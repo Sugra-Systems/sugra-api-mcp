@@ -110,6 +110,55 @@ Ask Claude:
 - "What's the Fed funds rate today, and what was the last change?"
 - "Find all Sugra endpoints related to shipping or vessels."
 
+## Troubleshooting
+
+**`SUGRA_API_KEY environment variable is required`**
+
+The server could not find your API key. Depending on how you run it:
+- As an MCP tool from your client (Claude, ChatGPT, Gemini, xAI, IDE, etc.): check the `env` block in your MCP config file. Value should be a full key like `sugra_ao1_...`, not empty and not wrapped in extra quotes.
+- Shell / CI: `export SUGRA_API_KEY=sugra_...` before running `sugra-api-mcp`.
+- HTTP mode: set via `.env` or systemd `EnvironmentFile`, not the shell.
+
+**`401 Unauthorized` or `403 Forbidden` in tool responses**
+
+Key accepted but rejected. Common causes:
+- Key was regenerated in [app.sugra.ai/settings/billing](https://app.sugra.ai/settings/billing) and your config still has the old one.
+- Typo - key contains only lowercase letters and digits, no spaces, no trailing newlines.
+- Free tier was deactivated. Sign in to verify status.
+
+**`429 Too Many Requests`**
+
+Hit your plan's daily limit. Response headers include `X-RateLimit-Reset` with the UTC timestamp when the counter resets (midnight UTC). Upgrade your plan at [app.sugra.ai/settings/billing](https://app.sugra.ai/settings/billing).
+
+**`Invalid Host header`** (only if self-hosting HTTP mode)
+
+FastMCP has DNS rebinding protection. Set `SUGRA_MCP_ALLOWED_HOSTS` to a comma-separated list of the public hostnames your reverse proxy serves. Example: `SUGRA_MCP_ALLOWED_HOSTS=mcp.example.com,example.com`.
+
+**Tool result truncated with `meta.truncated` notice**
+
+Some endpoints return very large payloads (global wildfires, full table catalogs). The client enforces the MCP 25k token limit - when hit, the data list is trimmed and a retry hint appears in `meta.truncated.retry_hint`. Add narrower filters (country, date range, `limit`) to get the full result.
+
+**`Python version 3.13 or higher is required`**
+
+sugra-api-mcp requires Python 3.13+. Check: `python --version`. If you have 3.12 or older:
+- Ubuntu: `sudo add-apt-repository ppa:deadsnakes/ppa && sudo apt install python3.13`
+- macOS: `brew install python@3.13`
+- Windows: download from [python.org](https://www.python.org/downloads/)
+
+Then recreate your venv.
+
+**Hosted `app.sugra.ai/mcp` returns 5xx**
+
+The hosted endpoint can briefly restart after deploys. Wait 60 seconds and retry. If persistent, email support@sugra.systems.
+
+**Debugging tool calls locally**
+
+Run with stdio and log JSON-RPC messages:
+```bash
+SUGRA_API_KEY=sugra_... sugra-api-mcp 2>&1 | tee mcp-debug.log
+```
+Send manual JSON-RPC from a second terminal using `nc` or an MCP inspector.
+
 ## Development
 
 ```bash
