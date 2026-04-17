@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import os
+from contextvars import ContextVar
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 
 from .client import SugraClient
-from .config import load_config
+from .config import Config, load_config
+
+api_key_ctx: ContextVar[str | None] = ContextVar("sugra_api_key", default=None)
 
 READ_ONLY_TOOL = ToolAnnotations(
     readOnlyHint=True,
@@ -53,16 +56,39 @@ mcp = FastMCP(
     transport_security=_build_transport_security(),
 )
 
-_client: SugraClient | None = None
+_shared_client: SugraClient | None = None
+
+_per_key_clients: dict[str, SugraClient] = {}
+
+
+def _build_client(api_key: str) -> SugraClient:
+    return SugraClient(
+        Config(
+            api_base=os.environ.get("SUGRA_API_BASE", "https://sugra.ai").rstrip("/"),
+            api_key=api_key,
+            timeout=float(os.environ.get("SUGRA_TIMEOUT", "30")),
+        )
+    )
 
 
 def get_client() -> SugraClient:
-    """Lazily instantiate the Sugra HTTP client.
+    """Return the downstream HTTP client for the current request.
 
-    We avoid creating the client at import time so the process can start
-    even if SUGRA_API_KEY is missing (e.g. during `--help`).
+    HTTP transport: ``api_key_ctx`` is set per-request by ``AuthMiddleware`` after
+    validating the Bearer token. We cache one client per distinct key to keep
+    the httpx.AsyncClient alive across calls.
+
+    stdio transport / no middleware: fall back to SUGRA_API_KEY from env.
     """
-    global _client
-    if _client is None:
-        _client = SugraClient(load_config())
-    return _client
+    per_request_key = api_key_ctx.get()
+    if per_request_key:
+        client = _per_key_clients.get(per_request_key)
+        if client is None:
+            client = _build_client(per_request_key)
+            _per_key_clients[per_request_key] = client
+        return client
+
+    global _shared_client
+    if _shared_client is None:
+        _shared_client = SugraClient(load_config())
+    return _shared_client

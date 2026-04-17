@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sugra-api-mcp"
-version = "0.1.6"
+version = "0.2.0"
 description = "Connector between LLM agents and world data. 518+ endpoints aggregating 55+ primary sources across financial markets, macroeconomics, company fundamentals, government, physical world, and news. Works with Anthropic Claude, OpenAI GPT, Google Gemini, xAI, and any MCP-enabled IDE."
 readme = "README.md"
 license = { text = "MIT" }
@@ -44,6 +44,8 @@ dependencies = [
 http = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
+    "starlette>=0.40",
+    "pyjwt[crypto]>=2.8",
 ]
 dev = [
     "pytest>=8.0",
