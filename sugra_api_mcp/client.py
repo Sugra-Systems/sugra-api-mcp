@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import httpx
@@ -9,9 +10,52 @@ import httpx
 from . import __version__
 from .config import Config
 
+# Anthropic Connectors Directory requires tool results <= 25 000 tokens.
+# Using ~4 chars per token as a conservative heuristic, we cap at 85 000 chars
+# (~21 000 tokens) to leave headroom for MCP envelope overhead.
+MAX_RESPONSE_CHARS = 85_000
+
 
 def _pkg_version() -> str:
     return __version__
+
+
+def _enforce_size_limit(payload: Any, url: str) -> Any:
+    """Trim payload to fit MCP token limits. Returns possibly-modified dict."""
+    payload_str = json.dumps(payload)
+    if len(payload_str) <= MAX_RESPONSE_CHARS:
+        return payload
+
+    # Try to truncate a list inside `data` field (common envelope shape)
+    if isinstance(payload, dict) and isinstance(payload.get("data"), list):
+        data_list = payload["data"]
+        if data_list:
+            empty_shell = {**payload, "data": []}
+            shell_size = len(json.dumps(empty_shell))
+            budget = MAX_RESPONSE_CHARS - shell_size - 500  # room for notice
+            avg_item = max(1, (len(payload_str) - shell_size) // len(data_list))
+            kept = max(1, min(len(data_list), budget // avg_item))
+            truncated = {**payload, "data": data_list[:kept]}
+            meta = dict(truncated.get("meta") or {})
+            meta["truncated"] = {
+                "reason": "exceeds_mcp_25k_token_limit",
+                "original_count": len(data_list),
+                "kept_count": kept,
+                "retry_hint": "Add filters (country, date range, limit) to reduce response size.",
+            }
+            truncated["meta"] = meta
+            return truncated
+
+    # Unknown shape - return a structured error the agent can act on
+    return {
+        "error": "response_too_large",
+        "message": (
+            f"Response exceeds MCP 25000 token limit (approx {len(payload_str) // 4} tokens). "
+            "Retry with narrower filters."
+        ),
+        "estimated_tokens": len(payload_str) // 4,
+        "url": url,
+    }
 
 
 class SugraClient:
@@ -51,7 +95,7 @@ class SugraClient:
                 "status_code": response.status_code,
                 "url": str(response.request.url),
             }
-        return payload
+        return _enforce_size_limit(payload, str(response.request.url))
 
     async def aclose(self) -> None:
         await self._client.aclose()
