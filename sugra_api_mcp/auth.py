@@ -1,0 +1,162 @@
+"""Per-request authentication for the HTTP transport.
+
+Accepts two Bearer token formats:
+
+- Raw Sugra API key (``sugra_...``) - V1 back-compat, used as x-api-key downstream
+- JWT issued by Passport at https://app.sugra.ai/oauth/authorize - validates the
+  signature against the JWKS, extracts ``sub`` (user id), then looks up the
+  user's primary API key via the app.sugra.ai internal endpoint
+
+On success the resolved x-api-key is stored in a ContextVar that
+``sugra_api_mcp.server.get_client`` reads when building downstream requests.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import time
+from dataclasses import dataclass
+
+import httpx
+import jwt
+from jwt import PyJWKClient
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+from starlette.types import ASGIApp
+
+from .config import AuthConfig
+from .server import api_key_ctx
+
+SIGNING_ALGORITHMS = ["RS256"]
+
+API_KEY_CACHE_TTL_SECONDS = 300
+
+INTERNAL_HTTP_TIMEOUT_SECONDS = 10.0
+
+
+class AuthError(Exception):
+    def __init__(self, message: str, *, status: int = 401) -> None:
+        super().__init__(message)
+        self.status = status
+
+
+@dataclass(frozen=True)
+class _CachedKey:
+    api_key: str
+    expires_at: float
+
+
+class Authenticator:
+    """Resolves a Bearer token to a downstream x-api-key."""
+
+    def __init__(self, config: AuthConfig) -> None:
+        self._config = config
+        self._jwks = PyJWKClient(config.jwks_url, cache_keys=True, lifespan=3600)
+        self._api_key_cache: dict[int, _CachedKey] = {}
+        self._lock = asyncio.Lock()
+
+    async def resolve(self, token: str) -> str:
+        token = token.strip()
+        if not token:
+            raise AuthError("Empty token")
+
+        if token.startswith("sugra_"):
+            return token
+
+        user_id = self._validate_jwt(token)
+        return await self._lookup_api_key(user_id)
+
+    def _validate_jwt(self, token: str) -> int:
+        try:
+            signing_key = self._jwks.get_signing_key_from_jwt(token)
+        except Exception as e:
+            raise AuthError(f"Unable to load signing key: {e}") from e
+
+        try:
+            decoded = jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=SIGNING_ALGORITHMS,
+                options={"verify_aud": False},
+                issuer=self._config.app_url,
+            )
+        except jwt.ExpiredSignatureError as e:
+            raise AuthError("Token expired") from e
+        except jwt.InvalidTokenError as e:
+            raise AuthError(f"Invalid token: {e}") from e
+
+        sub = decoded.get("sub")
+        if sub is None:
+            raise AuthError("Token missing sub claim")
+        try:
+            return int(sub)
+        except (TypeError, ValueError) as e:
+            raise AuthError("Token sub is not an integer user id") from e
+
+    async def _lookup_api_key(self, user_id: int) -> str:
+        now = time.time()
+        cached = self._api_key_cache.get(user_id)
+        if cached and cached.expires_at > now:
+            return cached.api_key
+
+        if not self._config.internal_token:
+            raise AuthError("INTERNAL_API_TOKEN not configured on MCP server", status=500)
+
+        async with self._lock:
+            cached = self._api_key_cache.get(user_id)
+            if cached and cached.expires_at > now:
+                return cached.api_key
+
+            url = f"{self._config.app_url}/api/internal/user/{user_id}/primary-api-key"
+            async with httpx.AsyncClient(timeout=INTERNAL_HTTP_TIMEOUT_SECONDS) as client:
+                resp = await client.get(
+                    url,
+                    headers={"X-Internal-Token": self._config.internal_token},
+                )
+
+            if resp.status_code == 404:
+                body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+                raise AuthError(
+                    body.get("message")
+                    or "User has no API key. Create one at https://app.sugra.ai/settings",
+                    status=403,
+                )
+            if resp.status_code >= 400:
+                raise AuthError(f"Internal lookup failed: HTTP {resp.status_code}", status=502)
+
+            data = resp.json()
+            api_key = data["api_key"]
+            self._api_key_cache[user_id] = _CachedKey(
+                api_key=api_key,
+                expires_at=now + API_KEY_CACHE_TTL_SECONDS,
+            )
+            return api_key
+
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    """Starlette middleware that resolves the Authorization header per request."""
+
+    def __init__(self, app: ASGIApp, authenticator: Authenticator) -> None:
+        super().__init__(app)
+        self._auth = authenticator
+
+    async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[override]
+        header = request.headers.get("authorization", "")
+        if not header.lower().startswith("bearer "):
+            return JSONResponse({"error": "missing_bearer_token"}, status_code=401)
+
+        token = header[7:].strip()
+        try:
+            api_key = await self._auth.resolve(token)
+        except AuthError as e:
+            return JSONResponse(
+                {"error": "auth_failed", "message": str(e)},
+                status_code=e.status,
+            )
+
+        ctx_token = api_key_ctx.set(api_key)
+        try:
+            return await call_next(request)
+        finally:
+            api_key_ctx.reset(ctx_token)

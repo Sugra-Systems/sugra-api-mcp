@@ -39,9 +39,15 @@ def main() -> None:
     if transport == "stdio":
         mcp.run(transport="stdio")
     else:
-        mcp.settings.host = args.host
-        mcp.settings.port = args.port
-        mcp.run(transport="streamable-http")
+        import uvicorn
+
+        from .auth import Authenticator, AuthMiddleware
+        from .config import load_auth_config
+
+        auth = Authenticator(load_auth_config())
+        app = mcp.streamable_http_app()
+        app.add_middleware(AuthMiddleware, authenticator=auth)
+        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
 
 if __name__ == "__main__":

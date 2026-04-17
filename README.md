@@ -96,9 +96,23 @@ In ChatGPT: Settings -> Connectors -> Add MCP server.
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `SUGRA_API_KEY` | Yes | - | Your Sugra API key |
+| `SUGRA_API_KEY` | Yes (stdio) | - | Your Sugra API key. In HTTP mode with OAuth this becomes a fallback for requests without Bearer |
 | `SUGRA_API_BASE` | No | `https://sugra.ai` | Override for self-hosted or beta environments |
 | `SUGRA_TIMEOUT` | No | `30` | Request timeout in seconds |
+| `SUGRA_MCP_ALLOWED_HOSTS` | No (HTTP) | - | Comma-separated hostnames to allow behind a reverse proxy |
+
+### HTTP transport with OAuth (v0.2.0+)
+
+When running with `--transport streamable-http` the server validates the incoming `Authorization: Bearer ...` header on every request. Two token formats are accepted:
+
+- Raw API key (`sugra_...`) - passed through as the downstream `x-api-key`. Backward compatible with v0.1.x.
+- OAuth JWT - signature verified against the issuer's JWKS. The `sub` claim identifies the user; the server then looks up that user's primary API key via an internal endpoint on the authorization server.
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `SUGRA_APP_URL` | HTTP + OAuth | `https://app.sugra.ai` | Base URL of the authorization server |
+| `SUGRA_JWKS_URL` | No | `$SUGRA_APP_URL/oauth/jwks.json` | JWKS endpoint |
+| `INTERNAL_API_TOKEN` | HTTP + OAuth | - | Shared secret for the user lookup endpoint on the authorization server. Same value must be set on both the MCP process and the app.sugra.ai Laravel process |
 
 ## Examples
 

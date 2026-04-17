@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import os
-
 
 def test_tools_register(monkeypatch):
     monkeypatch.setenv("SUGRA_API_KEY", "dummy")
+    import asyncio
+
     from sugra_api_mcp import tools  # noqa: F401
     from sugra_api_mcp.server import mcp
-
-    import asyncio
     tool_list = asyncio.run(mcp.list_tools())
     assert len(tool_list) == 17
     names = {t.name for t in tool_list}
@@ -29,8 +27,9 @@ def test_tools_register(monkeypatch):
 
 def test_config_requires_api_key(monkeypatch):
     monkeypatch.delenv("SUGRA_API_KEY", raising=False)
-    from sugra_api_mcp.config import load_config
     import pytest
+
+    from sugra_api_mcp.config import load_config
     with pytest.raises(RuntimeError, match="SUGRA_API_KEY"):
         load_config()
 
@@ -48,6 +47,7 @@ def test_config_defaults(monkeypatch):
 
 def test_size_limit_truncates_list():
     import json
+
     from sugra_api_mcp.client import MAX_RESPONSE_CHARS, _enforce_size_limit
 
     payload = {
