@@ -6,11 +6,15 @@
 
 **Connector between LLM agents and world data.** Official [Model Context Protocol](https://modelcontextprotocol.io) server for the [Sugra API](https://sugra.ai) - 518+ endpoints aggregating 55+ primary sources across financial markets, macroeconomics, company fundamentals, government, physical world, and news.
 
-MCP is a vendor-neutral protocol. This server works with any MCP-compatible client:
+Works with Anthropic Claude, OpenAI GPT, Google Gemini, xAI, and any MCP-enabled IDE.
 
-- **Anthropic**: Claude Desktop, Claude Code (CLI), claude.ai (web)
-- **OpenAI**: ChatGPT (via MCP connector)
-- **IDEs**: Cursor, Zed, Cline, Continue.dev, Windsurf
+Client details:
+
+- **Anthropic Claude**: Claude Desktop, Claude Code (CLI), claude.ai (web)
+- **OpenAI GPT**: ChatGPT (via MCP connector)
+- **Google Gemini**: Gemini CLI, Gemini Code Assist (VS Code + JetBrains)
+- **xAI**: Remote MCP Tools in xAI SDK and Responses API
+- **IDEs**: VS Code (native), Cursor, Zed, Cline, Continue.dev, Windsurf
 - **Custom agents**: anything built on the Python or TypeScript MCP SDK
 
 ## What you get
