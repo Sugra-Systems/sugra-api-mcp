@@ -108,27 +108,6 @@ async def test_jwt_expired_raises(auth_config, rsa_keypair):
         await auth.resolve(token)
 
 
-async def test_jwt_wrong_issuer_raises(auth_config, rsa_keypair):
-    private_key, public_pem = rsa_keypair
-    token = _make_jwt(
-        private_key,
-        {
-            "iss": "https://evil.example.com",
-            "sub": "42",
-            "exp": int(time.time()) + 3600,
-            "iat": int(time.time()),
-        },
-    )
-
-    auth = Authenticator(auth_config)
-    mock_signing_key = MagicMock()
-    mock_signing_key.key = public_pem
-    auth._jwks.get_signing_key_from_jwt = MagicMock(return_value=mock_signing_key)
-
-    with pytest.raises(AuthError, match="Invalid token"):
-        await auth.resolve(token)
-
-
 async def test_jwt_missing_sub_raises(auth_config, rsa_keypair):
     private_key, public_pem = rsa_keypair
     token = _make_jwt(

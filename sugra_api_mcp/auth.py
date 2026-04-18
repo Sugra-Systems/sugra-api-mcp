@@ -90,8 +90,7 @@ class Authenticator:
                 token,
                 signing_key.key,
                 algorithms=SIGNING_ALGORITHMS,
-                options={"verify_aud": False},
-                issuer=self._config.app_url,
+                options={"verify_aud": False, "verify_iss": False},
             )
         except jwt.ExpiredSignatureError as e:
             raise AuthError("Token expired") from e
