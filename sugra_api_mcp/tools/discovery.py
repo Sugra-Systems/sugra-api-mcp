@@ -1,11 +1,17 @@
-"""Discovery tools: search across all 518+ endpoints and call any of them directly."""
+###########################################
+### Sugra API MCP Version 0.3.0         ###
+###   DISCOVERY TOOLS Version 0.3.0     ###
+###########################################
+
+### BEGIN # sugra_api_mcp/tools/discovery.py ###
+"""Discovery tools: search across all 643 endpoints and call any of them directly."""
 
 from __future__ import annotations
 
 import re
 from typing import Any
 
-from ..server import READ_ONLY_TOOL, get_client, mcp
+from ..server import get_client, mcp, read_only
 
 _OPENAPI_CACHE: dict[str, Any] | None = None
 
@@ -18,9 +24,10 @@ async def _load_openapi() -> dict[str, Any]:
     return _OPENAPI_CACHE
 
 
-@mcp.tool(annotations=READ_ONLY_TOOL)
+### BEGIN # search_endpoint ###
+@mcp.tool(annotations=read_only("Search endpoint"))
 async def search_endpoint(query: str, limit: int = 10) -> dict[str, Any]:
-    """Search across all 518+ Sugra API endpoints by natural-language query.
+    """Search across all 643 Sugra API endpoints by natural-language query.
 
     Use this when the curated tools (get_market_price, get_macro_indicator, etc.) don't
     cover a specific need. Returns matching endpoints with path, method, summary, and
@@ -79,9 +86,11 @@ async def search_endpoint(query: str, limit: int = 10) -> dict[str, Any]:
 
     matches.sort(key=lambda x: x[0], reverse=True)
     return {"results": [m[1] for m in matches[:limit]], "total_matched": len(matches)}
+### END # search_endpoint ###
 
 
-@mcp.tool(annotations=READ_ONLY_TOOL)
+### BEGIN # call_endpoint ###
+@mcp.tool(annotations=read_only("Call endpoint"))
 async def call_endpoint(
     path: str,
     method: str = "GET",
@@ -117,3 +126,6 @@ async def call_endpoint(
     if upper == "POST":
         return await client.post(resolved, json=body)
     return {"error": f"Unsupported method: {method}"}
+### END # call_endpoint ###
+
+### END # sugra_api_mcp/tools/discovery.py ###

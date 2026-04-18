@@ -1,10 +1,14 @@
 # sugra-api-mcp
 
+<p align="center">
+  <img src="https://sugra.systems/images/sugra-logo-bold.svg" alt="Sugra" width="128" height="128" />
+</p>
+
 [![PyPI](https://img.shields.io/pypi/v/sugra-api-mcp.svg)](https://pypi.org/project/sugra-api-mcp/)
 [![Python](https://img.shields.io/pypi/pyversions/sugra-api-mcp.svg)](https://pypi.org/project/sugra-api-mcp/)
 [![License](https://img.shields.io/pypi/l/sugra-api-mcp.svg)](https://github.com/Sugra-Systems/prod-sugra-ai-MCP/blob/main/LICENSE)
 
-**Connector between LLM agents and world data.** Official [Model Context Protocol](https://modelcontextprotocol.io) server for the [Sugra API](https://sugra.ai) - 518+ endpoints aggregating 55+ primary sources across financial markets, macroeconomics, company fundamentals, government, physical world, and news.
+**Connector between LLM agents and world data.** Official [Model Context Protocol](https://modelcontextprotocol.io) server for the [Sugra API](https://sugra.ai) - 643 endpoints aggregating 75+ primary sources across financial markets, macroeconomics, company fundamentals, government, events, physical world, trade, food, and news.
 
 Works with Anthropic Claude, OpenAI GPT, Google Gemini, xAI, and any MCP-enabled IDE.
 
@@ -19,17 +23,20 @@ Client details:
 
 ## What you get
 
-17 tools covering the full Sugra API:
+27 tools covering the full Sugra API:
 
 | Category | Tools |
 |---|---|
-| Markets | `get_market_price`, `get_historical_prices`, `get_market_overview`, `search_symbol`, `get_prediction_market` |
-| Fundamentals | `get_company_overview`, `get_company_filings` |
-| Macro | `get_macro_indicator`, `get_central_bank_rate`, `search_economic_series` |
+| Markets | `get_market_price`, `get_historical_prices`, `get_market_overview`, `search_symbol`, `get_forex_rate`, `get_commodity_price` |
+| Fundamentals | `get_company_overview`, `get_company_filings`, `get_company_financials`, `get_analyst_ratings` |
+| Macro | `get_macro_indicator`, `get_central_bank_rate`, `search_economic_series`, `get_bond_yields`, `get_economic_calendar` |
 | Government | `get_government_spending`, `get_treasury_data` |
-| Physical world | `get_weather`, `get_environmental_data` |
+| Events | `get_earnings_calendar`, `get_prediction_market` |
 | News | `get_news` |
-| Discovery | `search_endpoint`, `call_endpoint` (covers all 518 endpoints) |
+| Physical world | `get_weather`, `get_natural_events`, `get_vessel_activity` |
+| Trade | `get_trade_flows` |
+| Food | `get_food_indicator` |
+| Discovery | `search_endpoint`, `call_endpoint` (covers all 643 endpoints) |
 
 ## Installation
 
@@ -192,4 +199,4 @@ pytest
 
 ## License
 
-MIT © Sugra Systems, Inc.
+MIT © 2026 Sugra Systems, Inc. Author: Arman Obosyan.

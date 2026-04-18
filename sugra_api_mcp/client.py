@@ -1,4 +1,10 @@
-"""Async HTTP client for the Sugra API."""
+###########################################
+### Sugra API MCP Version 0.3.0         ###
+###   HTTP CLIENT Version 0.3.0         ###
+###########################################
+
+### BEGIN # sugra_api_mcp/client.py ###
+"""Async HTTP client for the Sugra API with size-limit enforcement."""
 
 from __future__ import annotations
 
@@ -99,3 +105,5 @@ class SugraClient:
 
     async def aclose(self) -> None:
         await self._client.aclose()
+
+### END # sugra_api_mcp/client.py ###

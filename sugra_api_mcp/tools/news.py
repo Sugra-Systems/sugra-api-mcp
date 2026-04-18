@@ -1,13 +1,20 @@
+###########################################
+### Sugra API MCP Version 0.3.0         ###
+###   NEWS TOOLS Version 0.3.0          ###
+###########################################
+
+### BEGIN # sugra_api_mcp/tools/news.py ###
 """News tools: search, latest, by region or category."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from ..server import READ_ONLY_TOOL, get_client, mcp
+from ..server import get_client, mcp, read_only
 
 
-@mcp.tool(annotations=READ_ONLY_TOOL)
+### BEGIN # get_news ###
+@mcp.tool(annotations=read_only("News"))
 async def get_news(
     query: str | None = None,
     region: str | None = None,
@@ -38,3 +45,6 @@ async def get_news(
     if category:
         return await client.get(f"/api/v1/news/category/{category}", params={"limit": limit})
     return await client.get("/api/v1/news/latest", params={"limit": limit})
+### END # get_news ###
+
+### END # sugra_api_mcp/tools/news.py ###

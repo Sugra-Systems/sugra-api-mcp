@@ -1,3 +1,9 @@
+###########################################
+### Sugra API MCP Version 0.3.0         ###
+###   AUTH MIDDLEWARE Version 0.3.0     ###
+###########################################
+
+### BEGIN # sugra_api_mcp/auth.py ###
 """Per-request authentication for the HTTP transport.
 
 Accepts two Bearer token formats:
@@ -176,3 +182,5 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         finally:
             api_key_ctx.reset(ctx_token)
+
+### END # sugra_api_mcp/auth.py ###

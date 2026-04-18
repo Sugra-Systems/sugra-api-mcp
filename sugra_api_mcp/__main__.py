@@ -1,3 +1,9 @@
+###########################################
+### Sugra API MCP Version 0.3.0         ###
+###   CLI ENTRY POINT Version 0.3.0     ###
+###########################################
+
+### BEGIN # sugra_api_mcp/__main__.py ###
 """Entry point: `python -m sugra_api_mcp` or `sugra-api-mcp` CLI."""
 
 from __future__ import annotations
@@ -10,7 +16,7 @@ from typing import Literal
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="sugra-api-mcp",
-        description="Sugra API MCP server",
+        description="Sugra API MCP server - connector between LLM agents and world data.",
     )
     parser.add_argument(
         "--transport",
@@ -52,3 +58,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+### END # sugra_api_mcp/__main__.py ###

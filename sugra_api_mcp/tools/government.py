@@ -1,15 +1,22 @@
+###########################################
+### Sugra API MCP Version 0.3.0         ###
+###   GOVERNMENT TOOLS Version 0.3.0    ###
+###########################################
+
+### BEGIN # sugra_api_mcp/tools/government.py ###
 """Government and trade data tools: federal spending, Treasury fiscal data."""
 
 from __future__ import annotations
 
 from typing import Any, Literal
 
-from ..server import READ_ONLY_TOOL, get_client, mcp
+from ..server import get_client, mcp, read_only
 
 TreasuryDataset = Literal["debt", "debt-history", "rates", "interest-expense", "catalog"]
 
 
-@mcp.tool(annotations=READ_ONLY_TOOL)
+### BEGIN # get_government_spending ###
+@mcp.tool(annotations=read_only("Government spending"))
 async def get_government_spending(
     agency_code: str | None = None,
     fiscal_year: int | None = None,
@@ -26,8 +33,8 @@ async def get_government_spending(
         fiscal_year: Optional fiscal year (e.g. 2025).
 
     Examples:
-        get_government_spending()  # list all agencies
-        get_government_spending(agency_code="097")  # DoD
+        get_government_spending()
+        get_government_spending(agency_code="097")
         get_government_spending(agency_code="019", fiscal_year=2024)
     """
     client = get_client()
@@ -37,9 +44,11 @@ async def get_government_spending(
             params={"fiscal_year": fiscal_year},
         )
     return await client.get("/api/v1/usaspending/agencies")
+### END # get_government_spending ###
 
 
-@mcp.tool(annotations=READ_ONLY_TOOL)
+### BEGIN # get_treasury_data ###
+@mcp.tool(annotations=read_only("Treasury data"))
 async def get_treasury_data(
     dataset: TreasuryDataset = "debt",
     limit: int = 100,
@@ -62,3 +71,6 @@ async def get_treasury_data(
     """
     client = get_client()
     return await client.get(f"/api/v1/treasury/{dataset}", params={"limit": limit})
+### END # get_treasury_data ###
+
+### END # sugra_api_mcp/tools/government.py ###
