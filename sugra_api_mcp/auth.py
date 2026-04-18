@@ -14,6 +14,7 @@ On success the resolved x-api-key is stored in a ContextVar that
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from dataclasses import dataclass
 
@@ -27,6 +28,8 @@ from starlette.types import ASGIApp
 
 from .config import AuthConfig
 from .server import api_key_ctx
+
+logger = logging.getLogger("sugra_mcp.auth")
 
 SIGNING_ALGORITHMS = ["RS256"]
 
@@ -159,6 +162,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         try:
             api_key = await self._auth.resolve(token)
         except AuthError as e:
+            token_prefix = token[:12] + "..." if len(token) > 12 else token
+            logger.warning(
+                "auth_failed status=%d token_prefix=%s msg=%s",
+                e.status, token_prefix, e,
+            )
             return JSONResponse(
                 {"error": "auth_failed", "message": str(e)},
                 status_code=e.status,
