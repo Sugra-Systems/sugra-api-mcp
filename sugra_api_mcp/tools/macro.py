@@ -177,7 +177,7 @@ async def get_economic_calendar(
     end = end_date or (today + timedelta(days=7)).isoformat()
     return await client.get(
         "/api/v1/finnhub/calendar/economic",
-        params={"from": start, "to": end},
+        params={"from_date": start, "to_date": end},
     )
 ### END # get_economic_calendar ###
 

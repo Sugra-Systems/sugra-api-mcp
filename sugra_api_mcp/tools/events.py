@@ -47,7 +47,7 @@ async def get_earnings_calendar(
     end = end_date or (today + timedelta(days=7)).isoformat()
     return await client.get(
         "/api/v1/finnhub/calendar/earnings",
-        params={"from": start, "to": end, "symbol": symbol},
+        params={"from_date": start, "to_date": end, "symbol": symbol},
     )
 ### END # get_earnings_calendar ###
 
