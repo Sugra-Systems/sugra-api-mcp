@@ -70,8 +70,17 @@ class Authenticator:
     def _validate_jwt(self, token: str) -> int:
         try:
             signing_key = self._jwks.get_signing_key_from_jwt(token)
-        except Exception as e:
-            raise AuthError(f"Unable to load signing key: {e}") from e
+        except Exception:
+            # Passport / league-oauth2-server issues JWTs without a `kid`
+            # header, so kid-based lookup fails. Fall back to the sole key
+            # published in our JWKS while we use a single signing key.
+            try:
+                keys = list(self._jwks.get_signing_keys())
+            except Exception as e:
+                raise AuthError(f"Unable to load signing keys: {e}") from e
+            if len(keys) != 1:
+                raise AuthError("No unique signing key available in JWKS") from None
+            signing_key = keys[0]
 
         try:
             decoded = jwt.decode(
