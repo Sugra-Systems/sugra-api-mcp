@@ -1,5 +1,7 @@
 # sugra-api-mcp
 
+<!-- mcp-name: io.github.Sugra-Systems/sugra-api-mcp -->
+
 <p align="center">
   <img src="https://sugra.systems/images/sugra-logo-bold.svg" alt="Sugra" width="128" height="128" />
 </p>

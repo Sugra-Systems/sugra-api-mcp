@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from ..server import get_client, mcp, read_only
@@ -159,18 +160,24 @@ async def get_economic_calendar(
     Covers all major economies via Finnhub's calendar aggregation. Includes
     release time (UTC), prior value, forecast consensus where available.
 
+    For a wider window, pass explicit dates - note that the MCP token limit
+    caps responses at roughly one week of global macro events.
+
     Args:
-        start_date: Optional window start (YYYY-MM-DD). Default is today.
-        end_date: Optional window end (YYYY-MM-DD). Default is one week from today.
+        start_date: Optional window start (YYYY-MM-DD). Default is today (UTC).
+        end_date: Optional window end (YYYY-MM-DD). Default is 7 days from today.
 
     Examples:
         get_economic_calendar()
-        get_economic_calendar(start_date="2026-05-01", end_date="2026-05-15")
+        get_economic_calendar(start_date="2026-05-01", end_date="2026-05-07")
     """
     client = get_client()
+    today = datetime.now(UTC).date()
+    start = start_date or today.isoformat()
+    end = end_date or (today + timedelta(days=7)).isoformat()
     return await client.get(
         "/api/v1/finnhub/calendar/economic",
-        params={"from": start_date, "to": end_date},
+        params={"from": start, "to": end},
     )
 ### END # get_economic_calendar ###
 

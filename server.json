@@ -1,0 +1,36 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.Sugra-Systems/sugra-api-mcp",
+  "title": "Sugra API",
+  "description": "Connector between LLM agents and world data. 643 endpoints aggregating 75+ primary sources across financial markets, macroeconomics, company fundamentals, government, events, physical world, trade, food, and news.",
+  "repository": {
+    "url": "https://github.com/Sugra-Systems/prod-sugra-ai-MCP",
+    "source": "github"
+  },
+  "version": "0.3.1",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "sugra-api-mcp",
+      "version": "0.3.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "SUGRA_API_KEY",
+          "description": "Your Sugra API key. Get one free at https://app.sugra.ai/settings/billing (Free tier: 50 req/day).",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": true
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://app.sugra.ai/mcp"
+    }
+  ]
+}
