@@ -29,3 +29,7 @@ htmlcov/
 .idea/
 *.swp
 .DS_Store
+
+# Wave E - gitignore hardening
+Thumbs.db
+.python-version
