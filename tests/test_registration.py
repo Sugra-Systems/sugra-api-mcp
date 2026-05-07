@@ -10,32 +10,14 @@ def test_tools_register(monkeypatch):
     from sugra_api_mcp import tools  # noqa: F401
     from sugra_api_mcp.server import mcp
     tool_list = asyncio.run(mcp.list_tools())
-    assert len(tool_list) == 27
+    assert len(tool_list) == 5
     names = {t.name for t in tool_list}
     expected = {
-        # Markets (6)
-        "get_market_price", "get_historical_prices", "search_symbol",
-        "get_market_overview", "get_forex_rate", "get_commodity_price",
-        # Fundamentals (4)
-        "get_company_overview", "get_company_filings",
-        "get_company_financials", "get_analyst_ratings",
-        # Macro (5)
-        "get_macro_indicator", "get_central_bank_rate", "search_economic_series",
-        "get_bond_yields", "get_economic_calendar",
-        # Government (2)
-        "get_government_spending", "get_treasury_data",
-        # Events (2)
-        "get_earnings_calendar", "get_prediction_market",
-        # News (1)
-        "get_news",
-        # Physical (3)
-        "get_weather", "get_natural_events", "get_vessel_activity",
-        # Trade (1)
-        "get_trade_flows",
-        # Food (1)
-        "get_food_indicator",
-        # Discovery / meta (2)
-        "search_endpoint", "call_endpoint",
+        "search_endpoints",
+        "describe_endpoint",
+        "call_endpoint",
+        "list_toolsets",
+        "list_sources",
     }
     assert names == expected, f"Mismatch: missing={expected - names}, extra={names - expected}"
 

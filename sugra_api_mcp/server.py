@@ -1,9 +1,3 @@
-###########################################
-### Sugra API MCP Version 0.3.0         ###
-###   SERVER CORE Version 0.3.0         ###
-###########################################
-
-### BEGIN # sugra_api_mcp/server.py ###
 """FastMCP server instance, tool annotation helper, and shared client accessor."""
 
 from __future__ import annotations
@@ -31,9 +25,9 @@ READ_ONLY_TOOL = ToolAnnotations(
 def read_only(title: str) -> ToolAnnotations:
     """Tool annotations for a read-only Sugra API wrapper with a human-readable title.
 
-    All curated tools are safe to retry, do not mutate state, and pull from the
-    open world (external data). The optional `title` surfaces in MCP client UIs
-    as the display name distinct from the snake_case function name.
+    Gateway tools are safe to retry, do not mutate state, and pull from the
+    open world through the Sugra API. The optional `title` surfaces in MCP
+    client UIs as the display name distinct from the snake_case function name.
     """
     return ToolAnnotations(
         readOnlyHint=True,
@@ -70,11 +64,9 @@ def _build_transport_security() -> TransportSecuritySettings | None:
 mcp = FastMCP(
     "sugra-api",
     instructions=(
-        "Sugra API - unified data access across 643 endpoints: financial markets, "
-        "macroeconomics, company fundamentals, government, events, physical world, "
-        "trade, food, and news. Use curated tools (get_market_price, "
-        "get_macro_indicator, get_forex_rate, etc.) when they match the task. "
-        "Fall back to search_endpoint + call_endpoint for broader coverage."
+        "Sugra API gateway - unified operation_id access across the bundled endpoint "
+        "catalog. Use search_endpoints to find operations, describe_endpoint to inspect "
+        "parameters, and call_endpoint to call by operation_id."
     ),
     transport_security=_build_transport_security(),
 )
@@ -115,5 +107,3 @@ def get_client() -> SugraClient:
     if _shared_client is None:
         _shared_client = SugraClient(load_config())
     return _shared_client
-
-### END # sugra_api_mcp/server.py ###

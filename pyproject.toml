@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sugra-api-mcp"
-version = "0.3.3"
-description = "Connector between LLM agents and world data. 518+ endpoints aggregating 55+ primary sources across financial markets, macroeconomics, company fundamentals, government, physical world, and news. Works with Anthropic Claude, OpenAI GPT, Google Gemini, xAI, and any MCP-enabled IDE."
+version = "0.4.0"
+description = "Gateway connector between LLM agents and Sugra API world data through a bundled endpoint catalog and operation_id calls. Works with Anthropic Claude, OpenAI GPT, Google Gemini, xAI, and any MCP-enabled IDE."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
@@ -15,7 +15,7 @@ authors = [
 maintainers = [
     { name = "Arman Obosyan", email = "arman@sugra.systems" },
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 keywords = [
     "mcp",
     "model-context-protocol",
@@ -30,12 +30,12 @@ keywords = [
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "Intended Audience :: Financial and Insurance Industry",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
-    "Topic :: Office/Business :: Financial",
     "Topic :: Scientific/Engineering :: Information Analysis",
 ]
 dependencies = [
@@ -71,9 +71,12 @@ Issues = "https://github.com/Sugra-Systems/prod-sugra-ai-MCP/issues"
 [tool.hatch.build.targets.wheel]
 packages = ["sugra_api_mcp"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"sugra_api_mcp/catalog/data/endpoints.json" = "sugra_api_mcp/catalog/data/endpoints.json"
+
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
@@ -84,6 +87,6 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.11"
 strict = true
 warn_unused_configs = true

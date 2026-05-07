@@ -10,10 +10,15 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Route
+from starlette.testclient import TestClient
 
 from sugra_api_mcp.auth import (
     Authenticator,
     AuthError,
+    AuthMiddleware,
     _CachedKey,
 )
 from sugra_api_mcp.config import AuthConfig
@@ -128,6 +133,27 @@ async def test_jwt_missing_sub_raises(auth_config, rsa_keypair):
         await auth.resolve(token)
 
 
+async def test_jwt_wrong_issuer_raises(auth_config, rsa_keypair):
+    private_key, public_pem = rsa_keypair
+    token = _make_jwt(
+        private_key,
+        {
+            "iss": "https://attacker.example",
+            "sub": "42",
+            "exp": int(time.time()) + 3600,
+            "iat": int(time.time()),
+        },
+    )
+
+    auth = Authenticator(auth_config)
+    mock_signing_key = MagicMock()
+    mock_signing_key.key = public_pem
+    auth._jwks.get_signing_key_from_jwt = MagicMock(return_value=mock_signing_key)
+
+    with pytest.raises(AuthError, match="Invalid token"):
+        await auth.resolve(token)
+
+
 async def test_lookup_404_raises_with_user_message(auth_config, rsa_keypair):
     private_key, public_pem = rsa_keypair
     token = _make_jwt(
@@ -223,3 +249,18 @@ async def test_missing_internal_token_raises_500(auth_config, rsa_keypair):
     with pytest.raises(AuthError) as exc:
         await auth.resolve(token)
     assert exc.value.status == 500
+
+
+def test_auth_401_includes_www_authenticate_header(auth_config):
+    async def ok(_request):
+        return JSONResponse({"ok": True})
+
+    app = Starlette(routes=[Route("/mcp", ok)])
+    app.add_middleware(AuthMiddleware, authenticator=Authenticator(auth_config))
+
+    response = TestClient(app).get("/mcp")
+
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == (
+        'Bearer resource_metadata="https://app.sugra.ai/.well-known/oauth-protected-resource"'
+    )

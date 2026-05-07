@@ -1,9 +1,3 @@
-###########################################
-### Sugra API MCP Version 0.3.0         ###
-###   AUTH MIDDLEWARE Version 0.3.0     ###
-###########################################
-
-### BEGIN # sugra_api_mcp/auth.py ###
 """Per-request authentication for the HTTP transport.
 
 Accepts two Bearer token formats:
@@ -65,6 +59,10 @@ class Authenticator:
         self._api_key_cache: dict[int, _CachedKey] = {}
         self._lock = asyncio.Lock()
 
+    @property
+    def protected_resource_metadata_url(self) -> str:
+        return f"{self._config.app_url}/.well-known/oauth-protected-resource"
+
     async def resolve(self, token: str) -> str:
         token = token.strip()
         if not token:
@@ -96,7 +94,8 @@ class Authenticator:
                 token,
                 signing_key.key,
                 algorithms=SIGNING_ALGORITHMS,
-                options={"verify_aud": False, "verify_iss": False},
+                issuer=self._config.app_url,
+                options={"verify_aud": False},
             )
         except jwt.ExpiredSignatureError as e:
             raise AuthError("Token expired") from e
@@ -158,10 +157,22 @@ class AuthMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self._auth = authenticator
 
+    def _auth_headers(self) -> dict[str, str]:
+        return {
+            "WWW-Authenticate": (
+                'Bearer resource_metadata="'
+                f'{self._auth.protected_resource_metadata_url}"'
+            )
+        }
+
     async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[override]
         header = request.headers.get("authorization", "")
         if not header.lower().startswith("bearer "):
-            return JSONResponse({"error": "missing_bearer_token"}, status_code=401)
+            return JSONResponse(
+                {"error": "missing_bearer_token"},
+                status_code=401,
+                headers=self._auth_headers(),
+            )
 
         token = header[7:].strip()
         try:
@@ -175,6 +186,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return JSONResponse(
                 {"error": "auth_failed", "message": str(e)},
                 status_code=e.status,
+                headers=self._auth_headers() if e.status == 401 else None,
             )
 
         ctx_token = api_key_ctx.set(api_key)
@@ -182,5 +194,3 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         finally:
             api_key_ctx.reset(ctx_token)
-
-### END # sugra_api_mcp/auth.py ###

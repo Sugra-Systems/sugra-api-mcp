@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.13", "3.14"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
@@ -33,7 +33,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev,http]"
       - name: Ruff
-        run: ruff check sugra_api_mcp
+        run: ruff check sugra_api_mcp tests
+      - name: Pytest
+        run: pytest
       - name: Import check
         run: python -c "import sugra_api_mcp; from sugra_api_mcp import tools"
       - name: Tools registered
@@ -46,7 +48,7 @@ jobs:
           from sugra_api_mcp.server import mcp
           async def main():
               t = await mcp.list_tools()
-              assert len(t) == 27, f'Expected 27 tools, got {len(t)}'
+              assert len(t) == 5, f'Expected 5 tools, got {len(t)}'
               print(f'OK: {len(t)} tools registered')
           asyncio.run(main())
           "

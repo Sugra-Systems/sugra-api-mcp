@@ -1,0 +1,105 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Sugra API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v1/cot/financial": {
+      "get": {
+        "tags": ["Markets"],
+        "summary": "Traders in Financial Futures (TFF)",
+        "description": "Financial futures positioning for asset managers, dealers, leveraged funds, and other traders across major futures markets including equity index markets.",
+        "operationId": "cot_financial",
+        "parameters": [
+          {
+            "name": "market",
+            "in": "query",
+            "required": false,
+            "description": "Futures market name or code.",
+            "schema": {"type": "string"},
+            "example": "NASDAQ"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Maximum records to return.",
+            "schema": {"type": "integer", "minimum": 1, "maximum": 500},
+            "example": 25
+          }
+        ]
+      }
+    },
+    "/api/v1/quotes/{symbol}/price": {
+      "get": {
+        "tags": ["Markets"],
+        "summary": "Quote price",
+        "description": "Latest market price for a listed security.",
+        "operationId": "quotes_symbol_price",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "path",
+            "required": true,
+            "description": "Ticker symbol.",
+            "schema": {"type": "string"},
+            "example": "AAPL"
+          }
+        ]
+      }
+    },
+    "/api/v1/openfigi/map": {
+      "post": {
+        "tags": ["Reference"],
+        "summary": "Map identifiers",
+        "description": "Map security identifiers to OpenFIGI records.",
+        "operationId": "openfigi_map",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {"type": "object"}
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/air-quality/current": {
+      "get": {
+        "tags": ["Environment"],
+        "summary": "Current air quality",
+        "description": "Air quality index and pollutant measurements by city or coordinates.",
+        "operationId": "air_quality_current",
+        "parameters": [
+          {
+            "name": "city",
+            "in": "query",
+            "required": false,
+            "description": "City name.",
+            "schema": {"type": "string"},
+            "example": "Los Angeles"
+          }
+        ]
+      }
+    },
+    "/api/v1/bis/cb-rates": {
+      "get": {
+        "tags": ["Central Banks & Monetary"],
+        "summary": "Central bank policy rates",
+        "description": "Policy interest rates by central bank and country.",
+        "operationId": "bis_cb_rates",
+        "parameters": []
+      }
+    },
+    "/api/v1/central-banks/bcra/cotizaciones": {
+      "get": {
+        "tags": ["Central Banks & Monetary"],
+        "summary": "Daily FX cotizaciones snapshot",
+        "description": "Daily foreign exchange rates from the central bank.",
+        "operationId": "central_banks_bcra_cotizaciones",
+        "parameters": []
+      }
+    }
+  }
+}

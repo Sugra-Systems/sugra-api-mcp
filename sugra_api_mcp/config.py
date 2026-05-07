@@ -1,9 +1,3 @@
-###########################################
-### Sugra API MCP Version 0.3.0         ###
-###   CONFIG Version 0.3.0              ###
-###########################################
-
-### BEGIN # sugra_api_mcp/config.py ###
 """Configuration loading from environment variables."""
 
 from __future__ import annotations
@@ -54,5 +48,3 @@ def load_auth_config() -> AuthConfig:
     jwks_url = os.environ.get("SUGRA_JWKS_URL", f"{app_url}/oauth/jwks.json")
     internal_token = os.environ.get("INTERNAL_API_TOKEN", "").strip() or None
     return AuthConfig(app_url=app_url, jwks_url=jwks_url, internal_token=internal_token)
-
-### END # sugra_api_mcp/config.py ###

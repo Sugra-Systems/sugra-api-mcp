@@ -10,7 +10,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/sugra-api-mcp.svg)](https://pypi.org/project/sugra-api-mcp/)
 [![License](https://img.shields.io/pypi/l/sugra-api-mcp.svg)](https://github.com/Sugra-Systems/prod-sugra-ai-MCP/blob/main/LICENSE)
 
-**Connector between LLM agents and world data.** Official [Model Context Protocol](https://modelcontextprotocol.io) server for the [Sugra API](https://sugra.ai) - 643 endpoints aggregating 75+ primary sources across financial markets, macroeconomics, company fundamentals, government, events, physical world, trade, food, and news.
+**Gateway connector between LLM agents and world data.** Official [Model Context Protocol](https://modelcontextprotocol.io) server for the [Sugra API](https://sugra.ai), backed by a bundled endpoint catalog and operation_id calls.
 
 Works with Anthropic Claude, OpenAI GPT, Google Gemini, xAI, and any MCP-enabled IDE.
 
@@ -25,20 +25,17 @@ Client details:
 
 ## What you get
 
-27 tools covering the full Sugra API:
+v0.4.0 is a breaking gateway release. Curated tools such as `get_market_price`, `get_macro_indicator`, and `get_news` were removed. The package now exposes exactly five tools:
 
-| Category | Tools |
+| Tool | Purpose |
 |---|---|
-| Markets | `get_market_price`, `get_historical_prices`, `get_market_overview`, `search_symbol`, `get_forex_rate`, `get_commodity_price` |
-| Fundamentals | `get_company_overview`, `get_company_filings`, `get_company_financials`, `get_analyst_ratings` |
-| Macro | `get_macro_indicator`, `get_central_bank_rate`, `search_economic_series`, `get_bond_yields`, `get_economic_calendar` |
-| Government | `get_government_spending`, `get_treasury_data` |
-| Events | `get_earnings_calendar`, `get_prediction_market` |
-| News | `get_news` |
-| Physical world | `get_weather`, `get_natural_events`, `get_vessel_activity` |
-| Trade | `get_trade_flows` |
-| Food | `get_food_indicator` |
-| Discovery | `search_endpoint`, `call_endpoint` (covers all 643 endpoints) |
+| `search_endpoints` | Search the bundled endpoint catalog. Runtime search does not fetch `/openapi.json`. |
+| `describe_endpoint` | Inspect an endpoint by `operation_id`, including path, method, parameters, and required inputs. |
+| `call_endpoint` | Call a Sugra API operation by `operation_id`. Arbitrary path calls are no longer supported. |
+| `list_toolsets` | List catalog groups and endpoint counts. |
+| `list_sources` | Show bundled catalog source metadata. |
+
+`call_endpoint` supports response shaping with `limit`, `fields`, and `include_raw`.
 
 ## Installation
 
@@ -101,6 +98,25 @@ Add to claude.ai, ChatGPT, or any Streamable HTTP MCP client. Authenticate with 
 In claude.ai: Settings -> Connectors -> Add custom connector.
 In ChatGPT: Settings -> Connectors -> Add MCP server.
 
+## CLI
+
+Server startup is unchanged:
+
+```bash
+sugra-api-mcp
+sugra-api-mcp --transport streamable-http --port 8001
+```
+
+Catalog and gateway helpers:
+
+```bash
+sugra-api-mcp doctor
+sugra-api-mcp list-toolsets
+sugra-api-mcp search "NASDAQ futures"
+sugra-api-mcp describe cot_financial
+sugra-api-mcp call quotes_symbol_price --params '{"symbol":"AAPL"}'
+```
+
 ## Environment variables
 
 | Variable | Required | Default | Description |
@@ -110,7 +126,7 @@ In ChatGPT: Settings -> Connectors -> Add MCP server.
 | `SUGRA_TIMEOUT` | No | `30` | Request timeout in seconds |
 | `SUGRA_MCP_ALLOWED_HOSTS` | No (HTTP) | - | Comma-separated hostnames to allow behind a reverse proxy |
 
-### HTTP transport with OAuth (v0.2.0+)
+### HTTP transport with OAuth
 
 When running with `--transport streamable-http` the server validates the incoming `Authorization: Bearer ...` header on every request. Two token formats are accepted:
 
@@ -127,11 +143,10 @@ When running with `--transport streamable-http` the server validates the incomin
 
 Ask Claude:
 
-- "What's Bitcoin's current price and how did it move this week?"
-- "Show me Apple's income statement and debt profile."
-- "Compare US vs Germany CPI over the last 5 years."
-- "What's the Fed funds rate today, and what was the last change?"
-- "Find all Sugra endpoints related to shipping or vessels."
+- "Search Sugra endpoints for NASDAQ futures."
+- "Describe the `cot_financial` operation."
+- "Call `quotes_symbol_price` with symbol AAPL and return only symbol and price."
+- "List available Sugra toolsets."
 
 ## Troubleshooting
 
@@ -161,11 +176,11 @@ FastMCP has DNS rebinding protection. Set `SUGRA_MCP_ALLOWED_HOSTS` to a comma-s
 
 Some endpoints return very large payloads (global wildfires, full table catalogs). The client enforces the MCP 25k token limit - when hit, the data list is trimmed and a retry hint appears in `meta.truncated.retry_hint`. Add narrower filters (country, date range, `limit`) to get the full result.
 
-**`Python version 3.13 or higher is required`**
+**`Python version 3.11 or higher is required`**
 
-sugra-api-mcp requires Python 3.13+. Check: `python --version`. If you have 3.12 or older:
-- Ubuntu: `sudo add-apt-repository ppa:deadsnakes/ppa && sudo apt install python3.13`
-- macOS: `brew install python@3.13`
+sugra-api-mcp requires Python 3.11+. Check: `python --version`. If you have 3.10 or older:
+- Ubuntu: install Python 3.11 or newer from your distribution packages or the deadsnakes PPA.
+- macOS: `brew install python@3.11`
 - Windows: download from [python.org](https://www.python.org/downloads/)
 
 Then recreate your venv.
@@ -191,6 +206,7 @@ pip install -e ".[dev,http]"
 export SUGRA_API_KEY=sugra_...
 python -m sugra_api_mcp  # stdio mode
 python -m sugra_api_mcp --transport streamable-http --port 8001  # HTTP mode
+python scripts/build_endpoint_catalog.py  # rebuild bundled catalog from sibling API openapi.json
 ```
 
 Run tests:
@@ -201,4 +217,4 @@ pytest
 
 ## License
 
-MIT © 2026 Sugra Systems, Inc. Author: Arman Obosyan.
+MIT © 2026 Sugra Systems, Inc. Author: Arman Obosyan with Codex.

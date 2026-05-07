@@ -1,9 +1,3 @@
-###########################################
-### Sugra API MCP Version 0.3.0         ###
-###   HTTP CLIENT Version 0.3.0         ###
-###########################################
-
-### BEGIN # sugra_api_mcp/client.py ###
 """Async HTTP client for the Sugra API with size-limit enforcement."""
 
 from __future__ import annotations
@@ -80,12 +74,25 @@ class SugraClient:
         )
 
     async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        clean_params = {k: v for k, v in (params or {}).items() if v is not None}
-        response = await self._client.get(path, params=clean_params)
-        return self._handle(response)
+        return await self.request("GET", path, params=params)
 
     async def post(self, path: str, json: dict[str, Any] | None = None) -> dict[str, Any]:
-        response = await self._client.post(path, json=json or {})
+        return await self.request("POST", path, json=json)
+
+    async def request(
+        self,
+        method: str,
+        path: str,
+        params: dict[str, Any] | None = None,
+        json: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        clean_params = {k: v for k, v in (params or {}).items() if v is not None}
+        response = await self._client.request(
+            method.upper(),
+            path,
+            params=clean_params,
+            json=json if json is not None else None,
+        )
         return self._handle(response)
 
     @staticmethod
@@ -105,5 +112,3 @@ class SugraClient:
 
     async def aclose(self) -> None:
         await self._client.aclose()
-
-### END # sugra_api_mcp/client.py ###
