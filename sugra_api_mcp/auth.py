@@ -65,6 +65,10 @@ class Authenticator:
     def protected_resource_metadata_url(self) -> str:
         return f"{self._config.app_url}/.well-known/oauth-protected-resource"
 
+    @property
+    def audience(self) -> str:
+        return f"{self._config.app_url}/mcp"
+
     async def resolve(self, token: str) -> str:
         token = token.strip()
         if not token:
@@ -96,7 +100,7 @@ class Authenticator:
                 token,
                 signing_key.key,
                 algorithms=SIGNING_ALGORITHMS,
-                options={"verify_aud": False},
+                audience=self.audience,
             )
         except jwt.ExpiredSignatureError as e:
             raise AuthError("Token expired") from e

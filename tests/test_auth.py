@@ -71,6 +71,7 @@ async def test_jwt_with_valid_signature_and_cached_key(auth_config, rsa_keypair)
         private_key,
         {
             "iss": "https://app.sugra.ai",
+            "aud": "https://app.sugra.ai/mcp",
             "sub": "42",
             "exp": now + 3600,
             "iat": now,
@@ -92,13 +93,13 @@ async def test_jwt_with_valid_signature_and_cached_key(auth_config, rsa_keypair)
     assert resolved == "sugra_cached_key"
 
 
-async def test_passport_jwt_without_issuer_is_accepted(auth_config, rsa_keypair):
+async def test_passport_jwt_without_issuer_with_mcp_audience_is_accepted(auth_config, rsa_keypair):
     private_key, public_pem = rsa_keypair
     now = int(time.time())
     token = _make_jwt(
         private_key,
         {
-            "aud": "test-client-id",
+            "aud": "https://app.sugra.ai/mcp",
             "jti": "test-token-id",
             "sub": "42",
             "exp": now + 3600,
@@ -122,12 +123,37 @@ async def test_passport_jwt_without_issuer_is_accepted(auth_config, rsa_keypair)
     assert resolved == "sugra_cached_key"
 
 
+async def test_jwt_wrong_audience_raises(auth_config, rsa_keypair):
+    private_key, public_pem = rsa_keypair
+    token = _make_jwt(
+        private_key,
+        {
+            "aud": "test-client-id",
+            "jti": "test-token-id",
+            "sub": "42",
+            "exp": int(time.time()) + 3600,
+            "iat": int(time.time()),
+            "nbf": int(time.time()),
+            "scopes": ["sugra:read"],
+        },
+    )
+
+    auth = Authenticator(auth_config)
+    mock_signing_key = MagicMock()
+    mock_signing_key.key = public_pem
+    auth._jwks.get_signing_key_from_jwt = MagicMock(return_value=mock_signing_key)
+
+    with pytest.raises(AuthError, match="Invalid token"):
+        await auth.resolve(token)
+
+
 async def test_jwt_expired_raises(auth_config, rsa_keypair):
     private_key, public_pem = rsa_keypair
     token = _make_jwt(
         private_key,
         {
             "iss": "https://app.sugra.ai",
+            "aud": "https://app.sugra.ai/mcp",
             "sub": "42",
             "exp": int(time.time()) - 60,
             "iat": int(time.time()) - 120,
@@ -149,6 +175,7 @@ async def test_jwt_missing_sub_raises(auth_config, rsa_keypair):
         private_key,
         {
             "iss": "https://app.sugra.ai",
+            "aud": "https://app.sugra.ai/mcp",
             "exp": int(time.time()) + 3600,
             "iat": int(time.time()),
         },
@@ -169,6 +196,7 @@ async def test_jwt_wrong_issuer_raises(auth_config, rsa_keypair):
         private_key,
         {
             "iss": "https://attacker.example",
+            "aud": "https://app.sugra.ai/mcp",
             "sub": "42",
             "exp": int(time.time()) + 3600,
             "iat": int(time.time()),
@@ -190,6 +218,7 @@ async def test_jwt_missing_read_scope_raises(auth_config, rsa_keypair):
         private_key,
         {
             "iss": "https://app.sugra.ai",
+            "aud": "https://app.sugra.ai/mcp",
             "sub": "42",
             "exp": int(time.time()) + 3600,
             "iat": int(time.time()),
@@ -212,6 +241,7 @@ async def test_lookup_404_raises_with_user_message(auth_config, rsa_keypair):
         private_key,
         {
             "iss": "https://app.sugra.ai",
+            "aud": "https://app.sugra.ai/mcp",
             "sub": "42",
             "exp": int(time.time()) + 3600,
             "iat": int(time.time()),
@@ -245,6 +275,7 @@ async def test_lookup_success_caches_result(auth_config, rsa_keypair):
         private_key,
         {
             "iss": "https://app.sugra.ai",
+            "aud": "https://app.sugra.ai/mcp",
             "sub": "7",
             "exp": int(time.time()) + 3600,
             "iat": int(time.time()),
@@ -289,6 +320,7 @@ async def test_missing_internal_token_raises_500(auth_config, rsa_keypair):
         private_key,
         {
             "iss": "https://app.sugra.ai",
+            "aud": "https://app.sugra.ai/mcp",
             "sub": "1",
             "exp": int(time.time()) + 3600,
             "iat": int(time.time()),
