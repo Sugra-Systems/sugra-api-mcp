@@ -74,6 +74,7 @@ async def test_jwt_with_valid_signature_and_cached_key(auth_config, rsa_keypair)
         {
             "iss": "https://app.sugra.ai",
             "aud": "https://app.sugra.ai/mcp",
+            "jti": "cached-token-id",
             "sub": "42",
             "exp": now + 3600,
             "iat": now,
@@ -91,10 +92,15 @@ async def test_jwt_with_valid_signature_and_cached_key(auth_config, rsa_keypair)
         expires_at=time.time() + 60,
     )
 
-    resolved = await auth.resolve(token)
+    async def fake_post(self, url, headers=None, json=None):
+        return httpx.Response(204)
+
+    with patch("httpx.AsyncClient.post", new=fake_post):
+        resolved = await auth.resolve(token)
+
     assert resolved.api_key == "sugra_cached_key"
     assert resolved.user_id == 42
-    assert resolved.access_token_id is None
+    assert resolved.access_token_id == "cached-token-id"
 
 
 async def test_passport_jwt_without_issuer_with_mcp_audience_is_accepted(auth_config, rsa_keypair):
@@ -144,7 +150,7 @@ async def test_passport_jwt_without_issuer_with_mcp_audience_is_accepted(auth_co
     ]
 
 
-async def test_jwt_activity_failure_does_not_fail_auth(auth_config, rsa_keypair):
+async def test_jwt_activity_validation_failure_denies_auth(auth_config, rsa_keypair):
     private_key, public_pem = rsa_keypair
     now = int(time.time())
     token = _make_jwt(
@@ -175,16 +181,18 @@ async def test_jwt_activity_failure_does_not_fail_auth(auth_config, rsa_keypair)
     async def fake_post(self, url, headers=None, json=None):
         nonlocal call_count
         call_count += 1
-        return httpx.Response(500)
+        return httpx.Response(403, json={"error": "connection_disconnected"})
 
     with patch("httpx.AsyncClient.post", new=fake_post):
-        resolved = await auth.resolve(token)
+        with pytest.raises(AuthError) as exc:
+            await auth.resolve(token)
 
-    assert resolved.api_key == "sugra_cached_key"
+    assert exc.value.status == 403
+    assert "connection_disconnected" in str(exc.value)
     assert call_count == 1
 
 
-async def test_jwt_activity_exception_does_not_fail_auth(auth_config, rsa_keypair):
+async def test_jwt_activity_exception_denies_auth(auth_config, rsa_keypair):
     private_key, public_pem = rsa_keypair
     now = int(time.time())
     token = _make_jwt(
@@ -218,10 +226,37 @@ async def test_jwt_activity_exception_does_not_fail_auth(auth_config, rsa_keypai
         raise httpx.ConnectError("activity unavailable")
 
     with patch("httpx.AsyncClient.post", new=fake_post):
-        resolved = await auth.resolve(token)
+        with pytest.raises(AuthError) as exc:
+            await auth.resolve(token)
 
-    assert resolved.api_key == "sugra_cached_key"
+    assert exc.value.status == 502
+    assert "validation" in str(exc.value)
     assert call_count == 1
+
+
+async def test_jwt_missing_jti_raises(auth_config, rsa_keypair):
+    private_key, public_pem = rsa_keypair
+    now = int(time.time())
+    token = _make_jwt(
+        private_key,
+        {
+            "aud": "https://app.sugra.ai/mcp",
+            "sub": "42",
+            "exp": now + 3600,
+            "iat": now,
+            "nbf": now,
+            "scopes": ["sugra:read"],
+        },
+    )
+
+    auth = Authenticator(auth_config)
+    mock_signing_key = MagicMock()
+    mock_signing_key.key = public_pem
+
+    auth._jwks.get_signing_key_from_jwt = MagicMock(return_value=mock_signing_key)
+
+    with pytest.raises(AuthError, match="jti"):
+        await auth.resolve(token)
 
 
 async def test_raw_api_key_does_not_report_oauth_activity(auth_config):
@@ -355,6 +390,7 @@ async def test_lookup_404_raises_with_user_message(auth_config, rsa_keypair):
         {
             "iss": "https://app.sugra.ai",
             "aud": "https://app.sugra.ai/mcp",
+            "jti": "lookup-404-token-id",
             "sub": "42",
             "exp": int(time.time()) + 3600,
             "iat": int(time.time()),
@@ -372,10 +408,13 @@ async def test_lookup_404_raises_with_user_message(auth_config, rsa_keypair):
     mock_response.headers = {"content-type": "application/json"}
     mock_response.json = MagicMock(return_value={"error": "no_api_key", "message": "User has no API key"})
 
+    async def fake_post(self, url, headers=None, json=None):
+        return httpx.Response(204)
+
     async def fake_get(self, url, headers=None):
         return mock_response
 
-    with patch("httpx.AsyncClient.get", new=fake_get):
+    with patch("httpx.AsyncClient.post", new=fake_post), patch("httpx.AsyncClient.get", new=fake_get):
         with pytest.raises(AuthError) as exc:
             await auth.resolve(token)
         assert exc.value.status == 403
@@ -389,6 +428,7 @@ async def test_lookup_success_caches_result(auth_config, rsa_keypair):
         {
             "iss": "https://app.sugra.ai",
             "aud": "https://app.sugra.ai/mcp",
+            "jti": "lookup-success-token-id",
             "sub": "7",
             "exp": int(time.time()) + 3600,
             "iat": int(time.time()),
@@ -414,7 +454,10 @@ async def test_lookup_success_caches_result(auth_config, rsa_keypair):
         call_count += 1
         return mock_response
 
-    with patch("httpx.AsyncClient.get", new=fake_get):
+    async def fake_post(self, url, headers=None, json=None):
+        return httpx.Response(204)
+
+    with patch("httpx.AsyncClient.post", new=fake_post), patch("httpx.AsyncClient.get", new=fake_get):
         k1 = await auth.resolve(token)
         k2 = await auth.resolve(token)
         assert k1.api_key == "sugra_test_key"
@@ -434,6 +477,7 @@ async def test_missing_internal_token_raises_500(auth_config, rsa_keypair):
         {
             "iss": "https://app.sugra.ai",
             "aud": "https://app.sugra.ai/mcp",
+            "jti": "missing-internal-token-id",
             "sub": "1",
             "exp": int(time.time()) + 3600,
             "iat": int(time.time()),

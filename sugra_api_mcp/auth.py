@@ -62,7 +62,7 @@ class ResolvedAuth:
 @dataclass(frozen=True)
 class _JwtClaims:
     user_id: int
-    access_token_id: str | None = None
+    access_token_id: str
 
 
 class Authenticator:
@@ -91,13 +91,13 @@ class Authenticator:
             return ResolvedAuth(api_key=token)
 
         claims = self._validate_jwt(token)
+        await self._validate_mcp_access(claims)
         api_key = await self._lookup_api_key(claims.user_id)
         resolved = ResolvedAuth(
             api_key=api_key,
             user_id=claims.user_id,
             access_token_id=claims.access_token_id,
         )
-        await self._report_activity(resolved)
         return resolved
 
     def _validate_jwt(self, token: str) -> _JwtClaims:
@@ -140,9 +140,11 @@ class Authenticator:
         except (TypeError, ValueError) as e:
             raise AuthError("Token sub is not an integer user id") from e
         access_token_id = decoded.get("jti")
+        if not access_token_id:
+            raise AuthError("Token missing jti claim")
         return _JwtClaims(
             user_id=user_id,
-            access_token_id=str(access_token_id) if access_token_id else None,
+            access_token_id=str(access_token_id),
         )
 
     def _validate_scopes(self, decoded: dict) -> None:
@@ -199,13 +201,9 @@ class Authenticator:
             )
             return api_key
 
-    async def _report_activity(self, resolved: ResolvedAuth) -> None:
-        if (
-            not self._config.internal_token
-            or resolved.user_id is None
-            or not resolved.access_token_id
-        ):
-            return
+    async def _validate_mcp_access(self, claims: _JwtClaims) -> None:
+        if not self._config.internal_token:
+            raise AuthError("INTERNAL_API_TOKEN not configured on MCP server", status=500)
 
         url = f"{self._config.app_url}/api/internal/mcp/activity"
         try:
@@ -214,20 +212,33 @@ class Authenticator:
                     url,
                     headers={"X-Internal-Token": self._config.internal_token},
                     json={
-                        "user_id": resolved.user_id,
-                        "access_token_id": resolved.access_token_id,
+                        "user_id": claims.user_id,
+                        "access_token_id": claims.access_token_id,
                     },
                 )
         except Exception as e:
-            logger.info("mcp_activity_report_exception user_id=%d error=%s", resolved.user_id, e)
+            logger.info("mcp_access_validation_exception user_id=%d error=%s", claims.user_id, e)
+            raise AuthError("Internal MCP access validation failed", status=502) from e
+
+        if 200 <= resp.status_code < 300:
             return
 
-        if resp.status_code >= 400:
-            logger.info(
-                "mcp_activity_report_failed user_id=%d status=%d",
-                resolved.user_id,
-                resp.status_code,
-            )
+        logger.info(
+            "mcp_access_validation_failed user_id=%d status=%d",
+            claims.user_id,
+            resp.status_code,
+        )
+
+        if resp.status_code >= 500:
+            raise AuthError(f"Internal MCP access validation failed: HTTP {resp.status_code}", status=502)
+
+        try:
+            body = resp.json()
+        except ValueError:
+            body = {}
+
+        message = body.get("error") if isinstance(body, dict) else None
+        raise AuthError(message or f"MCP access validation failed: HTTP {resp.status_code}", status=403)
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
