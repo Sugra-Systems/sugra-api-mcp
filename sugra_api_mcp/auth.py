@@ -52,6 +52,19 @@ class _CachedKey:
     expires_at: float
 
 
+@dataclass(frozen=True)
+class ResolvedAuth:
+    api_key: str
+    user_id: int | None = None
+    access_token_id: str | None = None
+
+
+@dataclass(frozen=True)
+class _JwtClaims:
+    user_id: int
+    access_token_id: str | None = None
+
+
 class Authenticator:
     """Resolves a Bearer token to a downstream x-api-key."""
 
@@ -69,18 +82,25 @@ class Authenticator:
     def audience(self) -> str:
         return f"{self._config.app_url}/mcp"
 
-    async def resolve(self, token: str) -> str:
+    async def resolve(self, token: str) -> ResolvedAuth:
         token = token.strip()
         if not token:
             raise AuthError("Empty token")
 
         if token.startswith("sugra_"):
-            return token
+            return ResolvedAuth(api_key=token)
 
-        user_id = self._validate_jwt(token)
-        return await self._lookup_api_key(user_id)
+        claims = self._validate_jwt(token)
+        api_key = await self._lookup_api_key(claims.user_id)
+        resolved = ResolvedAuth(
+            api_key=api_key,
+            user_id=claims.user_id,
+            access_token_id=claims.access_token_id,
+        )
+        await self._report_activity(resolved)
+        return resolved
 
-    def _validate_jwt(self, token: str) -> int:
+    def _validate_jwt(self, token: str) -> _JwtClaims:
         try:
             signing_key = self._jwks.get_signing_key_from_jwt(token)
         except Exception:
@@ -116,9 +136,14 @@ class Authenticator:
             raise AuthError("Token missing sub claim")
         self._validate_scopes(decoded)
         try:
-            return int(sub)
+            user_id = int(sub)
         except (TypeError, ValueError) as e:
             raise AuthError("Token sub is not an integer user id") from e
+        access_token_id = decoded.get("jti")
+        return _JwtClaims(
+            user_id=user_id,
+            access_token_id=str(access_token_id) if access_token_id else None,
+        )
 
     def _validate_scopes(self, decoded: dict) -> None:
         scopes_claim = decoded.get("scopes")
@@ -174,6 +199,36 @@ class Authenticator:
             )
             return api_key
 
+    async def _report_activity(self, resolved: ResolvedAuth) -> None:
+        if (
+            not self._config.internal_token
+            or resolved.user_id is None
+            or not resolved.access_token_id
+        ):
+            return
+
+        url = f"{self._config.app_url}/api/internal/mcp/activity"
+        try:
+            async with httpx.AsyncClient(timeout=INTERNAL_HTTP_TIMEOUT_SECONDS) as client:
+                resp = await client.post(
+                    url,
+                    headers={"X-Internal-Token": self._config.internal_token},
+                    json={
+                        "user_id": resolved.user_id,
+                        "access_token_id": resolved.access_token_id,
+                    },
+                )
+        except Exception as e:
+            logger.info("mcp_activity_report_exception user_id=%d error=%s", resolved.user_id, e)
+            return
+
+        if resp.status_code >= 400:
+            logger.info(
+                "mcp_activity_report_failed user_id=%d status=%d",
+                resolved.user_id,
+                resp.status_code,
+            )
+
 
 class AuthMiddleware(BaseHTTPMiddleware):
     """Starlette middleware that resolves the Authorization header per request."""
@@ -201,7 +256,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         token = header[7:].strip()
         try:
-            api_key = await self._auth.resolve(token)
+            resolved = await self._auth.resolve(token)
         except AuthError as e:
             token_prefix = token[:12] + "..." if len(token) > 12 else token
             logger.warning(
@@ -214,7 +269,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 headers=self._auth_headers() if e.status == 401 else None,
             )
 
-        ctx_token = api_key_ctx.set(api_key)
+        ctx_token = api_key_ctx.set(resolved.api_key)
         try:
             return await call_next(request)
         finally:
