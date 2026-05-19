@@ -17,6 +17,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      - name: Validate release tag
+        run: |
+          python - <<'PY'
+          import os
+          import pathlib
+          import tomllib
+
+          version = tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+          tag = os.environ["GITHUB_REF_NAME"]
+          expected = f"v{version}"
+          if tag != expected:
+              raise SystemExit(
+                  f"Release tag {tag} does not match pyproject version {version}; expected {expected}"
+              )
+          print(f"Release tag {tag} matches pyproject version {version}")
+          PY
       - name: Build
         run: |
           python -m pip install --upgrade pip build
