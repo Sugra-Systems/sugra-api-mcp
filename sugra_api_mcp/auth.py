@@ -4,8 +4,8 @@ Accepts two Bearer token formats:
 
 - Raw Sugra API key (``sugra_...``) - V1 back-compat, used as x-api-key downstream
 - JWT issued by Passport at https://app.sugra.ai/oauth/authorize - validates the
-  signature against the JWKS, extracts ``sub`` (user id), then looks up the
-  user's primary API key via the app.sugra.ai internal endpoint
+  signature, audience, scope, and hosted access status, then looks up the user's
+  primary API key via app.sugra.ai internal endpoints
 
 On success the resolved x-api-key is stored in a ContextVar that
 ``sugra_api_mcp.server.get_client`` reads when building downstream requests.

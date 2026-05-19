@@ -25,7 +25,7 @@ Client details:
 
 ## What you get
 
-v0.4.0 is a breaking gateway release. Curated tools such as `get_market_price`, `get_macro_indicator`, and `get_news` were removed. The package now exposes exactly five tools:
+v0.5.0 keeps the v0.4.0 gateway surface and adds hosted OAuth connection tracking for `https://app.sugra.ai/mcp`. Since v0.4.0, curated tools such as `get_market_price`, `get_macro_indicator`, and `get_news` are removed. The package exposes exactly five tools:
 
 | Tool | Purpose |
 |---|---|
@@ -131,13 +131,13 @@ sugra-api-mcp call quotes_symbol_price --params '{"symbol":"AAPL"}'
 When running with `--transport streamable-http` the server validates the incoming `Authorization: Bearer ...` header on every request. Two token formats are accepted:
 
 - Raw API key (`sugra_...`) - passed through as the downstream `x-api-key`. Backward compatible with v0.1.x.
-- OAuth JWT - signature verified against the issuer's JWKS. The `sub` claim identifies the user; the server then looks up that user's primary API key via an internal endpoint on the authorization server.
+- OAuth JWT - signature verified against the issuer's JWKS. The audience must match `https://app.sugra.ai/mcp`, the token must include `sugra:read`, and hosted access is validated against APP before resolving the user's primary API key. Successful hosted OAuth requests update MCP connection activity in APP.
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `SUGRA_APP_URL` | HTTP + OAuth | `https://app.sugra.ai` | Base URL of the authorization server |
 | `SUGRA_JWKS_URL` | No | `$SUGRA_APP_URL/oauth/jwks.json` | JWKS endpoint |
-| `INTERNAL_API_TOKEN` | HTTP + OAuth | - | Shared secret for the user lookup endpoint on the authorization server. Same value must be set on both the MCP process and the app.sugra.ai Laravel process |
+| `INTERNAL_API_TOKEN` | HTTP + OAuth | - | Shared secret for the user lookup and MCP activity endpoints on the authorization server. Same value must be set on both the MCP process and the app.sugra.ai Laravel process |
 
 ## Examples
 
