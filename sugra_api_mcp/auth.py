@@ -39,6 +39,21 @@ API_KEY_CACHE_TTL_SECONDS = 300
 
 INTERNAL_HTTP_TIMEOUT_SECONDS = 10.0
 
+MAX_PUBLIC_MCP_CONTENT_LENGTH = 64 * 1024
+
+MAX_PUBLIC_MCP_BATCH_ITEMS = 16
+
+PUBLIC_MCP_METHODS = frozenset(
+    {
+        "initialize",
+        "notifications/initialized",
+        "tools/list",
+        "resources/list",
+        "prompts/list",
+        "ping",
+    }
+)
+
 
 class AuthError(Exception):
     def __init__(self, message: str, *, status: int = 401) -> None:
@@ -256,8 +271,50 @@ class AuthMiddleware(BaseHTTPMiddleware):
             )
         }
 
+    async def _is_public_mcp_request(self, request: Request) -> bool:
+        if request.method != "POST" or request.url.path.rstrip("/") != "/mcp":
+            return False
+
+        content_length = request.headers.get("content-length")
+        if content_length is None:
+            return False
+        try:
+            if int(content_length) > MAX_PUBLIC_MCP_CONTENT_LENGTH:
+                return False
+        except ValueError:
+            return False
+
+        try:
+            payload = await request.json()
+        except ValueError:
+            return False
+
+        if isinstance(payload, dict):
+            method = payload.get("method")
+            return isinstance(method, str) and method in PUBLIC_MCP_METHODS
+
+        if isinstance(payload, list) and 0 < len(payload) <= MAX_PUBLIC_MCP_BATCH_ITEMS:
+            for item in payload:
+                if not isinstance(item, dict):
+                    return False
+                method = item.get("method")
+                if not isinstance(method, str) or method not in PUBLIC_MCP_METHODS:
+                    return False
+            return True
+
+        return False
+
     async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[override]
         header = request.headers.get("authorization", "")
+        if not header:
+            if await self._is_public_mcp_request(request):
+                return await call_next(request)
+            return JSONResponse(
+                {"error": "missing_bearer_token"},
+                status_code=401,
+                headers=self._auth_headers(),
+            )
+
         if not header.lower().startswith("bearer "):
             return JSONResponse(
                 {"error": "missing_bearer_token"},

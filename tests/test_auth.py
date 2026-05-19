@@ -16,6 +16,8 @@ from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from sugra_api_mcp.auth import (
+    MAX_PUBLIC_MCP_BATCH_ITEMS,
+    MAX_PUBLIC_MCP_CONTENT_LENGTH,
     Authenticator,
     AuthError,
     AuthMiddleware,
@@ -506,3 +508,114 @@ def test_auth_401_includes_www_authenticate_header(auth_config):
     assert response.headers["WWW-Authenticate"] == (
         'Bearer resource_metadata="https://app.sugra.ai/.well-known/oauth-protected-resource"'
     )
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "initialize",
+        "notifications/initialized",
+        "tools/list",
+        "resources/list",
+        "prompts/list",
+        "ping",
+    ],
+)
+def test_auth_middleware_allows_public_mcp_discovery_methods_without_bearer(
+    auth_config,
+    method,
+):
+    async def echo_method(request):
+        payload = await request.json()
+        return JSONResponse({"method": payload["method"]})
+
+    app = Starlette(routes=[Route("/mcp", echo_method, methods=["POST"])])
+    app.add_middleware(AuthMiddleware, authenticator=Authenticator(auth_config))
+
+    response = TestClient(app).post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 1, "method": method, "params": {}},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"method": method}
+
+
+def test_auth_middleware_rejects_unauthenticated_tool_calls(auth_config):
+    async def ok(_request):
+        return JSONResponse({"ok": True})
+
+    app = Starlette(routes=[Route("/mcp", ok, methods=["POST"])])
+    app.add_middleware(AuthMiddleware, authenticator=Authenticator(auth_config))
+
+    response = TestClient(app).post(
+        "/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "list_toolsets", "arguments": {}},
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == (
+        'Bearer resource_metadata="https://app.sugra.ai/.well-known/oauth-protected-resource"'
+    )
+
+
+def test_auth_middleware_rejects_mixed_unauthenticated_batches(auth_config):
+    async def ok(_request):
+        return JSONResponse({"ok": True})
+
+    app = Starlette(routes=[Route("/mcp", ok, methods=["POST"])])
+    app.add_middleware(AuthMiddleware, authenticator=Authenticator(auth_config))
+
+    response = TestClient(app).post(
+        "/mcp",
+        json=[
+            {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {"name": "list_toolsets", "arguments": {}},
+            },
+        ],
+    )
+
+    assert response.status_code == 401
+
+
+def test_auth_middleware_rejects_oversized_public_discovery_body(auth_config):
+    async def ok(_request):
+        return JSONResponse({"ok": True})
+
+    app = Starlette(routes=[Route("/mcp", ok, methods=["POST"])])
+    app.add_middleware(AuthMiddleware, authenticator=Authenticator(auth_config))
+
+    response = TestClient(app).post(
+        "/mcp",
+        content=b" " * (MAX_PUBLIC_MCP_CONTENT_LENGTH + 1),
+        headers={"content-type": "application/json"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_auth_middleware_rejects_oversized_public_discovery_batch(auth_config):
+    async def ok(_request):
+        return JSONResponse({"ok": True})
+
+    app = Starlette(routes=[Route("/mcp", ok, methods=["POST"])])
+    app.add_middleware(AuthMiddleware, authenticator=Authenticator(auth_config))
+
+    response = TestClient(app).post(
+        "/mcp",
+        json=[
+            {"jsonrpc": "2.0", "id": item_id, "method": "tools/list", "params": {}}
+            for item_id in range(MAX_PUBLIC_MCP_BATCH_ITEMS + 1)
+        ],
+    )
+
+    assert response.status_code == 401
