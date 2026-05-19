@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/sugra-api-mcp/">PyPI v0.5.1</a> |
+  <a href="https://pypi.org/project/sugra-api-mcp/">PyPI v0.5.2</a> |
   Python 3.11+ |
   <a href="https://github.com/Sugra-Systems/prod-sugra-ai-MCP/blob/main/LICENSE">MIT</a>
 </p>
@@ -27,7 +27,7 @@ Client details:
 
 ## What you get
 
-Current release: five-tool gateway surface with hosted OAuth activity validation for `https://app.sugra.ai/mcp`. Curated tool names such as `get_market_price`, `get_macro_indicator`, and `get_news` are not part of this package. The package exposes exactly five tools:
+Current release: five-tool gateway surface with hosted OAuth activity validation for `https://app.sugra.ai/mcp`, plus ChatGPT Apps-compatible OAuth tool metadata. Curated tool names such as `get_market_price`, `get_macro_indicator`, and `get_news` are not part of this package. The package exposes exactly five tools:
 
 | Tool | Purpose |
 |---|---|
@@ -130,7 +130,7 @@ sugra-api-mcp call quotes_symbol_price --params '{"symbol":"AAPL"}'
 
 ### HTTP transport with OAuth
 
-When running with `--transport streamable-http` the server validates the incoming `Authorization: Bearer ...` header on every request. Two token formats are accepted:
+When running with `--transport streamable-http` the server allows unauthenticated MCP discovery requests (`initialize`, `notifications/initialized`, `tools/list`, `resources/list`, `prompts/list`, and `ping`) so ChatGPT Apps and other mixed-auth clients can discover tool metadata. Tool calls still require `Authorization: Bearer ...`. Two token formats are accepted:
 
 - Raw API key (`sugra_...`) - passed through as the downstream `x-api-key`. Compatible with earlier local API-key setups.
 - OAuth JWT - signature verified against the issuer's JWKS. The audience must match `https://app.sugra.ai/mcp`, the token must include `sugra:read`, and hosted access is validated against APP before resolving the user's primary API key. Successful hosted OAuth requests update MCP connection activity in APP.

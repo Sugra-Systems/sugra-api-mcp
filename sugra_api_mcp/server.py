@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import os
 from contextvars import ContextVar
+from copy import deepcopy
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.types import Tool as MCPTool
 from mcp.types import ToolAnnotations
 
 from .client import SugraClient
@@ -14,12 +17,38 @@ from .config import Config, load_config
 
 api_key_ctx: ContextVar[str | None] = ContextVar("sugra_api_key", default=None)
 
+OAUTH_SCOPES = ["sugra:read", "offline_access"]
+
+OAUTH_SECURITY_SCHEMES: list[dict[str, Any]] = [
+    {"type": "oauth2", "scopes": OAUTH_SCOPES},
+]
+
 READ_ONLY_TOOL = ToolAnnotations(
     readOnlyHint=True,
     destructiveHint=False,
     idempotentHint=True,
     openWorldHint=True,
 )
+
+
+def _oauth_security_schemes() -> list[dict[str, Any]]:
+    return deepcopy(OAUTH_SECURITY_SCHEMES)
+
+
+def _with_oauth_security(tool: MCPTool) -> MCPTool:
+    payload = tool.model_dump(by_alias=True, exclude_none=True)
+    payload["securitySchemes"] = _oauth_security_schemes()
+    meta = dict(payload.get("_meta") or {})
+    meta["securitySchemes"] = _oauth_security_schemes()
+    payload["_meta"] = meta
+    return MCPTool.model_validate(payload)
+
+
+class SugraFastMCP(FastMCP):
+    """FastMCP with OAuth tool metadata required by ChatGPT Apps."""
+
+    async def list_tools(self) -> list[MCPTool]:
+        return [_with_oauth_security(tool) for tool in await super().list_tools()]
 
 
 def read_only(title: str) -> ToolAnnotations:
@@ -61,7 +90,7 @@ def _build_transport_security() -> TransportSecuritySettings | None:
     )
 
 
-mcp = FastMCP(
+mcp = SugraFastMCP(
     "sugra-api",
     instructions=(
         "Sugra API gateway - unified operation_id access across the bundled endpoint "

@@ -22,6 +22,92 @@ def test_tools_register(monkeypatch):
     assert names == expected, f"Mismatch: missing={expected - names}, extra={names - expected}"
 
 
+def test_tools_advertise_oauth_security_schemes_for_chatgpt(monkeypatch):
+    monkeypatch.setenv("SUGRA_API_KEY", "dummy")
+    import asyncio
+
+    from sugra_api_mcp import tools  # noqa: F401
+    from sugra_api_mcp.server import OAUTH_SECURITY_SCHEMES, mcp
+
+    tool_list = asyncio.run(mcp.list_tools())
+
+    assert tool_list
+    for tool in tool_list:
+        dumped = tool.model_dump(by_alias=True)
+        assert dumped["securitySchemes"] == OAUTH_SECURITY_SCHEMES
+        assert dumped["_meta"]["securitySchemes"] == OAUTH_SECURITY_SCHEMES
+
+
+def test_streamable_http_public_discovery_exposes_oauth_security_schemes(monkeypatch):
+    monkeypatch.setenv("SUGRA_API_KEY", "dummy")
+    import json
+    import re
+
+    from starlette.testclient import TestClient
+
+    from sugra_api_mcp import tools  # noqa: F401
+    from sugra_api_mcp.auth import Authenticator, AuthMiddleware
+    from sugra_api_mcp.config import AuthConfig
+    from sugra_api_mcp.server import OAUTH_SECURITY_SCHEMES, mcp
+
+    app = mcp.streamable_http_app()
+    app.add_middleware(
+        AuthMiddleware,
+        authenticator=Authenticator(
+            AuthConfig(
+                app_url="https://app.sugra.ai",
+                jwks_url="https://app.sugra.ai/oauth/jwks.json",
+                internal_token="test-internal-token",
+            )
+        ),
+    )
+
+    headers = {"accept": "application/json, text/event-stream"}
+
+    with TestClient(app, base_url="http://localhost:8000") as client:
+        init_response = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "pytest", "version": "0"},
+                },
+            },
+            headers=headers,
+        )
+
+        assert init_response.status_code == 200
+        session_id = init_response.headers.get("mcp-session-id")
+        assert session_id
+
+        session_headers = {**headers, "mcp-session-id": session_id}
+        initialized_response = client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
+            headers=session_headers,
+        )
+
+        assert initialized_response.status_code == 202
+
+        tools_response = client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+            headers=session_headers,
+        )
+
+        assert tools_response.status_code == 200
+        match = re.search(r"^data: (.+)$", tools_response.text, re.MULTILINE)
+        assert match
+        payload = json.loads(match.group(1))
+        first_tool = payload["result"]["tools"][0]
+        assert first_tool["securitySchemes"] == OAUTH_SECURITY_SCHEMES
+        assert first_tool["_meta"]["securitySchemes"] == OAUTH_SECURITY_SCHEMES
+
+
 def test_config_requires_api_key(monkeypatch):
     monkeypatch.delenv("SUGRA_API_KEY", raising=False)
     import pytest
