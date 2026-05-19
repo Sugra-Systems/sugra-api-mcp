@@ -3,12 +3,14 @@
 <!-- mcp-name: io.github.Sugra-Systems/sugra-api-mcp -->
 
 <p align="center">
-  <img src="https://sugra.systems/images/sugra-logo-bold.svg" alt="Sugra" width="128" height="128" />
+  <img src="https://app.sugra.ai/images/brand/sugra-app-icon.svg" alt="sugra.ai" width="112" height="112" />
 </p>
 
-[![PyPI](https://img.shields.io/pypi/v/sugra-api-mcp.svg)](https://pypi.org/project/sugra-api-mcp/)
-[![Python](https://img.shields.io/pypi/pyversions/sugra-api-mcp.svg)](https://pypi.org/project/sugra-api-mcp/)
-[![License](https://img.shields.io/pypi/l/sugra-api-mcp.svg)](https://github.com/Sugra-Systems/prod-sugra-ai-MCP/blob/main/LICENSE)
+<p align="center">
+  <a href="https://pypi.org/project/sugra-api-mcp/">PyPI v0.5.1</a> |
+  Python 3.11+ |
+  <a href="https://github.com/Sugra-Systems/prod-sugra-ai-MCP/blob/main/LICENSE">MIT</a>
+</p>
 
 **Gateway connector between LLM agents and world data.** Official [Model Context Protocol](https://modelcontextprotocol.io) server for the [Sugra API](https://sugra.ai), backed by a bundled endpoint catalog and operation_id calls.
 
@@ -25,7 +27,7 @@ Client details:
 
 ## What you get
 
-v0.5.0 keeps the v0.4.0 gateway surface and adds hosted OAuth connection tracking for `https://app.sugra.ai/mcp`. Since v0.4.0, curated tools such as `get_market_price`, `get_macro_indicator`, and `get_news` are removed. The package exposes exactly five tools:
+Current release: five-tool gateway surface with hosted OAuth activity validation for `https://app.sugra.ai/mcp`. Curated tool names such as `get_market_price`, `get_macro_indicator`, and `get_news` are not part of this package. The package exposes exactly five tools:
 
 | Tool | Purpose |
 |---|---|
@@ -130,7 +132,7 @@ sugra-api-mcp call quotes_symbol_price --params '{"symbol":"AAPL"}'
 
 When running with `--transport streamable-http` the server validates the incoming `Authorization: Bearer ...` header on every request. Two token formats are accepted:
 
-- Raw API key (`sugra_...`) - passed through as the downstream `x-api-key`. Backward compatible with v0.1.x.
+- Raw API key (`sugra_...`) - passed through as the downstream `x-api-key`. Compatible with earlier local API-key setups.
 - OAuth JWT - signature verified against the issuer's JWKS. The audience must match `https://app.sugra.ai/mcp`, the token must include `sugra:read`, and hosted access is validated against APP before resolving the user's primary API key. Successful hosted OAuth requests update MCP connection activity in APP.
 
 | Variable | Required | Default | Description |
