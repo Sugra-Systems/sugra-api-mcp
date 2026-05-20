@@ -66,16 +66,34 @@ CENTRAL_BANK_PREFIX_BOOSTS: dict[str, str] = {
     "reserve bank of india": "rbi_",
 }
 
-# Likely stock ticker: 1-5 uppercase letters, optional dot (BRK.A).
-# Excluded reserved words that match this shape but are not tickers.
-TICKER_TOKEN_RE = re.compile(r"\b[A-Z]{1,5}(?:\.[A-Z])?\b")
+# Likely stock ticker: 2-5 uppercase letters, optional dot (BRK.A).
+# Single-letter tokens are excluded because plain English sentences like
+# "I need GDP data" or "A CPI endpoint" would otherwise count "I" / "A" as
+# tickers and trigger the equity boost.
+# Excluded reserved words that match this shape but are not tickers - includes
+# common business and tech acronyms (CEO, SEC, IRS, AI, IT, OK).
+TICKER_TOKEN_RE = re.compile(r"\b[A-Z]{2,5}(?:\.[A-Z])?\b")
 _NON_TICKER_WORDS: frozenset[str] = frozenset({
-    "API", "MCP", "URL", "JSON", "HTTP", "HTTPS", "SSL", "TLS",
-    "CPI", "GDP", "PPI", "PMI", "ETF", "REIT", "IPO", "M2", "M1",
-    "USD", "EUR", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD", "CNY", "INR", "RUB", "ZAR", "BRL", "MXN",
-    "BTC", "ETH", "BNB", "XRP", "SOL", "ADA", "DOGE",
+    # Tech / formats
+    "API", "MCP", "URL", "JSON", "HTTP", "HTTPS", "SSL", "TLS", "TCP", "UDP", "DNS",
+    "AI", "ML", "OS", "IT", "PC", "TV", "GPU", "CPU", "RAM",
+    # Macro / finance indicators (not tickers)
+    "CPI", "GDP", "PPI", "PMI", "ETF", "REIT", "IPO", "M2", "M1", "PE", "EPS",
+    # Roles / institutions
+    "CEO", "CFO", "CTO", "COO", "CMO", "VP", "SEC", "IRS", "FBI", "CIA",
+    "DOJ", "FAA", "FDA", "EPA", "OK", "PR", "HR", "QA", "RFC",
+    # Fiat currencies
+    "USD", "EUR", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD", "CNY", "INR",
+    "RUB", "ZAR", "BRL", "MXN", "SEK", "NOK", "DKK", "PLN", "TRY", "HKD",
+    "SGD", "KRW", "TWD", "THB", "IDR", "MYR", "PHP", "ILS", "AED", "SAR",
+    # Major crypto symbols
+    "BTC", "ETH", "BNB", "XRP", "SOL", "ADA", "DOGE", "USDT", "USDC", "DAI",
+    # Central bank symbols
     "FED", "FOMC", "ECB", "BOJ", "BOE", "BOC", "RBA", "RBNZ", "SNB",
-    "US", "UK", "EU", "NYC", "LA",
+    "RBI", "PBOC", "CBR", "SARB", "BCB", "BNM", "CNB", "BCRP", "BCRA",
+    # Country / geographic codes
+    "US", "UK", "EU", "EEA", "EEC", "USA", "USSR", "NYC", "LA", "SF",
+    "DC", "UAE", "DRC",
 })
 
 # Currency pair detection: 3 letters + optional separator + 3 letters.
@@ -118,8 +136,10 @@ def detect_currency_pairs(query: str) -> list[tuple[str, str]]:
 def matching_central_bank_prefixes(query: str) -> list[str]:
     """Return operation_id prefixes to boost when query references a specific central bank.
 
-    Matches against both the lowercased query and (for short codes) standalone uppercase
-    tokens, so "FED" inside an ALL-CAPS phrase still triggers the fed_ boost.
+    Each symbol must appear as a whole-token match (word boundaries) to avoid
+    false positives such as "CNBC news" matching the cnb_ prefix, "Boca Raton"
+    matching boc_, or "federal debt" matching fed_. Multi-word symbols like
+    "federal reserve" are matched as token-bounded phrases.
     """
     normalized = " ".join(query.lower().split())
     upper_tokens = set(re.findall(r"\b[A-Z]{2,}\b", query))
@@ -128,7 +148,10 @@ def matching_central_bank_prefixes(query: str) -> list[str]:
     for symbol, prefix in CENTRAL_BANK_PREFIX_BOOSTS.items():
         if prefix in seen:
             continue
-        if symbol in normalized or symbol.upper() in upper_tokens:
+        # Whole-token boundary match in the lowercase form.
+        symbol_lower = symbol.lower()
+        token_pattern = rf"(?<![a-z0-9]){re.escape(symbol_lower)}(?![a-z0-9])"
+        if re.search(token_pattern, normalized) or symbol.upper() in upper_tokens:
             prefixes.append(prefix)
             seen.add(prefix)
     return prefixes

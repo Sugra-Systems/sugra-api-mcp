@@ -36,6 +36,15 @@ from sugra_api_mcp.catalog.search import search_catalog
         ("USD JPY rate", []),
         ("FED interest rate", []),
         ("ETF flows", []),
+        # Codex Round 1 finding: single-letter words and common business acronyms
+        # were incorrectly classified as tickers.
+        ("I need GDP data", []),       # "I" is one letter, regex now requires >=2
+        ("A CPI endpoint", []),         # same
+        ("CEO announcement", []),       # CEO in non-ticker list
+        ("SEC filing", []),             # SEC in non-ticker list
+        ("IRS form 1040", []),          # IRS in non-ticker list
+        ("AI revolution", []),          # AI in non-ticker list
+        ("USDT price", []),             # major stablecoin, in non-ticker list
     ],
 )
 def test_detect_tickers(query: str, expected: list[str]) -> None:
@@ -77,6 +86,14 @@ def test_detect_currency_pairs(query: str, expected: list[tuple[str, str]]) -> N
         # No central bank reference -> empty.
         ("Apple price", []),
         ("Crypto market data", []),
+        # Codex Round 1 finding: substring matching gave false positives.
+        # All three queries below must return empty now that we require word
+        # boundaries (without it: "CNBC" matched cnb_, "Boca Raton" matched
+        # boc_, "federal debt" matched fed_).
+        ("CNBC news headlines", []),
+        ("Boca Raton real estate", []),
+        ("federal debt ceiling", []),  # "federal" alone isn't "fed"
+        ("Greenland weather", []),     # contains "RBA" inside "greenlanRBA"? No - sanity
     ],
 )
 def test_matching_central_bank_prefixes(query: str, expected_prefixes: list[str]) -> None:
@@ -91,32 +108,24 @@ def catalog():
     return load_catalog()
 
 
-@pytest.mark.parametrize(
-    "query,must_be_in_top_1",
-    [
-        # Equity tickers routed to /api/v2/quotes/* family.
-        ("AAPL price", {"quotes_symbol_price"}),
-        ("Apple stock price", {"quotes_symbol_price"}),
-        # MSFT earnings: either quotes_symbol_earnings_* (ticker-routed) or
-        # finnhub_calendar_earnings (calendar-routed) is acceptable - both lead
-        # the LLM to a valid endpoint. We're testing that ticker boost lands SOMETHING
-        # earnings-related top-1, not that we override finnhub.
-        ("MSFT earnings", {
-            "quotes_symbol_earnings_history", "quotes_symbol_earnings_events",
-            "quotes_symbol_calendar", "finnhub_calendar_earnings", "finnhub_earnings",
-        }),
-        ("Apple dividends", {"quotes_symbol_dividend", "quotes_symbol_actions"}),
-        ("Tesla market cap", {"quotes_symbol_market_cap", "quotes_symbol_summary"}),
-        # Crypto: BTC token disambiguated from equity tickers via crypto-context.
-        ("Bitcoin price", {"crypto_coin_id_price", "mempool_price"}),
-        # Central bank symbols route to their namespace.
-        ("FED interest rate", {"fed_rates_rate_type", "fed_rates"}),
-        ("Federal Reserve policy rate", {"fed_rates_rate_type", "fed_rates"}),
-        # Forex currency-pair detection routes to forex namespace.
-        ("EUR USD exchange rate", {"forex_latest", "forex_pair", "frankfurter_latest"}),
-    ],
-)
-def test_search_top_1_meets_contract(catalog, query: str, must_be_in_top_1: set[str]) -> None:
+# Two contract levels (Codex Round 1 Minor #2 fix):
+# - EXACT_TOP_1: only the most stable, single-correct-answer queries. These
+#   fail if catalog renames or splits these specific endpoints.
+# - NAMESPACE_TOP_1: most queries — assert top-1 lands in a namespace family
+#   (prefix or toolset). Tolerates catalog growth, endpoint renames within
+#   the same domain, and addition of new "better" endpoints.
+
+EXACT_TOP_1_CASES = [
+    # Foundational equity endpoint, stable since v0.4.0.
+    ("AAPL price", {"quotes_symbol_price"}),
+    ("Apple stock price", {"quotes_symbol_price"}),
+    # Bitcoin via the primary crypto coin endpoint.
+    ("Bitcoin price", {"crypto_coin_id_price", "mempool_price"}),
+]
+
+
+@pytest.mark.parametrize("query,must_be_in_top_1", EXACT_TOP_1_CASES)
+def test_search_top_1_exact_for_stable_endpoints(catalog, query: str, must_be_in_top_1: set[str]) -> None:
     results = search_catalog(catalog, query, limit=5)
     assert results, f"search returned no results for {query!r}"
     actual = results[0]["operation_id"]
@@ -126,14 +135,35 @@ def test_search_top_1_meets_contract(catalog, query: str, must_be_in_top_1: set[
     )
 
 
-def test_btc_crypto_namespace_present_in_top_3(catalog) -> None:
+NAMESPACE_TOP_1_CASES = [
+    # query, allowed top-1 operation_id prefixes (any match)
+    ("MSFT earnings", ("quotes_symbol_earnings", "quotes_symbol_calendar", "finnhub_earnings", "finnhub_calendar")),
+    ("Apple dividends", ("quotes_symbol_dividend", "quotes_symbol_actions", "market_calendar_dividends")),
+    ("Tesla market cap", ("quotes_symbol_market_cap", "quotes_symbol_summary", "quotes_symbol_info")),
+    ("FED interest rate", ("fed_rates", "fed_policy")),
+    ("Federal Reserve policy rate", ("fed_rates", "fed_policy")),
+    ("EUR USD exchange rate", ("forex_", "frankfurter_", "exchangerate_")),
+]
+
+
+@pytest.mark.parametrize("query,allowed_prefixes", NAMESPACE_TOP_1_CASES)
+def test_search_top_1_lands_in_correct_namespace(
+    catalog, query: str, allowed_prefixes: tuple[str, ...]
+) -> None:
+    results = search_catalog(catalog, query, limit=5)
+    assert results, f"search returned no results for {query!r}"
+    actual = results[0]["operation_id"]
+    assert actual.startswith(allowed_prefixes), (
+        f"top-1 for {query!r} was {actual!r}; expected operation_id starting with "
+        f"one of {allowed_prefixes}. Full top-5: {[r['operation_id'] for r in results]}"
+    )
+
+
+def test_crypto_context_query_surfaces_crypto_namespace(catalog) -> None:
     """Crypto-context queries must surface crypto-namespace endpoints in top-3.
 
     Before the crypto-context boost, "BTC market cap" returned five equity
-    quotes_symbol_* endpoints with zero crypto results visible. We accept that
-    quotes_symbol_market_cap (a generic market-cap endpoint) may still rank
-    high due to strong token overlap on "market" + "cap", but crypto endpoints
-    must be present so the LLM can pick a sensible one.
+    quotes_symbol_* endpoints with zero crypto results visible.
     """
     results = search_catalog(catalog, "BTC market cap", limit=5)
     assert results
@@ -144,6 +174,28 @@ def test_btc_crypto_namespace_present_in_top_3(catalog) -> None:
     )
     assert crypto_in_top_3 >= 1, (
         f"BTC query produced no crypto-namespace endpoint in top-3: {top_3_ops}"
+    )
+
+
+def test_crypto_context_suppresses_ticker_boost_for_real_ticker_shape(catalog) -> None:
+    """The strongest anti-boost proof: a token that LOOKS like a ticker but is
+    a crypto symbol must NOT trigger ticker -> quotes_symbol boost.
+
+    BTC is already in _NON_TICKER_WORDS, so detect_tickers() returns [] before
+    the crypto suppression even matters. USDT / USDC also start as 4-letter
+    uppercase tokens that detect_tickers() would happily return as tickers
+    if they weren't in the exclusion list. Combined with the crypto-context
+    check, "USDT price" must concentrate the top-3 in crypto-namespace
+    endpoints rather than landing on quotes_symbol_price.
+    """
+    # USDT is a 4-letter uppercase token that without _NON_TICKER_WORDS
+    # exclusion would be detected as a ticker by detect_tickers().
+    results = search_catalog(catalog, "USDT price", limit=5)
+    assert results
+    top_3_ops = [r["operation_id"] for r in results[:3]]
+    quotes_symbol_count = sum(1 for op in top_3_ops if op.startswith("quotes_symbol_"))
+    assert quotes_symbol_count == 0, (
+        f"USDT (crypto stablecoin) query leaked to equity endpoints: {top_3_ops}"
     )
 
 
