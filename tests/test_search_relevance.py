@@ -15,6 +15,7 @@ import pytest
 from sugra_api_mcp.catalog.aliases import (
     detect_currency_pairs,
     detect_tickers,
+    detect_us_macro_query,
     matching_central_bank_prefixes,
 )
 from sugra_api_mcp.catalog.loader import load_catalog
@@ -229,4 +230,77 @@ def test_forex_boost_does_not_mask_non_forex_results(catalog) -> None:
     forex_count = sum(1 for op in top_5_ops if op.startswith(("forex_", "frankfurter_", "exchangerate_")))
     assert forex_count == 0, (
         f"Apple stock price query incorrectly pulled in forex endpoints: {top_5_ops}"
+    )
+
+
+# ---- US-macro detection + FRED boost (live ChatGPT MCP feedback 2026-05-20) ----
+
+
+@pytest.mark.parametrize(
+    "query,expected",
+    [
+        # Positive: US context + macro keyword.
+        ("US CPI inflation", True),
+        ("US GDP", True),
+        ("US unemployment rate", True),
+        ("USA Treasury yield curve", True),
+        ("United States consumer price index", True),
+        ("American M2 money supply", True),
+        # US context alone, no macro keyword -> no boost.
+        ("US news", False),
+        ("US stocks", False),
+        ("US weather", False),
+        # Macro keyword alone, no US context -> no boost.
+        ("UK CPI", False),
+        ("Germany GDP", False),
+        ("Australia unemployment", False),
+        ("Eurozone inflation", False),
+        # "USD" / "USDT" must NOT match _US_CONTEXT_PATTERN (word boundary).
+        ("USD JPY rate", False),
+        ("USDT price", False),
+        # Substring "us" inside another word must not match.
+        ("Russia GDP", False),
+        ("Aussie CPI", False),
+    ],
+)
+def test_detect_us_macro_query(query: str, expected: bool) -> None:
+    assert detect_us_macro_query(query) is expected
+
+
+def test_us_macro_query_lands_fred_series_top_1(catalog) -> None:
+    """Live ChatGPT MCP feedback (2026-05-20): the LLM skipped MCP entirely
+    for "US CPI inflation" because non-US country endpoints (ons_cpi, rba_cpi)
+    out-ranked fred_series_series_id. The US-macro boost makes FRED dominant.
+    """
+    for query in ("US CPI inflation", "US GDP", "US unemployment rate"):
+        results = search_catalog(catalog, query, limit=3)
+        assert results, f"no results for {query!r}"
+        assert results[0]["operation_id"].startswith("fred_"), (
+            f"expected fred_* top-1 for {query!r}, got {results[0]['operation_id']}. "
+            f"Top-3: {[r['operation_id'] for r in results]}"
+        )
+
+
+def test_non_us_macro_query_does_not_boost_fred(catalog) -> None:
+    """Anti-regression: UK / Germany / Australia macro queries must keep
+    landing on their country-specific endpoints, not get pulled into FRED.
+    """
+    for query in ("UK CPI", "Germany GDP", "Australia unemployment"):
+        results = search_catalog(catalog, query, limit=3)
+        if not results:
+            continue
+        # FRED should not be top-1; ideally not in top-3 either.
+        assert not results[0]["operation_id"].startswith("fred_"), (
+            f"FRED incorrectly boosted for non-US query {query!r}: "
+            f"top-3 {[r['operation_id'] for r in results]}"
+        )
+
+
+def test_us_context_without_macro_keyword_does_not_boost_fred(catalog) -> None:
+    """'US news' has US context but no macro keyword - boost must not fire."""
+    results = search_catalog(catalog, "US news", limit=3)
+    assert results
+    assert not results[0]["operation_id"].startswith("fred_"), (
+        f"FRED incorrectly boosted for US-but-non-macro query: "
+        f"top-3 {[r['operation_id'] for r in results[:3]]}"
     )

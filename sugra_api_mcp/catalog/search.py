@@ -8,6 +8,7 @@ from typing import Any
 from .aliases import (
     detect_currency_pairs,
     detect_tickers,
+    detect_us_macro_query,
     matching_aliases,
     matching_central_bank_prefixes,
 )
@@ -23,6 +24,13 @@ TICKER_QUOTES_SYMBOL_BOOST = 25
 CURRENCY_PAIR_FOREX_BOOST = 15
 CENTRAL_BANK_PREFIX_BOOST = 15
 CRYPTO_NAMESPACE_BOOST = 18
+# Strongest boost on purpose: when query asks for US-specific macro data,
+# the generic FRED proxy reaches series that no country-specific endpoint
+# in our catalog covers (CPIAUCSL, GDP, UNRATE, etc.). Live ChatGPT MCP
+# session 2026-05-20 saw the LLM skip the MCP call entirely for "US CPI
+# inflation" because non-US endpoints out-ranked fred_series_series_id.
+US_MACRO_FRED_BOOST = 30
+US_MACRO_FED_BOOST = 20
 
 
 def _tokens(value: str) -> list[str]:
@@ -75,6 +83,7 @@ def _score(
     boost_markets_toolset: bool,
     boost_forex: bool,
     boost_crypto: bool,
+    boost_us_macro: bool,
     central_bank_prefixes: list[str],
 ) -> tuple[int, list[str]]:
     alias_terms = [term for terms in aliases.values() for term in terms]
@@ -121,6 +130,21 @@ def _score(
             score += CENTRAL_BANK_PREFIX_BOOST
             why.append(f"pattern:cb->{prefix}")
             break
+
+    if boost_us_macro:
+        # FRED is the canonical primary source for US macro time series. The
+        # generic proxy at fred_series_series_id covers ~800k indicators that
+        # no country-specific *_cpi / *_gdp endpoint can substitute for US
+        # queries. Strongest single boost in the file by design.
+        if endpoint.operation_id.startswith("fred_"):
+            score += US_MACRO_FRED_BOOST
+            why.append("pattern:us-macro->fred")
+        elif endpoint.operation_id.startswith("fed_"):
+            # Federal Reserve datasets (rates, SOMA, Z.1) cover the rate-policy
+            # side of US macro. Smaller boost since fred_series is the
+            # preferred catch-all entry point.
+            score += US_MACRO_FED_BOOST
+            why.append("pattern:us-macro->fed")
 
     tag_text = " ".join([*endpoint.tags, endpoint.toolset, endpoint.source_family])
     param_text = " ".join(
@@ -198,6 +222,7 @@ def search_catalog(
     boost_markets_toolset = boost_quotes_symbol
     boost_forex = bool(currency_pairs)
     boost_crypto = has_crypto_context
+    boost_us_macro = detect_us_macro_query(query)
 
     scored: list[tuple[int, Endpoint, list[str]]] = []
     for endpoint in catalog.endpoints:
@@ -214,6 +239,7 @@ def search_catalog(
             boost_markets_toolset=boost_markets_toolset,
             boost_forex=boost_forex,
             boost_crypto=boost_crypto,
+            boost_us_macro=boost_us_macro,
             central_bank_prefixes=central_bank_prefixes,
         )
         if score > 0:

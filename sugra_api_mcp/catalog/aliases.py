@@ -177,6 +177,43 @@ def detect_currency_pairs(query: str) -> list[tuple[str, str]]:
     return pairs
 
 
+# US-context tokens: standalone (not as part of words like "USD" or "USA1234").
+_US_CONTEXT_PATTERN = re.compile(
+    r"(?<![a-zA-Z0-9])(?:US|USA|U\.S\.|U\.S\.A\.|United States|American)(?![a-zA-Z0-9])",
+    re.IGNORECASE,
+)
+
+# Macro-data keywords that, combined with US context, indicate the user wants
+# US-specific macroeconomic data from a primary source (FRED). Kept narrow on
+# purpose - we don't want generic words like "data" or "rate" alone triggering
+# the boost.
+_US_MACRO_KEYWORDS: tuple[str, ...] = (
+    "cpi", "inflation", "ppi", "deflator",
+    "gdp", "gross domestic product",
+    "unemployment", "jobless", "labor force",
+    "treasury yield", "treasury rate", "yield curve",
+    "fed funds", "federal funds", "money supply", "m1", "m2",
+    "consumer price", "producer price",
+    "industrial production", "retail sales",
+    "personal income", "personal consumption", "pce",
+)
+
+
+def detect_us_macro_query(query: str) -> bool:
+    """Return True when the query asks for US-specific macroeconomic data.
+
+    Both signals must be present: (1) US-context token (US, USA, United States,
+    American) as a standalone word, and (2) at least one US-macro keyword (CPI,
+    GDP, unemployment, Treasury, federal funds, money supply, etc.). This
+    keeps generic queries like "US news" or "GDP forecast Germany" from
+    triggering the FRED boost.
+    """
+    if not _US_CONTEXT_PATTERN.search(query):
+        return False
+    lowered = query.lower()
+    return any(keyword in lowered for keyword in _US_MACRO_KEYWORDS)
+
+
 def matching_central_bank_prefixes(query: str) -> list[str]:
     """Return operation_id prefixes to boost when query references a specific central bank.
 
