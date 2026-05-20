@@ -127,8 +127,10 @@ EXACT_TOP_1_CASES = [
     # Foundational equity endpoint, stable since v0.4.0.
     ("AAPL price", {"quotes_symbol_price"}),
     ("Apple stock price", {"quotes_symbol_price"}),
-    # Bitcoin via the primary crypto coin endpoint.
-    ("Bitcoin price", {"crypto_coin_id_price", "mempool_price"}),
+    # Bitcoin via the primary crypto coin endpoint or the bitcoin-specific
+    # onchain endpoints (mempool_price was renamed to onchain_bitcoin_price
+    # in the Tier-C cleanup, see feedback_mcp_registry_sync_with_route_renames).
+    ("Bitcoin price", {"crypto_coin_id_price", "mempool_price", "onchain_bitcoin_price"}),
 ]
 
 
@@ -145,7 +147,10 @@ def test_search_top_1_exact_for_stable_endpoints(catalog, query: str, must_be_in
 
 NAMESPACE_TOP_1_CASES = [
     # query, allowed top-1 operation_id prefixes (any match)
-    ("MSFT earnings", ("quotes_symbol_earnings", "quotes_symbol_calendar", "finnhub_earnings", "finnhub_calendar")),
+    # MSFT earnings: finnhub_* were renamed in Tier-C scrub - accept the
+    # current top-1 winner `earnings` (the standalone equity-earnings endpoint),
+    # `calendar_earnings`, and the ticker-routed quotes_symbol_earnings_*.
+    ("MSFT earnings", ("earnings", "calendar_earnings", "quotes_symbol_earnings", "quotes_symbol_calendar")),
     ("Apple dividends", ("quotes_symbol_dividend", "quotes_symbol_actions", "market_calendar_dividends")),
     ("Tesla market cap", ("quotes_symbol_market_cap", "quotes_symbol_summary", "quotes_symbol_info")),
     ("FED interest rate", ("fed_rates", "fed_policy")),
