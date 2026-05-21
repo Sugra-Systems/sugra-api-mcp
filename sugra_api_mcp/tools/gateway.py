@@ -116,6 +116,110 @@ async def list_toolsets() -> dict[str, Any]:
     return {"toolsets": ordered_toolsets(counts), "total_endpoints": catalog.endpoint_count}
 
 
+@mcp.tool(annotations=read_only("Fetch data"))
+async def fetch_data(
+    query: str,
+    params: dict[str, Any] | None = None,
+    body: dict[str, Any] | None = None,
+    limit: int | None = None,
+    fields: list[str] | None = None,
+    include_raw: bool = False,
+) -> dict[str, Any]:
+    """One-step fetch: find the best Sugra endpoint for the query and call it.
+
+    Combines search_endpoints + call_endpoint into a single round trip. Use
+    this when you want data without manually picking an operation_id. The
+    full search_endpoints + describe_endpoint + call_endpoint dance is still
+    available when you need explicit control, but for most natural-language
+    queries this tool is enough.
+
+    Behavior:
+    1. Search the bundled catalog for the query. Top match wins.
+    2. If the matched endpoint has required parameters and they are all
+       provided in `params`, call it and return the response.
+    3. If required parameters are missing, return the candidate endpoints
+       and the missing-params list so the LLM can retry with the correct
+       `params` dict on the next call.
+
+    Examples:
+    - `fetch_data("US CPI inflation", params={"series_id": "CPIAUCSL"})`
+      → calls /api/v1/fred/series/CPIAUCSL, returns observations.
+    - `fetch_data("Bitcoin price", params={"coin_id": "bitcoin"})`
+      → calls /api/v1/crypto/bitcoin/price.
+    - `fetch_data("Latest financial news")`
+      → news_latest has no required params, returns latest news directly.
+    """
+    catalog = load_catalog()
+    results = search_catalog(catalog, query, limit=3)
+
+    if not results:
+        return {
+            "error": "no_endpoint_found",
+            "query": query,
+            "hint": "Try a more specific query or use search_endpoints + describe_endpoint to explore the catalog manually.",
+        }
+
+    top = results[0]
+    operation_id = top["operation_id"]
+
+    try:
+        endpoint = catalog.get(operation_id)
+    except KeyError:
+        # Should never happen — search returned an op_id that load_catalog
+        # doesn't recognise. Surface as a clear error rather than crashing.
+        return {
+            "error": "stale_search_result",
+            "operation_id": operation_id,
+            "candidate_endpoints": results,
+        }
+
+    clean_params = {key: value for key, value in (params or {}).items() if value is not None}
+    missing = _missing_required(endpoint, clean_params, body)
+
+    if missing:
+        # LLM didn't supply enough — return both the selected endpoint's
+        # schema and the alternative candidates so the next call can either
+        # fill the gap or pick a different endpoint.
+        return {
+            "needs_params": missing,
+            "selected_endpoint": {
+                "operation_id": operation_id,
+                "method": endpoint.method,
+                "path": endpoint.path,
+                "summary": endpoint.summary,
+                "required_parameters": endpoint.required_parameters,
+                "parameter_examples": [
+                    {
+                        "name": p.name,
+                        "description": p.description,
+                        "example": p.example,
+                        "required": p.required,
+                    }
+                    for p in endpoint.parameters
+                    if p.required
+                ],
+            },
+            "candidate_endpoints": results,
+            "hint": (
+                f"The top match `{operation_id}` requires {missing}. "
+                f"Retry as fetch_data(query, params={{...}}) with those keys filled in, "
+                f"or call describe_endpoint(operation_id) for full schema."
+            ),
+        }
+
+    # All required params satisfied — delegate to the same call path as
+    # call_endpoint so behavior is identical (path resolution, query/body
+    # routing, response shaping).
+    return await call_endpoint(
+        operation_id,
+        params=clean_params,
+        body=body,
+        limit=limit,
+        fields=fields,
+        include_raw=include_raw,
+    )
+
+
 @mcp.tool(annotations=read_only("List sources"))
 async def list_sources() -> dict[str, Any]:
     """List endpoint source families derived from catalog metadata."""

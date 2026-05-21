@@ -10,9 +10,10 @@ def test_tools_register(monkeypatch):
     from sugra_api_mcp import tools  # noqa: F401
     from sugra_api_mcp.server import mcp
     tool_list = asyncio.run(mcp.list_tools())
-    assert len(tool_list) == 5
+    assert len(tool_list) == 6
     names = {t.name for t in tool_list}
     expected = {
+        "fetch_data",
         "search_endpoints",
         "describe_endpoint",
         "call_endpoint",

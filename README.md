@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/sugra-api-mcp/">PyPI v0.5.8</a> |
+  <a href="https://pypi.org/project/sugra-api-mcp/">PyPI v0.6.0</a> |
   Python 3.11+ |
   <a href="https://github.com/Sugra-Systems/prod-sugra-ai-MCP/blob/main/LICENSE">MIT</a>
 </p>
@@ -27,17 +27,18 @@ Client details:
 
 ## What you get
 
-Current release: five-tool gateway surface with hosted OAuth activity validation for `https://app.sugra.ai/mcp`, plus ChatGPT Apps-compatible OAuth tool metadata. Curated tool names such as `get_market_price`, `get_macro_indicator`, and `get_news` are not part of this package. The package exposes exactly five tools:
+Current release: six-tool gateway surface with hosted OAuth activity validation for `https://app.sugra.ai/mcp`, plus ChatGPT Apps-compatible OAuth tool metadata. Curated tool names such as `get_market_price`, `get_macro_indicator`, and `get_news` are not part of this package. The package exposes exactly six tools:
 
 | Tool | Purpose |
 |---|---|
+| `fetch_data` | One-step: find best endpoint for a natural-language query and call it. Combines search + call in one round trip. |
 | `search_endpoints` | Search the bundled endpoint catalog. Runtime search does not fetch `/openapi.json`. |
 | `describe_endpoint` | Inspect an endpoint by `operation_id`, including path, method, parameters, and required inputs. |
 | `call_endpoint` | Call a Sugra API operation by `operation_id`. Arbitrary path calls are no longer supported. |
 | `list_toolsets` | List catalog groups and endpoint counts. |
 | `list_sources` | Show bundled catalog source metadata. |
 
-`call_endpoint` supports response shaping with `limit`, `fields`, and `include_raw`.
+`call_endpoint` and `fetch_data` both support response shaping with `limit`, `fields`, and `include_raw`.
 
 ## Installation
 
