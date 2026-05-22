@@ -125,11 +125,17 @@ def setup_observability(connection_string: str | None = None) -> bool:
         return False
 
     try:
+        # cloud_RoleName for filtering in App Insights when API + MCP
+        # share a workspace. The azure-monitor-opentelemetry SDK accepts
+        # **kwargs and silently ignores unrecognised keys (e.g. a plain
+        # `resource_attributes` dict), so we set the canonical OTel env
+        # var BEFORE calling configure_azure_monitor — the SDK reads it
+        # via Resource auto-detector. setdefault preserves any operator
+        # override in /etc/systemd unit or .env.
+        os.environ.setdefault("OTEL_SERVICE_NAME", "sugra-mcp")
+
         configure_azure_monitor(
             connection_string=conn,
-            # cloud_RoleName for filtering in App Insights when API + MCP
-            # share a workspace.
-            resource_attributes={"service.name": "sugra-mcp"},
             # No automatic log handler injection - we log to journalctl
             # only and do NOT want any exception messages exported as
             # traces (privacy contract).

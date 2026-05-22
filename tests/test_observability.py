@@ -403,3 +403,75 @@ def test_span_creation_failure_falls_back_to_direct_call(monkeypatch) -> None:
 
     result = asyncio.run(fake_tool())
     assert result == {"ok": True}
+
+
+def test_setup_sets_otel_service_name_default(monkeypatch) -> None:
+    """The SDK's configure_azure_monitor takes **kwargs and silently drops
+    unknown keys (verified empirically against azure-monitor-opentelemetry
+    1.8.8: a `resource_attributes` dict left cloud_RoleName at
+    `unknown_service`). The canonical OTel override is OTEL_SERVICE_NAME,
+    which the SDK honours via the Resource auto-detector. setup must set
+    this env var before calling configure_azure_monitor.
+    """
+    monkeypatch.setenv(
+        "APPLICATIONINSIGHTS_CONNECTION_STRING",
+        "InstrumentationKey=00000000-0000-0000-0000-000000000000",
+    )
+    monkeypatch.delenv("OTEL_SERVICE_NAME", raising=False)
+
+    captured_env: dict[str, str | None] = {}
+
+    def _fake_configure(**kwargs) -> None:
+        captured_env["OTEL_SERVICE_NAME"] = os.environ.get("OTEL_SERVICE_NAME")
+
+    import sys
+    import types
+    import os
+
+    fake_module = types.ModuleType("azure.monitor.opentelemetry")
+    fake_module.configure_azure_monitor = _fake_configure
+    monkeypatch.setitem(sys.modules, "azure.monitor.opentelemetry", fake_module)
+
+    fake_trace_mod = types.ModuleType("opentelemetry")
+    fake_trace_mod.trace = types.SimpleNamespace(
+        get_tracer=lambda _name: object()
+    )
+    monkeypatch.setitem(sys.modules, "opentelemetry", fake_trace_mod)
+    monkeypatch.setitem(sys.modules, "opentelemetry.trace", fake_trace_mod.trace)
+
+    assert observability.setup_observability() is True
+    assert captured_env["OTEL_SERVICE_NAME"] == "sugra-mcp"
+
+
+def test_setup_preserves_operator_otel_service_name_override(monkeypatch) -> None:
+    """setdefault respects any operator-supplied OTEL_SERVICE_NAME (e.g. for
+    multi-tenant deployments where one runtime hosts two MCP profiles).
+    """
+    monkeypatch.setenv(
+        "APPLICATIONINSIGHTS_CONNECTION_STRING",
+        "InstrumentationKey=00000000-0000-0000-0000-000000000000",
+    )
+    monkeypatch.setenv("OTEL_SERVICE_NAME", "sugra-mcp-staging")
+
+    captured: dict[str, str | None] = {}
+
+    def _fake_configure(**kwargs) -> None:
+        captured["OTEL_SERVICE_NAME"] = os.environ.get("OTEL_SERVICE_NAME")
+
+    import sys
+    import types
+    import os
+
+    fake_module = types.ModuleType("azure.monitor.opentelemetry")
+    fake_module.configure_azure_monitor = _fake_configure
+    monkeypatch.setitem(sys.modules, "azure.monitor.opentelemetry", fake_module)
+
+    fake_trace_mod = types.ModuleType("opentelemetry")
+    fake_trace_mod.trace = types.SimpleNamespace(
+        get_tracer=lambda _name: object()
+    )
+    monkeypatch.setitem(sys.modules, "opentelemetry", fake_trace_mod)
+    monkeypatch.setitem(sys.modules, "opentelemetry.trace", fake_trace_mod.trace)
+
+    assert observability.setup_observability() is True
+    assert captured["OTEL_SERVICE_NAME"] == "sugra-mcp-staging"
