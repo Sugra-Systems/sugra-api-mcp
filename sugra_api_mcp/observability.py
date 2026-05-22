@@ -197,6 +197,20 @@ def _safe_status_error(span: Any) -> None:
         span.set_status(Status(StatusCode.ERROR))
 
 
+def _safe_status_ok(span: Any) -> None:
+    """Set OTel span status to OK on success exit.
+
+    Without an explicit OK, the Azure Monitor exporter leaves the top-level
+    App Insights `success` column unset (KQL `avg(toint(success))` returns
+    NaN). Setting OK on the success path populates the column so
+    aggregations work without parsing `mcp.success` custom dimension.
+    """
+    with contextlib.suppress(Exception):
+        from opentelemetry.trace import Status, StatusCode
+
+        span.set_status(Status(StatusCode.OK))
+
+
 def _safe_end(span: Any) -> None:
     with contextlib.suppress(Exception):
         span.end()
@@ -277,6 +291,13 @@ def trace_mcp_tool(tool_name: str) -> Callable[[Callable[P, Awaitable[R]]], Call
                 if error_code is not None:
                     _safe_attr(span, "mcp.error.code", error_code)
                 _safe_attr(span, "mcp.duration_ms", int((time.perf_counter() - start) * 1000))
+                # Status drives App Insights top-level `success` column;
+                # ERROR for tool-reported failures (catalog-mapped error
+                # code), OK for clean success.
+                if success:
+                    _safe_status_ok(span)
+                else:
+                    _safe_status_error(span)
                 return result
             finally:
                 _safe_end(span)

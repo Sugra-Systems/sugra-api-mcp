@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sugra-api-mcp"
-version = "0.6.2"
+version = "0.6.3"
 description = "Gateway connector between LLM agents and Sugra API world data through a bundled endpoint catalog and operation_id calls. Works with Anthropic Claude, OpenAI GPT, Google Gemini, xAI, and any MCP-enabled IDE."
 readme = "README.md"
 license = { text = "MIT" }

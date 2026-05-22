@@ -408,6 +408,63 @@ def test_span_creation_failure_falls_back_to_direct_call(monkeypatch) -> None:
     assert result == {"ok": True}
 
 
+def test_success_path_sets_status_ok(monkeypatch) -> None:
+    """App Insights top-level `success` column is driven by OTel span
+    status. Without explicit OK on success, KQL aggregations like
+    avg(toint(success)) return NaN. The decorator must set OK on clean
+    return.
+    """
+    tracer = _install_fake_tracer(monkeypatch)
+
+    @observability.trace_mcp_tool("search_endpoints")
+    async def fake_tool(query: str) -> dict:
+        return {"results": [{"operation_id": "x"}]}
+
+    asyncio.run(fake_tool("anything"))
+
+    span = tracer.spans[0]
+    assert span.status is not None, "status was never set on success path"
+    # opentelemetry.trace.Status has a status_code attribute or is enum-like
+    code = getattr(span.status, "status_code", span.status)
+    assert "OK" in repr(code), f"expected OK status, got {span.status!r}"
+
+
+def test_tool_reported_failure_sets_status_error(monkeypatch) -> None:
+    """A tool returning {"error": "<code>"} is a tool-reported failure
+    (NOT an exception). The decorator should map it to span status ERROR
+    so App Insights success column reflects it.
+    """
+    tracer = _install_fake_tracer(monkeypatch)
+
+    @observability.trace_mcp_tool("call_endpoint")
+    async def fake_tool(operation_id: str) -> dict:
+        return {"error": "unknown_operation_id"}
+
+    asyncio.run(fake_tool(operation_id="nonexistent_op_id"))
+
+    span = tracer.spans[0]
+    assert span.status is not None, "status was never set on failure path"
+    code = getattr(span.status, "status_code", span.status)
+    assert "ERROR" in repr(code), f"expected ERROR status, got {span.status!r}"
+
+
+def test_exception_path_sets_status_error(monkeypatch) -> None:
+    """When the wrapped tool raises, span status must be ERROR."""
+    tracer = _install_fake_tracer(monkeypatch)
+
+    @observability.trace_mcp_tool("call_endpoint")
+    async def fake_tool() -> dict:
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(fake_tool())
+
+    span = tracer.spans[0]
+    assert span.status is not None
+    code = getattr(span.status, "status_code", span.status)
+    assert "ERROR" in repr(code)
+
+
 def test_setup_sets_otel_service_name_default(monkeypatch) -> None:
     """The SDK's configure_azure_monitor takes **kwargs and silently drops
     unknown keys (verified empirically against azure-monitor-opentelemetry
