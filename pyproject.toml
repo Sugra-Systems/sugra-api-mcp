@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sugra-api-mcp"
-version = "0.6.0"
+version = "0.6.1"
 description = "Gateway connector between LLM agents and Sugra API world data through a bundled endpoint catalog and operation_id calls. Works with Anthropic Claude, OpenAI GPT, Google Gemini, xAI, and any MCP-enabled IDE."
 readme = "README.md"
 license = { text = "MIT" }
@@ -50,6 +50,10 @@ http = [
     "uvicorn[standard]>=0.30",
     "starlette>=0.40",
     "pyjwt[crypto]>=2.8",
+    # Optional Azure Application Insights instrumentation. Loaded only when
+    # APPLICATIONINSIGHTS_CONNECTION_STRING env var is set; absence is a
+    # graceful no-op so stdio / dev users do not pull the SDK transitively.
+    "azure-monitor-opentelemetry>=1.6",
 ]
 dev = [
     "pytest>=8.0",
