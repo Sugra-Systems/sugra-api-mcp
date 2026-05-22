@@ -23,6 +23,9 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import os
+import sys
+import types
 
 import pytest
 
@@ -424,10 +427,6 @@ def test_setup_sets_otel_service_name_default(monkeypatch) -> None:
     def _fake_configure(**kwargs) -> None:
         captured_env["OTEL_SERVICE_NAME"] = os.environ.get("OTEL_SERVICE_NAME")
 
-    import sys
-    import types
-    import os
-
     fake_module = types.ModuleType("azure.monitor.opentelemetry")
     fake_module.configure_azure_monitor = _fake_configure
     monkeypatch.setitem(sys.modules, "azure.monitor.opentelemetry", fake_module)
@@ -457,10 +456,6 @@ def test_setup_preserves_operator_otel_service_name_override(monkeypatch) -> Non
 
     def _fake_configure(**kwargs) -> None:
         captured["OTEL_SERVICE_NAME"] = os.environ.get("OTEL_SERVICE_NAME")
-
-    import sys
-    import types
-    import os
 
     fake_module = types.ModuleType("azure.monitor.opentelemetry")
     fake_module.configure_azure_monitor = _fake_configure
