@@ -34,6 +34,13 @@ def _add_server_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _run_server(args: argparse.Namespace) -> None:
+    # Initialise Azure Monitor instrumentation BEFORE importing tools so the
+    # @trace_mcp_tool decorator picks up the configured tracer. No-op when
+    # APPLICATIONINSIGHTS_CONNECTION_STRING is not in the environment.
+    from .observability import setup_observability
+
+    setup_observability()
+
     # Import tools to register them with the FastMCP instance.
     from . import tools  # noqa: F401
     from .server import mcp

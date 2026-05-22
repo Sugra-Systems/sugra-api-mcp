@@ -8,6 +8,7 @@ from ..catalog.loader import load_catalog
 from ..catalog.response import shape_response
 from ..catalog.search import search_catalog
 from ..catalog.toolsets import ordered_toolsets
+from ..observability import trace_mcp_tool
 from ..server import get_client, mcp, read_only
 
 
@@ -30,6 +31,7 @@ def _missing_required(endpoint, params: dict[str, Any], body: dict[str, Any] | N
 
 
 @mcp.tool(annotations=read_only("Search endpoints"))
+@trace_mcp_tool("search_endpoints")
 async def search_endpoints(
     query: str,
     toolset: str | None = None,
@@ -43,6 +45,7 @@ async def search_endpoints(
 
 
 @mcp.tool(annotations=read_only("Describe endpoint"))
+@trace_mcp_tool("describe_endpoint")
 async def describe_endpoint(operation_id: str) -> dict[str, Any]:
     """Describe one Sugra API endpoint by operation_id."""
     catalog = load_catalog()
@@ -54,6 +57,7 @@ async def describe_endpoint(operation_id: str) -> dict[str, Any]:
 
 
 @mcp.tool(annotations=read_only("Call endpoint"))
+@trace_mcp_tool("call_endpoint")
 async def call_endpoint(
     operation_id: str,
     params: dict[str, Any] | None = None,
@@ -107,6 +111,7 @@ async def call_endpoint(
 
 
 @mcp.tool(annotations=read_only("List toolsets"))
+@trace_mcp_tool("list_toolsets")
 async def list_toolsets() -> dict[str, Any]:
     """List endpoint groups available in the bundled catalog."""
     catalog = load_catalog()
@@ -117,6 +122,7 @@ async def list_toolsets() -> dict[str, Any]:
 
 
 @mcp.tool(annotations=read_only("Fetch data"))
+@trace_mcp_tool("fetch_data")
 async def fetch_data(
     query: str,
     params: dict[str, Any] | None = None,
@@ -221,6 +227,7 @@ async def fetch_data(
 
 
 @mcp.tool(annotations=read_only("List sources"))
+@trace_mcp_tool("list_sources")
 async def list_sources() -> dict[str, Any]:
     """List endpoint source families derived from catalog metadata."""
     catalog = load_catalog()
