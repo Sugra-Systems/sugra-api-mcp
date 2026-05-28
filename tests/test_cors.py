@@ -271,7 +271,7 @@ def test_transport_security_middleware_accepts_chatgpt_origin(monkeypatch):
 
     Without the cors_origins merge in _build_transport_security() this test
     would fail with HTTP 403 Invalid Origin, which is exactly the production
-    bug Codex flagged as CORS-CRIT-1.
+    bug this test pins.
     """
     import asyncio
 

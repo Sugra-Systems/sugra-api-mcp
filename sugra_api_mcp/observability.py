@@ -70,12 +70,11 @@ _KNOWN_ERROR_CODES: frozenset[str] = frozenset({
     "auth_failed",
 })
 
-# Codex Round 1 Critical #1: azure-monitor-opentelemetry enables all bundled
-# instrumentations by default (fastapi, requests, urllib, urllib3, azure_sdk,
-# django, flask, psycopg2). Those auto-spans carry URL + query-string
-# attributes that bypass our privacy contract. Disable every bundled
-# instrumentation explicitly so the only spans we emit are the ones we
-# author here.
+# azure-monitor-opentelemetry enables all bundled instrumentations by default
+# (fastapi, requests, urllib, urllib3, azure_sdk, django, flask, psycopg2).
+# Those auto-spans carry URL + query-string attributes that bypass our privacy
+# contract. Disable every bundled instrumentation explicitly so the only spans
+# we emit are the ones we author here.
 _DISABLE_ALL_INSTRUMENTATION = {
     "azure_sdk": {"enabled": False},
     "django": {"enabled": False},
@@ -141,8 +140,8 @@ def setup_observability(connection_string: str | None = None) -> bool:
             # traces (privacy contract).
             disable_logging=True,
             disable_metrics=False,
-            # Codex CRIT-1: disable every bundled auto-instrumentation so
-            # only our explicit `@trace_mcp_tool` spans reach the workspace.
+            # Disable every bundled auto-instrumentation so only our explicit
+            # `@trace_mcp_tool` spans reach the workspace.
             instrumentation_options=_DISABLE_ALL_INSTRUMENTATION,
         )
         _TRACER = trace.get_tracer("sugra_mcp.tools")
@@ -256,10 +255,10 @@ def trace_mcp_tool(tool_name: str) -> Callable[[Callable[P, Awaitable[R]]], Call
             try:
                 _safe_attr(span, "mcp.tool.name", tool_name)
 
-                # Codex CRIT-2: operation_id is attached ONLY if the kwarg
-                # value matches a catalog-known operation_id. Arbitrary
-                # client-supplied strings (PII / secrets / free text) are
-                # dropped before reaching App Insights.
+                # operation_id is attached ONLY if the kwarg value matches a
+                # catalog-known operation_id. Arbitrary client-supplied strings
+                # (PII / secrets / free text) are dropped before reaching App
+                # Insights.
                 operation_id = kwargs.get("operation_id")
                 if isinstance(operation_id, str) and operation_id in _get_valid_operation_ids():
                     _safe_attr(span, "mcp.operation_id", operation_id)
@@ -281,9 +280,8 @@ def trace_mcp_tool(tool_name: str) -> Callable[[Callable[P, Awaitable[R]]], Call
                     error_value = result.get("error")
                     if isinstance(error_value, str):
                         success = False
-                        # Codex CRIT-3: map unknown error strings to a
-                        # constant so free-text upstream messages cannot
-                        # reach the span attribute.
+                        # Map unknown error strings to a constant so free-text
+                        # upstream messages cannot reach the span attribute.
                         error_code = (
                             error_value if error_value in _KNOWN_ERROR_CODES else "unknown_error"
                         )

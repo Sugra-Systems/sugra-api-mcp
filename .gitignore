@@ -15,6 +15,10 @@ dist/
 .Codex/
 .agents/
 
+# Repo-local agent instruction stubs (workspace-internal; not shipped publicly)
+CLAUDE.md
+AGENTS.md
+
 # Scratch / temporary files
 .tmp/
 .research/

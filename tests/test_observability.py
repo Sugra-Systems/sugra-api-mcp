@@ -225,13 +225,13 @@ def test_setup_observability_is_idempotent(monkeypatch) -> None:
     assert first == second
 
 
-# ---- Codex Round 1 fixes ----
+# ---- Privacy-contract guards ----
 
 
 def test_unknown_operation_id_kwarg_is_not_attached_to_span(monkeypatch) -> None:
-    """Codex CRIT-2: a client supplying an arbitrary string as operation_id
-    kwarg (PII, secret, raw query text) must NOT have that string labeled
-    as mcp.operation_id. Only catalog-known operation_ids pass the allowlist.
+    """A client supplying an arbitrary string as operation_id kwarg (PII,
+    secret, raw query text) must NOT have that string labeled as
+    mcp.operation_id. Only catalog-known operation_ids pass the allowlist.
     """
     tracer = _install_fake_tracer(monkeypatch)
 
@@ -250,9 +250,9 @@ def test_unknown_operation_id_kwarg_is_not_attached_to_span(monkeypatch) -> None
 
 
 def test_known_operation_id_kwarg_is_attached_to_span(monkeypatch) -> None:
-    """Positive contract for Codex CRIT-2: a real catalog-known operation_id
-    IS recorded as mcp.operation_id. Demonstrates the allowlist works both
-    ways - real values pass, arbitrary strings are dropped.
+    """Positive contract: a real catalog-known operation_id IS recorded as
+    mcp.operation_id. Demonstrates the allowlist works both ways - real
+    values pass, arbitrary strings are dropped.
     """
     tracer = _install_fake_tracer(monkeypatch)
 
@@ -267,9 +267,9 @@ def test_known_operation_id_kwarg_is_attached_to_span(monkeypatch) -> None:
 
 
 def test_unknown_error_string_is_mapped_to_unknown_error(monkeypatch) -> None:
-    """Codex CRIT-3: any string at result["error"] that is not in the known
-    error-code allowlist must be mapped to the constant "unknown_error".
-    Prevents free-text upstream error messages from reaching the span.
+    """Any string at result["error"] that is not in the known error-code
+    allowlist must be mapped to the constant "unknown_error". Prevents
+    free-text upstream error messages from reaching the span.
     """
     tracer = _install_fake_tracer(monkeypatch)
 
@@ -292,9 +292,9 @@ def test_unknown_error_string_is_mapped_to_unknown_error(monkeypatch) -> None:
 
 
 def test_known_error_code_is_passed_through(monkeypatch) -> None:
-    """Positive contract for Codex CRIT-3: known catalog error codes
-    (unknown_operation_id / missing_required_parameters / etc.) ARE
-    preserved on the span - they are operational signal, not free-text.
+    """Positive contract: known catalog error codes (unknown_operation_id /
+    missing_required_parameters / etc.) ARE preserved on the span - they
+    are operational signal, not free-text.
     """
     tracer = _install_fake_tracer(monkeypatch)
 
@@ -309,9 +309,9 @@ def test_known_error_code_is_passed_through(monkeypatch) -> None:
 
 
 def test_telemetry_failure_does_not_mask_tool_result(monkeypatch) -> None:
-    """Codex IMP-3: if set_attribute crashes (e.g. exporter has rolled out
-    a breaking change), the wrapper must still return the tool's real
-    result rather than masking the call with a telemetry error.
+    """If set_attribute crashes (e.g. exporter has rolled out a breaking
+    change), the wrapper must still return the tool's real result rather
+    than masking the call with a telemetry error.
     """
     class _BrokenSpan:
         def __init__(self, name: str):

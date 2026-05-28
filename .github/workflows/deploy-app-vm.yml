@@ -1,17 +1,18 @@
 name: Deploy MCP to APP VM
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Test"]
+    types: [completed]
     branches: [main]
-    paths:
-      - "sugra_api_mcp/**"
-      - "pyproject.toml"
-      - ".github/workflows/deploy-app-vm.yml"
   workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Deploy only when the triggering Test run on main succeeded (or on manual
+    # dispatch). Prevents shipping a red main to the APP VM.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v4
       - name: Deploy via SSH

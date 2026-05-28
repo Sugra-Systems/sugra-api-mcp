@@ -17,11 +17,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - name: Validate release tag
+      - name: Validate release tag and version sync
         run: |
           python - <<'PY'
+          import json
           import os
           import pathlib
+          import re
           import tomllib
 
           version = tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
@@ -31,7 +33,25 @@ jobs:
               raise SystemExit(
                   f"Release tag {tag} does not match pyproject version {version}; expected {expected}"
               )
-          print(f"Release tag {tag} matches pyproject version {version}")
+
+          init_text = pathlib.Path("sugra_api_mcp/__init__.py").read_text(encoding="utf-8")
+          init_match = re.search(r'^__version__\s*=\s*"([^"]+)"', init_text, re.MULTILINE)
+          if init_match is None:
+              raise SystemExit("Could not find __version__ in sugra_api_mcp/__init__.py")
+          if init_match.group(1) != version:
+              raise SystemExit(
+                  f"__init__.py __version__ {init_match.group(1)} != pyproject version {version}"
+              )
+
+          server = json.loads(pathlib.Path("server.json").read_text(encoding="utf-8"))
+          server_versions = [server.get("version")] + [p.get("version") for p in server.get("packages", [])]
+          mismatched = [v for v in server_versions if v != version]
+          if mismatched:
+              raise SystemExit(
+                  f"server.json version(s) {mismatched} != pyproject version {version}"
+              )
+
+          print(f"Version sync OK: tag={tag}, pyproject={version}, __init__ + server.json match")
           PY
       - name: Build
         run: |

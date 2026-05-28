@@ -2,22 +2,12 @@
 
 <one paragraph: what changes and why>
 
-## Board item
+## Testing
 
-Closes / advances: <link to board item — https://github.com/orgs/Sugra-Systems/projects/1/views/1?pane=issue&itemId=...>
+- [ ] `pytest` passes
+- [ ] `ruff check sugra_api_mcp tests` clean
 
-If this PR touches behavior NOT yet on the board, add the item first per the convention in workspace `CLAUDE.md` / `AGENTS.md`.
+## Checklist
 
-## Test plan
-
-- [ ] ...
-- [ ] ...
-
-## Doc updates
-
-- [ ] `USE_CASES_COVERAGE_*.md` updated in this PR if board item status flipped
-- [ ] Mandatory doc updates per `CLAUDE.md` table done
-
-## Codex review
-
-- [ ] `/codex:review` clean (or docs-only exemption)
+- [ ] README / docs updated if the tool surface or behavior changed
+- [ ] On a release: `pyproject.toml`, `sugra_api_mcp/__init__.py`, and `server.json` versions stay in sync
