@@ -23285,7 +23285,7 @@
       "toolset": "news"
     },
     {
-      "description": "Top GDELT GKG themes aggregated across the requested window with count and share. period=1h reads latest.json only; period=6h or 24h additionally merges daily shards. Response carries stale + partial completeness flags (Codex R4 P2 - matches /recent + /events/by-country).",
+      "description": "Top GDELT GKG themes aggregated across the requested window with count and share. period=1h reads latest.json only; period=6h or 24h additionally merges daily shards. Response carries stale + partial completeness flags (matches /recent + /events/by-country).",
       "method": "GET",
       "operation_id": "gdelt_themes_trending",
       "parameters": [

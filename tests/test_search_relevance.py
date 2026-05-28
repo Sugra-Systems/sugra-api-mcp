@@ -37,16 +37,17 @@ from sugra_api_mcp.catalog.search import search_catalog
         ("USD JPY rate", []),
         ("FED interest rate", []),
         ("ETF flows", []),
-        # Codex Round 1 finding: single-letter words and common business acronyms
-        # were incorrectly classified as tickers.
+        # Single-letter words and common business acronyms were previously
+        # mis-classified as tickers; the detector requires >=2 chars and an
+        # exclusion list.
         ("I need GDP data", []),       # "I" is one letter, regex now requires >=2
         ("A CPI endpoint", []),         # same
         ("CEO announcement", []),       # CEO in non-ticker list
         ("SEC filing", []),             # SEC in non-ticker list
         ("IRS form 1040", []),          # IRS in non-ticker list
         ("USDT price", []),             # major stablecoin, in non-ticker list
-        # Codex Round 2 finding: AI and IT are real NYSE tickers (C3.ai, Gartner).
-        # Without equity context they stay generic English acronyms.
+        # AI and IT are real NYSE tickers (C3.ai, Gartner). Without equity
+        # context they stay generic English acronyms.
         ("AI revolution", []),          # no equity context -> not a ticker
         ("IT support team", []),        # no equity context -> not a ticker
         # WITH equity context, ambiguous tickers are re-admitted.
@@ -95,10 +96,10 @@ def test_detect_currency_pairs(query: str, expected: list[tuple[str, str]]) -> N
         # No central bank reference -> empty.
         ("Apple price", []),
         ("Crypto market data", []),
-        # Codex Round 1 finding: substring matching gave false positives.
-        # All three queries below must return empty now that we require word
-        # boundaries (without it: "CNBC" matched cnb_, "Boca Raton" matched
-        # boc_, "federal debt" matched fed_).
+        # Substring matching previously gave false positives. All three
+        # queries below must return empty now that we require word boundaries
+        # (without it: "CNBC" matched cnb_, "Boca Raton" matched boc_,
+        # "federal debt" matched fed_).
         ("CNBC news headlines", []),
         ("Boca Raton real estate", []),
         ("federal debt ceiling", []),  # "federal" alone isn't "fed"
@@ -117,7 +118,7 @@ def catalog():
     return load_catalog()
 
 
-# Two contract levels (Codex Round 1 Minor #2 fix):
+# Two contract levels:
 # - EXACT_TOP_1: only the most stable, single-correct-answer queries. These
 #   fail if catalog renames or splits these specific endpoints.
 # - NAMESPACE_TOP_1: most queries — assert top-1 lands in a namespace family

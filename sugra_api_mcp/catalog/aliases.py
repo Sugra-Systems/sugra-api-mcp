@@ -96,11 +96,11 @@ _NON_TICKER_WORDS: frozenset[str] = frozenset({
     "DC", "UAE", "DRC",
 })
 
-# Real NYSE tickers that collide with common English acronyms. Codex Round 2
-# flagged AI (C3.ai Inc.) and IT (Gartner Inc.) as real listed companies. These
-# are still default-excluded above, but `detect_tickers()` re-admits them when
-# the query carries strong equity-context vocabulary, so "AI revolution" stays
-# a generic AI query while "AI stock price" routes to quotes_symbol_*.
+# Real NYSE tickers that collide with common English acronyms - AI (C3.ai Inc.)
+# and IT (Gartner Inc.) are real listed companies. These are still
+# default-excluded above, but `detect_tickers()` re-admits them when the query
+# carries strong equity-context vocabulary, so "AI revolution" stays a generic
+# AI query while "AI stock price" routes to quotes_symbol_*.
 _AMBIGUOUS_TICKERS: frozenset[str] = frozenset({
     "AI",   # C3.ai Inc. (NYSE: AI)
     "IT",   # Gartner Inc. (NYSE: IT)
