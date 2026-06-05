@@ -1,5 +1,8 @@
-"""Tool modules. Importing this package registers gateway tools with FastMCP."""
+"""Tool modules. Importing this package registers all tools with FastMCP."""
 
 from __future__ import annotations
 
-from . import gateway  # noqa: F401
+from . import (
+    entities,  # noqa: F401
+    gateway,  # noqa: F401
+)

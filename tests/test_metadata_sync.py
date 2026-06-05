@@ -14,8 +14,17 @@ from pathlib import Path
 import sugra_api_mcp
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-EXPECTED_TOOL_COUNT = 6
-NUMBER_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven"}
+EXPECTED_TOOL_COUNT = 8
+NUMBER_WORDS = {
+    1: "one",
+    2: "two",
+    3: "three",
+    4: "four",
+    5: "five",
+    6: "six",
+    7: "seven",
+    8: "eight",
+}
 
 
 def _pyproject_version():
