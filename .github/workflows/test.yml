@@ -46,9 +46,10 @@ jobs:
           import asyncio
           from sugra_api_mcp import tools
           from sugra_api_mcp.server import mcp
+          from tests.test_metadata_sync import EXPECTED_TOOL_COUNT
           async def main():
               t = await mcp.list_tools()
-              assert len(t) == 6, f'Expected 6 tools, got {len(t)}'
+              assert len(t) == EXPECTED_TOOL_COUNT, f'Expected {EXPECTED_TOOL_COUNT} tools, got {len(t)}'
               print(f'OK: {len(t)} tools registered')
           asyncio.run(main())
           "
