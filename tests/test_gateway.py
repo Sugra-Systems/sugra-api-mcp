@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from sugra_api_mcp.catalog.builder import build_catalog_from_openapi
 from sugra_api_mcp.tools import gateway
@@ -198,4 +198,106 @@ async def test_fetch_data_returns_error_when_no_endpoint_matches(monkeypatch) ->
     assert fake.calls == []
     assert result["error"] == "no_endpoint_found"
     assert "hint" in result  # actionable guidance for the LLM
+
+
+# ---- error contract: structured failures must reach the agent untouched ----
+
+
+class StructuredErrorClient:
+    """Mimics SugraClient returning a transport-error dict (MCP-Imp-1)."""
+
+    ERROR: ClassVar[dict[str, Any]] = {
+        "error": "upstream_timeout",
+        "reason": "ReadTimeout",
+        "status_code": None,
+        "elapsed_ms": 30012,
+        "url": "https://sugra.ai/api/v1/quotes/AAPL/price",
+        "retry_hint": "Retry once.",
+        "timeout_s": 30.0,
+    }
+
+    async def get(self, path, params=None):
+        return dict(self.ERROR)
+
+    async def request(self, method, path, params=None, json=None):
+        return dict(self.ERROR)
+
+
+async def test_call_endpoint_returns_structured_error_without_shaping(monkeypatch) -> None:
+    """A transport-error dict must pass through unmodified: shaping it would
+    add a misleading meta.shaped block to an error payload."""
+    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
+    monkeypatch.setattr(gateway, "get_client", lambda: StructuredErrorClient())
+
+    result = await gateway.call_endpoint(
+        "quotes_symbol_price",
+        params={"symbol": "AAPL"},
+        fields=["symbol"],
+        limit=1,
+    )
+
+    assert result == StructuredErrorClient.ERROR
+    assert "meta" not in result
+
+
+class RaisingClient:
+    """Mimics an unexpected non-httpx failure inside the call path."""
+
+    async def get(self, path, params=None):
+        raise RuntimeError("unexpected internal failure")
+
+    async def request(self, method, path, params=None, json=None):
+        raise RuntimeError("unexpected internal failure")
+
+
+async def test_call_endpoint_catches_unexpected_exception(monkeypatch) -> None:
+    """Safety net (defect D2): nothing may raise through FastMCP as an
+    empty 'Error executing tool call_endpoint:' string."""
+    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
+    monkeypatch.setattr(gateway, "get_client", lambda: RaisingClient())
+
+    result = await gateway.call_endpoint("quotes_symbol_price", params={"symbol": "AAPL"})
+
+    assert result["error"] == "tool_execution_failed"
+    assert result["operation_id"] == "quotes_symbol_price"
+    assert result["exception_type"] == "RuntimeError"
+    assert "unexpected internal failure" in result["reason"]
+
+
+async def test_fetch_data_propagates_structured_error(monkeypatch) -> None:
+    """fetch_data delegates to call_endpoint: the structured error contract
+    must survive the combined search+call round trip too."""
+    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
+    monkeypatch.setattr(gateway, "get_client", lambda: StructuredErrorClient())
+
+    result = await gateway.fetch_data(query="AAPL stock price", params={"symbol": "AAPL"})
+
+    assert result["error"] == "upstream_timeout"
+    assert result["elapsed_ms"] == 30012
+
+
+# ---- agent hints surface in discovery tools (MCP-Imp-3) ----
+
+
+async def test_describe_endpoint_includes_agent_hints(monkeypatch) -> None:
+    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
+
+    result = await gateway.describe_endpoint("quotes_symbol_price")
+
+    hints = result["agent_hints"]
+    assert hints["duration_class"] == "fast"
+    assert hints["max_concurrency"] == 4
+    assert "duration_note" in hints
+
+
+async def test_fetch_data_needs_params_includes_agent_hints(monkeypatch) -> None:
+    fake = FakeClient()
+    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
+    monkeypatch.setattr(gateway, "get_client", lambda: fake)
+
+    result = await gateway.fetch_data(query="AAPL stock price")
+
+    assert fake.calls == []
+    assert "agent_hints" in result["selected_endpoint"]
+    assert result["selected_endpoint"]["agent_hints"]["duration_class"] == "fast"
 

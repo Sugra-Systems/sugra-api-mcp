@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..catalog.hints import hints_for
 from ..catalog.loader import load_catalog
 from ..catalog.response import shape_response
 from ..catalog.search import search_catalog
@@ -47,13 +48,19 @@ async def search_endpoints(
 @mcp.tool(annotations=read_only("Describe endpoint"))
 @trace_mcp_tool("describe_endpoint")
 async def describe_endpoint(operation_id: str) -> dict[str, Any]:
-    """Describe one Sugra API endpoint by operation_id."""
+    """Describe one Sugra API endpoint by operation_id.
+
+    Includes agent_hints (duration_class fast/slow/heavy, max_concurrency,
+    bulk billing) so you can budget timeouts and parallelism before calling.
+    """
     catalog = load_catalog()
     try:
         endpoint = catalog.get(operation_id)
     except KeyError:
         return {"error": "unknown_operation_id", "operation_id": operation_id}
-    return endpoint.to_dict()
+    described = endpoint.to_dict()
+    described["agent_hints"] = hints_for(endpoint)
+    return described
 
 
 @mcp.tool(annotations=read_only("Call endpoint"))
@@ -66,7 +73,16 @@ async def call_endpoint(
     fields: list[str] | None = None,
     include_raw: bool = False,
 ) -> dict[str, Any]:
-    """Call a Sugra API endpoint by operation_id from the bundled catalog."""
+    """Call a Sugra API endpoint by operation_id from the bundled catalog.
+
+    Plan calls with describe_endpoint's agent_hints: duration_class "fast"
+    responds in under ~2s, "slow" may take 5-30s (live upstream), "heavy" can
+    exceed the gateway timeout - keep parallel calls within max_concurrency
+    and prefer small batches. Bulk endpoints bill 1 request credit per body
+    item. Failures return structured errors {error, reason, status_code,
+    elapsed_ms, retry_hint}; after "upstream_timeout" a single retry often
+    succeeds because the aborted attempt warms upstream caches.
+    """
     catalog = load_catalog()
     try:
         endpoint = catalog.get(operation_id)
@@ -100,14 +116,37 @@ async def call_endpoint(
     }
 
     client = get_client()
-    if endpoint.method == "GET":
-        payload = await client.get(path, params=query_params)
-    elif endpoint.method == "POST":
-        payload = await client.request(endpoint.method, path, params=query_params, json=body)
-    else:
-        return {"error": "unsupported_method", "operation_id": operation_id, "method": endpoint.method}
+    try:
+        if endpoint.method == "GET":
+            payload = await client.get(path, params=query_params)
+        elif endpoint.method == "POST":
+            payload = await client.request(endpoint.method, path, params=query_params, json=body)
+        else:
+            return {
+                "error": "unsupported_method",
+                "operation_id": operation_id,
+                "method": endpoint.method,
+            }
 
-    return shape_response(payload, limit=limit, fields=fields, include_raw=include_raw)
+        if isinstance(payload, dict) and "error" in payload:
+            # Structured error contract from SugraClient (transport failure,
+            # HTTP 4xx/5xx, or size-limit refusal). Return it untouched:
+            # shaping an error dict would only decorate it with misleading
+            # meta while the agent needs the raw {error, reason, elapsed_ms}.
+            return payload
+
+        return shape_response(payload, limit=limit, fields=fields, include_raw=include_raw)
+    except Exception as exc:
+        # A raised exception surfaces to MCP clients as "Error executing
+        # tool call_endpoint: <message>" where the message can be EMPTY
+        # (field-test defect D2). Returning a structured dict keeps the
+        # error contract intact for any unexpected failure class.
+        return {
+            "error": "tool_execution_failed",
+            "operation_id": operation_id,
+            "exception_type": type(exc).__name__,
+            "reason": str(exc)[:300].strip() or type(exc).__name__,
+        }
 
 
 @mcp.tool(annotations=read_only("List toolsets"))
@@ -193,6 +232,7 @@ async def fetch_data(
                 "method": endpoint.method,
                 "path": endpoint.path,
                 "summary": endpoint.summary,
+                "agent_hints": hints_for(endpoint),
                 "required_parameters": endpoint.required_parameters,
                 "parameter_examples": [
                     {

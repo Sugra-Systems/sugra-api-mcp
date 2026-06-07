@@ -68,6 +68,14 @@ _KNOWN_ERROR_CODES: frozenset[str] = frozenset({
     "response_too_large",
     "validation_failed",
     "auth_failed",
+    # Transport-layer error contract (SugraClient catches httpx failures and
+    # returns these as structured dicts; free text stays in the dict's
+    # "reason" field which never reaches spans).
+    "upstream_timeout",
+    "upstream_connect_error",
+    "upstream_transport_error",
+    # Gateway safety net for unexpected exceptions inside call_endpoint.
+    "tool_execution_failed",
 })
 
 # azure-monitor-opentelemetry enables all bundled instrumentations by default

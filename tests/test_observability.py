@@ -308,6 +308,38 @@ def test_known_error_code_is_passed_through(monkeypatch) -> None:
     assert span.attributes["mcp.error.code"] == "missing_required_parameters"
 
 
+@pytest.mark.parametrize(
+    "code",
+    [
+        "upstream_timeout",
+        "upstream_connect_error",
+        "upstream_transport_error",
+        "tool_execution_failed",
+    ],
+)
+def test_transport_error_codes_pass_the_allowlist(monkeypatch, code: str) -> None:
+    """MCP-Imp-1: the structured transport-error codes returned by
+    SugraClient (and the gateway safety net) must reach spans verbatim,
+    not collapse into "unknown_error" - otherwise timeout vs connect vs
+    disconnect are indistinguishable in App Insights.
+    """
+    tracer = _install_fake_tracer(monkeypatch)
+
+    @observability.trace_mcp_tool("call_endpoint")
+    async def fake_call() -> dict:
+        return {"error": code, "reason": "free text stays out of spans", "elapsed_ms": 30000}
+
+    asyncio.run(fake_call())
+
+    span = tracer.spans[0]
+    assert span.attributes["mcp.success"] is False
+    assert span.attributes["mcp.error.code"] == code
+    # Privacy: the free-text reason must not appear in any span attribute.
+    for value in span.attributes.values():
+        if isinstance(value, str):
+            assert "free text stays out of spans" not in value
+
+
 def test_telemetry_failure_does_not_mask_tool_result(monkeypatch) -> None:
     """If set_attribute crashes (e.g. exporter has rolled out a breaking
     change), the wrapper must still return the tool's real result rather

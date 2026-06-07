@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/sugra-api-mcp/">PyPI v0.6.3</a> |
+  <a href="https://pypi.org/project/sugra-api-mcp/">PyPI v0.7.0</a> |
   Python 3.11+ |
   <a href="https://github.com/Sugra-Systems/prod-sugra-ai-MCP/blob/main/LICENSE">MIT</a>
 </p>
@@ -27,18 +27,26 @@ Client details:
 
 ## What you get
 
-Current release: six-tool gateway surface with hosted OAuth activity validation for `https://app.sugra.ai/mcp`, plus ChatGPT Apps-compatible OAuth tool metadata. Curated tool names such as `get_market_price`, `get_macro_indicator`, and `get_news` are not part of this package. The package exposes exactly six tools:
+Current release: eight-tool surface with hosted OAuth activity validation for `https://app.sugra.ai/mcp`, plus ChatGPT Apps-compatible OAuth tool metadata. Curated tool names such as `get_market_price`, `get_macro_indicator`, and `get_news` are not part of this package. The package exposes exactly eight tools:
 
 | Tool | Purpose |
 |---|---|
 | `fetch_data` | One-step: find best endpoint for a natural-language query and call it. Combines search + call in one round trip. |
 | `search_endpoints` | Search the bundled endpoint catalog. Runtime search does not fetch `/openapi.json`. |
-| `describe_endpoint` | Inspect an endpoint by `operation_id`, including path, method, parameters, and required inputs. |
+| `describe_endpoint` | Inspect an endpoint by `operation_id`, including path, method, parameters, required inputs, and `agent_hints`. |
 | `call_endpoint` | Call a Sugra API operation by `operation_id`. Arbitrary path calls are no longer supported. |
 | `list_toolsets` | List catalog groups and endpoint counts. |
 | `list_sources` | Show bundled catalog source metadata. |
+| `sugra_entity_screen` | Screen a name against sanctions and watchlists (Sugra Entity). |
+| `sugra_entity_lookup` | Look up a screened entity record by list id (Sugra Entity). |
 
 `call_endpoint` and `fetch_data` both support response shaping with `limit`, `fields`, and `include_raw`.
+
+`describe_endpoint` returns computed `agent_hints` per endpoint so agents can budget time and parallelism before calling:
+
+- `duration_class` - `fast` (under ~2s, snapshot-backed), `slow` (live upstream proxying, occasionally 15s+), or `heavy` (per-item upstream work, large batches can exceed the gateway timeout)
+- `max_concurrency` - advisory ceiling for parallel calls from one session
+- `bulk_cost` - on per-item bulk endpoints: 1 request credit per item in the request body (the API reports the total in the `X-RateLimit-Cost` response header)
 
 ## Installation
 
@@ -143,6 +151,29 @@ When running with `--transport streamable-http` the server allows unauthenticate
 | `SUGRA_APP_URL` | HTTP + OAuth | `https://app.sugra.ai` | Base URL of the authorization server |
 | `SUGRA_JWKS_URL` | No | `$SUGRA_APP_URL/oauth/jwks.json` | JWKS endpoint |
 | `INTERNAL_API_TOKEN` | HTTP + OAuth | - | Shared secret for the user lookup and MCP activity endpoints on the authorization server. Same value must be set on both the MCP process and the app.sugra.ai Laravel process |
+
+## Timeouts and the error contract
+
+`SUGRA_TIMEOUT` caps each downstream HTTP call from this server to the Sugra API (default 30 seconds). It is one link in a longer chain; when a tool call fails, `elapsed_ms` in the error payload tells you which link cut it:
+
+```
+MCP client (agent harness)         own tool timeout, often 60-180s, client-controlled
+  -> hosted proxy (app.sugra.ai)   86400s, effectively unlimited
+    -> this server (httpx)         SUGRA_TIMEOUT, default 30s
+      -> Sugra API -> upstreams    15-60s per upstream call, server-side
+```
+
+Tool failures return structured JSON instead of raising, so agents can pick a retry strategy:
+
+| `error` value | Meaning | Retry strategy |
+|---|---|---|
+| `upstream_timeout` | No response within `SUGRA_TIMEOUT` (`elapsed_ms` close to `timeout_s` x 1000) | Retry once: the aborted attempt usually completes server-side and warms upstream caches. Then narrow the request (smaller batch, tighter filters). |
+| `upstream_connect_error` | Could not reach the Sugra API (DNS failure, connection refused) | Retry after a short delay. |
+| `upstream_transport_error` | Connection dropped mid-request | Retry once. |
+| free-text string + `status_code` | The API answered with HTTP 4xx/5xx; `retry_after` included when the API sent a Retry-After header | Honor `retry_after` for 429/503; fix the request for 4xx. |
+| `tool_execution_failed` | Unexpected failure inside the gateway (`exception_type` included) | Report if persistent. |
+
+All error payloads carry `elapsed_ms` and `url`. If a tool call instead fails with a bare client-side message and no structured JSON, the timeout fired in your agent harness above this server: raise the client's tool timeout, not `SUGRA_TIMEOUT`.
 
 ## Examples
 
