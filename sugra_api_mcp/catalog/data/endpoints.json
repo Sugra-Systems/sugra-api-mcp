@@ -1,5 +1,5 @@
 {
-  "endpoint_count": 1354,
+  "endpoint_count": 1369,
   "endpoints": [
     {
       "description": "Pre-configured key Australian datasets: CPI, GDP, Labour, Trade, Retail, Wages, Population.",
@@ -18832,6 +18832,67 @@
       "toolset": "environment"
     },
     {
+      "description": "Returns the full S&P 500 constituent list (503 entries) with GICS sector + sub-industry classifications + date-added + SEC EDGAR CIK identifiers. Sourced from public Wikipedia (CC-BY-SA-4.0) membership announcements via daily auto-refresh blob; hardcoded 503-entry snapshot serves as defence-in-depth fallback when the blob is unavailable. Filter by ``?sector=<GICS sector>`` or ``?sub_industry=<GICS sub-industry>`` to narrow the list. Use case: UC-2 Earnings Whiplash Map filters earnings calendar by SPX members; UC-1 Institutional Footprint cross-references CIK to /sec/13f endpoints. The ``data_source`` field exposes whether the response was served from the Wikipedia blob (``blob_wikipedia``) or the hardcoded fallback (``hardcoded_fallback``).",
+      "method": "GET",
+      "operation_id": "equities_sp500_constituents",
+      "parameters": [
+        {
+          "description": "Optional GICS Level 1 sector filter. Case-sensitive. Returns 400 with the canonical 11-sector list when the value is not in the GICS taxonomy.",
+          "location": "query",
+          "name": "sector",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional GICS Level 1 sector filter. Case-sensitive. Returns 400 with the canonical 11-sector list when the value is not in the GICS taxonomy.",
+            "examples": [
+              "Information Technology"
+            ],
+            "title": "Sector"
+          }
+        },
+        {
+          "description": "Optional GICS Level 4 sub-industry filter. Case-sensitive. Returns 400 with the observed catalog when the value is not present in the current data source.",
+          "location": "query",
+          "name": "sub_industry",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional GICS Level 4 sub-industry filter. Case-sensitive. Returns 400 with the observed catalog when the value is not present in the current data source.",
+            "examples": [
+              "Semiconductors"
+            ],
+            "title": "Sub Industry"
+          }
+        }
+      ],
+      "path": "/api/v1/equities/sp500/constituents",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "core",
+      "sources": [
+        "core"
+      ],
+      "summary": "S&P 500 constituents (membership metadata)",
+      "tags": [
+        "Equities Indices"
+      ],
+      "toolset": "core"
+    },
+    {
       "description": "List key Japanese statistics: CPI (790 items, 67 regions), unemployment/employment/participation rates, population census.",
       "method": "GET",
       "operation_id": "estat_catalog",
@@ -19084,6 +19145,74 @@
       "toolset": "core"
     },
     {
+      "description": "Returns the most-recent ICI Weekly Estimated Long-Term Flows + ETF Net Issuance release, including a 5-week history strip. Source: ICI public press release (Investment Company Institute, Tier I non-profit trade association). 6 buckets (Equity Domestic/World, Hybrid, Bond Taxable/Municipal, Commodity) + Total + a separate ETF net issuance figure. Cadence: weekly, ICI publishes Wednesday afternoon ET; ingest captures Thursday morning UTC. Use case: ``UC-3 Sector Rotation Detector`` aggregate macro context to complement per-ETF flow estimates.",
+      "method": "GET",
+      "operation_id": "etf_flows_aggregate",
+      "parameters": [],
+      "path": "/api/v1/etf/flows/aggregate",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "core",
+      "sources": [
+        "core"
+      ],
+      "summary": "Weekly ETF + mutual fund flow aggregates (ICI public press release)",
+      "tags": [
+        "Funds & ETFs"
+      ],
+      "toolset": "core"
+    },
+    {
+      "description": "Cross-sector ranking of US sector SPDR ETFs by trailing return over a configurable window. Walks the 11 canonical S&P GICS sector SPDRs (XLB, XLC, XLY, XLP, XLE, XLF, XLV, XLI, XLRE, XLK, XLU), extracts the matching ``returns_<window>`` field from each ETF's latest B5 snapshot (or a dated snapshot via ``?date=YYYY-MM-DD``), and ranks DESC. Sectors missing a return (delisted, snapshot blob absent, or ETF history shorter than the window) are surfaced in ``missing_symbols`` with a structured reason and do not contribute to leader / laggard / spread / median. Use case: ``UC-3 Sector Rotation Detector`` - capital rotation signal without N round-trips.",
+      "method": "GET",
+      "operation_id": "etf_sectors_relative_strength",
+      "parameters": [
+        {
+          "description": "Trailing-return window. One of: 1m, ytd, 1y, 3y, 5y, 10y. Defaults to 1m.",
+          "location": "query",
+          "name": "window",
+          "required": false,
+          "schema": {
+            "default": "1m",
+            "description": "Trailing-return window. One of: 1m, ytd, 1y, 3y, 5y, 10y. Defaults to 1m.",
+            "title": "Window",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Optional dated snapshot (YYYY-MM-DD). Defaults to the latest cycle.",
+          "location": "query",
+          "name": "date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional dated snapshot (YYYY-MM-DD). Defaults to the latest cycle.",
+            "title": "Date"
+          }
+        }
+      ],
+      "path": "/api/v1/etf/sectors/relative-strength",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "core",
+      "sources": [
+        "core"
+      ],
+      "summary": "Sector SPDR relative-strength leaderboard for one window",
+      "tags": [
+        "Funds & ETFs"
+      ],
+      "toolset": "core"
+    },
+    {
       "description": "List of US ETFs covered by the Sugra Finance fund-summary daily snapshot. Each entry carries the ticker, name, category, AUM rank, and a status flag (``active`` / ``delisted_candidate`` / ``removed``). The universe refreshes quarterly; the daily snapshot cycle populates ``last_snapshot_date`` and ``snapshot_count`` per symbol from the latest manifest.",
       "method": "GET",
       "operation_id": "etf_snapshot_universe",
@@ -19096,6 +19225,54 @@
         "core"
       ],
       "summary": "Covered ETF universe + per-symbol status",
+      "tags": [
+        "Funds & ETFs"
+      ],
+      "toolset": "core"
+    },
+    {
+      "description": "Derived endpoint that computes per-day net flow estimates for one ETF over the requested rolling window by walking consecutive ETF snapshots. Formula: ``net_flow_today = Δ(shares_outstanding) × nav_today`` where ``shares_outstanding = aum_usd / nav``. This is the standard ETF creation/redemption proxy used by analysts; results are an ESTIMATE, not ICI-authoritative numbers. Days where the snapshot blob is missing are silently skipped (sparse series). The first available day always has ``net_flow_dollar_estimate=null`` (no prior day to diff against). Use case: ``UC-3 Sector Rotation Detector`` per-ETF accumulation signal, complemented by ICI aggregate at /etf/flows/aggregate.",
+      "method": "GET",
+      "operation_id": "etf_symbol_flows",
+      "parameters": [
+        {
+          "description": "ETF ticker.",
+          "location": "path",
+          "name": "symbol",
+          "required": true,
+          "schema": {
+            "description": "ETF ticker.",
+            "examples": [
+              "SPY"
+            ],
+            "pattern": "^[A-Z][A-Z0-9.\\-]{0,9}$",
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Lookback window in days (1..90). Out-of-range returns 400 per ETF snapshot retention contract.",
+          "location": "query",
+          "name": "days",
+          "required": false,
+          "schema": {
+            "default": 30,
+            "description": "Lookback window in days (1..90). Out-of-range returns 400 per ETF snapshot retention contract.",
+            "title": "Days",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/etf/{symbol}/flows",
+      "request_body_required": false,
+      "required_parameters": [
+        "symbol"
+      ],
+      "source_family": "core",
+      "sources": [
+        "core"
+      ],
+      "summary": "Derived per-ETF daily net flow estimate (creation/redemption proxy)",
       "tags": [
         "Funds & ETFs"
       ],
@@ -23285,7 +23462,7 @@
       "toolset": "news"
     },
     {
-      "description": "Top GDELT GKG themes aggregated across the requested window with count and share. period=1h reads latest.json only; period=6h or 24h additionally merges daily shards. Response carries stale + partial completeness flags (matches /recent + /events/by-country).",
+      "description": "Top GDELT GKG themes aggregated across the requested window with count and share. period=1h reads latest.json only; period=6h or 24h additionally merges daily shards. Response carries stale + partial completeness flags (Codex R4 P2 - matches /recent + /events/by-country).",
       "method": "GET",
       "operation_id": "gdelt_themes_trending",
       "parameters": [
@@ -41701,15 +41878,15 @@
       "path": "/api/v1/network/asn",
       "request_body_required": false,
       "required_parameters": [],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "ASN resources by country",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -41733,15 +41910,15 @@
       "required_parameters": [
         "asn"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "ASN overview",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -41765,18 +41942,18 @@
       "required_parameters": [
         "asn"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "ASN abuse contact + RIR",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
-      "description": "Derive country distribution by iterating atlas records for prefixes\nmatching the given ASN.\n\nNote: maxminddb does not provide a reverse index (ASN -> prefixes), so\nwe walk the database. For top ASNs (most prefixes) this is O(N) in the\natlas size (~1 M entries). v1.2-A caches the response keyed by\n``(asn, atlas_etag)`` so subsequent hits within the same atlas build\nbypass the full walk; the cache invalidates automatically when the\natlas blob ETag rotates (daily rebuild).",
+      "description": "Derive country distribution by iterating atlas records for prefixes\nmatching the given ASN.\n\nSemantic note (SNT-P1-10.1, post 2026-05-25): The ``hq_country`` and\n``top_countries`` fields reflect **actual usage country** (Geofeed >\ncloud-region > PeeringDB > RIR allocation priority chain), NOT the\nRIR allocation country alone. For globally-distributed ASNs (cloud\nproviders, CDNs), the distribution now spreads across the regions\nwhere prefixes are actually announced (e.g., AWS AS16509 splits\nacross us-east-1=US, eu-west-1=IE, ap-northeast-1=JP, etc.) rather\nthan collapsing to a single RIR-alloc country. For traditional ISPs\nthe distribution is usually unchanged because they announce from\nthe same country their RIR allocated to. ``hq_country`` is the\ndominant (most-common) actual-usage country, not necessarily the\nlegal headquarters - the name predates the SNT-P1-10 semantic clarification.\n\nImplementation note: maxminddb does not provide a reverse index\n(ASN -> prefixes), so we walk the database. For top ASNs (most\nprefixes) this is O(N) in the atlas size (~1 M entries). v1.2-A\ncaches the response keyed by ``(asn, atlas_etag)`` so subsequent\nhits within the same atlas build bypass the full walk; the cache\ninvalidates automatically when the atlas blob ETag rotates (daily\nrebuild).",
       "method": "GET",
       "operation_id": "network_asn_asn_geo_distribution",
       "parameters": [
@@ -41797,15 +41974,15 @@
       "required_parameters": [
         "asn"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "ASN geographic distribution from Sugra Net Atlas",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -41829,15 +42006,15 @@
       "required_parameters": [
         "asn"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "ASN upstream + downstream neighbours",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -41861,15 +42038,15 @@
       "required_parameters": [
         "asn"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "ASN announced IPv4 + IPv6 prefixes",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -41893,15 +42070,15 @@
       "required_parameters": [
         "asn"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "ASN routing status",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -41925,15 +42102,15 @@
       "required_parameters": [
         "asn"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "ASN BGP update activity",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -41957,15 +42134,15 @@
       "required_parameters": [
         "asn"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "ASN WHOIS records",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -42007,15 +42184,15 @@
       "path": "/api/v1/network/atlas/anchor/list",
       "request_body_required": false,
       "required_parameters": [],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "RIPE Atlas anchor probes",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -42039,15 +42216,15 @@
       "path": "/api/v1/network/atlas/anchor/measurements",
       "request_body_required": false,
       "required_parameters": [],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "RIPE Atlas anchor mesh measurements",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -42125,15 +42302,15 @@
       "path": "/api/v1/network/atlas/measurement/list",
       "request_body_required": false,
       "required_parameters": [],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "RIPE Atlas measurements",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -42157,15 +42334,15 @@
       "required_parameters": [
         "id"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "RIPE Atlas measurement detail",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -42202,15 +42379,15 @@
       "required_parameters": [
         "id"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "RIPE Atlas measurement raw results",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -42306,15 +42483,15 @@
       "path": "/api/v1/network/atlas/probe/list",
       "request_body_required": false,
       "required_parameters": [],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "RIPE Atlas probes worldwide",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -42324,15 +42501,15 @@
       "path": "/api/v1/network/atlas/probe/tags",
       "request_body_required": false,
       "required_parameters": [],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "RIPE Atlas probe tag catalog",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -42356,15 +42533,15 @@
       "required_parameters": [
         "id"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Single RIPE Atlas probe detail",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -42373,18 +42550,36 @@
       "parameters": [],
       "path": "/api/v1/network/bulk/asn",
       "request_body_required": true,
+      "request_body_schema": {
+        "properties": {
+          "asns": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Asns",
+            "type": "array"
+          }
+        },
+        "required": [
+          "asns"
+        ],
+        "title": "BulkAsnRequest",
+        "type": "object"
+      },
       "required_parameters": [
         "body"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Batch ASN lookup (max 100)",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -42393,18 +42588,36 @@
       "parameters": [],
       "path": "/api/v1/network/bulk/ip",
       "request_body_required": true,
+      "request_body_schema": {
+        "properties": {
+          "ips": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Ips",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ips"
+        ],
+        "title": "BulkIpRequest",
+        "type": "object"
+      },
       "required_parameters": [
         "body"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Batch IP lookup (max 100)",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -42457,15 +42670,15 @@
       "required_parameters": [
         "domain"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Certificate issuance history for a domain",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -42501,15 +42714,15 @@
       "required_parameters": [
         "domain"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Certificate Authority breakdown for a domain",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -42545,15 +42758,15 @@
       "required_parameters": [
         "domain"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Revoked SSL certificates for a domain",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -42645,15 +42858,15 @@
       "path": "/api/v1/network/cert/search",
       "request_body_required": false,
       "required_parameters": [],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Search SSL certificates by domain",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -42678,15 +42891,15 @@
       "required_parameters": [
         "domain"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Subdomain discovery via CT logs",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -42710,15 +42923,15 @@
       "required_parameters": [
         "host"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Forward DNS via Sugra DNS resolver chain",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -42742,15 +42955,15 @@
       "required_parameters": [
         "host"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Domain RDAP (raw response via IANA bootstrap)",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -42774,15 +42987,15 @@
       "required_parameters": [
         "host"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Domain WHOIS (flat shape from RDAP via IANA bootstrap)",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -42819,15 +43032,15 @@
       "required_parameters": [
         "asn"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Hijacks involving ASN",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -42864,15 +43077,15 @@
       "required_parameters": [
         "cidr"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Hijacks targeting prefix",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -42935,15 +43148,15 @@
       "path": "/api/v1/network/hijack/recent",
       "request_body_required": false,
       "required_parameters": [],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Recent BGP hijacks from RouteViews diff",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "Unified IP lookup: country, city, ASN, prefix, reverse DNS, abuse contact, and composite privacy signal in a single response. Powered by the Sugra Net Atlas first-party MMDB plus live RIPEstat enrichment.",
@@ -42968,15 +43181,15 @@
       "required_parameters": [
         "ip"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Unified IP intelligence lookup",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -43000,15 +43213,15 @@
       "required_parameters": [
         "ip"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Abuse contact for the ASN holding this IP",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -43032,15 +43245,15 @@
       "required_parameters": [
         "ip"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "ASN + organization for an IP",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -43064,15 +43277,15 @@
       "required_parameters": [
         "ip"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Geo (country + city) for an IP",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -43096,15 +43309,15 @@
       "required_parameters": [
         "ip"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Composite privacy signal for an IP",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -43128,15 +43341,15 @@
       "required_parameters": [
         "ip"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Reverse DNS records for an IP",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -43207,15 +43420,15 @@
       "path": "/api/v1/network/outage/alerts",
       "request_body_required": false,
       "required_parameters": [],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Active internet outage alerts",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -43256,15 +43469,15 @@
       "required_parameters": [
         "q"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Search outage-monitored entities",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -43274,15 +43487,15 @@
       "path": "/api/v1/network/outage/entities/countries",
       "request_body_required": false,
       "required_parameters": [],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "All countries monitored for outages",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "Filterable by ?country={cc} ?asn={n} or ?continent={code}. Replaces the legacy /internet/outages/country|asn|continent paths.",
@@ -43360,15 +43573,15 @@
       "path": "/api/v1/network/outage/recent",
       "request_body_required": false,
       "required_parameters": [],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Recent internet outage signals",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -43392,15 +43605,15 @@
       "required_parameters": [
         "cidr"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "IP prefix overview",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -43437,15 +43650,15 @@
       "required_parameters": [
         "cidr"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Prefix hijack timeline (changes only)",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -43482,15 +43695,15 @@
       "required_parameters": [
         "cidr"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Prefix routing history (90-day window)",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -43533,15 +43746,15 @@
       "required_parameters": [
         "cidr"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Prefix RPKI validation",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -43566,15 +43779,33 @@
       "required_parameters": [
         "q"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Search ASNs, prefixes, holders",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
+    },
+    {
+      "description": "Per-source ingestion counts and freshness for every primary source the Sugra Net Atlas is built from. Categories: registry (RIR delegated), bgp_collector (RouteViews RIB), operator_published (RFC 8805 Geofeeds), privacy_signal (Tor exits, firehol, static anycast prefixes), and cloud_provider (AWS / GCP / Cloudflare published IP ranges). All sources are first-party primary publications - no paid aggregator data.",
+      "method": "GET",
+      "operation_id": "network_sources_coverage",
+      "parameters": [],
+      "path": "/api/v1/network/sources/coverage",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "network",
+      "sources": [
+        "network"
+      ],
+      "summary": "Sugra Net Atlas primary-source provenance",
+      "tags": [
+        "Sugra Net Atlas"
+      ],
+      "toolset": "network"
     },
     {
       "description": "",
@@ -43598,15 +43829,15 @@
       "path": "/api/v1/network/tor/bandwidth",
       "request_body_required": false,
       "required_parameters": [],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Top Tor relay bandwidth",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -43630,15 +43861,15 @@
       "path": "/api/v1/network/tor/clients",
       "request_body_required": false,
       "required_parameters": [],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Tor bridge client estimates",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -43662,15 +43893,15 @@
       "path": "/api/v1/network/tor/details",
       "request_body_required": false,
       "required_parameters": [],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Top Tor relays by consensus weight",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -43707,15 +43938,15 @@
       "required_parameters": [
         "country"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Tor relays by country",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -43752,15 +43983,15 @@
       "required_parameters": [
         "flag"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Tor relays by directory authority flag",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -43797,15 +44028,15 @@
       "required_parameters": [
         "q"
       ],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Search Tor relays",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -43840,15 +44071,15 @@
       "path": "/api/v1/network/tor/summary",
       "request_body_required": false,
       "required_parameters": [],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Tor network summary",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "",
@@ -43872,15 +44103,15 @@
       "path": "/api/v1/network/tor/uptime",
       "request_body_required": false,
       "required_parameters": [],
-      "source_family": "core",
+      "source_family": "network",
       "sources": [
-        "core"
+        "network"
       ],
       "summary": "Tor relay uptime history",
       "tags": [
         "Sugra Net Atlas"
       ],
-      "toolset": "core"
+      "toolset": "network"
     },
     {
       "description": "Headlines filtered by category. Categories: news, defense, business, tech, science, energy, disasters.",
@@ -47869,6 +48100,83 @@
       "parameters": [],
       "path": "/api/v1/openfigi/mapping",
       "request_body_required": true,
+      "request_body_schema": {
+        "items": {
+          "properties": {
+            "currency": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Currency"
+            },
+            "exchCode": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exchcode"
+            },
+            "idType": {
+              "title": "Idtype",
+              "type": "string"
+            },
+            "idValue": {
+              "title": "Idvalue",
+              "type": "string"
+            },
+            "marketSecDes": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Marketsecdes"
+            },
+            "micCode": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Miccode"
+            },
+            "securityType2": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Securitytype2"
+            }
+          },
+          "required": [
+            "idType",
+            "idValue"
+          ],
+          "title": "MappingJob",
+          "type": "object"
+        },
+        "title": "Jobs",
+        "type": "array"
+      },
       "required_parameters": [
         "body"
       ],
@@ -48007,6 +48315,80 @@
         "core"
       ],
       "summary": "Covered options underlier universe + per-symbol status",
+      "tags": [
+        "Options"
+      ],
+      "toolset": "core"
+    },
+    {
+      "description": "Derived endpoint that packages the standard option-implied move computation: ``implied_move = spot * ATM_IV * sqrt(T)`` where ``T = days_to_expiration / 365.25``. Reads the precomputed ``iv_surface[i].atm_iv`` for the chosen expiry from the latest B6 snapshot (or a dated snapshot via ``?date=YYYY-MM-DD``). Defaults to the nearest-term front expiry; pass ``?expiry=YYYY-MM-DD`` to select a different expiry from those listed in ``available_expiries``. Returns the move in dollar + percent terms plus the 1-sigma implied price range (low / high). Use case: ``UC-2 Earnings Whiplash Map`` - compare historical post-earnings realised moves vs current option-implied amplitude.",
+      "method": "GET",
+      "operation_id": "options_symbol_implied_move",
+      "parameters": [
+        {
+          "description": "Underlier ticker.",
+          "location": "path",
+          "name": "symbol",
+          "required": true,
+          "schema": {
+            "description": "Underlier ticker.",
+            "examples": [
+              "AAPL"
+            ],
+            "pattern": "^[A-Z][A-Z0-9.\\-]{0,9}$",
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Optional target expiration date (YYYY-MM-DD). Defaults to nearest-term front expiry. 404 when not in snapshot.",
+          "location": "query",
+          "name": "expiry",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional target expiration date (YYYY-MM-DD). Defaults to nearest-term front expiry. 404 when not in snapshot.",
+            "title": "Expiry"
+          }
+        },
+        {
+          "description": "Optional snapshot date (YYYY-MM-DD). Defaults to the latest cycle.",
+          "location": "query",
+          "name": "date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional snapshot date (YYYY-MM-DD). Defaults to the latest cycle.",
+            "title": "Date"
+          }
+        }
+      ],
+      "path": "/api/v1/options/{symbol}/implied-move",
+      "request_body_required": false,
+      "required_parameters": [
+        "symbol"
+      ],
+      "source_family": "core",
+      "sources": [
+        "core"
+      ],
+      "summary": "Straddle-equivalent 1-sigma implied move for one underlier + expiry",
       "tags": [
         "Options"
       ],
@@ -48286,6 +48668,111 @@
         "core"
       ],
       "summary": "Sparse snapshot time-series for one underlier",
+      "tags": [
+        "Options"
+      ],
+      "toolset": "core"
+    },
+    {
+      "description": "Derived endpoint that flags contracts whose current per-contract volume materially exceeds the contract's own rolling average across the last ``baseline_window_days`` dated snapshots. Walks the latest B6 snapshot's per-contract volumes; for each contract (both calls and puts) computes ``baseline_avg = mean(volume across days the contract appeared with positive volume)`` and flags rows where ``current_volume / baseline_avg > threshold``. Per-row output carries OSI contract symbol + strike + expiry + current volume + baseline + ratio + supplementary Greeks (delta + IV). Sorted by ratio DESC; truncated to ``limit``. Use case: ``UC-4 Insider + Options Flow Confluence`` - bullish skew detection in concert with Form 4 insider purchases.",
+      "method": "GET",
+      "operation_id": "options_symbol_unusual_volume",
+      "parameters": [
+        {
+          "description": "Underlier ticker.",
+          "location": "path",
+          "name": "symbol",
+          "required": true,
+          "schema": {
+            "description": "Underlier ticker.",
+            "examples": [
+              "AAPL"
+            ],
+            "pattern": "^[A-Z][A-Z0-9.\\-]{0,9}$",
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Volume-ratio threshold for the unusual flag (1.5..50). Default 3.0 = 3x the contract's rolling average.",
+          "location": "query",
+          "name": "threshold",
+          "required": false,
+          "schema": {
+            "default": 3.0,
+            "description": "Volume-ratio threshold for the unusual flag (1.5..50). Default 3.0 = 3x the contract's rolling average.",
+            "maximum": 50.0,
+            "minimum": 1.5,
+            "title": "Threshold",
+            "type": "number"
+          }
+        },
+        {
+          "description": "Maximum flagged contracts returned (1..200).",
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 25,
+            "description": "Maximum flagged contracts returned (1..200).",
+            "maximum": 200,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        {
+          "description": "Rolling baseline window in calendar days (5..90). Defaults to 30. Bounded by 90-day retention.",
+          "location": "query",
+          "name": "baseline_window_days",
+          "required": false,
+          "schema": {
+            "default": 30,
+            "description": "Rolling baseline window in calendar days (5..90). Defaults to 30. Bounded by 90-day retention.",
+            "maximum": 90,
+            "minimum": 5,
+            "title": "Baseline Window Days",
+            "type": "integer"
+          }
+        },
+        {
+          "description": "Minimum current-snapshot volume for a contract to be evaluated (filters illiquid deep-OTM strikes).",
+          "location": "query",
+          "name": "min_volume",
+          "required": false,
+          "schema": {
+            "default": 100,
+            "description": "Minimum current-snapshot volume for a contract to be evaluated (filters illiquid deep-OTM strikes).",
+            "maximum": 10000000,
+            "minimum": 0,
+            "title": "Min Volume",
+            "type": "integer"
+          }
+        },
+        {
+          "description": "Minimum baseline coverage (days the contract appeared with positive volume) required for a contract to qualify. Contracts below this floor land in contracts_excluded_no_baseline.",
+          "location": "query",
+          "name": "min_baseline_days",
+          "required": false,
+          "schema": {
+            "default": 5,
+            "description": "Minimum baseline coverage (days the contract appeared with positive volume) required for a contract to qualify. Contracts below this floor land in contracts_excluded_no_baseline.",
+            "minimum": 1,
+            "title": "Min Baseline Days",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/options/{symbol}/unusual-volume",
+      "request_body_required": false,
+      "required_parameters": [
+        "symbol"
+      ],
+      "source_family": "core",
+      "sources": [
+        "core"
+      ],
+      "summary": "Per-contract volume vs rolling baseline (unusual options activity)",
       "tags": [
         "Options"
       ],
@@ -55238,6 +55725,92 @@
       "toolset": "hedge_fund_intelligence"
     },
     {
+      "description": "Derived cost-basis approximation per fund and portfolio-wide. 13F filings disclose position SIZE per quarter-end, NOT transaction-level cost basis. This endpoint reconstructs an estimate by multiplying each fund's positive quarterly Δshares by that quarter's average daily close (Sugra Finance equity price feed). Sales are EXCLUDED - their basis cannot be unambiguously attributed without transaction-level disclosure. `ticker` query param is REQUIRED in v1 (CUSIP -> ticker resolver is a follow-up item). Each response carries an explicit `methodology` string and a per-fund + portfolio `confidence` tag - consumers must surface those to end users; the number is an estimate, not a tax cost basis.",
+      "method": "GET",
+      "operation_id": "sec_13f_consensus_cusip_avg_entry_price",
+      "parameters": [
+        {
+          "description": "9-character canonical CUSIP.",
+          "example": "037833100",
+          "location": "path",
+          "name": "cusip",
+          "required": true,
+          "schema": {
+            "description": "9-character canonical CUSIP.",
+            "pattern": "^[A-Za-z0-9]{9}$",
+            "title": "Cusip",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Ticker symbol used to fetch per-quarter average daily close (required in v1; CUSIP->ticker resolver is B1.1 backlog).",
+          "example": "AAPL",
+          "location": "query",
+          "name": "ticker",
+          "required": true,
+          "schema": {
+            "description": "Ticker symbol used to fetch per-quarter average daily close (required in v1; CUSIP->ticker resolver is B1.1 backlog).",
+            "pattern": "^[A-Za-z][A-Za-z0-9.\\-^]{0,9}$",
+            "title": "Ticker",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Oldest stem in window. Default: oldest stem in retention manifest.",
+          "location": "query",
+          "name": "from_quarter",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^(\\d{2}[a-z]{3}\\d{4}-\\d{2}[a-z]{3}\\d{4}|\\d{4}q\\d)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Oldest stem in window. Default: oldest stem in retention manifest.",
+            "title": "From Quarter"
+          }
+        },
+        {
+          "description": "Newest stem in window. Default: newest stem in retention manifest.",
+          "location": "query",
+          "name": "to_quarter",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^(\\d{2}[a-z]{3}\\d{4}-\\d{2}[a-z]{3}\\d{4}|\\d{4}q\\d)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Newest stem in window. Default: newest stem in retention manifest.",
+            "title": "To Quarter"
+          }
+        }
+      ],
+      "path": "/api/v1/sec/13f/consensus/{cusip}/avg-entry-price",
+      "request_body_required": false,
+      "required_parameters": [
+        "cusip",
+        "ticker"
+      ],
+      "source_family": "hedge_fund_intelligence",
+      "sources": [
+        "hedge_fund_intelligence"
+      ],
+      "summary": "Approximate weighted-average entry price for a CUSIP across 13F holders",
+      "tags": [
+        "Hedge Fund Intelligence"
+      ],
+      "toolset": "hedge_fund_intelligence"
+    },
+    {
       "description": "List of institutional investment managers that filed Form 13F-HR for the latest reported quarter (Schedule 13F covers managers with $100M+ in qualifying US securities). Sorted by total holdings value descending. Each filer entry has CIK, manager name, CRD (cross-link to W3 SEC ADV), filing date, period, and summary stats (position count, total value). Source: SEC quarterly bulk 13F-HR data sets.",
       "method": "GET",
       "operation_id": "sec_13f_filers",
@@ -55276,6 +55849,72 @@
         "hedge_fund_intelligence"
       ],
       "summary": "SEC 13F-HR filers (institutional managers >=$100M AUM)",
+      "tags": [
+        "Hedge Fund Intelligence"
+      ],
+      "toolset": "hedge_fund_intelligence"
+    },
+    {
+      "description": "Reverse lookup spanning multiple CUSIPs at once. Pass a comma-separated list of CUSIPs and the endpoint returns every 13F filer holding at least `min_overlap` of them in the requested quarter. Useful for detecting consensus baskets (e.g. 'which funds hold all 5 of these AI infrastructure names?'). Each matched fund's per-CUSIP position detail (shares + value + issuer) is echoed so callers don't need a follow-up scan. `min_overlap` defaults to 2 (the meaningful overlap floor); set to `len(cusips)` for a strict intersection. PUT/CALL option rows are filtered before counting - this is a stock-ownership signal, not derivative exposure. Optional `?quarter=<stem>` selects a historical snapshot (default: newest stem in retention manifest).",
+      "method": "GET",
+      "operation_id": "sec_13f_funds_overlap",
+      "parameters": [
+        {
+          "description": "Comma-separated list of 9-character canonical CUSIPs (2-10 entries; duplicates dropped).",
+          "example": "037833100,594918104,67066G104",
+          "location": "query",
+          "name": "cusips",
+          "required": true,
+          "schema": {
+            "description": "Comma-separated list of 9-character canonical CUSIPs (2-10 entries; duplicates dropped).",
+            "title": "Cusips",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Minimum count of requested CUSIPs a fund must hold to appear (1..10). Defaults to 2 (any pair overlap).",
+          "location": "query",
+          "name": "min_overlap",
+          "required": false,
+          "schema": {
+            "default": 2,
+            "description": "Minimum count of requested CUSIPs a fund must hold to appear (1..10). Defaults to 2 (any pair overlap).",
+            "maximum": 10,
+            "minimum": 1,
+            "title": "Min Overlap",
+            "type": "integer"
+          }
+        },
+        {
+          "description": "Optional retention-manifest stem. When omitted, scan the newest available stem.",
+          "location": "query",
+          "name": "quarter",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^(\\d{2}[a-z]{3}\\d{4}-\\d{2}[a-z]{3}\\d{4}|\\d{4}q\\d)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional retention-manifest stem. When omitted, scan the newest available stem.",
+            "title": "Quarter"
+          }
+        }
+      ],
+      "path": "/api/v1/sec/13f/funds/overlap",
+      "request_body_required": false,
+      "required_parameters": [
+        "cusips"
+      ],
+      "source_family": "hedge_fund_intelligence",
+      "sources": [
+        "hedge_fund_intelligence"
+      ],
+      "summary": "Funds holding multiple given securities (cross-CUSIP overlap)",
       "tags": [
         "Hedge Fund Intelligence"
       ],
@@ -55390,6 +56029,72 @@
         "hedge_fund_intelligence"
       ],
       "summary": "Multi-quarter retention manifest",
+      "tags": [
+        "Hedge Fund Intelligence"
+      ],
+      "toolset": "hedge_fund_intelligence"
+    },
+    {
+      "description": "Derived cross-fund leaderboard of quarter-over-quarter institutional accumulation. Walks the top-N filers in the requested quarter (ranked by AUM), diffs each filer's per-position share count against the immediately-prior retained quarter, aggregates the POSITIVE share-deltas by CUSIP, and returns the largest rollups by dollar value. Each row reports total shares added, total value added (in $thousands), distinct fund count, and a sample of the top contributing buyers. PUT/CALL option rows are excluded (stock-accumulation signal only). Sales are excluded - this is a strict 'buy' signal. Optional `?quarter=<stem>` scans a historical quarter (default: newest retained stem; from_stem is auto-resolved to the next-prior stem in the retention manifest). v1 limitation: scope bounded to top-N filers (default 100, max 300); full-universe scan deferred to v2 via ingest-side pre-aggregation.",
+      "method": "GET",
+      "operation_id": "sec_13f_top_buys",
+      "parameters": [
+        {
+          "description": "Optional retention-manifest stem. When omitted, scan the newest available stem.",
+          "location": "query",
+          "name": "quarter",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^(\\d{2}[a-z]{3}\\d{4}-\\d{2}[a-z]{3}\\d{4}|\\d{4}q\\d)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional retention-manifest stem. When omitted, scan the newest available stem.",
+            "title": "Quarter"
+          }
+        },
+        {
+          "description": "Top-N institutional managers by AUM to include in the scan (10..300, default 100).",
+          "location": "query",
+          "name": "filer_top_n",
+          "required": false,
+          "schema": {
+            "default": 100,
+            "description": "Top-N institutional managers by AUM to include in the scan (10..300, default 100).",
+            "maximum": 300,
+            "minimum": 10,
+            "title": "Filer Top N",
+            "type": "integer"
+          }
+        },
+        {
+          "description": "Maximum CUSIP rows returned (1..200, default 50).",
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 50,
+            "description": "Maximum CUSIP rows returned (1..200, default 50).",
+            "maximum": 200,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/sec/13f/top-buys",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "hedge_fund_intelligence",
+      "sources": [
+        "hedge_fund_intelligence"
+      ],
+      "summary": "Largest institutional buys per CUSIP this quarter (cross-fund leaderboard)",
       "tags": [
         "Hedge Fund Intelligence"
       ],
@@ -59368,6 +60073,19 @@
       ],
       "path": "/api/v1/statistical-agencies/ssb/data/{table_id}",
       "request_body_required": false,
+      "request_body_schema": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Raw PxWeb query body with shape `{\"query\": [...], \"response\": {\"format\": \"json\"}}`. Omit to use Sugra's default `top 12` auto-query.",
+        "title": "Body"
+      },
       "required_parameters": [
         "table_id"
       ],
@@ -61051,6 +61769,185 @@
         "Public Finance & Government"
       ],
       "toolset": "public_finance"
+    },
+    {
+      "description": "Snapshot combining each country's latest long-term + short-term Treasury holdings. The aggregated view is precomputed in ingest (deterministic LT+ST join) and served from the schema v2 envelope. 503 `tic_aggregated_not_available` if the aggregated key is absent (legacy v1 envelope OR upstream banking missing so join was skipped).",
+      "method": "GET",
+      "operation_id": "treasury_tic_aggregated_latest",
+      "parameters": [
+        {
+          "description": "Max number of country rows to return.",
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 100,
+            "description": "Max number of country rows to return.",
+            "maximum": 300,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/treasury/tic/aggregated/latest",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "hedge_fund_intelligence",
+      "sources": [
+        "hedge_fund_intelligence"
+      ],
+      "summary": "Latest LT + ST aggregated TIC holdings per country",
+      "tags": [
+        "Hedge Fund Intelligence"
+      ],
+      "toolset": "hedge_fund_intelligence"
+    },
+    {
+      "description": "Historical timeseries of one country's combined long-term + short-term Treasury holdings. 503 `tic_aggregated_not_available` if the aggregated key is absent.",
+      "method": "GET",
+      "operation_id": "treasury_tic_aggregated_country",
+      "parameters": [
+        {
+          "description": "",
+          "example": "japan",
+          "location": "path",
+          "name": "country",
+          "required": true,
+          "schema": {
+            "pattern": "^[a-z][a-z\\-]{1,40}$",
+            "title": "Country",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/treasury/tic/aggregated/{country}",
+      "request_body_required": false,
+      "required_parameters": [
+        "country"
+      ],
+      "source_family": "hedge_fund_intelligence",
+      "sources": [
+        "hedge_fund_intelligence"
+      ],
+      "summary": "One country's aggregated LT + ST history",
+      "tags": [
+        "Hedge Fund Intelligence"
+      ],
+      "toolset": "hedge_fund_intelligence"
+    },
+    {
+      "description": "Countries ranked by absolute short-term banking holdings change between the latest period and `window` months earlier. Returns top increases AND top decreases (so both biggest buyers and biggest sellers appear). Default window is 3 months. Skips countries with insufficient history for the requested offset.",
+      "method": "GET",
+      "operation_id": "treasury_tic_banking_changes",
+      "parameters": [
+        {
+          "description": "Look-back window in months (1..12).",
+          "location": "query",
+          "name": "window",
+          "required": false,
+          "schema": {
+            "default": 3,
+            "description": "Look-back window in months (1..12).",
+            "maximum": 12,
+            "minimum": 1,
+            "title": "Window",
+            "type": "integer"
+          }
+        },
+        {
+          "description": "Max rows per direction (increases / decreases).",
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 50,
+            "description": "Max rows per direction (increases / decreases).",
+            "maximum": 200,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/treasury/tic/banking/changes",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "hedge_fund_intelligence",
+      "sources": [
+        "hedge_fund_intelligence"
+      ],
+      "summary": "Top short-term banking movers (window months MoM)",
+      "tags": [
+        "Hedge Fund Intelligence"
+      ],
+      "toolset": "hedge_fund_intelligence"
+    },
+    {
+      "description": "Snapshot of the most recent reported month from the US Treasury TIC short-term banking series. Returns each country's latest short-term US Treasury holdings broken down into Treasury bills and other short-term claims, plus aggregate totals. Source: Treasury TIC bulk ingest with B4 schema v2 envelope. 503 with `tic_banking_not_initialised` if the upstream banking series is not present in the current snapshot.",
+      "method": "GET",
+      "operation_id": "treasury_tic_banking_latest",
+      "parameters": [
+        {
+          "description": "Max number of country rows to return.",
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 50,
+            "description": "Max number of country rows to return.",
+            "maximum": 200,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/treasury/tic/banking/latest",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "hedge_fund_intelligence",
+      "sources": [
+        "hedge_fund_intelligence"
+      ],
+      "summary": "Latest TIC short-term banking snapshot per country",
+      "tags": [
+        "Hedge Fund Intelligence"
+      ],
+      "toolset": "hedge_fund_intelligence"
+    },
+    {
+      "description": "Historical monthly timeseries of one country's short-term US Treasury banking holdings, looked up by URL-safe slug. Slug rule: lowercase + commas/periods stripped + spaces replaced with hyphens. Examples: `japan`, `china-mainland`, `united-kingdom`. 503 `tic_banking_not_initialised` if the upstream banking series is not present in the current snapshot.",
+      "method": "GET",
+      "operation_id": "treasury_tic_banking_country",
+      "parameters": [
+        {
+          "description": "",
+          "example": "japan",
+          "location": "path",
+          "name": "country",
+          "required": true,
+          "schema": {
+            "pattern": "^[a-z][a-z\\-]{1,40}$",
+            "title": "Country",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/treasury/tic/banking/{country}",
+      "request_body_required": false,
+      "required_parameters": [
+        "country"
+      ],
+      "source_family": "hedge_fund_intelligence",
+      "sources": [
+        "hedge_fund_intelligence"
+      ],
+      "summary": "One country's short-term banking history",
+      "tags": [
+        "Hedge Fund Intelligence"
+      ],
+      "toolset": "hedge_fund_intelligence"
     },
     {
       "description": "Sum of US Treasury holdings across the 5 Caribbean Banking Centers (Cayman Islands, Bermuda, Bahamas, Curacao, British Virgin Islands) for each month where members are individually disclosed. Useful as a proxy for offshore hedge-fund / SPV capital flow into US Treasuries: rapid CBC growth typically signals leveraged-fund inflows, while stagnation / decline indicates central-bank-reserve dominance (Japan / China). Caveat: smaller members (Bahamas / Curacao / BVI) may fall into the 'All Other' bucket some periods, slightly under-counting true offshore aggregate.",
@@ -70524,5 +71421,5 @@
       "toolset": "markets"
     }
   ],
-  "source": "../prod-sugra-ai-API/static/openapi.json"
+  "source": "prod-sugra-ai-API/static/openapi.json"
 }

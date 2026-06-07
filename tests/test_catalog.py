@@ -31,6 +31,36 @@ def test_load_bundled_catalog_has_endpoints() -> None:
     assert catalog.get("cot_financial").operation_id == "cot_financial"
 
 
+def test_bundled_catalog_network_toolset_covers_net_atlas() -> None:
+    """MCP-Imp-5: every /api/v1/network endpoint must live in the network
+    toolset (they used to be invisible inside the catch-all core)."""
+    catalog = load_catalog()
+
+    network_paths = [
+        endpoint
+        for endpoint in catalog.endpoints
+        if endpoint.path.startswith("/api/v1/network")
+    ]
+    assert len(network_paths) >= 50
+    assert all(endpoint.toolset == "network" for endpoint in network_paths)
+    # And nothing else claims the toolset.
+    network_toolset = [e for e in catalog.endpoints if e.toolset == "network"]
+    assert len(network_toolset) == len(network_paths)
+
+
+def test_bundled_catalog_carries_bulk_request_body_schema() -> None:
+    """MCP-Imp-6: the regenerated bundle must contain the resolved body
+    schema for the per-item bulk endpoints (clients used to guess 'ips')."""
+    catalog = load_catalog()
+
+    bulk_ip = catalog.get("post_network_bulk_ip")
+    assert bulk_ip.request_body_schema["required"] == ["ips"]
+    assert bulk_ip.request_body_schema["properties"]["ips"]["items"] == {"type": "string"}
+
+    bulk_asn = catalog.get("post_network_bulk_asn")
+    assert bulk_asn.request_body_schema["properties"]["asns"]["items"] == {"type": "integer"}
+
+
 def test_search_nasdaq_futures_returns_market_relevant_candidate() -> None:
     catalog = build_catalog_from_openapi(json.loads(FIXTURE.read_text(encoding="utf-8")))
 
