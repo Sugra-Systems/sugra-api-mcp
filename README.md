@@ -33,14 +33,14 @@ Current release: eight-tool surface with hosted OAuth activity validation for `h
 |---|---|
 | `fetch_data` | One-step: find best endpoint for a natural-language query and call it. Combines search + call in one round trip. |
 | `search_endpoints` | Search the bundled endpoint catalog. Runtime search does not fetch `/openapi.json`. |
-| `describe_endpoint` | Inspect an endpoint by `operation_id`, including path, method, parameters, required inputs, and `agent_hints`. |
+| `describe_endpoint` | Inspect an endpoint by `operation_id`, including path, method, parameters, required inputs, `agent_hints`, and `request_body_schema` for JSON-body POST operations. |
 | `call_endpoint` | Call a Sugra API operation by `operation_id`. Arbitrary path calls are no longer supported. |
-| `list_toolsets` | List catalog groups and endpoint counts. |
+| `list_toolsets` | List catalog groups with endpoint counts and descriptions. |
 | `list_sources` | Show bundled catalog source metadata. |
 | `sugra_entity_screen` | Screen a name against sanctions and watchlists (Sugra Entity). |
 | `sugra_entity_lookup` | Composed entity lookup by identifier - `anchor` is `lei` or `vat`, plus the identifier `value`; returns registry identity + screening (Sugra Entity). |
 
-`call_endpoint` and `fetch_data` both support response shaping with `limit`, `fields`, and `include_raw`.
+`call_endpoint` and `fetch_data` both support response shaping with `limit`, `fields`, and `include_raw`. Shaping works on enveloped (`{"data": ...}`) and envelope-less payloads alike; `fields` entries may use dotted paths into nested objects (`geo.city`), and `meta.shaped` reports what was actually applied (`fields_applied` / `fields_unmatched`, `limit_applied`) rather than echoing the request.
 
 `describe_endpoint` returns computed `agent_hints` per endpoint so agents can budget time and parallelism before calling:
 
