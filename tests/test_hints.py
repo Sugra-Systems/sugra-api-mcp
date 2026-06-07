@@ -32,6 +32,27 @@ def test_network_family_is_slow_with_low_concurrency() -> None:
     assert "bulk_cost" not in hints
 
 
+def test_live_proxy_families_are_slow() -> None:
+    """gleif/comtrade/wits/wto/gfw proxy live upstreams per request (verified:
+    no blob/snapshot reads in their API routers). Labeling them fast would be
+    an affirmatively wrong hint - worse than no hint (GLEIF was measured at
+    24.5s avg in prod before its timeout fix)."""
+    for family in ("gleif", "comtrade", "wits", "wto", "gfw"):
+        hints = hints_for(_endpoint(path=f"/api/v1/{family}/lookup"))
+        assert hints["duration_class"] == "slow", family
+        assert hints["max_concurrency"] == 2, family
+
+
+def test_mixed_families_stay_fast_with_hedged_note() -> None:
+    """sec/gdelt/maritime are mostly snapshot-backed with a few live paths -
+    family-level slow would over-tag them. The fast note must hedge (no
+    unconditional "snapshot-backed" claim)."""
+    for family in ("sec", "gdelt", "maritime"):
+        hints = hints_for(_endpoint(path=f"/api/v1/{family}/something"))
+        assert hints["duration_class"] == "fast", family
+        assert "can occasionally take longer" in hints["duration_note"]
+
+
 def test_post_bulk_endpoint_is_heavy_serial_and_billed_per_item() -> None:
     hints = hints_for(_endpoint(method="POST", path="/api/v1/network/bulk/ip"))
 

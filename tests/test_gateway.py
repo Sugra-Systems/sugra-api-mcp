@@ -264,6 +264,55 @@ async def test_call_endpoint_catches_unexpected_exception(monkeypatch) -> None:
     assert "unexpected internal failure" in result["reason"]
 
 
+async def test_call_endpoint_catches_catalog_load_failure(monkeypatch) -> None:
+    """The safety net covers the WHOLE tool body: a failure in catalog load
+    or parameter resolution (before the HTTP call) must also return the
+    structured contract, not raise through FastMCP."""
+
+    def broken_catalog():
+        raise ValueError("corrupt bundled catalog")
+
+    monkeypatch.setattr(gateway, "load_catalog", broken_catalog)
+
+    result = await gateway.call_endpoint("quotes_symbol_price", params={"symbol": "AAPL"})
+
+    assert result["error"] == "tool_execution_failed"
+    assert result["exception_type"] == "ValueError"
+
+
+async def test_fetch_data_catches_search_path_failure(monkeypatch) -> None:
+    """fetch_data's search/selection path sits in the same safety net."""
+    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
+
+    def broken_search(*args, **kwargs):
+        raise RuntimeError("search index corrupted")
+
+    monkeypatch.setattr(gateway, "search_catalog", broken_search)
+
+    result = await gateway.fetch_data(query="AAPL stock price")
+
+    assert result["error"] == "tool_execution_failed"
+    assert result["exception_type"] == "RuntimeError"
+
+
+async def test_call_endpoint_shapes_success_payload_containing_error_key(monkeypatch) -> None:
+    """The error-bypass requires ABSENCE of "data" (mirrors entities._is_error):
+    a hypothetical 200 partial-degradation payload carrying both data and a
+    top-level error note must still get shaped (limit applied), not returned raw."""
+
+    class PartialClient:
+        async def get(self, path, params=None):
+            return {"data": [{"v": 1}, {"v": 2}], "error": "partial", "meta": {}}
+
+    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
+    monkeypatch.setattr(gateway, "get_client", lambda: PartialClient())
+
+    result = await gateway.call_endpoint("quotes_symbol_price", params={"symbol": "AAPL"}, limit=1)
+
+    assert result["data"] == [{"v": 1}]  # limit applied -> shaping ran
+    assert result["meta"]["shaped"]["limit"] == 1
+
+
 async def test_fetch_data_propagates_structured_error(monkeypatch) -> None:
     """fetch_data delegates to call_endpoint: the structured error contract
     must survive the combined search+call round trip too."""

@@ -6,10 +6,13 @@ the Sugra API serves each family:
 
 - Most endpoints read blob-backed or cached snapshots and respond well
   under 2 seconds ("fast").
-- The network family (Sugra Net Atlas) proxies live registry upstreams
-  per request; single lookups usually take 1-5 seconds but can approach
-  the gateway timeout when the upstream computes a cold result, and
-  parallel calls contend for a shared upstream budget ("slow").
+- Families that proxy live upstreams per request (network/Sugra Net Atlas,
+  gleif, comtrade, wits, wto, gfw - verified against the API routers: no
+  snapshot backing) usually take 1-5 seconds but can approach the gateway
+  timeout when the upstream computes a cold result, and parallel calls
+  contend for a shared upstream budget ("slow"). Mixed families (e.g. sec,
+  gdelt, maritime - mostly snapshot-backed with a few live paths) stay
+  "fast" at family level; the fast note is hedged accordingly.
 - Bulk endpoints process one upstream round per item in the request body;
   large batches can exceed the gateway timeout entirely ("heavy"), and
   each item bills one request credit (the API reports the total in the
@@ -30,7 +33,10 @@ DURATION_SLOW = "slow"
 DURATION_HEAVY = "heavy"
 
 _DURATION_NOTES = {
-    DURATION_FAST: "typically responds in under ~2s (snapshot or cache-backed read)",
+    DURATION_FAST: (
+        "typically responds in under ~2s; endpoints that fetch from the "
+        "source on a cache miss can occasionally take longer"
+    ),
     DURATION_SLOW: (
         "proxies live upstream services per request: usually 1-5s, "
         "occasionally 15s+ on a cold upstream computation"
@@ -42,13 +48,17 @@ _DURATION_NOTES = {
 }
 
 # Path families (first segment after /api/vN/) that proxy live upstreams per
-# request rather than reading snapshots.
-_SLOW_FAMILIES = frozenset({"network"})
+# request rather than reading snapshots - verified against the API routers
+# (no blob/snapshot reads). Mixed families (sec, gdelt, maritime) are NOT
+# listed: most of their endpoints are snapshot-backed and a family-level
+# "slow" would over-tag them.
+_SLOW_FAMILIES = frozenset({"comtrade", "gfw", "gleif", "network", "wits", "wto"})
 
 _DEFAULT_MAX_CONCURRENCY = 4
-# Field-tested: 3 parallel network calls starve each other behind the shared
-# upstream budget. Advertise a low ceiling until server-side fanout hardening
-# ships (NetAtlas-Imp-9).
+# Field-tested on network: 3 parallel calls starve each other behind the
+# shared upstream budget (the other live-proxy families share the same
+# per-request upstream exposure). Conservative ceiling until server-side
+# fanout hardening ships (NetAtlas-Imp-9).
 _SLOW_MAX_CONCURRENCY = 2
 _HEAVY_MAX_CONCURRENCY = 1
 

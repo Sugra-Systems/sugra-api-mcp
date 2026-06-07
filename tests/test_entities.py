@@ -351,3 +351,50 @@ def test_entity_tools_are_registered(monkeypatch) -> None:
     names = {t.name for t in asyncio.run(mcp.list_tools())}
     assert "sugra_entity_screen" in names
     assert "sugra_entity_lookup" in names
+
+
+# ---------------------------------------------------------------------------
+# Error contract parity with call_endpoint (MCP-Imp-1)
+# ---------------------------------------------------------------------------
+
+
+def test_clean_error_passes_through_transport_fields() -> None:
+    """The client's structured transport errors carry retry guidance and
+    timing; _clean_error must forward them, not strip them, so the entity
+    tools keep contract parity with call_endpoint."""
+    cleaned = entities._clean_error(
+        {
+            "error": "upstream_timeout",
+            "reason": "ReadTimeout",
+            "status_code": None,
+            "elapsed_ms": 30012,
+            "url": "https://sugra.ai/api/v1/entity/lei/X/screen",
+            "retry_hint": "Retry once.",
+            "timeout_s": 30.0,
+        }
+    )
+
+    assert cleaned["error"] == "upstream_timeout"
+    assert cleaned["reason"] == "ReadTimeout"
+    assert cleaned["retry_hint"] == "Retry once."
+    assert cleaned["elapsed_ms"] == 30012
+    assert cleaned["timeout_s"] == 30.0
+
+
+def test_clean_error_stays_compact_for_plain_http_errors() -> None:
+    """Plain HTTP errors (no transport fields) keep the original compact
+    {error, detail} shape plus retry_after when the API sent one."""
+    cleaned = entities._clean_error(
+        {
+            "error": "Rate limit exceeded",
+            "status_code": 429,
+            "url": "https://sugra.ai/api/v1/entity/lei/X/screen",
+            "elapsed_ms": 120,
+            "retry_after": 12,
+        }
+    )
+
+    assert cleaned["error"] == "Rate limit exceeded"
+    assert "HTTP 429" in cleaned["detail"]
+    assert cleaned["retry_after"] == 12
+    assert "reason" not in cleaned

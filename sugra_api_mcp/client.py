@@ -48,11 +48,18 @@ def _elapsed_ms(start: float) -> int:
 
 
 def _retry_after(response: httpx.Response) -> int | str | None:
-    """Parse the Retry-After header: delta-seconds -> int, HTTP-date -> raw string."""
-    raw = response.headers.get("Retry-After", "").strip()
+    """Parse the Retry-After header: delta-seconds -> int, anything else -> raw string.
+
+    Never raises. str.isdigit() alone is NOT a safe gate for int(): it accepts
+    unicode digit characters (e.g. superscript two) that int() rejects with
+    ValueError, and this helper runs outside the transport try/except - a
+    malformed header from a proxy must not break the error path. Hence the
+    additional isascii() check.
+    """
+    raw = str(response.headers.get("Retry-After", "")).strip()
     if not raw:
         return None
-    if raw.isdigit():
+    if raw.isascii() and raw.isdigit():
         return int(raw)
     return raw
 
@@ -142,10 +149,11 @@ class SugraClient:
                 start,
                 path,
                 retry_hint=(
-                    f"No response within the configured {self._config.timeout:g}s client "
-                    "timeout. A single retry often succeeds (the aborted attempt usually "
-                    "completes server-side and warms upstream caches). Otherwise narrow "
-                    "the request: smaller batch, fewer items, tighter filters."
+                    f"No response within the gateway's configured {self._config.timeout:g}s "
+                    "upstream timeout (SUGRA_TIMEOUT). A single retry often succeeds (the "
+                    "aborted attempt usually completes server-side and warms upstream "
+                    "caches). Otherwise narrow the request: smaller batch, fewer items, "
+                    "tighter filters."
                 ),
                 extra={"timeout_s": self._config.timeout},
             )

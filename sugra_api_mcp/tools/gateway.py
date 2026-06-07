@@ -76,47 +76,59 @@ async def call_endpoint(
     """Call a Sugra API endpoint by operation_id from the bundled catalog.
 
     Plan calls with describe_endpoint's agent_hints: duration_class "fast"
-    responds in under ~2s, "slow" may take 5-30s (live upstream), "heavy" can
-    exceed the gateway timeout - keep parallel calls within max_concurrency
-    and prefer small batches. Bulk endpoints bill 1 request credit per body
-    item. Failures return structured errors {error, reason, status_code,
-    elapsed_ms, retry_hint}; after "upstream_timeout" a single retry often
-    succeeds because the aborted attempt warms upstream caches.
+    usually responds in under ~2s, "slow" usually 1-5s and occasionally 15s+
+    on a cold upstream, "heavy" can exceed the gateway timeout - keep parallel
+    calls within max_concurrency and prefer small batches. Bulk endpoints bill
+    1 request credit per body item. Failures return structured errors {error,
+    reason, status_code, elapsed_ms, retry_hint}; after "upstream_timeout" a
+    single retry often succeeds because the aborted attempt warms upstream
+    caches.
     """
-    catalog = load_catalog()
+    # The whole body sits in one safety net: a raised exception surfaces to
+    # MCP clients as "Error executing tool call_endpoint: <message>" where
+    # the message can be EMPTY (field-test defect D2). Returning a structured
+    # dict keeps the error contract intact for any unexpected failure class,
+    # including catalog-load and parameter-resolution failures.
     try:
-        endpoint = catalog.get(operation_id)
-    except KeyError:
-        return {"error": "unknown_operation_id", "operation_id": operation_id}
+        catalog = load_catalog()
+        try:
+            endpoint = catalog.get(operation_id)
+        except KeyError:
+            return {"error": "unknown_operation_id", "operation_id": operation_id}
 
-    clean_params = {key: value for key, value in (params or {}).items() if value is not None}
-    missing = _missing_required(endpoint, clean_params, body)
-    if missing:
-        return {
-            "error": "missing_required_parameters",
-            "operation_id": operation_id,
-            "missing": missing,
+        clean_params = {key: value for key, value in (params or {}).items() if value is not None}
+        missing = _missing_required(endpoint, clean_params, body)
+        if missing:
+            return {
+                "error": "missing_required_parameters",
+                "operation_id": operation_id,
+                "missing": missing,
+            }
+
+        path_param_names = {
+            parameter.name for parameter in endpoint.parameters if parameter.location == "path"
+        }
+        query_param_names = {
+            parameter.name for parameter in endpoint.parameters if parameter.location == "query"
+        }
+        path = _resolve_path(
+            endpoint.path,
+            {key: value for key, value in clean_params.items() if key in path_param_names},
+        )
+        if "{" in path:
+            return {
+                "error": "unresolved_path_parameters",
+                "operation_id": operation_id,
+                "path": path,
+            }
+
+        query_params = {
+            key: value
+            for key, value in clean_params.items()
+            if key in query_param_names or key not in path_param_names
         }
 
-    path_param_names = {parameter.name for parameter in endpoint.parameters if parameter.location == "path"}
-    query_param_names = {
-        parameter.name for parameter in endpoint.parameters if parameter.location == "query"
-    }
-    path = _resolve_path(
-        endpoint.path,
-        {key: value for key, value in clean_params.items() if key in path_param_names},
-    )
-    if "{" in path:
-        return {"error": "unresolved_path_parameters", "operation_id": operation_id, "path": path}
-
-    query_params = {
-        key: value
-        for key, value in clean_params.items()
-        if key in query_param_names or key not in path_param_names
-    }
-
-    client = get_client()
-    try:
+        client = get_client()
         if endpoint.method == "GET":
             payload = await client.get(path, params=query_params)
         elif endpoint.method == "POST":
@@ -128,19 +140,18 @@ async def call_endpoint(
                 "method": endpoint.method,
             }
 
-        if isinstance(payload, dict) and "error" in payload:
+        if isinstance(payload, dict) and "error" in payload and "data" not in payload:
             # Structured error contract from SugraClient (transport failure,
             # HTTP 4xx/5xx, or size-limit refusal). Return it untouched:
             # shaping an error dict would only decorate it with misleading
             # meta while the agent needs the raw {error, reason, elapsed_ms}.
+            # The "no data key" guard mirrors entities._is_error: a success
+            # envelope always carries data, so a hypothetical 200 partial
+            # payload with both keys still gets shaped normally.
             return payload
 
         return shape_response(payload, limit=limit, fields=fields, include_raw=include_raw)
     except Exception as exc:
-        # A raised exception surfaces to MCP clients as "Error executing
-        # tool call_endpoint: <message>" where the message can be EMPTY
-        # (field-test defect D2). Returning a structured dict keeps the
-        # error contract intact for any unexpected failure class.
         return {
             "error": "tool_execution_failed",
             "operation_id": operation_id,
@@ -194,76 +205,85 @@ async def fetch_data(
     - `fetch_data("Latest financial news")`
       → news_latest has no required params, returns latest news directly.
     """
-    catalog = load_catalog()
-    results = search_catalog(catalog, query, limit=3)
-
-    if not results:
-        return {
-            "error": "no_endpoint_found",
-            "query": query,
-            "hint": "Try a more specific query or use search_endpoints + describe_endpoint to explore the catalog manually.",
-        }
-
-    top = results[0]
-    operation_id = top["operation_id"]
-
+    # Same whole-body safety net as call_endpoint (defect D2): the search and
+    # selection path must never raise through FastMCP as an empty message.
     try:
-        endpoint = catalog.get(operation_id)
-    except KeyError:
-        # Should never happen — search returned an op_id that load_catalog
-        # doesn't recognise. Surface as a clear error rather than crashing.
-        return {
-            "error": "stale_search_result",
-            "operation_id": operation_id,
-            "candidate_endpoints": results,
-        }
+        catalog = load_catalog()
+        results = search_catalog(catalog, query, limit=3)
 
-    clean_params = {key: value for key, value in (params or {}).items() if value is not None}
-    missing = _missing_required(endpoint, clean_params, body)
+        if not results:
+            return {
+                "error": "no_endpoint_found",
+                "query": query,
+                "hint": "Try a more specific query or use search_endpoints + describe_endpoint to explore the catalog manually.",
+            }
 
-    if missing:
-        # LLM didn't supply enough — return both the selected endpoint's
-        # schema and the alternative candidates so the next call can either
-        # fill the gap or pick a different endpoint.
-        return {
-            "needs_params": missing,
-            "selected_endpoint": {
+        top = results[0]
+        operation_id = top["operation_id"]
+
+        try:
+            endpoint = catalog.get(operation_id)
+        except KeyError:
+            # Should never happen — search returned an op_id that load_catalog
+            # doesn't recognise. Surface as a clear error rather than crashing.
+            return {
+                "error": "stale_search_result",
                 "operation_id": operation_id,
-                "method": endpoint.method,
-                "path": endpoint.path,
-                "summary": endpoint.summary,
-                "agent_hints": hints_for(endpoint),
-                "required_parameters": endpoint.required_parameters,
-                "parameter_examples": [
-                    {
-                        "name": p.name,
-                        "description": p.description,
-                        "example": p.example,
-                        "required": p.required,
-                    }
-                    for p in endpoint.parameters
-                    if p.required
-                ],
-            },
-            "candidate_endpoints": results,
-            "hint": (
-                f"The top match `{operation_id}` requires {missing}. "
-                f"Retry as fetch_data(query, params={{...}}) with those keys filled in, "
-                f"or call describe_endpoint(operation_id) for full schema."
-            ),
-        }
+                "candidate_endpoints": results,
+            }
 
-    # All required params satisfied — delegate to the same call path as
-    # call_endpoint so behavior is identical (path resolution, query/body
-    # routing, response shaping).
-    return await call_endpoint(
-        operation_id,
-        params=clean_params,
-        body=body,
-        limit=limit,
-        fields=fields,
-        include_raw=include_raw,
-    )
+        clean_params = {key: value for key, value in (params or {}).items() if value is not None}
+        missing = _missing_required(endpoint, clean_params, body)
+
+        if missing:
+            # LLM didn't supply enough — return both the selected endpoint's
+            # schema and the alternative candidates so the next call can either
+            # fill the gap or pick a different endpoint.
+            return {
+                "needs_params": missing,
+                "selected_endpoint": {
+                    "operation_id": operation_id,
+                    "method": endpoint.method,
+                    "path": endpoint.path,
+                    "summary": endpoint.summary,
+                    "agent_hints": hints_for(endpoint),
+                    "required_parameters": endpoint.required_parameters,
+                    "parameter_examples": [
+                        {
+                            "name": p.name,
+                            "description": p.description,
+                            "example": p.example,
+                            "required": p.required,
+                        }
+                        for p in endpoint.parameters
+                        if p.required
+                    ],
+                },
+                "candidate_endpoints": results,
+                "hint": (
+                    f"The top match `{operation_id}` requires {missing}. "
+                    f"Retry as fetch_data(query, params={{...}}) with those keys filled in, "
+                    f"or call describe_endpoint(operation_id) for full schema."
+                ),
+            }
+
+        # All required params satisfied — delegate to the same call path as
+        # call_endpoint so behavior is identical (path resolution, query/body
+        # routing, response shaping).
+        return await call_endpoint(
+            operation_id,
+            params=clean_params,
+            body=body,
+            limit=limit,
+            fields=fields,
+            include_raw=include_raw,
+        )
+    except Exception as exc:
+        return {
+            "error": "tool_execution_failed",
+            "exception_type": type(exc).__name__,
+            "reason": str(exc)[:300].strip() or type(exc).__name__,
+        }
 
 
 @mcp.tool(annotations=read_only("List sources"))

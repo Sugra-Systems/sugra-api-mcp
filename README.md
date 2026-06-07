@@ -173,7 +173,7 @@ Tool failures return structured JSON instead of raising, so agents can pick a re
 | free-text string + `status_code` | The API answered with HTTP 4xx/5xx; `retry_after` included when the API sent a Retry-After header | Honor `retry_after` for 429/503; fix the request for 4xx. |
 | `tool_execution_failed` | Unexpected failure inside the gateway (`exception_type` included) | Report if persistent. |
 
-All error payloads carry `elapsed_ms` and `url`. If a tool call instead fails with a bare client-side message and no structured JSON, the timeout fired in your agent harness above this server: raise the client's tool timeout, not `SUGRA_TIMEOUT`.
+All error payloads carry `elapsed_ms` and `url`. On the three transport errors `status_code` is `null` (no HTTP status was received) - consumers comparing `status_code` numerically should guard for that. If a tool call instead fails with a bare client-side message and no structured JSON, the timeout fired in your agent harness above this server: raise the client's tool timeout, not `SUGRA_TIMEOUT`.
 
 ## Examples
 

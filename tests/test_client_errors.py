@@ -181,6 +181,35 @@ async def test_retry_after_seconds_header_is_parsed_to_int() -> None:
     assert result["retry_after"] == 12
 
 
+async def test_retry_after_non_ascii_digit_header_does_not_raise() -> None:
+    """str.isdigit() is True for unicode digits (superscript two) that int()
+    rejects with ValueError. _retry_after runs OUTSIDE the transport
+    try/except, so without the isascii() gate a malformed proxy header would
+    raise through client.request() - reintroducing defect D2 on surfaces
+    without a gateway safety net (the entity tools call the client directly).
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        # Header value as BYTES - the wire form. httpx decodes b"\xc2\xb2"
+        # into "²" (superscript two), for which str.isdigit() is True but
+        # int() raises ValueError.
+        return httpx.Response(
+            503,
+            json={"error": "Service unavailable"},
+            headers=[(b"Retry-After", "²".encode())],
+            request=request,
+        )
+
+    client = _client(handler)
+    try:
+        result = await client.get("/api/v1/entity/lei/X/screen")
+    finally:
+        await client.aclose()
+
+    assert result["status_code"] == 503
+    assert result["retry_after"] == "²"  # raw passthrough, no crash
+
+
 async def test_retry_after_http_date_header_passes_through_raw() -> None:
     http_date = "Wed, 21 Oct 2026 07:28:00 GMT"
 
