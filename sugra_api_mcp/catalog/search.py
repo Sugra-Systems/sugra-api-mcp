@@ -7,10 +7,12 @@ from typing import Any
 
 from .aliases import (
     detect_currency_pairs,
+    detect_network_terms,
     detect_tickers,
     detect_us_macro_query,
     matching_aliases,
     matching_central_bank_prefixes,
+    query_has_equity_context,
 )
 from .models import Catalog, Endpoint
 
@@ -208,7 +210,19 @@ def search_catalog(
         or bool(crypto_symbol_pattern.search(lowered))
     )
 
-    boost_quotes_symbol = bool(tickers) and not has_crypto_context
+    # Network-domain dominance: when two or more distinct networking terms
+    # appear (traceroute, IXP, peering, ...), a ticker-shaped token is almost
+    # certainly an acronym, not an equity symbol - suppress the ticker boost
+    # the same way crypto context does (field test 2026-06-07: IXP routed a
+    # Net Atlas query to top-20 quotes_symbol_*). Explicit equity vocabulary
+    # ("stock price", "dividend") overrides the suppression, consistent with
+    # the ambiguous-ticker gate in detect_tickers.
+    network_dominated = (
+        len(detect_network_terms(query)) >= 2
+        and not query_has_equity_context(query)
+    )
+
+    boost_quotes_symbol = bool(tickers) and not has_crypto_context and not network_dominated
     # Also boost markets toolset on common stock-related phrases that don't
     # contain a literal ticker but clearly target equity ("Apple stock price",
     # "Tesla market cap"). Crypto context still suppresses.

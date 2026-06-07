@@ -55,6 +55,20 @@ from sugra_api_mcp.catalog.search import search_catalog
         ("IT price", ["IT"]),           # equity context "price" -> ticker
         ("AI dividend", ["AI"]),        # equity context "dividend" -> ticker
         ("AI market cap", ["AI"]),      # equity context "market cap" -> ticker
+        # Networking acronyms (field test 2026-06-07: IXP parsed as a ticker
+        # and routed a network query to top-20 quotes_symbol_*).
+        ("IXP peering map", []),
+        ("BGP hijack history", []),
+        ("ASN lookup for Cogent", []),
+        ("RIPE measurement results", []),
+        ("CDN and VPN detection", []),
+        ("TOR exit node list", []),
+        # IP (International Paper) and NAT (Nordic American Tankers) are real
+        # NYSE tickers AND core networking acronyms - equity-context gated.
+        ("IP geolocation lookup", []),
+        ("NAT traversal test", []),
+        ("IP stock price", ["IP"]),
+        ("NAT dividend history", ["NAT"]),
     ],
 )
 def test_detect_tickers(query: str, expected: list[str]) -> None:
@@ -211,6 +225,53 @@ def test_crypto_context_suppresses_ticker_boost_for_real_ticker_shape(catalog) -
     quotes_symbol_count = sum(1 for op in top_3_ops if op.startswith("quotes_symbol_"))
     assert quotes_symbol_count == 0, (
         f"USDT (crypto stablecoin) query leaked to equity endpoints: {top_3_ops}"
+    )
+
+
+def test_network_field_log_query_routes_to_network_endpoints(catalog) -> None:
+    """Field test 2026-06-07 (Claude Desktop + hosted MCP, RIPE Labs use case):
+    this exact query returned top-20 all quotes_symbol_* because IXP passed
+    the ticker regex (score 25 = pure ticker boost, zero token relevance).
+    After the fix the ticker boost must not fire and Sugra Net Atlas
+    endpoints must dominate.
+    """
+    query = "network country internet exchange IXP traceroute ping measurement create"
+    results = search_catalog(catalog, query, limit=20)
+    assert results
+    ops = [r["operation_id"] for r in results]
+    quotes_leaks = [op for op in ops if op.startswith("quotes_symbol_")]
+    assert not quotes_leaks, (
+        f"network field-log query still leaks equity endpoints: {quotes_leaks}"
+    )
+    top_5 = ops[:5]
+    network_in_top_5 = sum(1 for op in top_5 if op.startswith("network_"))
+    assert network_in_top_5 >= 3, (
+        f"expected network_* to dominate top-5, got {top_5}"
+    )
+
+
+def test_network_dominance_suppresses_unknown_ticker_shaped_token(catalog) -> None:
+    """A token that LOOKS like a ticker (unknown 4-letter uppercase) must not
+    trigger the quotes_symbol_* boost when the query is dominated by
+    network-domain vocabulary - mirrors the crypto-context suppression.
+    """
+    results = search_catalog(catalog, "ZZXQ traceroute peering probe", limit=5)
+    top_ops = [r["operation_id"] for r in results[:5]]
+    quotes_count = sum(1 for op in top_ops if op.startswith("quotes_symbol_"))
+    assert quotes_count == 0, (
+        f"network-dominated query leaked to equity endpoints: {top_ops}"
+    )
+
+
+def test_single_generic_network_token_does_not_suppress_equity_boost(catalog) -> None:
+    """Dominance needs >=2 distinct network terms: one generic word like
+    'network' alongside a real ticker must keep the equity routing intact.
+    """
+    results = search_catalog(catalog, "AAPL price network", limit=5)
+    assert results
+    assert results[0]["operation_id"].startswith("quotes_symbol_"), (
+        f"single 'network' token wrongly suppressed the ticker boost: "
+        f"{[r['operation_id'] for r in results[:5]]}"
     )
 
 
