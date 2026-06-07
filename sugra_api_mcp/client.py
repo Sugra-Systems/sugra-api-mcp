@@ -1,8 +1,31 @@
-"""Async HTTP client for the Sugra API with size-limit enforcement."""
+"""Async HTTP client for the Sugra API with size-limit enforcement.
+
+Error contract: this client NEVER raises httpx exceptions to callers.
+Transport failures (timeout, refused connection, mid-stream disconnect)
+return structured dicts the agent can act on, mirroring the shape already
+used for HTTP 4xx/5xx responses:
+
+    {
+        "error": "upstream_timeout" | "upstream_connect_error"
+                 | "upstream_transport_error",
+        "reason": "<exception class>: <message>",   # class name only if empty
+        "status_code": None,                        # no HTTP status received
+        "elapsed_ms": 30012,
+        "url": "https://sugra.ai/api/v1/...",
+        "retry_hint": "...",
+        "timeout_s": 30.0,                          # upstream_timeout only
+    }
+
+Without this, httpx exceptions propagate to the MCP framework which renders
+them as "Error executing tool call_endpoint: " with an EMPTY message
+(httpx.ReadTimeout stringifies to ""), leaving the agent unable to pick a
+retry strategy (field-test defect D2).
+"""
 
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 import httpx
@@ -18,6 +41,27 @@ MAX_RESPONSE_CHARS = 85_000
 
 def _pkg_version() -> str:
     return __version__
+
+
+def _elapsed_ms(start: float) -> int:
+    return int((time.perf_counter() - start) * 1000)
+
+
+def _retry_after(response: httpx.Response) -> int | str | None:
+    """Parse the Retry-After header: delta-seconds -> int, anything else -> raw string.
+
+    Never raises. str.isdigit() alone is NOT a safe gate for int(): it accepts
+    unicode digit characters (e.g. superscript two) that int() rejects with
+    ValueError, and this helper runs outside the transport try/except - a
+    malformed header from a proxy must not break the error path. Hence the
+    additional isascii() check.
+    """
+    raw = str(response.headers.get("Retry-After", "")).strip()
+    if not raw:
+        return None
+    if raw.isascii() and raw.isdigit():
+        return int(raw)
+    return raw
 
 
 def _enforce_size_limit(payload: Any, url: str) -> Any:
@@ -61,7 +105,7 @@ def _enforce_size_limit(payload: Any, url: str) -> Any:
 class SugraClient:
     """Thin async wrapper over the Sugra API with x-api-key auth."""
 
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Config, *, transport: httpx.AsyncBaseTransport | None = None) -> None:
         self._config = config
         self._client = httpx.AsyncClient(
             base_url=config.api_base,
@@ -71,6 +115,7 @@ class SugraClient:
                 "Accept": "application/json",
             },
             timeout=config.timeout,
+            transport=transport,
         )
 
     async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -87,27 +132,102 @@ class SugraClient:
         json: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         clean_params = {k: v for k, v in (params or {}).items() if v is not None}
-        response = await self._client.request(
-            method.upper(),
-            path,
-            params=clean_params,
-            json=json if json is not None else None,
-        )
-        return self._handle(response)
+        start = time.perf_counter()
+        try:
+            response = await self._client.request(
+                method.upper(),
+                path,
+                params=clean_params,
+                json=json if json is not None else None,
+            )
+        # Order matters: ConnectTimeout subclasses TimeoutException (NOT
+        # ConnectError), so all timeout flavors land in upstream_timeout.
+        except httpx.TimeoutException as exc:
+            return self._transport_error(
+                "upstream_timeout",
+                exc,
+                start,
+                path,
+                retry_hint=(
+                    f"No response within the gateway's configured {self._config.timeout:g}s "
+                    "upstream timeout (SUGRA_TIMEOUT). A single retry often succeeds (the "
+                    "aborted attempt usually completes server-side and warms upstream "
+                    "caches). Otherwise narrow the request: smaller batch, fewer items, "
+                    "tighter filters."
+                ),
+                extra={"timeout_s": self._config.timeout},
+            )
+        except httpx.ConnectError as exc:
+            return self._transport_error(
+                "upstream_connect_error",
+                exc,
+                start,
+                path,
+                retry_hint="Could not connect to the Sugra API. Retry after a short delay.",
+            )
+        except httpx.HTTPError as exc:
+            return self._transport_error(
+                "upstream_transport_error",
+                exc,
+                start,
+                path,
+                retry_hint=(
+                    "Transient transport failure (connection dropped mid-request). "
+                    "Retry once; if it persists, report the reason field."
+                ),
+            )
+        return self._handle(response, elapsed_ms=_elapsed_ms(start))
+
+    def _transport_error(
+        self,
+        code: str,
+        exc: httpx.HTTPError,
+        start: float,
+        path: str,
+        *,
+        retry_hint: str,
+        extra: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Build the structured error dict for a transport-layer failure."""
+        message = str(exc).strip()
+        reason = f"{type(exc).__name__}: {message}" if message else type(exc).__name__
+        result: dict[str, Any] = {
+            "error": code,
+            "reason": reason,
+            "status_code": None,
+            "elapsed_ms": _elapsed_ms(start),
+            "url": self._request_url(exc, path),
+            "retry_hint": retry_hint,
+        }
+        if extra:
+            result.update(extra)
+        return result
+
+    def _request_url(self, exc: httpx.HTTPError, path: str) -> str:
+        try:
+            return str(exc.request.url)
+        except RuntimeError:
+            # httpx raises RuntimeError when the exception carries no request.
+            return f"{self._config.api_base}{path}"
 
     @staticmethod
-    def _handle(response: httpx.Response) -> dict[str, Any]:
+    def _handle(response: httpx.Response, *, elapsed_ms: int) -> dict[str, Any]:
         try:
             payload = response.json()
         except ValueError:
             payload = {"error": response.text[:500]}
         if response.status_code >= 400:
             error = payload.get("error") if isinstance(payload, dict) else str(payload)
-            return {
+            result: dict[str, Any] = {
                 "error": error or f"HTTP {response.status_code}",
                 "status_code": response.status_code,
                 "url": str(response.request.url),
+                "elapsed_ms": elapsed_ms,
             }
+            retry_after = _retry_after(response)
+            if retry_after is not None:
+                result["retry_after"] = retry_after
+            return result
         return _enforce_size_limit(payload, str(response.request.url))
 
     async def aclose(self) -> None:

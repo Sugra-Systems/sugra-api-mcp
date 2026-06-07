@@ -79,7 +79,15 @@ def _clean_error(payload: dict[str, Any]) -> dict[str, Any]:
     if url:
         detail_bits.append(str(url))
     detail = " ".join(detail_bits) if detail_bits else str(error)
-    return {"error": str(error), "detail": detail}
+    result = {"error": str(error), "detail": detail}
+    # MCP-Imp-1: the client's structured transport errors carry retry guidance
+    # and timing - pass them through so the entity tools keep contract parity
+    # with call_endpoint instead of stripping the actionable fields.
+    for key in ("reason", "retry_hint", "elapsed_ms", "timeout_s", "retry_after"):
+        value = payload.get(key)
+        if value is not None:
+            result[key] = value
+    return result
 
 
 def _disclaimer_of(meta: dict[str, Any]) -> str:
