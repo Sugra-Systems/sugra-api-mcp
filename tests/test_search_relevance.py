@@ -69,6 +69,15 @@ from sugra_api_mcp.catalog.search import search_catalog
         ("NAT traversal test", []),
         ("IP stock price", ["IP"]),
         ("NAT dividend history", ["NAT"]),
+        # Codex S3 review: equity vocabulary must match whole tokens, not
+        # substrings - "Stockholm" satisfied "stock" and re-admitted IP as a
+        # ticker; "stockpile" did the same for NAT.
+        ("IP address geolocation Stockholm", []),
+        ("NAT gateway stockpile audit", []),
+        # Bare "exchange" was dropped from the equity vocabulary (collides
+        # with internet exchange + exchange rate); the phrase survives.
+        ("IP internet exchange map", []),
+        ("IP stock exchange listing", ["IP"]),
     ],
 )
 def test_detect_tickers(query: str, expected: list[str]) -> None:
@@ -261,6 +270,25 @@ def test_network_dominance_suppresses_unknown_ticker_shaped_token(catalog) -> No
     assert quotes_count == 0, (
         f"network-dominated query leaked to equity endpoints: {top_ops}"
     )
+
+
+def test_network_dominance_survives_equity_substring_false_positives(catalog) -> None:
+    """Codex S3 review: 'Stockholm' must not satisfy the 'stock' equity
+    override (substring match) and 'internet exchange' must not satisfy
+    'exchange' - either would re-enable the ticker boost on a clearly
+    network-domain query carrying a ticker-shaped token.
+    """
+    for query in (
+        "ZZXQ traceroute peering Stockholm",
+        "ZZXQ internet exchange peering map",
+    ):
+        results = search_catalog(catalog, query, limit=5)
+        top_ops = [r["operation_id"] for r in results[:5]]
+        quotes_count = sum(1 for op in top_ops if op.startswith("quotes_symbol_"))
+        assert quotes_count == 0, (
+            f"equity-substring false positive re-enabled ticker boost for "
+            f"{query!r}: {top_ops}"
+        )
 
 
 def test_single_generic_network_token_does_not_suppress_equity_boost(catalog) -> None:
