@@ -262,6 +262,9 @@ async def test_call_endpoint_catches_unexpected_exception(monkeypatch) -> None:
     assert result["operation_id"] == "quotes_symbol_price"
     assert result["exception_type"] == "RuntimeError"
     assert "unexpected internal failure" in result["reason"]
+    # Codex finding: the README contract promises elapsed_ms on ALL error
+    # payloads - the safety-net path must carry it too.
+    assert isinstance(result["elapsed_ms"], int)
 
 
 async def test_call_endpoint_catches_catalog_load_failure(monkeypatch) -> None:
@@ -293,6 +296,7 @@ async def test_fetch_data_catches_search_path_failure(monkeypatch) -> None:
 
     assert result["error"] == "tool_execution_failed"
     assert result["exception_type"] == "RuntimeError"
+    assert isinstance(result["elapsed_ms"], int)
 
 
 async def test_call_endpoint_shapes_success_payload_containing_error_key(monkeypatch) -> None:

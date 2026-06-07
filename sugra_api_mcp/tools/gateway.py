@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from ..catalog.hints import hints_for
@@ -89,6 +90,7 @@ async def call_endpoint(
     # the message can be EMPTY (field-test defect D2). Returning a structured
     # dict keeps the error contract intact for any unexpected failure class,
     # including catalog-load and parameter-resolution failures.
+    start = time.perf_counter()
     try:
         catalog = load_catalog()
         try:
@@ -157,6 +159,7 @@ async def call_endpoint(
             "operation_id": operation_id,
             "exception_type": type(exc).__name__,
             "reason": str(exc)[:300].strip() or type(exc).__name__,
+            "elapsed_ms": int((time.perf_counter() - start) * 1000),
         }
 
 
@@ -207,6 +210,7 @@ async def fetch_data(
     """
     # Same whole-body safety net as call_endpoint (defect D2): the search and
     # selection path must never raise through FastMCP as an empty message.
+    start = time.perf_counter()
     try:
         catalog = load_catalog()
         results = search_catalog(catalog, query, limit=3)
@@ -283,6 +287,7 @@ async def fetch_data(
             "error": "tool_execution_failed",
             "exception_type": type(exc).__name__,
             "reason": str(exc)[:300].strip() or type(exc).__name__,
+            "elapsed_ms": int((time.perf_counter() - start) * 1000),
         }
 
 
