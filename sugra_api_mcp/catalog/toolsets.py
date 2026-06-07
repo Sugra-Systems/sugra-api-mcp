@@ -26,7 +26,7 @@ BROAD_TOOLSETS = [
 # Agent-facing one-liners surfaced by list_toolsets. digital_infra is
 # explicitly framed as blockchain-only and cross-references network: in the
 # 2026-06-07 field test a network engineer was misled into digital_infra
-# while the 53 Sugra Net Atlas endpoints sat invisible in core.
+# while the Sugra Net Atlas endpoints sat invisible in core.
 TOOLSET_DESCRIPTIONS: dict[str, str] = {
     "core": "Cross-domain reference, system, and uncategorized endpoints",
     "markets": "Equity quotes, prices, corporate events, and market calendars",
