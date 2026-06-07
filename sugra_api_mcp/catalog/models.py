@@ -59,6 +59,10 @@ class Endpoint(BaseModel):
     sources: list[str] = Field(default_factory=list)
     parameters: list[EndpointParameter] = Field(default_factory=list)
     request_body_required: bool = False
+    # Resolved application/json requestBody schema ($refs inlined at build
+    # time); {} for endpoints without a JSON body. Lets describe_endpoint
+    # show the exact body shape instead of clients guessing keys.
+    request_body_schema: dict[str, Any] = Field(default_factory=dict)
 
     @property
     def required_parameters(self) -> list[str]:
@@ -85,10 +89,11 @@ class Endpoint(BaseModel):
                 if isinstance(param, dict)
             ],
             request_body_required=bool(data.get("request_body_required", False)),
+            request_body_schema=dict(data.get("request_body_schema") or {}),
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result: dict[str, Any] = {
             "operation_id": self.operation_id,
             "method": self.method,
             "path": self.path,
@@ -102,6 +107,11 @@ class Endpoint(BaseModel):
             "required_parameters": self.required_parameters,
             "request_body_required": self.request_body_required,
         }
+        # Omit when empty: 1300+ GET endpoints would otherwise carry dead
+        # keys in the bundled catalog and in describe_endpoint output.
+        if self.request_body_schema:
+            result["request_body_schema"] = self.request_body_schema
+        return result
 
 
 class Catalog(BaseModel):

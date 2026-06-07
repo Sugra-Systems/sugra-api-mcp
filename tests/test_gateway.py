@@ -92,6 +92,32 @@ async def test_call_endpoint_validates_missing_required_params(monkeypatch) -> N
     assert fake.calls == []
 
 
+async def test_describe_endpoint_includes_request_body_schema(monkeypatch) -> None:
+    """Clients used to guess POST body keys: the builder discarded the
+    requestBody schema (field-test defect, S3/MCP-Imp-6)."""
+    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
+
+    described = await gateway.describe_endpoint("openfigi_map")
+
+    schema = described["request_body_schema"]
+    assert schema["required"] == ["jobs"]
+    assert schema["properties"]["jobs"]["items"]["properties"]["idType"] == {"type": "string"}
+    # GET endpoints stay lean - no empty schema noise.
+    quote = await gateway.describe_endpoint("quotes_symbol_price")
+    assert "request_body_schema" not in quote
+
+
+async def test_fetch_data_needs_params_exposes_request_body_schema(monkeypatch) -> None:
+    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
+    monkeypatch.setattr(gateway, "get_client", lambda: FakeClient())
+
+    result = await gateway.fetch_data("Map identifiers to OpenFIGI")
+
+    assert result["needs_params"] == ["body"]
+    schema = result["selected_endpoint"]["request_body_schema"]
+    assert schema["required"] == ["jobs"]
+
+
 async def test_call_endpoint_applies_fields_to_envelope_less_payload(monkeypatch) -> None:
     """Field test 2026-06-07: Net Atlas endpoints return flat dicts (no data
     envelope) and `fields` was a silent no-op - the full payload came back

@@ -207,6 +207,165 @@ def test_response_shaping_omits_oversized_raw_payload() -> None:
     assert shaped["meta"]["raw_omitted"]["reason"] == "exceeds_raw_size_limit"
 
 
+def test_catalog_builder_extracts_request_body_schema_with_ref_resolution() -> None:
+    """Field test 2026-06-07: describe_endpoint kept only the required flag
+    and discarded the requestBody schema, so clients had to guess POST body
+    keys ({"ips": [...]}). FastAPI emits $ref into components/schemas - the
+    builder must inline them.
+    """
+    openapi = {
+        "paths": {
+            "/api/v1/network/bulk/ip": {
+                "post": {
+                    "operationId": "post_network_bulk_ip",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/BulkIpRequest"}
+                            }
+                        },
+                    },
+                }
+            },
+            "/api/v1/openfigi/mapping": {
+                "post": {
+                    "operationId": "openfigi_mapping",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {"$ref": "#/components/schemas/MappingJob"},
+                                }
+                            }
+                        },
+                    },
+                }
+            },
+        },
+        "components": {
+            "schemas": {
+                "BulkIpRequest": {
+                    "type": "object",
+                    "required": ["ips"],
+                    "properties": {
+                        "ips": {"type": "array", "items": {"type": "string"}, "maxItems": 100}
+                    },
+                },
+                "MappingJob": {
+                    "type": "object",
+                    "properties": {"idType": {"type": "string"}},
+                },
+            }
+        },
+    }
+
+    catalog = build_catalog_from_openapi(openapi)
+
+    bulk = catalog.get("post_network_bulk_ip")
+    assert bulk.request_body_required is True
+    assert bulk.request_body_schema["type"] == "object"
+    assert bulk.request_body_schema["required"] == ["ips"]
+    assert bulk.request_body_schema["properties"]["ips"]["items"] == {"type": "string"}
+
+    # Array-of-$ref shape (openfigi): nested refs resolve too.
+    figi = catalog.get("openfigi_mapping")
+    assert figi.request_body_required is False
+    assert figi.request_body_schema["type"] == "array"
+    assert figi.request_body_schema["items"]["properties"]["idType"] == {"type": "string"}
+
+
+def test_catalog_builder_request_body_schema_survives_ref_cycles() -> None:
+    """Self-referential schemas must terminate: the inner cyclic $ref stays
+    as a marker instead of recursing forever."""
+    openapi = {
+        "paths": {
+            "/api/v1/tree": {
+                "post": {
+                    "operationId": "tree_op",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/Node"}
+                            }
+                        },
+                    },
+                }
+            }
+        },
+        "components": {
+            "schemas": {
+                "Node": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "children": {
+                            "type": "array",
+                            "items": {"$ref": "#/components/schemas/Node"},
+                        },
+                    },
+                }
+            }
+        },
+    }
+
+    catalog = build_catalog_from_openapi(openapi)
+
+    schema = catalog.get("tree_op").request_body_schema
+    assert schema["properties"]["name"] == {"type": "string"}
+    # The cycle stops at a $ref marker rather than infinite inlining.
+    assert schema["properties"]["children"]["items"] == {"$ref": "#/components/schemas/Node"}
+
+
+def test_catalog_builder_unknown_ref_stays_as_marker() -> None:
+    openapi = {
+        "paths": {
+            "/api/v1/x": {
+                "post": {
+                    "operationId": "x_op",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/Missing"}
+                            }
+                        },
+                    },
+                }
+            }
+        }
+    }
+
+    catalog = build_catalog_from_openapi(openapi)
+
+    assert catalog.get("x_op").request_body_schema == {"$ref": "#/components/schemas/Missing"}
+
+
+def test_endpoint_dict_round_trip_with_request_body_schema() -> None:
+    catalog = build_catalog_from_openapi(
+        json.loads(FIXTURE.read_text(encoding="utf-8"))
+    )
+
+    figi = catalog.get("openfigi_map")
+    # Fixture maps requestBody through components/schemas refs.
+    assert figi.request_body_schema["properties"]["jobs"]["items"]["properties"][
+        "idType"
+    ] == {"type": "string"}
+
+    as_dict = figi.to_dict()
+    assert as_dict["request_body_schema"] == figi.request_body_schema
+
+    from sugra_api_mcp.catalog.models import Endpoint
+
+    round_tripped = Endpoint.from_dict(as_dict)
+    assert round_tripped.request_body_schema == figi.request_body_schema
+
+    # GET endpoints without a body keep their serialized form lean.
+    quote = catalog.get("quotes_symbol_price")
+    assert quote.request_body_schema == {}
+    assert "request_body_schema" not in quote.to_dict()
+
+
 def test_catalog_builder_fails_on_missing_operation_id() -> None:
     openapi = {
         "paths": {

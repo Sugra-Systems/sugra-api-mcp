@@ -53,6 +53,9 @@ async def describe_endpoint(operation_id: str) -> dict[str, Any]:
 
     Includes agent_hints (duration_class fast/slow/heavy, max_concurrency,
     bulk billing) so you can budget timeouts and parallelism before calling.
+    POST endpoints with a JSON body also carry request_body_schema (the
+    resolved JSON schema) - construct the `body` argument from it instead
+    of guessing key names.
     """
     catalog = load_catalog()
     try:
@@ -243,26 +246,31 @@ async def fetch_data(
             # LLM didn't supply enough — return both the selected endpoint's
             # schema and the alternative candidates so the next call can either
             # fill the gap or pick a different endpoint.
+            selected: dict[str, Any] = {
+                "operation_id": operation_id,
+                "method": endpoint.method,
+                "path": endpoint.path,
+                "summary": endpoint.summary,
+                "agent_hints": hints_for(endpoint),
+                "required_parameters": endpoint.required_parameters,
+                "parameter_examples": [
+                    {
+                        "name": p.name,
+                        "description": p.description,
+                        "example": p.example,
+                        "required": p.required,
+                    }
+                    for p in endpoint.parameters
+                    if p.required
+                ],
+            }
+            if endpoint.request_body_schema:
+                # "body" in missing means the agent must construct a JSON
+                # body - hand it the exact schema instead of letting it guess.
+                selected["request_body_schema"] = endpoint.request_body_schema
             return {
                 "needs_params": missing,
-                "selected_endpoint": {
-                    "operation_id": operation_id,
-                    "method": endpoint.method,
-                    "path": endpoint.path,
-                    "summary": endpoint.summary,
-                    "agent_hints": hints_for(endpoint),
-                    "required_parameters": endpoint.required_parameters,
-                    "parameter_examples": [
-                        {
-                            "name": p.name,
-                            "description": p.description,
-                            "example": p.example,
-                            "required": p.required,
-                        }
-                        for p in endpoint.parameters
-                        if p.required
-                    ],
-                },
+                "selected_endpoint": selected,
                 "candidate_endpoints": results,
                 "hint": (
                     f"The top match `{operation_id}` requires {missing}. "
