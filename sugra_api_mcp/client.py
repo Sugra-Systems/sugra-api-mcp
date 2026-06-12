@@ -121,8 +121,13 @@ class SugraClient:
     async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         return await self.request("GET", path, params=params)
 
-    async def post(self, path: str, json: dict[str, Any] | None = None) -> dict[str, Any]:
-        return await self.request("POST", path, json=json)
+    async def post(
+        self,
+        path: str,
+        json: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        return await self.request("POST", path, json=json, headers=headers)
 
     async def request(
         self,
@@ -130,15 +135,20 @@ class SugraClient:
         path: str,
         params: dict[str, Any] | None = None,
         json: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         clean_params = {k: v for k, v in (params or {}).items() if v is not None}
         start = time.perf_counter()
         try:
+            # Per-request headers are MERGED over the instance headers by httpx
+            # (request wins on key conflicts) - x-api-key stays, extras (e.g.
+            # X-Internal-Token for the agent plane) ride alongside.
             response = await self._client.request(
                 method.upper(),
                 path,
                 params=clean_params,
                 json=json if json is not None else None,
+                headers=headers,
             )
         # Order matters: ConnectTimeout subclasses TimeoutException (NOT
         # ConnectError), so all timeout flavors land in upstream_timeout.

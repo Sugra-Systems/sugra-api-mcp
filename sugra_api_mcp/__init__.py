@@ -7,4 +7,4 @@ and eight gateway tools.
 See https://github.com/Sugra-Systems/prod-sugra-ai-MCP for usage.
 """
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"

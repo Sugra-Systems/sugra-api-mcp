@@ -54,6 +54,13 @@ def _run_server(args: argparse.Namespace) -> None:
 
         from .auth import Authenticator, AuthMiddleware
         from .config import load_allowed_origins, load_auth_config
+        from .tools.agent import register_agent_tools
+
+        # Hosted-only Agent Context Layer tools: registered from the HTTP
+        # branch ONLY (a stdio process never gets them even with the env var
+        # present), and register_agent_tools itself refuses without the
+        # SUGRA_AGENT_INTERNAL_TOKEN credential.
+        register_agent_tools()
 
         auth = Authenticator(load_auth_config())
         app = mcp.streamable_http_app()

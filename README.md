@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/sugra-api-mcp/">PyPI v0.7.0</a> |
+  <a href="https://pypi.org/project/sugra-api-mcp/">PyPI v0.8.0</a> |
   Python 3.11+ |
   <a href="https://github.com/Sugra-Systems/prod-sugra-ai-MCP/blob/main/LICENSE">MIT</a>
 </p>
@@ -47,6 +47,18 @@ Current release: eight-tool surface with hosted OAuth activity validation for `h
 - `duration_class` - `fast` (under ~2s, snapshot-backed), `slow` (live upstream proxying, occasionally 15s+), or `heavy` (per-item upstream work, large batches can exceed the gateway timeout)
 - `max_concurrency` - advisory ceiling for parallel calls from one session
 - `bulk_cost` - on per-item bulk endpoints: 1 request credit per item in the request body (the API reports the total in the `X-RateLimit-Cost` response header)
+
+## Hosted-only agent tools (app.sugra.ai/mcp)
+
+The hosted MCP endpoint at `https://app.sugra.ai/mcp` serves the same eight tools PLUS three composed agent tools that are not available on stdio or self-hosted installs:
+
+| Tool | Purpose |
+|---|---|
+| `resolve_entity` | Free text (ticker, company, indicator, coin, currency pair) to a canonical market or macro entity. Ambiguous matches return ranked candidates, never a silent pick. |
+| `get_snapshot` | Entity plus a named recipe to one composed current view with freshness, provenance, coverage, and billing blocks. Composed calls charge a fixed recipe cost (1-2 requests) from the daily quota. |
+| `get_timeseries` | Entity plus metric (`price`, `macro_series`, `etf_flows`) to a bounded series with an explicit downsampling flag. |
+
+These three tools wrap an internal composed plane that requires an infrastructure credential available only on the hosted deployment. The tool code ships inside the package, but it is registered only by the hosted HTTP entry point and only when that credential is present - `pip install sugra-api-mcp` (stdio and self-hosted HTTP) always exposes the classic eight-tool gateway. Hosted-only examples in any documentation are labeled as such. For compliance entity lookups (LEI / VAT, sanctions screening) use `sugra_entity_lookup` and `sugra_entity_screen`, which work on every transport.
 
 ## Installation
 

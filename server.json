@@ -7,12 +7,12 @@
     "url": "https://github.com/Sugra-Systems/prod-sugra-ai-MCP",
     "source": "github"
   },
-  "version": "0.7.0",
+  "version": "0.8.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "sugra-api-mcp",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "transport": {
         "type": "stdio"
       },

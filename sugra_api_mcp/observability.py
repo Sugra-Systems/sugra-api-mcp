@@ -76,6 +76,9 @@ _KNOWN_ERROR_CODES: frozenset[str] = frozenset({
     "upstream_transport_error",
     # Gateway safety net for unexpected exceptions inside call_endpoint.
     "tool_execution_failed",
+    # Agent Context Layer plane: infra-level credential rejected (hosted-only
+    # tools, tools/agent.py remaps the plane 403 to this distinct code).
+    "agent_plane_unavailable",
 })
 
 # azure-monitor-opentelemetry enables all bundled instrumentations by default
@@ -223,12 +226,21 @@ def _safe_end(span: Any) -> None:
         span.end()
 
 
-def trace_mcp_tool(tool_name: str) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
+def trace_mcp_tool(
+    tool_name: str,
+    result_attrs: Callable[[Any], dict[str, Any]] | None = None,
+) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
     """Decorator that wraps an async MCP tool with an OpenTelemetry span.
 
     The span carries the dimensions documented at the module level. When
     `setup_observability()` was a no-op (env var unset or SDK missing)
     the decorator is a transparent pass-through with zero overhead.
+
+    ``result_attrs`` is an optional extractor called with the tool RESULT on
+    the success path; it returns extra span attributes (the extractor owns the
+    privacy allowlist - it must derive attributes from response metadata only,
+    never from request values). An extractor failure is swallowed: telemetry
+    must never break the tool result.
 
     Failure-safety guarantees:
     - If span creation fails, the tool still runs.
@@ -296,6 +308,13 @@ def trace_mcp_tool(tool_name: str) -> Callable[[Callable[P, Awaitable[R]]], Call
                 _safe_attr(span, "mcp.success", success)
                 if error_code is not None:
                     _safe_attr(span, "mcp.error.code", error_code)
+                if result_attrs is not None and success:
+                    try:
+                        for key, value in result_attrs(result).items():
+                            _safe_attr(span, key, value)
+                    except Exception:
+                        # Extractor bugs must never break the tool result.
+                        pass
                 _safe_attr(span, "mcp.duration_ms", int((time.perf_counter() - start) * 1000))
                 # Status drives App Insights top-level `success` column;
                 # ERROR for tool-reported failures (catalog-mapped error
