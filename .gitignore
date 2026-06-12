@@ -50,3 +50,4 @@ htmlcov/
 # Wave E - gitignore hardening
 Thumbs.db
 .python-version
+evals/results/
