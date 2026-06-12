@@ -6,7 +6,8 @@ SUGRA_TEST_API_KEY):
     python -m evals.smoke_live
 
 Checks (design doc section 8 smoke set, adapted to what is OBSERVABLE live):
-  S1  unauthenticated POST /mcp -> 401 (auth layer up, no anonymous tools/call)
+  S1  unauthenticated tools/call -> 401 (tools/list stays public by design:
+      MCP discovery allowlist in auth.py; the card pins the CALL boundary)
   S2  tools/list == EXPECTED_HOSTED_TOOL_COUNT (11)
   S3  weighted cost: two sequential company_snapshot calls decrement
       billing.remaining by the recipe cost (2) each - billing is computed in
@@ -47,14 +48,19 @@ def record(name: str, ok: bool, detail: str = "") -> None:
     print(f"{'PASS' if ok else 'FAIL'}  {name}  {detail}")
 
 
-async def s1_unauthenticated_401() -> None:
+async def s1_unauthenticated_call_401() -> None:
+    # tools/list is DELIBERATELY public (MCP discovery allowlist, auth.py) -
+    # the auth boundary the card pins is tools/CALL without a key -> 401.
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(
             DEFAULT_URL,
-            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+            json={
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": "resolve_entity", "arguments": {"query": "AAPL"}},
+            },
             headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream"},
         )
-    record("S1 unauthenticated -> 401", response.status_code == 401, f"got {response.status_code}")
+    record("S1 unauthenticated tools/call -> 401", response.status_code == 401, f"got {response.status_code}")
 
 
 async def s2_tool_count(session) -> None:
@@ -151,7 +157,7 @@ async def s7_freshness_honesty(session) -> None:
 
 async def main() -> int:
     require_key()
-    await s1_unauthenticated_401()
+    await s1_unauthenticated_call_401()
     async with open_session() as session:
         await s2_tool_count(session)
         await s3_weighted_cost(session)

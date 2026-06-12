@@ -14,7 +14,7 @@ an LLM. The CI-runnable part is `tests/test_evals_scoring.py` (manifest schema
 | `EVAL_MODEL` | no | Agent model (default `claude-opus-4-8`) |
 | `EVAL_JUDGE_MODEL` | no | Judge model (default = `EVAL_MODEL`) |
 | `SUGRA_MCP_URL` | no | Default `https://app.sugra.ai/mcp` |
-| `SUGRA_EVAL_CALL_TIMEOUT` | no | Per-tool-call timeout seconds (default 60) |
+| `SUGRA_EVAL_CALL_TIMEOUT` | no | HTTP timeout seconds for the MCP connection (default 60). NOT a complete hard bound on a tool-result wait - the SDK's SSE read timeout is separate; the agent eval adds a 600 s outer wait_for per query |
 
 The golden eval needs the `[mcp]` extra: `pip install "anthropic[mcp]"`.
 
@@ -24,7 +24,8 @@ The golden eval needs the `[mcp]` extra: `pip install "anthropic[mcp]"`.
 python -m evals.smoke_live
 ```
 
-Seven checks: unauthenticated 401, tools/list == 11, weighted cost decrements
+Seven checks: unauthenticated tools/call 401 (tools/list is public discovery
+by design), tools/list == 11, weighted cost decrements
 quota by the recipe cost, max_points bounded + honest downsampled flag, META
 ambiguity contract (ranked candidates, no silent pick), garbage-resolve clean
 not-found, freshness-block honesty. Exit 0 = green. Required-fail -> 502 /
@@ -48,6 +49,11 @@ markdown scorecard.
 This is a SCORECARD, not a pass/fail gate. `known_failure` queries (B1: agents
 historically pick the UK CPI series; B6: plane macro loader is FRED-only) are
 tracked in a separate bucket - they inform fixes, they never fail a run.
+
+Denominators: queries that ERROR (timeout, transport) are excluded from the
+selection-accuracy and relevance denominators and reported in the separate
+`errored` count - an accuracy figure never silently absorbs infrastructure
+failures.
 
 Quota note: a full run consumes roughly 60-100 request units of the test key's
 daily quota (composed recipes cost 1-2 units per call) plus Anthropic tokens
