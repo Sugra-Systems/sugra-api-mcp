@@ -15,6 +15,9 @@ on:
       - '**/*.md'
   pull_request:
     branches: [main]
+  # workflow_dispatch preserved from the deleted deploy-app-vm.yml: the hosted MCP
+  # deploy (the `deploy` job below) is gated on it as the reliable manual kick.
+  workflow_dispatch:
 
 jobs:
   test:
@@ -53,3 +56,56 @@ jobs:
               print(f'OK: {len(t)} tools registered')
           asyncio.run(main())
           "
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    # Hosted app.sugra.ai/mcp redeploy, folded in from the deleted deploy-app-vm.yml
+    # (which used a brittle `workflow_run: workflows: ["Test"]` NAME coupling that
+    # breaks silently if this workflow is renamed). `needs: test` chains off ALL
+    # matrix legs in-file. Deploy only on push to main (after green tests) or a
+    # manual workflow_dispatch; never on a PR.
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pre-deploy sudo fail-fast probe (INFRA-11.1)
+        # The MCP deploy runs `sudo /usr/local/bin/sugra-mcp-deploy` (general root
+        # sudo) on the APP VM, so it needs the general waagent NOPASSWD intact -
+        # `sudo -n true` is the faithful probe (same as APP; not WEB's scoped -l
+        # form). Probe first so a waagent sudoers reset fails with a clear message
+        # instead of dying mid-deploy.
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.APP_VM_HOST }}
+          username: ${{ secrets.APP_VM_USER }}
+          key: ${{ secrets.APP_VM_SSH_KEY }}
+          script: |
+            if ! sudo -n true 2>/dev/null; then
+              echo "FAIL: passwordless sudo is broken on the APP VM (waagent sudoers reset?). Re-assert NOPASSWD via 'az vm run-command', then re-run this workflow. Do NOT manual-SSH-deploy (CI/CD only)."
+              exit 1
+            fi
+            echo "sudo -n OK"
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.APP_VM_HOST }}
+          username: ${{ secrets.APP_VM_USER }}
+          key: ${{ secrets.APP_VM_SSH_KEY }}
+          script: |
+            set -e
+            sudo /usr/local/bin/sugra-mcp-deploy
+      - name: Post-deploy smoke (hosted MCP on app.sugra.ai)
+        run: |
+          for i in 1 2 3 4 5 6; do
+            wk="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 https://app.sugra.ai/.well-known/oauth-protected-resource || echo 000)"
+            mcp="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 https://app.sugra.ai/mcp || echo 000)"
+            echo "attempt $i: .well-known -> $wk, /mcp -> $mcp"
+            if [ "$wk" = "200" ] && [ "$mcp" != "404" ] && [ "$mcp" != "000" ]; then
+              echo "hosted MCP surface healthy"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "FAIL: hosted MCP did not come up (.well-known != 200 or /mcp == 404) after deploy."
+          exit 1
