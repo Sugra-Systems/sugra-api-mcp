@@ -98,8 +98,13 @@ def _is_per_item_bulk(endpoint: Endpoint) -> bool:
 
 
 def _is_slow_path(path: str) -> bool:
-    """An individually slow path inside an otherwise-fast family (see _SLOW_PATHS)."""
-    return any(slow in path for slow in _SLOW_PATHS)
+    """An individually slow path inside an otherwise-fast family (see _SLOW_PATHS).
+
+    Segment-bounded: a key matches a whole `/weather/flood` segment (and any
+    sub-path under it) but not a longer segment like `/weather/floodplain`.
+    """
+    bounded = path if path.endswith("/") else path + "/"
+    return any((slow + "/") in bounded for slow in _SLOW_PATHS)
 
 
 def hints_for(endpoint: Endpoint) -> dict[str, Any]:

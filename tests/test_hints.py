@@ -104,6 +104,14 @@ def test_slow_weather_paths_are_slow() -> None:
         assert hints["max_concurrency"] == 2, path
 
 
+def test_slow_path_match_is_segment_bounded() -> None:
+    """A slow key matches a whole segment, not a prefix of a longer one - a
+    hypothetical /weather/floodplain path must not inherit flood's slow class."""
+    hints = hints_for(_endpoint(path="/api/v1/weather/floodplain/maps"))
+    assert hints["duration_class"] == "fast"
+    assert hints["max_concurrency"] == 4
+
+
 def test_fast_weather_paths_stay_fast() -> None:
     """The rest of the weather family reads fast upstreams (forecast 10s,
     marine 15s, us 10s, air-quality 15s client budget) - they must NOT be
