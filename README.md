@@ -1,13 +1,13 @@
 # sugra-api-mcp
 
-<!-- mcp-name: io.github.Sugra-Systems/sugra-api-mcp -->
+<!-- mcp-name: ai.sugra/api-mcp -->
 
 <p align="center">
   <img src="https://app.sugra.ai/images/brand/sugra-app-icon.svg" alt="sugra.ai" width="112" height="112" />
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/sugra-api-mcp/">PyPI v0.8.1</a> |
+  <a href="https://pypi.org/project/sugra-api-mcp/">PyPI v0.8.2</a> |
   Python 3.11+ |
   <a href="https://github.com/Sugra-Systems/prod-sugra-ai-MCP/blob/main/LICENSE">MIT</a>
 </p>

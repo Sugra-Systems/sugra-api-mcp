@@ -1,18 +1,18 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.Sugra-Systems/sugra-api-mcp",
+  "name": "ai.sugra/api-mcp",
   "title": "Sugra API",
   "description": "Gateway between LLM agents and world data through eight tools and a bundled endpoint catalog.",
   "repository": {
     "url": "https://github.com/Sugra-Systems/prod-sugra-ai-MCP",
     "source": "github"
   },
-  "version": "0.8.1",
+  "version": "0.8.2",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "sugra-api-mcp",
-      "version": "0.8.1",
+      "version": "0.8.2",
       "transport": {
         "type": "stdio"
       },
