@@ -18,6 +18,36 @@ from .models import Catalog, Endpoint
 
 TOKEN_RE = re.compile(r"[a-z0-9]+")
 
+# English function words stripped from QUERY terms only (never from endpoint
+# tokenization or the raw-query ticker/fx/central-bank/us-macro detectors).
+# Natural-language filler ("what is the price for ...") otherwise inflates any
+# endpoint whose prose parameter/description text contains those words: the
+# ChatGPT App submission prompt "What is the latest price for NVDA and how has
+# it moved over the past week?" tied quotes_symbol_logo_png (a 302 image
+# redirect with a prose description) with quotes_symbol_price purely on the
+# filler tokens "the"/"for"/"has", and the alphabetical operation_id tie-break
+# then surfaced the logo PNG.
+#
+# LENGTH >= 3 ONLY, on purpose: 2-letter tokens collide with ISO country codes
+# (in=India, it=Italy, is=Iceland, be=Belgium, at=Austria) and short tickers
+# (SO, IT, IP), so stripping them could drop the one meaningful token of a
+# query. The NVDA tie was created entirely by 3+ letter filler ("the"/"for"/
+# "has"), so the >=3 floor fixes it without any 2-letter risk. The filter below
+# also guards on len explicitly, so adding a 2-letter word here would be inert.
+# 3-letter ticker collisions (HAS=Hasbro, CAN=Canaan) still route correctly
+# because detect_tickers runs on the RAW query, independent of this filter.
+_QUERY_STOPWORDS: frozenset[str] = frozenset({
+    "the", "this", "that", "these", "those",
+    "and", "but", "nor", "then", "than",
+    "our", "you", "your", "him", "his", "she", "her",
+    "its", "they", "them", "their", "who", "whom", "whose", "what", "which",
+    "how", "when", "where", "why", "whether",
+    "are", "was", "were", "been", "being",
+    "does", "did", "has", "have", "had",
+    "will", "would", "shall", "should", "can", "could", "might", "must",
+    "from", "with", "for", "about", "into", "over", "under", "against",
+})
+
 # Boosts (additive on top of token-level score). Tuned empirically against
 # tests/test_search_relevance_benchmark.py — see that file for the target queries.
 ALIAS_PHRASE_BOOST = 10
@@ -187,6 +217,15 @@ def search_catalog(
     terms = _tokens(query)
     if not terms:
         return []
+    # Strip English filler (function words of length >= 3) from the query terms.
+    # The raw-empty guard above already handled a genuinely token-less query;
+    # a query that is ALL stopwords ("what is the") yields an empty term list
+    # here and falls through to pattern-only matching, returning no results when
+    # no ticker/fx/central-bank/us-macro pattern fires (those detectors read the
+    # raw `query`, so "what is AAPL" still routes via the ticker boost). The
+    # explicit len guard keeps 2-letter tokens (ISO codes, short tickers) intact
+    # regardless of the stopword set.
+    terms = [term for term in terms if len(term) < 3 or term not in _QUERY_STOPWORDS]
     aliases = matching_aliases(query)
 
     # Pattern detection runs against the raw query (preserves uppercase) so
