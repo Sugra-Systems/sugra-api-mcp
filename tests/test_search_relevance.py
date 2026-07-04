@@ -170,6 +170,42 @@ def test_search_top_1_exact_for_stable_endpoints(catalog, query: str, must_be_in
     )
 
 
+def test_natural_language_price_prompt_beats_logo_redirect(catalog) -> None:
+    """OpenAI ChatGPT App submission case (2026-07-03): the natural-language
+    price prompt tied quotes_symbol_logo_png (a 302 image redirect with a prose
+    description) with quotes_symbol_price on English filler ("the"/"for"/"has"),
+    and the alphabetical operation_id tie-break surfaced the logo PNG top-1 - so
+    fetch_data returned a logo image instead of a price. Query-stopword stripping
+    must let the real price endpoint win.
+    """
+    query = "What is the latest price for NVDA and how has it moved over the past week?"
+    results = search_catalog(catalog, query, limit=5)
+    assert results
+    assert results[0]["operation_id"] == "quotes_symbol_price", (
+        f"expected quotes_symbol_price top-1, got {[r['operation_id'] for r in results[:5]]}"
+    )
+    top_3 = [r["operation_id"] for r in results[:3]]
+    assert "quotes_symbol_logo_png" not in top_3, (
+        f"logo image redirect leaked into top-3 for a price prompt: {top_3}"
+    )
+
+
+def test_query_stopwords_scope_stays_conservative() -> None:
+    """Lock the stopword set to pure grammatical filler: the US-macro token and
+    every data-semantic word must stay searchable, or the fix would silently
+    break US-macro / data-word routing.
+    """
+    from sugra_api_mcp.catalog.search import _QUERY_STOPWORDS
+
+    assert "us" not in _QUERY_STOPWORDS
+    data_words = {
+        "price", "rate", "gdp", "cpi", "news", "cap", "week", "day", "year",
+        "flows", "list", "order", "inflation", "yield", "series", "may",
+    }
+    leaked = data_words & _QUERY_STOPWORDS
+    assert not leaked, f"data-semantic words wrongly in stopword set: {leaked}"
+
+
 NAMESPACE_TOP_1_CASES = [
     # query, allowed top-1 operation_id prefixes (any match)
     # MSFT earnings: finnhub_* were renamed in Tier-C scrub - accept the

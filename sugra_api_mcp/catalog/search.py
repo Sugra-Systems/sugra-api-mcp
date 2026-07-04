@@ -18,6 +18,30 @@ from .models import Catalog, Endpoint
 
 TOKEN_RE = re.compile(r"[a-z0-9]+")
 
+# English function words stripped from QUERY terms only (never from endpoint
+# tokenization or the raw-query ticker/fx/central-bank/us-macro detectors).
+# Natural-language filler ("what is the price for ...") otherwise inflates any
+# endpoint whose prose parameter/description text contains those words: the
+# ChatGPT App submission prompt "What is the latest price for NVDA and how has
+# it moved over the past week?" tied quotes_symbol_logo_png (a 302 image
+# redirect with a prose description) with quotes_symbol_price purely on the
+# filler tokens "the"/"for"/"has", and the alphabetical operation_id tie-break
+# then surfaced the logo PNG. Excludes "us" (US-macro token) and every
+# data-semantic word (price, rate, gdp, cpi, news, cap, week, day, year, flows,
+# list, order, ...); "may" is omitted (month-name collision).
+_QUERY_STOPWORDS: frozenset[str] = frozenset({
+    "a", "an", "the", "this", "that", "these", "those",
+    "and", "or", "but", "nor", "so", "if", "then", "than",
+    "i", "me", "my", "we", "our", "you", "your", "he", "him", "his", "she", "her",
+    "it", "its", "they", "them", "their", "who", "whom", "whose", "what", "which",
+    "how", "when", "where", "why", "whether",
+    "is", "am", "are", "was", "were", "be", "been", "being",
+    "do", "does", "did", "has", "have", "had",
+    "will", "would", "shall", "should", "can", "could", "might", "must",
+    "of", "in", "on", "at", "to", "from", "by", "with", "for", "about",
+    "into", "over", "under", "against",
+})
+
 # Boosts (additive on top of token-level score). Tuned empirically against
 # tests/test_search_relevance_benchmark.py — see that file for the target queries.
 ALIAS_PHRASE_BOOST = 10
@@ -187,6 +211,10 @@ def search_catalog(
     terms = _tokens(query)
     if not terms:
         return []
+    # Strip English filler AFTER the raw-empty guard so a stopword-only query
+    # still short-circuits, while the pattern boosts below (which run on the raw
+    # `query`) survive even a filtered-empty term list.
+    terms = [term for term in terms if term not in _QUERY_STOPWORDS]
     aliases = matching_aliases(query)
 
     # Pattern detection runs against the raw query (preserves uppercase) so
