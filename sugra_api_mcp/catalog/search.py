@@ -26,20 +26,26 @@ TOKEN_RE = re.compile(r"[a-z0-9]+")
 # it moved over the past week?" tied quotes_symbol_logo_png (a 302 image
 # redirect with a prose description) with quotes_symbol_price purely on the
 # filler tokens "the"/"for"/"has", and the alphabetical operation_id tie-break
-# then surfaced the logo PNG. Excludes "us" (US-macro token) and every
-# data-semantic word (price, rate, gdp, cpi, news, cap, week, day, year, flows,
-# list, order, ...); "may" is omitted (month-name collision).
+# then surfaced the logo PNG.
+#
+# LENGTH >= 3 ONLY, on purpose: 2-letter tokens collide with ISO country codes
+# (in=India, it=Italy, is=Iceland, be=Belgium, at=Austria) and short tickers
+# (SO, IT, IP), so stripping them could drop the one meaningful token of a
+# query. The NVDA tie was created entirely by 3+ letter filler ("the"/"for"/
+# "has"), so the >=3 floor fixes it without any 2-letter risk. The filter below
+# also guards on len explicitly, so adding a 2-letter word here would be inert.
+# 3-letter ticker collisions (HAS=Hasbro, CAN=Canaan) still route correctly
+# because detect_tickers runs on the RAW query, independent of this filter.
 _QUERY_STOPWORDS: frozenset[str] = frozenset({
-    "a", "an", "the", "this", "that", "these", "those",
-    "and", "or", "but", "nor", "so", "if", "then", "than",
-    "i", "me", "my", "we", "our", "you", "your", "he", "him", "his", "she", "her",
-    "it", "its", "they", "them", "their", "who", "whom", "whose", "what", "which",
+    "the", "this", "that", "these", "those",
+    "and", "but", "nor", "then", "than",
+    "our", "you", "your", "him", "his", "she", "her",
+    "its", "they", "them", "their", "who", "whom", "whose", "what", "which",
     "how", "when", "where", "why", "whether",
-    "is", "am", "are", "was", "were", "be", "been", "being",
-    "do", "does", "did", "has", "have", "had",
+    "are", "was", "were", "been", "being",
+    "does", "did", "has", "have", "had",
     "will", "would", "shall", "should", "can", "could", "might", "must",
-    "of", "in", "on", "at", "to", "from", "by", "with", "for", "about",
-    "into", "over", "under", "against",
+    "from", "with", "for", "about", "into", "over", "under", "against",
 })
 
 # Boosts (additive on top of token-level score). Tuned empirically against
@@ -211,10 +217,15 @@ def search_catalog(
     terms = _tokens(query)
     if not terms:
         return []
-    # Strip English filler AFTER the raw-empty guard so a stopword-only query
-    # still short-circuits, while the pattern boosts below (which run on the raw
-    # `query`) survive even a filtered-empty term list.
-    terms = [term for term in terms if term not in _QUERY_STOPWORDS]
+    # Strip English filler (function words of length >= 3) from the query terms.
+    # The raw-empty guard above already handled a genuinely token-less query;
+    # a query that is ALL stopwords ("what is the") yields an empty term list
+    # here and falls through to pattern-only matching, returning no results when
+    # no ticker/fx/central-bank/us-macro pattern fires (those detectors read the
+    # raw `query`, so "what is AAPL" still routes via the ticker boost). The
+    # explicit len guard keeps 2-letter tokens (ISO codes, short tickers) intact
+    # regardless of the stopword set.
+    terms = [term for term in terms if len(term) < 3 or term not in _QUERY_STOPWORDS]
     aliases = matching_aliases(query)
 
     # Pattern detection runs against the raw query (preserves uppercase) so

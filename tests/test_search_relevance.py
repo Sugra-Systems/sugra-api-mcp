@@ -190,13 +190,21 @@ def test_natural_language_price_prompt_beats_logo_redirect(catalog) -> None:
     )
 
 
-def test_query_stopwords_scope_stays_conservative() -> None:
-    """Lock the stopword set to pure grammatical filler: the US-macro token and
-    every data-semantic word must stay searchable, or the fix would silently
-    break US-macro / data-word routing.
+def test_query_stopwords_conservative_and_do_not_break_routing(catalog) -> None:
+    """The stopword set must stay pure grammatical filler AND stripping must not
+    wipe routing for queries whose meaningful token is short. End-to-end against
+    the real catalog, not just a set-intersection check.
+
+    Scope guards: every entry is >= 3 letters (so 2-letter ISO codes / short
+    tickers are never stripped), the US-macro token "us" is absent, and no
+    data-semantic word leaked in.
     """
     from sugra_api_mcp.catalog.search import _QUERY_STOPWORDS
 
+    assert all(len(word) >= 3 for word in _QUERY_STOPWORDS), (
+        f"2-letter stopwords risk ISO codes / tickers: "
+        f"{[w for w in _QUERY_STOPWORDS if len(w) < 3]}"
+    )
     assert "us" not in _QUERY_STOPWORDS
     data_words = {
         "price", "rate", "gdp", "cpi", "news", "cap", "week", "day", "year",
@@ -204,6 +212,13 @@ def test_query_stopwords_scope_stays_conservative() -> None:
     }
     leaked = data_words & _QUERY_STOPWORDS
     assert not leaked, f"data-semantic words wrongly in stopword set: {leaked}"
+
+    # End-to-end: filler-heavy and short-token queries still return results,
+    # and US-macro routing is unchanged.
+    for query in ("US CPI inflation", "IT sector data", "What is the GDP of India?"):
+        results = search_catalog(catalog, query, limit=5)
+        assert results, f"stopword filter wiped all results for {query!r}"
+    assert search_catalog(catalog, "US CPI inflation", limit=1)[0]["operation_id"].startswith("fred_")
 
 
 NAMESPACE_TOP_1_CASES = [
