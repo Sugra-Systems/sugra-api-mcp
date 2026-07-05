@@ -27,18 +27,29 @@ def _has_ref(prop: dict) -> bool:
     return any(b.get("$ref") for b in prop.get("anyOf", []))
 
 
+def _props(tools):
+    return {t.name: (t.inputSchema or {}).get("properties", {}) for t in tools}
+
+
 @pytest.fixture(scope="module")
 def tool_schemas():
+    """Base-tool schemas from the global server, agent-tool schemas from a FRESH
+    FastMCP instance. Registering the hosted agent tools on the global would
+    pollute the tool count that test_metadata_sync asserts (EXPECTED_TOOL_COUNT
+    = 8), so keep them off the global here."""
     os.environ.setdefault("SUGRA_API_KEY", "x")
     os.environ["SUGRA_AGENT_INTERNAL_TOKEN"] = "x"
-    import sugra_api_mcp.tools.entities
-    import sugra_api_mcp.tools.gateway  # noqa: F401
-    from sugra_api_mcp.server import mcp
-    from sugra_api_mcp.tools import agent
+    from mcp.server.fastmcp import FastMCP
 
-    agent.register_agent_tools()
-    tools = asyncio.run(mcp.list_tools())
-    return {t.name: (t.inputSchema or {}).get("properties", {}) for t in tools}
+    import sugra_api_mcp.tools  # noqa: F401  (registers base tools on the global)
+    from sugra_api_mcp.server import mcp
+    from sugra_api_mcp.tools.agent import register_agent_tools
+
+    base = _props(asyncio.run(mcp.list_tools()))
+    fresh = FastMCP("arg-schema-test")
+    assert register_agent_tools(fresh) is True
+    agent_tools = _props(asyncio.run(fresh.list_tools()))
+    return {**base, **agent_tools}
 
 
 def test_entity_lookup_anchor_is_enum(tool_schemas):

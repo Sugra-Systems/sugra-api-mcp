@@ -36,7 +36,9 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal
+
+from typing_extensions import TypedDict
 
 from ..observability import trace_mcp_tool
 from ..server import get_client, mcp, read_only
