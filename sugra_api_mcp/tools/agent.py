@@ -36,13 +36,24 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+from typing import Any, Literal
+
+from typing_extensions import TypedDict
 
 from ..observability import trace_mcp_tool
 from ..server import get_client, mcp, read_only
 
 _PLANE_BASE = "/internal/agent/v1"
 _TOKEN_ENV = "SUGRA_AGENT_INTERNAL_TOKEN"
+
+
+class AgentEntity(TypedDict):
+    """The agent-plane entity shape returned by resolve_entity and consumed by
+    get_snapshot / get_timeseries. Extra keys from a resolve result (label,
+    confidence) are accepted and ignored - only namespace + ids are sent on."""
+
+    namespace: str
+    ids: dict[str, Any]
 
 # Idempotence latch for the GLOBAL mcp instance only. Explicit instances
 # (tests) are the caller's responsibility - they are never latched so a test
@@ -144,7 +155,7 @@ async def resolve_entity(query: str, type_hint: str | None = None) -> dict[str, 
 
 
 @trace_mcp_tool("get_snapshot", result_attrs=_agent_result_attrs)
-async def get_snapshot(recipe: str, entity: dict[str, Any]) -> dict[str, Any]:
+async def get_snapshot(recipe: str, entity: AgentEntity) -> dict[str, Any]:
     """Composed current view of an entity via a named recipe.
 
     Executes a fixed server-side recipe (company_snapshot, etf_snapshot,
@@ -170,8 +181,8 @@ async def get_snapshot(recipe: str, entity: dict[str, Any]) -> dict[str, Any]:
 
 @trace_mcp_tool("get_timeseries", result_attrs=_agent_result_attrs)
 async def get_timeseries(
-    metric: str,
-    entity: dict[str, Any],
+    metric: Literal["price", "macro_series", "etf_flows"],
+    entity: AgentEntity,
     granularity: str = "1d",
     max_points: int = 500,
 ) -> dict[str, Any]:

@@ -22,7 +22,7 @@ unchanged - the path call is the contract.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from ..observability import trace_mcp_tool
 from ..server import get_client, mcp, read_only
@@ -260,7 +260,7 @@ async def sugra_entity_screen(
 @mcp.tool(annotations=read_only("Sugra Entity lookup"))
 @trace_mcp_tool("sugra_entity_lookup")
 async def sugra_entity_lookup(
-    anchor: str,
+    anchor: Literal["lei", "vat"],
     value: str,
     include: list[str] | None = None,
 ) -> dict[str, Any]:
