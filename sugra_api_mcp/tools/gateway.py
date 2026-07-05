@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Annotated, Any
+
+from pydantic import Field
 
 from ..catalog.hints import hints_for
 from ..catalog.loader import load_catalog
@@ -71,8 +73,25 @@ async def describe_endpoint(operation_id: str) -> dict[str, Any]:
 @trace_mcp_tool("call_endpoint")
 async def call_endpoint(
     operation_id: str,
-    params: dict[str, Any] | None = None,
-    body: dict[str, Any] | None = None,
+    params: Annotated[
+        dict[str, Any] | None,
+        Field(
+            description=(
+                "Query and path parameters for this operation_id. Keys and types are "
+                "operation-specific - call describe_endpoint(operation_id) first to get the "
+                "exact parameter names, types, and examples. Omit if the operation takes none."
+            ),
+        ),
+    ] = None,
+    body: Annotated[
+        dict[str, Any] | None,
+        Field(
+            description=(
+                "JSON request body for a POST operation, matching the request_body_schema "
+                "returned by describe_endpoint(operation_id). Omit for GET operations."
+            ),
+        ),
+    ] = None,
     limit: int | None = None,
     fields: list[str] | None = None,
     include_raw: bool = False,
@@ -181,8 +200,25 @@ async def list_toolsets() -> dict[str, Any]:
 @trace_mcp_tool("fetch_data")
 async def fetch_data(
     query: str,
-    params: dict[str, Any] | None = None,
-    body: dict[str, Any] | None = None,
+    params: Annotated[
+        dict[str, Any] | None,
+        Field(
+            description=(
+                "Parameters for the auto-selected endpoint. If omitted and the best-match "
+                "endpoint has required parameters, the tool returns that endpoint's "
+                "required_parameters and examples so you can retry with them filled in."
+            ),
+        ),
+    ] = None,
+    body: Annotated[
+        dict[str, Any] | None,
+        Field(
+            description=(
+                "JSON body for an auto-selected POST operation; the tool returns the "
+                "request_body_schema to fill when the match needs one."
+            ),
+        ),
+    ] = None,
     limit: int | None = None,
     fields: list[str] | None = None,
     include_raw: bool = False,
