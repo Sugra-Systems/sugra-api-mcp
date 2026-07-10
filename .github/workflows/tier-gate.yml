@@ -1,0 +1,35 @@
+# tier-gate: mechanical risk-tier floor. NON-required at introduction
+# (green-before-require); becomes required via APPEND-ONLY to the branch's
+# required_status_checks contexts once proven to report.
+#
+# pull_request_target (not pull_request): the BASE-branch workflow/script/config
+# judge the PR, so a PR cannot modify its own judge. The gate never checks out or
+# executes PR code - it reads the PR's changed-file LIST and labels via the API,
+# and reads a vendored CHANGE.md via the contents API. Token is read-only.
+# Label events re-run the check; ready_for_review covers draft promotion.
+# No `paths:` filter: the job reports on EVERY PR and exits fast when nothing
+# high-risk is touched (a path-filtered required check strands low-risk PRs).
+name: tier-gate
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled, unlabeled, edited, ready_for_review]
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  tier-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: tier gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
+        run: python3 .github/workflows/tier_gate.py --pr "$PR_NUMBER" --repo "$REPO" --head-sha "$HEAD_SHA"
