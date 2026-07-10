@@ -1,0 +1,8 @@
+# tier-floor HIGH-RISK globs. A PR touching ANY of these has floor T3: it must
+# carry the tier:T3 label AND release:human-ok to pass tier-gate. fnmatch globs
+# against repo-relative paths (renames match the old path too). This file is
+# itself security-load-bearing: it lives under .github/workflows/** so changes
+# to it are floored at T3 by its own last rule.
+sugra_api_mcp/auth.py
+sugra_api_mcp/config.py
+.github/workflows/**
