@@ -7,4 +7,5 @@ from . import (
     gateway,  # noqa: F401
     prompts,  # noqa: F401
     resources,  # noqa: F401
+    widgets,  # noqa: F401
 )
