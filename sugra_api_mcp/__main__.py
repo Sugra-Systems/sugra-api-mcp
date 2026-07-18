@@ -64,6 +64,15 @@ def _run_server(args: argparse.Namespace) -> None:
 
         auth = Authenticator(load_auth_config())
         app = mcp.streamable_http_app()
+        # Human-facing landing on the host root + liveness probe. HTTP-only
+        # surface (never registered for stdio); AuthMiddleware exempts exactly
+        # these two GET paths via PUBLIC_GET_PATHS.
+        from starlette.routing import Route
+
+        from .web import health, landing
+
+        app.router.routes.append(Route("/", landing, methods=["GET"]))
+        app.router.routes.append(Route("/health", health, methods=["GET"]))
         # Order matters: Starlette applies middleware in REVERSE registration
         # order, so AuthMiddleware added first ends up as the inner layer and
         # CORSMiddleware added second wraps it as the outer layer. OPTIONS
