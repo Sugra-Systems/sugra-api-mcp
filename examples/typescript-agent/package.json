@@ -1,0 +1,21 @@
+{
+  "name": "sugra-mcp-example-ts",
+  "version": "0.1.0",
+  "description": "TypeScript example: hosted Sugra MCP into an Anthropic tool-use agent.",
+  "license": "MIT",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "agent": "tsx agent.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": ">=0.40 <1",
+    "@modelcontextprotocol/sdk": ">=1.12 <2",
+    "dotenv": ">=16 <18"
+  },
+  "devDependencies": {
+    "@types/node": ">=20",
+    "tsx": ">=4 <5",
+    "typescript": ">=5 <7"
+  }
+}

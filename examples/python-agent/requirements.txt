@@ -1,0 +1,4 @@
+# Pinned to tested versions for a reproducible first run; mcp floats within 1.x.
+anthropic==0.105.2
+mcp>=1.27,<2
+python-dotenv==1.2.2
