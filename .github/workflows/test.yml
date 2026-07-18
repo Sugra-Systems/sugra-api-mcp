@@ -57,9 +57,14 @@ jobs:
     # Hosted app.sugra.ai/mcp redeploy, folded in from the deleted deploy-app-vm.yml
     # (which used a brittle `workflow_run: workflows: ["Test"]` NAME coupling that
     # breaks silently if this workflow is renamed). `needs: test` chains off ALL
-    # matrix legs in-file. Deploy only on push to main (after green tests) or a
-    # manual workflow_dispatch; never on a PR.
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    # matrix legs in-file.
+    # TEMPORARY FREEZE (board card MCP-4.1): hosted deploy is manual-only
+    # (workflow_dispatch) while the OpenAI Apps submission review runs against
+    # app.sugra.ai/mcp - runtime merges to main must not auto-change the endpoint
+    # under review. On the review verdict restore the original dual-trigger
+    # condition verbatim:
+    #   if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
