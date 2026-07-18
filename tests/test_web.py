@@ -88,7 +88,7 @@ def test_public_initialize_still_passes(client: TestClient) -> None:
 
 
 def test_allowlist_is_exactly_root_and_health() -> None:
-    assert PUBLIC_GET_PATHS == frozenset({"/", "/health"})
+    assert frozenset({"/", "/health"}) == PUBLIC_GET_PATHS
 
 
 def test_slash_variants_stay_behind_auth(client: TestClient) -> None:
