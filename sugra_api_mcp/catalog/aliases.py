@@ -102,6 +102,14 @@ _NON_TICKER_WORDS: frozenset[str] = frozenset({
     "PTR", "NTP", "ICMP", "SNMP", "TOR", "WHOIS", "RPKI", "ROA", "IANA",
     "ICANN", "IETF", "APNIC", "ARIN", "LIR", "RIR", "DDOS", "LAN", "WAN",
     "MTU", "TTL",
+    # Intergovernmental and statistical organizations (board MCP-4.9 field
+    # find: "IMF reserves" ranked quotes_symbol_* top-3 because IMF passed
+    # the ticker regex - every org acronym below leaked the same way). These
+    # dominate data-catalog queries; none is an active major US listing worth
+    # the ambiguous-ticker gate.
+    "IMF", "BIS", "OECD", "WTO", "WHO", "UN", "ILO", "FAO", "OPEC", "NATO",
+    "EIA", "BLS", "BEA", "CBO", "GAO", "ONS", "EIB", "EBRD", "ADB", "IFC",
+    "WB",
 })
 
 # Real NYSE tickers that collide with common English acronyms - AI (C3.ai Inc.)

@@ -53,6 +53,17 @@ _QUERY_STOPWORDS: frozenset[str] = frozenset({
 ALIAS_PHRASE_BOOST = 10
 TICKER_MARKETS_TOOLSET_BOOST = 12
 TICKER_QUOTES_SYMBOL_BOOST = 25
+# Symbol-aware relevance (board MCP-4.9): when the raw query carries a
+# ticker-like token (MSFT, AAPL - detect_tickers is conservative on purpose),
+# endpoints that actually TAKE a symbol input must outrank market-wide ones.
+# Without this, "MSFT earnings" ranked market_calendar_earnings (params
+# from/to only, market-wide) above quotes_symbol_earnings_events
+# (symbol-routed). Two tiers: a {symbol}/{ticker} path segment marks a
+# per-symbol resource (strongest signal); a required parameter named
+# symbol/ticker is symbol-scoped too, slightly weaker. Zero effect on queries
+# without a ticker-like token ("federal funds rate", "EUR USD exchange rate").
+TICKER_SYMBOL_PATH_BOOST = 10
+TICKER_SYMBOL_PARAM_BOOST = 6
 CURRENCY_PAIR_FOREX_BOOST = 15
 CENTRAL_BANK_PREFIX_BOOST = 15
 CRYPTO_NAMESPACE_BOOST = 18
@@ -106,6 +117,26 @@ def _alias_matches(endpoint_text: str, expansion: str) -> bool:
     return _phrase_has(endpoint_text, expansion)
 
 
+_SYMBOL_PATH_PARAM_RE = re.compile(r"\{(?:symbol|ticker)\}", re.IGNORECASE)
+_SYMBOL_PARAM_NAMES = frozenset({"symbol", "ticker"})
+
+
+def _symbol_input_kind(endpoint: Endpoint) -> str | None:
+    """Classify how an endpoint accepts a symbol-like input (MCP-4.9).
+
+    Returns "path" when the path contains a {symbol}/{ticker} segment (the
+    endpoint is a per-symbol resource), "param" when a required parameter is
+    named symbol/ticker, and None when the endpoint takes no symbol-like
+    input (market-wide endpoints such as calendar feeds).
+    """
+    if _SYMBOL_PATH_PARAM_RE.search(endpoint.path):
+        return "path"
+    for parameter in endpoint.parameters:
+        if parameter.required and parameter.name.lower() in _SYMBOL_PARAM_NAMES:
+            return "param"
+    return None
+
+
 def _score(
     endpoint: Endpoint,
     query_terms: list[str],
@@ -113,6 +144,7 @@ def _score(
     *,
     boost_quotes_symbol: bool,
     boost_markets_toolset: bool,
+    boost_symbol_input: bool,
     boost_forex: bool,
     boost_crypto: bool,
     boost_us_macro: bool,
@@ -139,6 +171,15 @@ def _score(
     elif boost_markets_toolset and endpoint.toolset == "markets":
         score += TICKER_MARKETS_TOOLSET_BOOST
         why.append("pattern:ticker->markets")
+
+    if boost_symbol_input:
+        symbol_kind = _symbol_input_kind(endpoint)
+        if symbol_kind == "path":
+            score += TICKER_SYMBOL_PATH_BOOST
+            why.append("pattern:ticker->symbol-path")
+        elif symbol_kind == "param":
+            score += TICKER_SYMBOL_PARAM_BOOST
+            why.append("pattern:ticker->symbol-param")
 
     if boost_forex and (
         endpoint.operation_id.startswith("forex_")
@@ -261,7 +302,14 @@ def search_catalog(
         and not query_has_equity_context(query)
     )
 
-    boost_quotes_symbol = bool(tickers) and not has_crypto_context and not network_dominated
+    # Symbol-aware gate (MCP-4.9): a ticker-like token in the RAW query means
+    # the user asks about one instrument, so endpoints that take a symbol
+    # input get the symbol-input boost. Crypto context and network dominance
+    # suppress it exactly like the quotes_symbol boost. The phrase-based
+    # extension below ("stock price" without a literal ticker) deliberately
+    # does NOT enable it: the gate needs an explicit ticker-like token.
+    has_ticker_token = bool(tickers) and not has_crypto_context and not network_dominated
+    boost_quotes_symbol = has_ticker_token
     # Also boost markets toolset on common stock-related phrases that don't
     # contain a literal ticker but clearly target equity ("Apple stock price",
     # "Tesla market cap"). Crypto context still suppresses.
@@ -290,6 +338,7 @@ def search_catalog(
             aliases,
             boost_quotes_symbol=boost_quotes_symbol,
             boost_markets_toolset=boost_markets_toolset,
+            boost_symbol_input=has_ticker_token,
             boost_forex=boost_forex,
             boost_crypto=boost_crypto,
             boost_us_macro=boost_us_macro,

@@ -474,3 +474,112 @@ def test_us_context_without_macro_keyword_does_not_boost_fred(catalog) -> None:
         f"FRED incorrectly boosted for US-but-non-macro query: "
         f"top-3 {[r['operation_id'] for r in results[:3]]}"
     )
+# ---- Symbol-aware relevance: ticker queries prefer symbol-routed endpoints ----
+# Board MCP-4.9: "MSFT earnings" ranked market_calendar_earnings (market-wide,
+# parameters from/to only) above quotes_symbol_earnings_events (symbol-routed).
+# The symbol-input boost fires only when the raw query carries a ticker-like
+# token and must leave every no-ticker query byte-identical to the pre-boost
+# ranking.
+
+
+def _is_symbol_routed(result: dict) -> bool:
+    """True when the endpoint takes a symbol-like input: a {symbol}/{ticker}
+    path segment or a required parameter named symbol/ticker."""
+    path = result["path"].lower()
+    if "{symbol}" in path or "{ticker}" in path:
+        return True
+    return any(name.lower() in ("symbol", "ticker") for name in result["required_parameters"])
+
+
+def test_msft_earnings_prefers_symbol_routed_endpoint(catalog) -> None:
+    """A ticker plus "earnings" must land on a SYMBOL-TAKING earnings endpoint,
+    never the market-wide earnings calendar (params from/to only - it cannot
+    answer a single-ticker question). The pin is semantic, not name-based:
+    after the toolset-coverage change (MCP-4.8) the v1 `earnings` endpoint
+    (required symbol param, markets toolset) legitimately outranks
+    quotes_symbol_earnings_events - both satisfy the MCP-4.9 goal."""
+    results = search_catalog(catalog, "MSFT earnings", limit=5)
+    assert results, "search returned no results for 'MSFT earnings'"
+    top_1 = results[0]
+    assert top_1["operation_id"] != "market_calendar_earnings", (
+        f"market-wide calendar won a ticker query. "
+        f"Full top-5: {[r['operation_id'] for r in results]}"
+    )
+    assert _is_symbol_routed(top_1), (
+        f"top-1 {top_1['operation_id']!r} does not take a symbol input: {top_1['path']}"
+    )
+    symbol_reasons = {"pattern:ticker->quotes_symbol", "pattern:ticker->symbol-path",
+                      "pattern:ticker->symbol-param"}
+    assert symbol_reasons & set(top_1["why"]), (
+        f"top-1 {top_1['operation_id']!r} won without a symbol-input boost reason: "
+        f"{top_1['why']}"
+    )
+
+
+def test_aapl_dividends_top_1_is_symbol_routed(catalog) -> None:
+    results = search_catalog(catalog, "AAPL dividends", limit=5)
+    assert results, "search returned no results for 'AAPL dividends'"
+    top_1 = results[0]
+    assert _is_symbol_routed(top_1), (
+        f"top-1 for 'AAPL dividends' is not symbol-routed: {top_1['operation_id']!r} "
+        f"({top_1['path']}). Full top-5: {[r['operation_id'] for r in results]}"
+    )
+
+
+def test_no_ticker_token_leaves_ranking_unchanged(catalog) -> None:
+    """NEGATIVE pin: "federal funds rate" carries no ticker-like token, so the
+    symbol-input boost must not fire on any result. Top-1 captured on main
+    (2026-07-19, v0.9.0 bundled catalog) BEFORE the boost landed:
+    fred_series_series_id at score 18. Both the winner and the absence of any
+    symbol-input boost reason are pinned.
+    """
+    results = search_catalog(catalog, "federal funds rate", limit=5)
+    assert results, "search returned no results for 'federal funds rate'"
+    # Full ordered top-5 pinned (not just top-1): a scoring change that
+    # reshuffles ranks 2-5 without touching the winner must still fail here.
+    assert [r["operation_id"] for r in results] == [
+        "fred_series_series_id",
+        "boc_prime_rate",
+        "catalog_funds",
+        "fed_rates_rate_type",
+        "fixed_income_treasury_reference_rates_rate_history",
+    ], f"non-ticker query ranking drifted: {[r['operation_id'] for r in results]}"
+    assert results[0]["operation_id"] == "fred_series_series_id", (
+        f"top-1 for 'federal funds rate' changed from the pre-boost main winner "
+        f"fred_series_series_id to {results[0]['operation_id']!r}. "
+        f"Full top-5: {[r['operation_id'] for r in results]}"
+    )
+    for result in results:
+        symbol_reasons = [
+            reason for reason in result["why"]
+            if reason.startswith("pattern:ticker->symbol")
+        ]
+        assert not symbol_reasons, (
+            f"symbol-input boost fired without a ticker token on "
+            f"{result['operation_id']!r}: {symbol_reasons}"
+        )
+
+
+ORG_ACRONYMS = [
+    "IMF", "BIS", "OECD", "WTO", "WHO", "UN", "ILO", "FAO", "OPEC", "NATO",
+    "EIA", "BLS", "BEA", "CBO", "GAO", "ONS", "EIB", "EBRD", "ADB", "IFC",
+    "WB",
+]
+
+
+@pytest.mark.parametrize("org", ORG_ACRONYMS)
+def test_org_acronyms_are_not_tickers(org) -> None:
+    """Intergovernmental and statistical org acronyms never pass as tickers
+    (field find: "IMF reserves" ranked quotes_symbol_* top-3 before the
+    blacklist covered them)."""
+    from sugra_api_mcp.catalog.aliases import detect_tickers
+
+    assert detect_tickers(f"{org} data report") == [], org
+
+
+def test_imf_reserves_lands_in_the_imf_namespace(catalog) -> None:
+    results = search_catalog(catalog, "IMF reserves", limit=3)
+    assert results[0]["operation_id"].startswith("imf_"), (
+        f"'IMF reserves' top-1 left the imf namespace: "
+        f"{[r['operation_id'] for r in results]}"
+    )
