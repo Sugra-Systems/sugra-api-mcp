@@ -54,6 +54,12 @@ PUBLIC_MCP_METHODS = frozenset(
     }
 )
 
+# Unauthenticated GET surface of the hosted app: the human landing page on the
+# host root and the liveness probe. Exact-path allowlist - everything else
+# (including unknown paths) stays behind auth. Handlers live in
+# sugra_api_mcp.web; the two lists must stay in sync.
+PUBLIC_GET_PATHS = frozenset({"", "/health"})
+
 
 class AuthError(Exception):
     def __init__(self, message: str, *, status: int = 401) -> None:
@@ -305,6 +311,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return False
 
     async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[override]
+        if (
+            request.method == "GET"
+            and request.url.path.rstrip("/") in PUBLIC_GET_PATHS
+        ):
+            return await call_next(request)
+
         header = request.headers.get("authorization", "")
         if not header:
             if await self._is_public_mcp_request(request):
