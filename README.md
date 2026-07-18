@@ -20,7 +20,7 @@ Official [Model Context Protocol](https://modelcontextprotocol.io) server for th
 
 ## What a session looks like
 
-Hosted MCP transcript (the three composed tools shown here run on the hosted endpoint):
+Hosted MCP transcript (the three composed tools shown here run on the hosted endpoint). Captured example - wording and figures vary by run and as new BLS data is published:
 
 ```text
 User: Where does US inflation stand, and how has it trended over the past year?
@@ -45,7 +45,7 @@ Every tool result carries structured metadata - source attribution, freshness, a
 flowchart LR
     A["AI agent<br/>(ChatGPT, Claude, Gemini, xAI, IDEs)"] --> B["Sugra MCP<br/>hosted: 11 tools / local: 8 tools"]
     B --> C["Sugra API<br/>1,500+ endpoints, 36 data domains"]
-    C --> D["163 primary sources<br/>markets, economics, government,<br/>news, climate, maritime"]
+    C --> D["160+ primary sources<br/>markets, economics, government,<br/>news, climate, maritime"]
 ```
 
 Behind the gateway sits the Sugra API: 160+ primary sources - sovereign statistics agencies, central banks, intergovernmental bodies and more - feeding 1,500+ endpoints across 36 data domains. The server ships a bundled catalog of the full endpoint surface, so discovery (search, describe, toolsets) runs locally without network calls; only actual data requests hit the API.
