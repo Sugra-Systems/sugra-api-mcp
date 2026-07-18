@@ -226,7 +226,10 @@ NAMESPACE_TOP_1_CASES = [
     # MSFT earnings: finnhub_* were renamed in Tier-C scrub - accept the
     # current top-1 winner `earnings` (the standalone equity-earnings endpoint),
     # `calendar_earnings`, and the ticker-routed quotes_symbol_earnings_*.
-    ("MSFT earnings", ("earnings", "calendar_earnings", "quotes_symbol_earnings", "quotes_symbol_calendar")),
+    # 2026-07-18 catalog resync: the market-wide earnings calendar moved to
+    # /api/v2 as `market_calendar_earnings` - same already-allowed namespace
+    # under a new operation_id, so it joins the tuple.
+    ("MSFT earnings", ("earnings", "calendar_earnings", "market_calendar_earnings", "quotes_symbol_earnings", "quotes_symbol_calendar")),
     ("Apple dividends", ("quotes_symbol_dividend", "quotes_symbol_actions", "market_calendar_dividends")),
     ("Tesla market cap", ("quotes_symbol_market_cap", "quotes_symbol_summary", "quotes_symbol_info")),
     ("FED interest rate", ("fed_rates", "fed_policy")),
