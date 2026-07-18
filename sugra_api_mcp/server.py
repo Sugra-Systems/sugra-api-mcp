@@ -10,9 +10,10 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.types import Icon, ToolAnnotations
 from mcp.types import Tool as MCPTool
-from mcp.types import ToolAnnotations
 
+from . import __version__
 from .client import SugraClient
 from .config import Config, load_allowed_origins, load_config
 
@@ -22,6 +23,23 @@ OAUTH_SCOPES = ["sugra:read", "offline_access"]
 
 OAUTH_SECURITY_SCHEMES: list[dict[str, Any]] = [
     {"type": "oauth2", "scopes": OAUTH_SCOPES},
+]
+
+WEBSITE_URL = "https://sugra.ai"
+
+# Brand icons for the initialize response, served from our own host so MCP
+# clients can fetch them without authentication.
+SERVER_ICONS: list[Icon] = [
+    Icon(
+        src="https://app.sugra.ai/images/brand/sugra-app-icon-192.png",
+        mimeType="image/png",
+        sizes=["192x192"],
+    ),
+    Icon(
+        src="https://app.sugra.ai/images/brand/sugra-app-icon-512.png",
+        mimeType="image/png",
+        sizes=["512x512"],
+    ),
 ]
 
 READ_ONLY_TOOL = ToolAnnotations(
@@ -46,7 +64,16 @@ def _with_oauth_security(tool: MCPTool) -> MCPTool:
 
 
 class SugraFastMCP(FastMCP):
-    """FastMCP with OAuth tool metadata required by ChatGPT Apps."""
+    """FastMCP with OAuth tool metadata required by ChatGPT Apps.
+
+    Also pins serverInfo.version to the package version: FastMCP never
+    forwards a version to the lowlevel server, whose initialize response then
+    falls back to the MCP SDK version instead of ours.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._mcp_server.version = __version__
 
     async def list_tools(self) -> list[MCPTool]:
         return [_with_oauth_security(tool) for tool in await super().list_tools()]
@@ -123,6 +150,8 @@ mcp = SugraFastMCP(
         "catalog. Use search_endpoints to find operations, describe_endpoint to inspect "
         "parameters, and call_endpoint to call by operation_id."
     ),
+    website_url=WEBSITE_URL,
+    icons=SERVER_ICONS,
     transport_security=_build_transport_security(),
 )
 
