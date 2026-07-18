@@ -12,11 +12,84 @@
   <a href="https://github.com/Sugra-Systems/sugra-api-mcp/blob/main/LICENSE">MIT</a>
 </p>
 
-**Gateway connector between LLM agents and world data.** Official [Model Context Protocol](https://modelcontextprotocol.io) server for the [Sugra API](https://sugra.ai), backed by a bundled endpoint catalog and operation_id calls.
+**Give any AI agent access to 1,500+ data endpoints across markets, economics, companies, government, news, climate, maritime and entity screening - through one MCP server.**
 
-Works with Anthropic Claude, OpenAI GPT, Google Gemini, xAI, and any MCP-enabled IDE.
+Works with ChatGPT, Claude, Gemini, xAI, Cursor, VS Code and any MCP client.
 
-Client details:
+Official [Model Context Protocol](https://modelcontextprotocol.io) server for the [Sugra API](https://sugra.ai): one connector, a bundled endpoint catalog, and structured tool results with source attribution on every answer.
+
+## What a session looks like
+
+Hosted MCP transcript (the three composed tools shown here run on the hosted endpoint):
+
+```text
+User: Where does US inflation stand, and how has it trended over the past year?
+
+resolve_entity("US inflation")
+  -> macro indicator cpi_us (U.S. Bureau of Labor Statistics)
+get_snapshot("cpi_us")
+  -> latest reading with freshness, provenance and quota cost
+get_timeseries("cpi_us", metric="macro_series", range="1y")
+  -> 12 monthly points with an explicit downsampling flag
+
+Agent: US CPI printed 2.9% year over year in the latest release, down from
+3.5% twelve months earlier - a steady decline since spring.
+Source: U.S. Bureau of Labor Statistics via the Sugra API.
+```
+
+Every tool result carries structured metadata - source attribution, freshness, and rate-limit cost - so agents can cite sources and budget requests instead of guessing.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A["AI agent<br/>(ChatGPT, Claude, Gemini, xAI, IDEs)"] --> B["Sugra MCP<br/>hosted: 11 tools / local: 8 tools"]
+    B --> C["Sugra API<br/>1,500+ endpoints, 36 data domains"]
+    C --> D["163 primary sources<br/>markets, economics, government,<br/>news, climate, maritime"]
+```
+
+Behind the gateway sits the Sugra API: 160+ primary sources - sovereign statistics agencies, central banks, intergovernmental bodies and more - feeding 1,500+ endpoints across 36 data domains. The server ships a bundled catalog of the full endpoint surface, so discovery (search, describe, toolsets) runs locally without network calls; only actual data requests hit the API.
+
+## Hosted MCP (recommended)
+
+No install. Point your client at the hosted Streamable HTTP endpoint:
+
+```
+https://app.sugra.ai/mcp
+```
+
+- 11 tools: the eight gateway tools plus three composed agent tools (`resolve_entity`, `get_snapshot`, `get_timeseries`)
+- OAuth sign-in through the claude.ai and ChatGPT connector UIs, or `Authorization: Bearer sugra_xxx_...` with an API key
+- In claude.ai: Settings -> Connectors -> Add custom connector
+- In ChatGPT: Settings -> Connectors -> Add MCP server
+
+## Local package
+
+Runs on your machine over stdio (or self-hosted HTTP) with an API key:
+
+```bash
+pip install sugra-api-mcp
+```
+
+- Eight gateway tools
+- stdio for desktop clients and IDEs, Streamable HTTP for self-hosting
+- Authenticates with `SUGRA_API_KEY`
+
+Get a free API key at [app.sugra.ai/settings/billing](https://app.sugra.ai/settings/billing) (Free tier: 50 req/day).
+
+## Quick start
+
+```bash
+pip install sugra-api-mcp
+export SUGRA_API_KEY=sugra_xxx_...   # free key: app.sugra.ai/settings/billing
+sugra-api-mcp call quotes_symbol_price --params '{"symbol":"AAPL"}'
+```
+
+The same call through an agent: connect the server to your client (next section) and ask "What is AAPL trading at? Use Sugra." The agent finds `quotes_symbol_price` in the catalog and calls it with the symbol.
+
+## Connect your client
+
+Supported clients:
 
 - **Anthropic Claude**: Claude Desktop, Claude Code (CLI), claude.ai (web)
 - **OpenAI GPT**: ChatGPT (via MCP connector)
@@ -25,50 +98,7 @@ Client details:
 - **IDEs**: VS Code (native), Cursor, Zed, Cline, Continue.dev, Windsurf
 - **Custom agents**: anything built on the Python or TypeScript MCP SDK
 
-## What you get
-
-Current release: eight-tool surface with hosted OAuth activity validation for `https://app.sugra.ai/mcp`, plus ChatGPT Apps-compatible OAuth tool metadata. Curated tool names such as `get_market_price`, `get_macro_indicator`, and `get_news` are not part of this package. The package exposes exactly eight tools:
-
-| Tool | Purpose |
-|---|---|
-| `fetch_data` | One-step: find best endpoint for a natural-language query and call it. Combines search + call in one round trip. |
-| `search_endpoints` | Search the bundled endpoint catalog. Runtime search does not fetch `/openapi.json`. |
-| `describe_endpoint` | Inspect an endpoint by `operation_id`, including path, method, parameters, required inputs, `agent_hints`, and `request_body_schema` for JSON-body POST operations. |
-| `call_endpoint` | Call a Sugra API operation by `operation_id`. Arbitrary path calls are no longer supported. |
-| `list_toolsets` | List catalog groups with endpoint counts and descriptions. |
-| `list_sources` | Show bundled catalog source metadata. |
-| `sugra_entity_screen` | Screen a name against sanctions and watchlists (Sugra Entity). |
-| `sugra_entity_lookup` | Composed entity lookup by identifier - `anchor` is `lei` or `vat`, plus the identifier `value`; returns registry identity + screening (Sugra Entity). |
-
-`call_endpoint` and `fetch_data` both support response shaping with `limit`, `fields`, and `include_raw`. Shaping works on enveloped (`{"data": ...}`) and envelope-less payloads alike; `fields` entries may use dotted paths into nested objects (`geo.city`), and `meta.shaped` reports what was actually applied (`fields_applied` / `fields_unmatched`, `limit_applied`) rather than echoing the request.
-
-`describe_endpoint` returns computed `agent_hints` per endpoint so agents can budget time and parallelism before calling:
-
-- `duration_class` - `fast` (under ~2s, snapshot-backed), `slow` (live upstream proxying, occasionally 15s+), or `heavy` (per-item upstream work, large batches can exceed the gateway timeout)
-- `max_concurrency` - advisory ceiling for parallel calls from one session
-- `bulk_cost` - on per-item bulk endpoints: 1 request credit per item in the request body (the API reports the total in the `X-RateLimit-Cost` response header)
-
-## Hosted-only agent tools (app.sugra.ai/mcp)
-
-The hosted MCP endpoint at `https://app.sugra.ai/mcp` serves the same eight tools PLUS three composed agent tools that are not available on stdio or self-hosted installs:
-
-| Tool | Purpose |
-|---|---|
-| `resolve_entity` | Free text (ticker, company, indicator, coin, currency pair) to a canonical market or macro entity. Ambiguous matches return ranked candidates, never a silent pick. |
-| `get_snapshot` | Entity plus a named recipe to one composed current view with freshness, provenance, coverage, and billing blocks. Composed calls charge a fixed recipe cost (1-2 requests) from the daily quota. |
-| `get_timeseries` | Entity plus metric (`price`, `macro_series`, `etf_flows`) to a bounded series with an explicit downsampling flag. |
-
-These three tools wrap an internal composed plane that requires an infrastructure credential available only on the hosted deployment. The tool code ships inside the package, but it is registered only by the hosted HTTP entry point and only when that credential is present - `pip install sugra-api-mcp` (stdio and self-hosted HTTP) always exposes the classic eight-tool gateway. Hosted-only examples in any documentation are labeled as such. For compliance entity lookups (LEI / VAT, sanctions screening) use `sugra_entity_lookup` and `sugra_entity_screen`, which work on every transport.
-
-## Installation
-
-```bash
-pip install sugra-api-mcp
-```
-
-Get a free API key at [app.sugra.ai/settings/billing](https://app.sugra.ai/settings/billing) (Free tier: 50 req/day).
-
-## Usage with Claude Desktop (stdio)
+### Claude Desktop (stdio)
 
 Add to `claude_desktop_config.json`:
 
@@ -91,7 +121,7 @@ Add to `claude_desktop_config.json`:
 
 Restart Claude Desktop. Sugra tools appear in the tools menu.
 
-## Usage with Claude Code (Anthropic CLI)
+### Claude Code (Anthropic CLI)
 
 ```bash
 claude mcp add sugra -- sugra-api-mcp
@@ -101,15 +131,15 @@ export SUGRA_API_KEY=sugra_xxx_...
 
 Or edit `~/.claude/config.json` manually with the same shape as Claude Desktop above.
 
-## Usage with Cursor, Zed, Cline, Continue.dev, Windsurf
+### Cursor, Zed, Cline, Continue.dev, Windsurf
 
 Each of these has an MCP settings file (typically `mcp.json` or equivalent) with the same stdio config shape as Claude Desktop.
 
-## Usage with ChatGPT
+### ChatGPT
 
 ChatGPT supports MCP through its connector UI. Use the hosted HTTP endpoint (below) since ChatGPT does not launch local stdio processes.
 
-## Usage over HTTP (claude.ai, ChatGPT, remote agents)
+### HTTP (claude.ai, ChatGPT, remote agents)
 
 Hosted Streamable HTTP endpoint:
 
@@ -121,6 +151,41 @@ Add to claude.ai, ChatGPT, or any Streamable HTTP MCP client. Authenticate with 
 
 In claude.ai: Settings -> Connectors -> Add custom connector.
 In ChatGPT: Settings -> Connectors -> Add MCP server.
+
+## Tool reference
+
+Current release: eight-tool surface with hosted OAuth activity validation for `https://app.sugra.ai/mcp`, plus ChatGPT Apps-compatible OAuth tool metadata. Curated tool names such as `get_market_price`, `get_macro_indicator`, and `get_news` are not part of this package. The package exposes exactly eight tools:
+
+| Tool | Purpose |
+|---|---|
+| `fetch_data` | One-step: find best endpoint for a natural-language query and call it. Combines search + call in one round trip. |
+| `search_endpoints` | Search the bundled endpoint catalog. Runtime search does not fetch `/openapi.json`. |
+| `describe_endpoint` | Inspect an endpoint by `operation_id`, including path, method, parameters, required inputs, `agent_hints`, and `request_body_schema` for JSON-body POST operations. |
+| `call_endpoint` | Call a Sugra API operation by `operation_id`. Arbitrary path calls are no longer supported. |
+| `list_toolsets` | List catalog groups with endpoint counts and descriptions. |
+| `list_sources` | Show bundled catalog source metadata. |
+| `sugra_entity_screen` | Screen a name against sanctions and watchlists (Sugra Entity). |
+| `sugra_entity_lookup` | Composed entity lookup by identifier - `anchor` is `lei` or `vat`, plus the identifier `value`; returns registry identity + screening (Sugra Entity). |
+
+`call_endpoint` and `fetch_data` both support response shaping with `limit`, `fields`, and `include_raw`. Shaping works on enveloped (`{"data": ...}`) and envelope-less payloads alike; `fields` entries may use dotted paths into nested objects (`geo.city`), and `meta.shaped` reports what was actually applied (`fields_applied` / `fields_unmatched`, `limit_applied`) rather than echoing the request.
+
+`describe_endpoint` returns computed `agent_hints` per endpoint so agents can budget time and parallelism before calling:
+
+- `duration_class` - `fast` (under ~2s, snapshot-backed), `slow` (live upstream proxying, occasionally 15s+), or `heavy` (per-item upstream work, large batches can exceed the gateway timeout)
+- `max_concurrency` - advisory ceiling for parallel calls from one session
+- `bulk_cost` - on per-item bulk endpoints: 1 request credit per item in the request body (the API reports the total in the `X-RateLimit-Cost` response header)
+
+### Hosted-only agent tools (app.sugra.ai/mcp)
+
+The hosted MCP endpoint at `https://app.sugra.ai/mcp` serves the same eight tools PLUS three composed agent tools that are not available on stdio or self-hosted installs:
+
+| Tool | Purpose |
+|---|---|
+| `resolve_entity` | Free text (ticker, company, indicator, coin, currency pair) to a canonical market or macro entity. Ambiguous matches return ranked candidates, never a silent pick. |
+| `get_snapshot` | Entity plus a named recipe to one composed current view with freshness, provenance, coverage, and billing blocks. Composed calls charge a fixed recipe cost (1-2 requests) from the daily quota. |
+| `get_timeseries` | Entity plus metric (`price`, `macro_series`, `etf_flows`) to a bounded series with an explicit downsampling flag. |
+
+These three tools wrap an internal composed plane that requires an infrastructure credential available only on the hosted deployment. The tool code ships inside the package, but it is registered only by the hosted HTTP entry point and only when that credential is present - `pip install sugra-api-mcp` (stdio and self-hosted HTTP) always exposes the classic eight-tool gateway. Hosted-only examples in any documentation are labeled as such. For compliance entity lookups (LEI / VAT, sanctions screening) use `sugra_entity_lookup` and `sugra_entity_screen`, which work on every transport.
 
 ## CLI
 
