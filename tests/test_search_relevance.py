@@ -491,19 +491,28 @@ def _is_symbol_routed(result: dict) -> bool:
     return any(name.lower() in ("symbol", "ticker") for name in result["required_parameters"])
 
 
-def test_msft_earnings_prefers_symbol_routed_quotes_endpoint(catalog) -> None:
-    """A ticker plus "earnings" must land on the per-symbol earnings endpoint,
-    not the market-wide earnings calendar (which takes no symbol at all and
-    cannot answer a single-ticker question)."""
+def test_msft_earnings_prefers_symbol_routed_endpoint(catalog) -> None:
+    """A ticker plus "earnings" must land on a SYMBOL-TAKING earnings endpoint,
+    never the market-wide earnings calendar (params from/to only - it cannot
+    answer a single-ticker question). The pin is semantic, not name-based:
+    after the toolset-coverage change (MCP-4.8) the v1 `earnings` endpoint
+    (required symbol param, markets toolset) legitimately outranks
+    quotes_symbol_earnings_events - both satisfy the MCP-4.9 goal."""
     results = search_catalog(catalog, "MSFT earnings", limit=5)
     assert results, "search returned no results for 'MSFT earnings'"
     top_1 = results[0]
-    assert top_1["operation_id"].startswith("quotes_symbol_"), (
-        f"top-1 for 'MSFT earnings' was {top_1['operation_id']!r}; expected a "
-        f"quotes_symbol_* endpoint. Full top-5: {[r['operation_id'] for r in results]}"
+    assert top_1["operation_id"] != "market_calendar_earnings", (
+        f"market-wide calendar won a ticker query. "
+        f"Full top-5: {[r['operation_id'] for r in results]}"
     )
     assert _is_symbol_routed(top_1), (
         f"top-1 {top_1['operation_id']!r} does not take a symbol input: {top_1['path']}"
+    )
+    symbol_reasons = {"pattern:ticker->quotes_symbol", "pattern:ticker->symbol-path",
+                      "pattern:ticker->symbol-param"}
+    assert symbol_reasons & set(top_1["why"]), (
+        f"top-1 {top_1['operation_id']!r} won without a symbol-input boost reason: "
+        f"{top_1['why']}"
     )
 
 
