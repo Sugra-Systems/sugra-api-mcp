@@ -30,6 +30,20 @@ NUMBER_WORDS = {
     8: "eight",
 }
 
+# Registration order: tools/__init__ imports entities first, then gateway;
+# the SDK ToolManager stores tools in an insertion-ordered dict, so
+# list_tools() returns exactly this order on every call.
+EXPECTED_TOOL_NAME_ORDER = [
+    "sugra_entity_screen",
+    "sugra_entity_lookup",
+    "search_endpoints",
+    "describe_endpoint",
+    "call_endpoint",
+    "list_toolsets",
+    "fetch_data",
+    "list_sources",
+]
+
 
 def _pyproject_version():
     data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
@@ -52,6 +66,39 @@ def test_server_json_versions_match_pyproject():
         assert package["version"] == version, "server.json package version drifted from pyproject"
 
 
+def test_server_info_version_matches_package():
+    """serverInfo.version in the initialize response must be OUR version.
+
+    FastMCP never forwards a version to the lowlevel server, which then falls
+    back to the MCP SDK version. SugraFastMCP.__init__ pins it; both the
+    attribute and the initialization options built from it must match.
+    """
+    from sugra_api_mcp.server import mcp
+
+    assert mcp._mcp_server.version == sugra_api_mcp.__version__
+    init_options = mcp._mcp_server.create_initialization_options()
+    assert init_options.server_version == sugra_api_mcp.__version__
+
+
+def test_server_website_url_and_icons():
+    from sugra_api_mcp.server import SERVER_ICONS, WEBSITE_URL, mcp
+
+    low = mcp._mcp_server
+    assert WEBSITE_URL == "https://sugra.ai"
+    assert low.website_url == WEBSITE_URL
+
+    assert low.icons == SERVER_ICONS
+    assert [icon.sizes for icon in low.icons] == [["192x192"], ["512x512"]]
+    for icon in low.icons:
+        assert icon.mimeType == "image/png"
+        assert icon.src.startswith("https://app.sugra.ai/images/brand/")
+
+    # The lowlevel server forwards both fields into the initialize response.
+    init_options = mcp._mcp_server.create_initialization_options()
+    assert init_options.website_url == WEBSITE_URL
+    assert init_options.icons == SERVER_ICONS
+
+
 def test_registered_tool_count_matches_expectation(monkeypatch):
     monkeypatch.setenv("SUGRA_API_KEY", "dummy")
     import asyncio
@@ -61,6 +108,21 @@ def test_registered_tool_count_matches_expectation(monkeypatch):
 
     tool_list = asyncio.run(mcp.list_tools())
     assert len(tool_list) == EXPECTED_TOOL_COUNT
+
+
+def test_tool_list_order_is_pinned(monkeypatch):
+    """list_tools() must be deterministic AND stay in registration order."""
+    monkeypatch.setenv("SUGRA_API_KEY", "dummy")
+    import asyncio
+
+    from sugra_api_mcp import tools  # noqa: F401  (import registers the tools)
+    from sugra_api_mcp.server import mcp
+
+    first = [tool.name for tool in asyncio.run(mcp.list_tools())]
+    second = [tool.name for tool in asyncio.run(mcp.list_tools())]
+    assert first == second, "consecutive list_tools calls disagree on order"
+    assert first == EXPECTED_TOOL_NAME_ORDER
+    assert len(EXPECTED_TOOL_NAME_ORDER) == EXPECTED_TOOL_COUNT
 
 
 def test_hosted_tool_count_with_internal_token():
@@ -86,7 +148,10 @@ def test_hosted_tool_count_with_internal_token():
     )
     out = subprocess.run(
         [sys.executable, "-c", code],
-        capture_output=True, text=True, cwd=REPO_ROOT, check=True,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        check=True,
     )
     assert int(out.stdout.strip()) == EXPECTED_HOSTED_TOOL_COUNT
 
