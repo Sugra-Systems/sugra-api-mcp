@@ -474,3 +474,69 @@ def test_us_context_without_macro_keyword_does_not_boost_fred(catalog) -> None:
         f"FRED incorrectly boosted for US-but-non-macro query: "
         f"top-3 {[r['operation_id'] for r in results[:3]]}"
     )
+# ---- Symbol-aware relevance: ticker queries prefer symbol-routed endpoints ----
+# Board MCP-4.9: "MSFT earnings" ranked market_calendar_earnings (market-wide,
+# parameters from/to only) above quotes_symbol_earnings_events (symbol-routed).
+# The symbol-input boost fires only when the raw query carries a ticker-like
+# token and must leave every no-ticker query byte-identical to the pre-boost
+# ranking.
+
+
+def _is_symbol_routed(result: dict) -> bool:
+    """True when the endpoint takes a symbol-like input: a {symbol}/{ticker}
+    path segment or a required parameter named symbol/ticker."""
+    path = result["path"].lower()
+    if "{symbol}" in path or "{ticker}" in path:
+        return True
+    return any(name.lower() in ("symbol", "ticker") for name in result["required_parameters"])
+
+
+def test_msft_earnings_prefers_symbol_routed_quotes_endpoint(catalog) -> None:
+    """A ticker plus "earnings" must land on the per-symbol earnings endpoint,
+    not the market-wide earnings calendar (which takes no symbol at all and
+    cannot answer a single-ticker question)."""
+    results = search_catalog(catalog, "MSFT earnings", limit=5)
+    assert results, "search returned no results for 'MSFT earnings'"
+    top_1 = results[0]
+    assert top_1["operation_id"].startswith("quotes_symbol_"), (
+        f"top-1 for 'MSFT earnings' was {top_1['operation_id']!r}; expected a "
+        f"quotes_symbol_* endpoint. Full top-5: {[r['operation_id'] for r in results]}"
+    )
+    assert _is_symbol_routed(top_1), (
+        f"top-1 {top_1['operation_id']!r} does not take a symbol input: {top_1['path']}"
+    )
+
+
+def test_aapl_dividends_top_1_is_symbol_routed(catalog) -> None:
+    results = search_catalog(catalog, "AAPL dividends", limit=5)
+    assert results, "search returned no results for 'AAPL dividends'"
+    top_1 = results[0]
+    assert _is_symbol_routed(top_1), (
+        f"top-1 for 'AAPL dividends' is not symbol-routed: {top_1['operation_id']!r} "
+        f"({top_1['path']}). Full top-5: {[r['operation_id'] for r in results]}"
+    )
+
+
+def test_no_ticker_token_leaves_ranking_unchanged(catalog) -> None:
+    """NEGATIVE pin: "federal funds rate" carries no ticker-like token, so the
+    symbol-input boost must not fire on any result. Top-1 captured on main
+    (2026-07-19, v0.9.0 bundled catalog) BEFORE the boost landed:
+    fred_series_series_id at score 18. Both the winner and the absence of any
+    symbol-input boost reason are pinned.
+    """
+    results = search_catalog(catalog, "federal funds rate", limit=5)
+    assert results, "search returned no results for 'federal funds rate'"
+    assert results[0]["operation_id"] == "fred_series_series_id", (
+        f"top-1 for 'federal funds rate' changed from the pre-boost main winner "
+        f"fred_series_series_id to {results[0]['operation_id']!r}. "
+        f"Full top-5: {[r['operation_id'] for r in results]}"
+    )
+    for result in results:
+        symbol_reasons = [
+            reason for reason in result["why"]
+            if reason.startswith("pattern:ticker->symbol")
+        ]
+        assert not symbol_reasons, (
+            f"symbol-input boost fired without a ticker token on "
+            f"{result['operation_id']!r}: {symbol_reasons}"
+        )
