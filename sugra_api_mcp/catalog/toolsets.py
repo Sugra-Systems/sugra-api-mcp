@@ -57,7 +57,7 @@ TOOLSET_DESCRIPTIONS: dict[str, str] = {
     "predictions": "Prediction market events, prices, orderbooks, trades, and settlements",
     "macro": "Macroeconomic indicators and statistical time series",
     "statistics": (
-        "National statistical office data: prices, labour, population, "
+        "National statistical office data: prices, labor, population, "
         "and industry series"
     ),
     "central_banks": "Central bank rates, balance sheets, and monetary statistics",
