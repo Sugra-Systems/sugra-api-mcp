@@ -118,15 +118,19 @@ async def test_raw_slash_paths_stay_behind_auth() -> None:
     )
     app.add_middleware(AuthMiddleware, authenticator=Authenticator(config))
 
-    for raw_path in ("//", "////", "//health"):
-        status_holder: list[int] = []
-
+    def make_channel(statuses: list[int]):
         async def receive():
             return {"type": "http.request", "body": b"", "more_body": False}
 
-        async def send(message):
+        async def send(message, _statuses=statuses):
             if message["type"] == "http.response.start":
-                status_holder.append(message["status"])
+                _statuses.append(message["status"])
+
+        return receive, send
+
+    for raw_path in ("//", "////", "//health"):
+        status_holder: list[int] = []
+        receive, send = make_channel(status_holder)
 
         scope = {
             "type": "http",
