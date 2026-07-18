@@ -114,8 +114,8 @@ def test_prompt_module_source_follows_copy_rules():
 
     source = inspect.getsource(prompts_module)
 
-    assert "—" not in source, "em dash found in prompt module"
-    assert "–" not in source, "en dash found in prompt module"
+    assert "\u2014" not in source, "em dash found in prompt module"
+    assert "\u2013" not in source, "en dash found in prompt module"
     assert source.isascii(), "non-ASCII character (emoji or dash) in prompt module"
 
     lowered = source.lower()
