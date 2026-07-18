@@ -7,12 +7,12 @@
     "url": "https://github.com/Sugra-Systems/sugra-api-mcp",
     "source": "github"
   },
-  "version": "0.8.2",
+  "version": "0.8.3rc1",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "sugra-api-mcp",
-      "version": "0.8.2",
+      "version": "0.8.3rc1",
       "transport": {
         "type": "stdio"
       },
