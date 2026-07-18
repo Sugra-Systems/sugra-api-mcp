@@ -50,6 +50,13 @@ READ_ONLY_TOOL = ToolAnnotations(
 )
 
 
+# MCP Apps (SEP-1865, extension io.modelcontextprotocol/ui): the one tool
+# that renders an interactive widget. Its template declaration is attached in
+# SugraFastMCP.list_tools via _meta.ui.resourceUri (spec section "Resource
+# Discovery"; the flat "ui/resourceUri" key is deprecated).
+UI_TEMPLATE_TOOL = "call_endpoint"
+
+
 def _oauth_security_schemes() -> list[dict[str, Any]]:
     return deepcopy(OAUTH_SECURITY_SCHEMES)
 
@@ -63,8 +70,26 @@ def _with_oauth_security(tool: MCPTool) -> MCPTool:
     return MCPTool.model_validate(payload)
 
 
+def _with_ui_template(tool: MCPTool) -> MCPTool:
+    """Attach the MCP Apps template declaration (SEP-1865 "Resource Discovery").
+
+    Only UI_TEMPLATE_TOOL renders a widget: _meta.ui.resourceUri points at
+    the predeclared ui:// template resource served by tools/widgets.py. The
+    import is lazy because the tools package imports this module at load time.
+    """
+    if tool.name != UI_TEMPLATE_TOOL:
+        return tool
+    from .tools.widgets import PRICE_CHART_URI
+
+    payload = tool.model_dump(by_alias=True, exclude_none=True)
+    meta = dict(payload.get("_meta") or {})
+    meta["ui"] = {"resourceUri": PRICE_CHART_URI}
+    payload["_meta"] = meta
+    return MCPTool.model_validate(payload)
+
+
 class SugraFastMCP(FastMCP):
-    """FastMCP with OAuth tool metadata required by ChatGPT Apps.
+    """FastMCP with OAuth tool metadata and the SEP-1865 UI template meta.
 
     Also pins serverInfo.version to the package version: FastMCP never
     forwards a version to the lowlevel server, whose initialize response then
@@ -76,7 +101,10 @@ class SugraFastMCP(FastMCP):
         self._mcp_server.version = __version__
 
     async def list_tools(self) -> list[MCPTool]:
-        return [_with_oauth_security(tool) for tool in await super().list_tools()]
+        return [
+            _with_ui_template(_with_oauth_security(tool))
+            for tool in await super().list_tools()
+        ]
 
 
 def read_only(title: str) -> ToolAnnotations:

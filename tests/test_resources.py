@@ -1,4 +1,4 @@
-"""Tests for the read-only catalog resources (sugra:// URIs)."""
+"""Tests for the read-only registered resources (sugra:// catalog + ui:// widget)."""
 
 from __future__ import annotations
 
@@ -10,12 +10,17 @@ DOMAINS_URI = "sugra://catalog/domains"
 SOURCES_URI = "sugra://catalog/sources"
 ATTRIBUTION_URI = "sugra://attribution"
 
-EXPECTED_URIS = {DOMAINS_URI, SOURCES_URI, ATTRIBUTION_URI}
+# MCP Apps template (SEP-1865), registered by tools/widgets.py and covered
+# in depth by tests/test_widgets.py.
+WIDGET_URI = "ui://sugra/price-chart.html"
+
+EXPECTED_URIS = {DOMAINS_URI, SOURCES_URI, ATTRIBUTION_URI, WIDGET_URI}
 
 EXPECTED_MIME_TYPES = {
     DOMAINS_URI: "application/json",
     SOURCES_URI: "application/json",
     ATTRIBUTION_URI: "text/markdown",
+    WIDGET_URI: "text/html;profile=mcp-app",
 }
 
 # Commercial upstream names that must never appear in public copy. Lowercase
@@ -47,9 +52,9 @@ async def _read(mcp, uri: str):
     return contents[0]
 
 
-async def test_exactly_three_resources_registered(registered_mcp) -> None:
+async def test_exactly_four_resources_registered(registered_mcp) -> None:
     resource_list = await registered_mcp.list_resources()
-    assert len(resource_list) == 3
+    assert len(resource_list) == 4
     assert {str(resource.uri) for resource in resource_list} == EXPECTED_URIS
 
 
