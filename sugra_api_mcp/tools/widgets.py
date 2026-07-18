@@ -157,6 +157,12 @@ PRICE_CHART_TEMPLATE = """<!doctype html>
   }
 
   window.addEventListener("message", function (event) {
+    // Only the embedding host may talk to this app: reject messages whose
+    // source is not the parent window (codex review: prevents init and
+    // tool-result spoofing from sibling or injected frames). The parent
+    // origin is host-specific and unknown at build time, so the SOURCE
+    // identity check is the reliable gate.
+    if (event.source !== window.parent) { return; }
     var msg = event.data;
     if (!msg || msg.jsonrpc !== "2.0") { return; }
     if (!initialized && msg.id === initializeId && msg.method === undefined) {
