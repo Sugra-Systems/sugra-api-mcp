@@ -27,6 +27,12 @@ def _has_ref(prop: dict) -> bool:
     return any(b.get("$ref") for b in prop.get("anyOf", []))
 
 
+def _types_of(prop: dict) -> set[str]:
+    types = {prop["type"]} if "type" in prop else set()
+    types.update(branch["type"] for branch in prop.get("anyOf", []) if "type" in branch)
+    return types
+
+
 def _props(tools):
     return {t.name: (t.inputSchema or {}).get("properties", {}) for t in tools}
 
@@ -77,3 +83,8 @@ def test_gateway_dynamic_params_carry_schema_guidance(tool_schemas):
             assert desc and any(g in desc for g in guidance), (
                 f"{tool}.{arg} missing schema guidance"
             )
+
+
+def test_gateway_body_accepts_object_and_array_json(tool_schemas):
+    for tool in ("call_endpoint", "fetch_data"):
+        assert _types_of(tool_schemas[tool]["body"]) == {"object", "array", "null"}

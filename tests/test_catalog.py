@@ -61,6 +61,27 @@ def test_bundled_catalog_carries_bulk_request_body_schema() -> None:
     assert bulk_asn.request_body_schema["properties"]["asns"]["items"] == {"type": "integer"}
 
 
+def test_bundled_catalog_request_bodies_use_supported_top_level_shapes() -> None:
+    catalog = load_catalog()
+    body_types: dict[str, set[str]] = {}
+
+    for endpoint in catalog.endpoints:
+        schema = endpoint.request_body_schema
+        if not schema:
+            continue
+        types = (
+            {schema["type"]}
+            if "type" in schema
+            else {branch["type"] for branch in schema.get("anyOf", []) if "type" in branch}
+        )
+        body_types[endpoint.operation_id] = types
+
+    assert all(types <= {"object", "array", "null"} for types in body_types.values())
+    assert {operation_id for operation_id, types in body_types.items() if "array" in types} == {
+        "post_openfigi_mapping"
+    }
+
+
 def test_search_nasdaq_futures_returns_market_relevant_candidate() -> None:
     catalog = build_catalog_from_openapi(json.loads(FIXTURE.read_text(encoding="utf-8")))
 

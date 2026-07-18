@@ -12,6 +12,7 @@ from ..catalog.loader import load_catalog
 from ..catalog.response import shape_response
 from ..catalog.search import search_catalog
 from ..catalog.toolsets import ordered_toolsets
+from ..client import JsonBody
 from ..observability import trace_mcp_tool
 from ..server import get_client, mcp, read_only
 
@@ -23,7 +24,7 @@ def _resolve_path(path: str, params: dict[str, Any]) -> str:
     return resolved
 
 
-def _missing_required(endpoint, params: dict[str, Any], body: dict[str, Any] | None) -> list[str]:
+def _missing_required(endpoint, params: dict[str, Any], body: JsonBody | None) -> list[str]:
     missing = [
         parameter.name
         for parameter in endpoint.parameters
@@ -84,7 +85,7 @@ async def call_endpoint(
         ),
     ] = None,
     body: Annotated[
-        dict[str, Any] | None,
+        JsonBody | None,
         Field(
             description=(
                 "JSON request body for a POST operation, matching the request_body_schema "
@@ -211,7 +212,7 @@ async def fetch_data(
         ),
     ] = None,
     body: Annotated[
-        dict[str, Any] | None,
+        JsonBody | None,
         Field(
             description=(
                 "JSON body for an auto-selected POST operation; the tool returns the "

@@ -37,6 +37,7 @@ from .config import Config
 # Using ~4 chars per token as a conservative heuristic, we cap at 85 000 chars
 # (~21 000 tokens) to leave headroom for MCP envelope overhead.
 MAX_RESPONSE_CHARS = 85_000
+JsonBody = dict[str, Any] | list[Any]
 
 
 def _pkg_version() -> str:
@@ -124,7 +125,7 @@ class SugraClient:
     async def post(
         self,
         path: str,
-        json: dict[str, Any] | None = None,
+        json: JsonBody | None = None,
         headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         return await self.request("POST", path, json=json, headers=headers)
@@ -134,7 +135,7 @@ class SugraClient:
         method: str,
         path: str,
         params: dict[str, Any] | None = None,
-        json: dict[str, Any] | None = None,
+        json: JsonBody | None = None,
         headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         clean_params = {k: v for k, v in (params or {}).items() if v is not None}

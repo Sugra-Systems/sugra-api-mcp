@@ -6,7 +6,12 @@ import json
 from pathlib import Path
 from typing import Any, ClassVar
 
+import httpx
+
 from sugra_api_mcp.catalog.builder import build_catalog_from_openapi
+from sugra_api_mcp.catalog.loader import load_catalog
+from sugra_api_mcp.client import SugraClient
+from sugra_api_mcp.config import Config
 from sugra_api_mcp.tools import gateway
 
 FIXTURE = Path(__file__).parent / "fixtures" / "openapi_minimal.json"
@@ -75,6 +80,33 @@ async def test_call_endpoint_post_preserves_query_params_and_body(monkeypatch) -
         )
     ]
     assert result["data"] == {"ok": True}
+
+
+async def test_call_endpoint_sends_array_body_end_to_end(monkeypatch) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"data": [{"figi": "BBG000B9XRY4"}]}, request=request)
+
+    client = SugraClient(
+        Config(api_base="https://api.test", api_key="test-key", timeout=1),
+        transport=httpx.MockTransport(handler),
+    )
+    monkeypatch.setattr(gateway, "load_catalog", load_catalog)
+    monkeypatch.setattr(gateway, "get_client", lambda: client)
+    body = [{"idType": "TICKER", "idValue": "IBM"}]
+
+    try:
+        result = await gateway.call_endpoint("post_openfigi_mapping", body=body)
+    finally:
+        await client.aclose()
+
+    assert len(requests) == 1
+    assert requests[0].method == "POST"
+    assert requests[0].url.path == "/api/v1/openfigi/mapping"
+    assert json.loads(requests[0].content) == body
+    assert result["data"] == [{"figi": "BBG000B9XRY4"}]
 
 
 async def test_call_endpoint_validates_missing_required_params(monkeypatch) -> None:
@@ -411,4 +443,3 @@ async def test_fetch_data_needs_params_includes_agent_hints(monkeypatch) -> None
     assert fake.calls == []
     assert "agent_hints" in result["selected_endpoint"]
     assert result["selected_endpoint"]["agent_hints"]["duration_class"] == "fast"
-
