@@ -526,6 +526,15 @@ def test_no_ticker_token_leaves_ranking_unchanged(catalog) -> None:
     """
     results = search_catalog(catalog, "federal funds rate", limit=5)
     assert results, "search returned no results for 'federal funds rate'"
+    # Full ordered top-5 pinned (not just top-1): a scoring change that
+    # reshuffles ranks 2-5 without touching the winner must still fail here.
+    assert [r["operation_id"] for r in results] == [
+        "fred_series_series_id",
+        "boc_prime_rate",
+        "catalog_funds",
+        "fed_rates_rate_type",
+        "fixed_income_treasury_reference_rates_rate_history",
+    ], f"non-ticker query ranking drifted: {[r['operation_id'] for r in results]}"
     assert results[0]["operation_id"] == "fred_series_series_id", (
         f"top-1 for 'federal funds rate' changed from the pre-boost main winner "
         f"fred_series_series_id to {results[0]['operation_id']!r}. "
@@ -540,3 +549,28 @@ def test_no_ticker_token_leaves_ranking_unchanged(catalog) -> None:
             f"symbol-input boost fired without a ticker token on "
             f"{result['operation_id']!r}: {symbol_reasons}"
         )
+
+
+ORG_ACRONYMS = [
+    "IMF", "BIS", "OECD", "WTO", "WHO", "UN", "ILO", "FAO", "OPEC", "NATO",
+    "EIA", "BLS", "BEA", "CBO", "GAO", "ONS", "EIB", "EBRD", "ADB", "IFC",
+    "WB",
+]
+
+
+@pytest.mark.parametrize("org", ORG_ACRONYMS)
+def test_org_acronyms_are_not_tickers(org) -> None:
+    """Intergovernmental and statistical org acronyms never pass as tickers
+    (field find: "IMF reserves" ranked quotes_symbol_* top-3 before the
+    blacklist covered them)."""
+    from sugra_api_mcp.catalog.aliases import detect_tickers
+
+    assert detect_tickers(f"{org} data report") == [], org
+
+
+def test_imf_reserves_lands_in_the_imf_namespace(catalog) -> None:
+    results = search_catalog(catalog, "IMF reserves", limit=3)
+    assert results[0]["operation_id"].startswith("imf_"), (
+        f"'IMF reserves' top-1 left the imf namespace: "
+        f"{[r['operation_id'] for r in results]}"
+    )
