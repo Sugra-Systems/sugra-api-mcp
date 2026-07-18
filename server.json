@@ -4,7 +4,7 @@
   "title": "Sugra API",
   "description": "Gateway between LLM agents and world data through eight tools and a bundled endpoint catalog.",
   "repository": {
-    "url": "https://github.com/Sugra-Systems/prod-sugra-ai-MCP",
+    "url": "https://github.com/Sugra-Systems/sugra-api-mcp",
     "source": "github"
   },
   "version": "0.8.2",

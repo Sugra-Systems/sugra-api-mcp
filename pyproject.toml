@@ -69,9 +69,9 @@ sugra-api-mcp = "sugra_api_mcp.__main__:main"
 [project.urls]
 Homepage = "https://sugra.ai"
 Documentation = "https://docs.sugra.ai"
-Repository = "https://github.com/Sugra-Systems/prod-sugra-ai-MCP"
-Issues = "https://github.com/Sugra-Systems/prod-sugra-ai-MCP/issues"
-Security = "https://github.com/Sugra-Systems/prod-sugra-ai-MCP/blob/main/SECURITY.md"
+Repository = "https://github.com/Sugra-Systems/sugra-api-mcp"
+Issues = "https://github.com/Sugra-Systems/sugra-api-mcp/issues"
+Security = "https://github.com/Sugra-Systems/sugra-api-mcp/blob/main/SECURITY.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["sugra_api_mcp"]
