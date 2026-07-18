@@ -185,15 +185,24 @@ async def call_endpoint(
         }
 
 
-@mcp.tool(annotations=read_only("List toolsets"))
-@trace_mcp_tool("list_toolsets")
-async def list_toolsets() -> dict[str, Any]:
-    """List endpoint groups available in the bundled catalog."""
+def toolsets_payload() -> dict[str, Any]:
+    """Toolset groups with endpoint counts from the bundled catalog.
+
+    Shared by the list_toolsets tool and the sugra://catalog/domains
+    resource so both surfaces always report identical data.
+    """
     catalog = load_catalog()
     counts: dict[str, int] = {}
     for endpoint in catalog.endpoints:
         counts[endpoint.toolset] = counts.get(endpoint.toolset, 0) + 1
     return {"toolsets": ordered_toolsets(counts), "total_endpoints": catalog.endpoint_count}
+
+
+@mcp.tool(annotations=read_only("List toolsets"))
+@trace_mcp_tool("list_toolsets")
+async def list_toolsets() -> dict[str, Any]:
+    """List endpoint groups available in the bundled catalog."""
+    return toolsets_payload()
 
 
 @mcp.tool(annotations=read_only("Fetch data"))
@@ -335,10 +344,12 @@ async def fetch_data(
         }
 
 
-@mcp.tool(annotations=read_only("List sources"))
-@trace_mcp_tool("list_sources")
-async def list_sources() -> dict[str, Any]:
-    """List endpoint source families derived from catalog metadata."""
+def sources_payload() -> dict[str, Any]:
+    """Source families with endpoint counts from the bundled catalog.
+
+    Shared by the list_sources tool and the sugra://catalog/sources
+    resource so both surfaces always report identical data.
+    """
     catalog = load_catalog()
     counts: dict[str, int] = {}
     for endpoint in catalog.endpoints:
@@ -349,3 +360,10 @@ async def list_sources() -> dict[str, Any]:
         "endpoint_count": catalog.endpoint_count,
         "catalog_source": catalog.source,
     }
+
+
+@mcp.tool(annotations=read_only("List sources"))
+@trace_mcp_tool("list_sources")
+async def list_sources() -> dict[str, Any]:
+    """List endpoint source families derived from catalog metadata."""
+    return sources_payload()
