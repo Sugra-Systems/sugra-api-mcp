@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://pypi.org/project/sugra-api-mcp/">PyPI v0.8.2</a> |
   Python 3.11+ |
-  <a href="https://github.com/Sugra-Systems/prod-sugra-ai-MCP/blob/main/LICENSE">MIT</a>
+  <a href="https://github.com/Sugra-Systems/sugra-api-mcp/blob/main/LICENSE">MIT</a>
 </p>
 
 **Gateway connector between LLM agents and world data.** Official [Model Context Protocol](https://modelcontextprotocol.io) server for the [Sugra API](https://sugra.ai), backed by a bundled endpoint catalog and operation_id calls.
@@ -248,8 +248,8 @@ Send manual JSON-RPC from a second terminal using `nc` or an MCP inspector.
 ## Development
 
 ```bash
-git clone https://github.com/Sugra-Systems/prod-sugra-ai-MCP
-cd prod-sugra-ai-MCP
+git clone https://github.com/Sugra-Systems/sugra-api-mcp
+cd sugra-api-mcp
 pip install -e ".[dev,http]"
 export SUGRA_API_KEY=sugra_...
 python -m sugra_api_mcp  # stdio mode
