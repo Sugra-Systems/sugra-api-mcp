@@ -54,11 +54,12 @@ PUBLIC_MCP_METHODS = frozenset(
     }
 )
 
-# Unauthenticated GET surface of the hosted app: the human landing page on the
-# host root and the liveness probe. Exact-path allowlist - everything else
-# (including unknown paths) stays behind auth. Handlers live in
-# sugra_api_mcp.web; the two lists must stay in sync.
-PUBLIC_GET_PATHS = frozenset({"", "/health"})
+# Unauthenticated GET/HEAD surface of the hosted app: the human landing page on
+# the host root and the liveness probe. STRICT exact-path allowlist (no slash
+# normalization: /health/ and // variants deliberately stay behind auth and
+# 401 rather than redirect). Handlers live in sugra_api_mcp.web; the two lists
+# must stay in sync.
+PUBLIC_GET_PATHS = frozenset({"/", "/health"})
 
 
 class AuthError(Exception):
@@ -313,7 +314,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[override]
         if (
             request.method in ("GET", "HEAD")
-            and request.url.path.rstrip("/") in PUBLIC_GET_PATHS
+            and request.url.path in PUBLIC_GET_PATHS
         ):
             return await call_next(request)
 

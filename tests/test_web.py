@@ -88,4 +88,69 @@ def test_public_initialize_still_passes(client: TestClient) -> None:
 
 
 def test_allowlist_is_exactly_root_and_health() -> None:
-    assert PUBLIC_GET_PATHS == frozenset({"", "/health"})
+    assert PUBLIC_GET_PATHS == frozenset({"/", "/health"})
+
+
+def test_slash_variants_stay_behind_auth(client: TestClient) -> None:
+    # STRICT matching: normalization tricks never widen the public surface.
+    # (// and //// are exercised at the ASGI layer below - httpx normalizes
+    # or rejects them client-side before the server ever sees them.)
+    for path in ("/health/", "/health//", "/HEALTH"):
+        resp = client.get(path)
+        assert resp.status_code == 401, path
+
+
+@pytest.mark.anyio
+async def test_raw_slash_paths_stay_behind_auth() -> None:
+    """Drive the middleware at the ASGI layer with paths httpx cannot send."""
+    from starlette.applications import Starlette
+    from starlette.responses import JSONResponse
+    from starlette.routing import Route
+
+    async def ok(_request):
+        return JSONResponse({"ok": True})
+
+    app = Starlette(routes=[Route("/", ok), Route("/health", ok)])
+    config = AuthConfig(
+        app_url="https://app.sugra.ai",
+        jwks_url="https://app.sugra.ai/oauth/jwks.json",
+        internal_token="test-internal-token",
+    )
+    app.add_middleware(AuthMiddleware, authenticator=Authenticator(config))
+
+    for raw_path in ("//", "////", "//health"):
+        status_holder: list[int] = []
+
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message):
+            if message["type"] == "http.response.start":
+                status_holder.append(message["status"])
+
+        scope = {
+            "type": "http",
+            "method": "GET",
+            "path": raw_path,
+            "raw_path": raw_path.encode(),
+            "query_string": b"",
+            "headers": [],
+        }
+        await app(scope, receive, send)
+        assert status_holder and status_holder[0] == 401, raw_path
+
+
+def test_real_http_app_route_registration() -> None:
+    """Pin the PROD app shape: streamable_http_app + appended public routes."""
+    from starlette.routing import Route
+
+    from sugra_api_mcp.server import mcp
+    from sugra_api_mcp.web import health, landing
+
+    app = mcp.streamable_http_app()
+    app.router.routes.append(Route("/", landing, methods=["GET"]))
+    app.router.routes.append(Route("/health", health, methods=["GET"]))
+    paths = [getattr(r, "path", None) for r in app.router.routes]
+    # /mcp stays FIRST (appended routes cannot shadow it); both new routes present.
+    assert paths.index("/mcp") < paths.index("/")
+    assert paths.index("/mcp") < paths.index("/health")
