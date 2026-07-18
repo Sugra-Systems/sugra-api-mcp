@@ -72,6 +72,13 @@ def test_post_to_public_paths_not_exempt(client: TestClient) -> None:
         assert resp.status_code == 401, path
 
 
+def test_head_requests_allowed_on_public_paths(client: TestClient) -> None:
+    # Uptime monitors and load balancers commonly probe with HEAD.
+    for path in ("/", "/health"):
+        resp = client.head(path)
+        assert resp.status_code == 200, path
+
+
 def test_public_initialize_still_passes(client: TestClient) -> None:
     resp = client.post(
         "/mcp",

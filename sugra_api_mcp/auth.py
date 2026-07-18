@@ -312,7 +312,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[override]
         if (
-            request.method == "GET"
+            request.method in ("GET", "HEAD")
             and request.url.path.rstrip("/") in PUBLIC_GET_PATHS
         ):
             return await call_next(request)
