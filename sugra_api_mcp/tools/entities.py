@@ -82,8 +82,9 @@ def _clean_error(payload: dict[str, Any]) -> dict[str, Any]:
     result = {"error": str(error), "detail": detail}
     # MCP-Imp-1: the client's structured transport errors carry retry guidance
     # and timing - pass them through so the entity tools keep contract parity
-    # with call_endpoint instead of stripping the actionable fields.
-    for key in ("reason", "retry_hint", "elapsed_ms", "timeout_s", "retry_after"):
+    # with call_endpoint instead of stripping the actionable fields. "hint"
+    # carries the missing_api_key remediation from the keyless stand-in client.
+    for key in ("reason", "retry_hint", "hint", "elapsed_ms", "timeout_s", "retry_after"):
         value = payload.get(key)
         if value is not None:
             result[key] = value

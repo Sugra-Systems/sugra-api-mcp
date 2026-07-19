@@ -111,13 +111,21 @@ def test_streamable_http_public_discovery_exposes_oauth_security_schemes(monkeyp
         assert first_tool["_meta"]["securitySchemes"] == OAUTH_SECURITY_SCHEMES
 
 
-def test_config_requires_api_key(monkeypatch):
+def test_config_allows_missing_api_key(monkeypatch):
+    """Startup must never fail on a missing key (keyless stdio start).
+
+    The key requirement is enforced at call time by server.get_client, which
+    hands out the keyless stand-in client returning the structured
+    missing_api_key error - see tests/test_keyless.py.
+    """
     monkeypatch.delenv("SUGRA_API_KEY", raising=False)
-    import pytest
 
     from sugra_api_mcp.config import load_config
-    with pytest.raises(RuntimeError, match="SUGRA_API_KEY"):
-        load_config()
+
+    cfg = load_config()
+    assert cfg.api_key == ""
+    # The legacy keyword is accepted and still does not raise.
+    assert load_config(require_api_key=True).api_key == ""
 
 
 def test_config_defaults(monkeypatch):

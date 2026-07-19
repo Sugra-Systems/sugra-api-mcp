@@ -5,6 +5,12 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+# Remediation copy for the call-time missing_api_key error. Shared by the
+# keyless stand-in client (server.py) and the CLI doctor warning (__main__.py).
+MISSING_API_KEY_HINT = (
+    "Set SUGRA_API_KEY. Get one free at https://app.sugra.ai/settings/billing"
+)
+
 DEFAULT_ALLOWED_ORIGINS: tuple[str, ...] = (
     "https://chatgpt.com",
     "https://chat.openai.com",
@@ -35,16 +41,20 @@ class AuthConfig:
 def load_config(*, require_api_key: bool = True) -> Config:
     """Load main client config.
 
-    When ``require_api_key`` is False (HTTP transport with OAuth), an empty
-    SUGRA_API_KEY is acceptable - the auth middleware will supply a per-request
-    key resolved from the Bearer token.
+    An empty SUGRA_API_KEY is always allowed here: startup must never fail on
+    a missing key. MCP clients and directory evaluators launch the server
+    without env configured and expect initialize plus tools/list introspection
+    to work before the user supplies credentials. The key requirement is
+    enforced at call time instead - ``server.get_client`` hands out a stand-in
+    client whose network methods return the structured ``missing_api_key``
+    error when no key is available.
+
+    ``require_api_key`` is kept for signature compatibility and no longer
+    triggers a raise. On the HTTP transport the auth middleware supplies a
+    per-request key resolved from the Bearer token, exactly as before.
     """
+    del require_api_key  # retained for signature compatibility only
     api_key = os.environ.get("SUGRA_API_KEY", "").strip()
-    if require_api_key and not api_key:
-        raise RuntimeError(
-            "SUGRA_API_KEY environment variable is required. "
-            "Get one free at https://app.sugra.ai/settings/billing"
-        )
     return Config(
         api_base=os.environ.get("SUGRA_API_BASE", "https://sugra.ai").rstrip("/"),
         api_key=api_key,
