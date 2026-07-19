@@ -1,0 +1,34 @@
+# Self-hosted Streamable HTTP deployment of sugra-api-mcp.
+#
+# Usage:
+#   export SUGRA_API_KEY=sugra_...   # optional fallback; clients can send Bearer
+#   docker compose up -d
+#
+# The listed environment variables pass through from your shell only when set;
+# none are required for the container to start.
+services:
+  sugra-api-mcp:
+    build: .
+    image: sugra-api-mcp
+    command:
+      - --transport
+      - streamable-http
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8001"
+    ports:
+      - "8001:8001"
+    environment:
+      - SUGRA_API_KEY
+      - SUGRA_API_BASE
+      - SUGRA_TIMEOUT
+      - SUGRA_MCP_ALLOWED_ORIGINS
+      - SUGRA_MCP_ALLOWED_HOSTS
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped

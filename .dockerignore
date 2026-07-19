@@ -1,0 +1,20 @@
+# Keep the build context to the package source plus packaging metadata.
+.git
+.github
+.claude
+.venv
+venv
+.env
+dist
+build
+*.egg-info
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.tmp
+tests
+evals
+examples
+scripts
