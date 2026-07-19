@@ -23,7 +23,9 @@ def _resolve_path(path: str, params: dict[str, Any]) -> str:
     return resolved
 
 
-def _missing_required(endpoint, params: dict[str, Any], body: dict[str, Any] | None) -> list[str]:
+def _missing_required(
+    endpoint, params: dict[str, Any], body: dict[str, Any] | list[Any] | None
+) -> list[str]:
     missing = [
         parameter.name
         for parameter in endpoint.parameters
@@ -84,11 +86,13 @@ async def call_endpoint(
         ),
     ] = None,
     body: Annotated[
-        dict[str, Any] | None,
+        dict[str, Any] | list[Any] | None,
         Field(
             description=(
                 "JSON request body for a POST operation, matching the request_body_schema "
-                "returned by describe_endpoint(operation_id). Omit for GET operations."
+                "returned by describe_endpoint(operation_id): a JSON object for most "
+                "operations, or a JSON array when that schema's top-level type is array. "
+                "Omit for GET operations."
             ),
         ),
     ] = None,
@@ -220,11 +224,12 @@ async def fetch_data(
         ),
     ] = None,
     body: Annotated[
-        dict[str, Any] | None,
+        dict[str, Any] | list[Any] | None,
         Field(
             description=(
                 "JSON body for an auto-selected POST operation; the tool returns the "
-                "request_body_schema to fill when the match needs one."
+                "request_body_schema to fill when the match needs one. Pass a JSON "
+                "object or a JSON array as that schema's top-level type dictates."
             ),
         ),
     ] = None,

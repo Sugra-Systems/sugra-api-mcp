@@ -16,7 +16,7 @@ FIXTURE = Path(__file__).parent / "fixtures" / "openapi_minimal.json"
 def test_catalog_builder_from_fixture() -> None:
     catalog = build_catalog_from_openapi(json.loads(FIXTURE.read_text(encoding="utf-8")))
 
-    assert catalog.endpoint_count == 6
+    assert catalog.endpoint_count == 7
     assert catalog.source == "fixture"
     assert catalog.get("cot_financial").path == "/api/v1/cot/financial"
     assert catalog.get("quotes_symbol_price").required_parameters == ["symbol"]
