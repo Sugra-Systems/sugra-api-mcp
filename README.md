@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/sugra-api-mcp/">PyPI v0.8.2</a> |
+  <a href="https://pypi.org/project/sugra-api-mcp/"><img src="https://img.shields.io/pypi/v/sugra-api-mcp?label=PyPI&color=F5A623" alt="PyPI"></a> |
   Python 3.11+ |
   <a href="https://github.com/Sugra-Systems/sugra-api-mcp/blob/main/LICENSE">MIT</a>
 </p>
