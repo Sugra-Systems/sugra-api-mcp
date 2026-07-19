@@ -81,6 +81,29 @@
         }
       }
     },
+    "/api/v1/openfigi/mapping": {
+      "post": {
+        "tags": [
+          "Reference"
+        ],
+        "summary": "Map identifiers (bulk array)",
+        "description": "Map a JSON array of identifier jobs to OpenFIGI records.",
+        "operationId": "openfigi_mapping",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MappingJob"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/air-quality/current": {
       "get": {
         "tags": [

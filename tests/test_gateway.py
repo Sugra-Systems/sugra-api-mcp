@@ -412,3 +412,78 @@ async def test_fetch_data_needs_params_includes_agent_hints(monkeypatch) -> None
     assert "agent_hints" in result["selected_endpoint"]
     assert result["selected_endpoint"]["agent_hints"]["duration_class"] == "fast"
 
+
+# ---- JSON-array request bodies (issue #51 / MCP-Imp-8) ----
+
+
+async def test_call_endpoint_accepts_array_body(monkeypatch) -> None:
+    """openfigi mapping POSTs a JSON ARRAY body. The dict-only `body`
+    annotation made FastMCP reject the call before the request was sent,
+    while describe_endpoint correctly advertised type: array (issue #51)."""
+    fake = FakeClient()
+    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
+    monkeypatch.setattr(gateway, "get_client", lambda: fake)
+
+    jobs = [
+        {"idType": "TICKER", "idValue": "AAPL"},
+        {"idType": "TICKER", "idValue": "MSFT"},
+    ]
+    result = await gateway.call_endpoint("openfigi_mapping", body=jobs)
+
+    assert fake.calls == [("POST", "/api/v1/openfigi/mapping", {}, jobs)]
+    assert result["data"] == {"ok": True}
+
+
+async def test_fetch_data_passes_array_body_through(monkeypatch) -> None:
+    """fetch_data shares call_endpoint's body path: an array body must reach
+    the client untouched. Search is pinned so ranking between the two
+    openfigi fixtures cannot flake the test."""
+    fake = FakeClient()
+    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
+    monkeypatch.setattr(gateway, "get_client", lambda: fake)
+    monkeypatch.setattr(
+        gateway,
+        "search_catalog",
+        lambda *args, **kwargs: [{"operation_id": "openfigi_mapping"}],
+    )
+
+    jobs = [{"idType": "TICKER", "idValue": "AAPL"}]
+    result = await gateway.fetch_data("bulk map identifiers", body=jobs)
+
+    assert fake.calls == [("POST", "/api/v1/openfigi/mapping", {}, jobs)]
+    assert result["data"] == {"ok": True}
+
+
+async def test_fetch_data_passes_dict_body_through(monkeypatch) -> None:
+    """Widening body to dict | list must not regress plain object bodies
+    on the fetch_data path (call_endpoint dict bodies are covered by
+    test_call_endpoint_post_preserves_query_params_and_body)."""
+    fake = FakeClient()
+    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
+    monkeypatch.setattr(gateway, "get_client", lambda: fake)
+    monkeypatch.setattr(
+        gateway,
+        "search_catalog",
+        lambda *args, **kwargs: [{"operation_id": "openfigi_map"}],
+    )
+
+    body = {"jobs": [{"idType": "TICKER", "idValue": "AAPL"}]}
+    result = await gateway.fetch_data("map identifiers", body=body)
+
+    assert fake.calls == [("POST", "/api/v1/openfigi/map", {}, body)]
+    assert result["data"] == {"ok": True}
+
+
+async def test_gateway_body_tool_schemas_accept_arrays(monkeypatch) -> None:
+    """The regression lived in FastMCP validation, before tool code ran:
+    the generated input schema for `body` must allow object AND array on
+    both gateway tools."""
+    monkeypatch.setenv("SUGRA_API_KEY", "dummy")
+    from sugra_api_mcp.server import mcp
+
+    tools = {tool.name: tool for tool in await mcp.list_tools()}
+    for name in ("call_endpoint", "fetch_data"):
+        body_schema = tools[name].inputSchema["properties"]["body"]
+        types = {sub.get("type") for sub in body_schema.get("anyOf", [])}
+        assert {"object", "array"} <= types, f"{name} body schema rejects arrays: {body_schema}"
+

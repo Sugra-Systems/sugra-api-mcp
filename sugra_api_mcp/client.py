@@ -134,7 +134,7 @@ class SugraClient:
         method: str,
         path: str,
         params: dict[str, Any] | None = None,
-        json: dict[str, Any] | None = None,
+        json: dict[str, Any] | list[Any] | None = None,
         headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         clean_params = {k: v for k, v in (params or {}).items() if v is not None}
