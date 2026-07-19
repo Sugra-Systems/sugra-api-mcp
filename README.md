@@ -328,6 +328,31 @@ Run tests:
 pytest
 ```
 
+## Docker
+
+Build the image from the repository root:
+
+```bash
+docker build -t sugra-api-mcp .
+```
+
+Run in stdio mode (the default entrypoint) for MCP clients that spawn a local process:
+
+```bash
+docker run -i --rm -e SUGRA_API_KEY=sugra_... sugra-api-mcp
+```
+
+Run the Streamable HTTP transport on port 8001 with Docker Compose:
+
+```bash
+export SUGRA_API_KEY=sugra_...
+docker compose up -d
+```
+
+Then point your MCP client at `http://localhost:8001/mcp`. The compose service passes `SUGRA_API_KEY`, `SUGRA_API_BASE`, `SUGRA_TIMEOUT`, `SUGRA_MCP_ALLOWED_ORIGINS`, and `SUGRA_MCP_ALLOWED_HOSTS` through from your shell environment when set, and checks container health against `http://localhost:8001/health`.
+
+A note on auth: no environment variable is baked into the image and none is required for the container to start. In HTTP mode clients authenticate per request with `Authorization: Bearer sugra_...`, so `SUGRA_API_KEY` on the container is only a fallback for requests without a Bearer token (see the environment table above). Behind a reverse proxy, set `SUGRA_MCP_ALLOWED_HOSTS` to the public hostnames you serve.
+
 ## License
 
 MIT © 2026 Sugra Systems, Inc.
