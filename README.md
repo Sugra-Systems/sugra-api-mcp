@@ -50,6 +50,19 @@ flowchart LR
 
 Behind the gateway sits the Sugra API: 160+ primary sources - sovereign statistics agencies, central banks, intergovernmental bodies and more - feeding 1,500+ endpoints across 36 data domains. The server ships a bundled catalog of the full endpoint surface, so discovery (search, describe, toolsets) runs locally without network calls; only actual data requests hit the API.
 
+## What agents build with it
+
+Six workflow prompts ship with the server and turn these into one-click flows in clients that surface MCP prompts:
+
+- **Market and macro research** - "Compare inflation and central bank policy rates across the G7." (`macro_briefing`)
+- **Equity snapshots with sources** - "Where does NVIDIA stand today - price, profile, and market backdrop?" (`market_snapshot`)
+- **Sanctions and compliance screening** - "Screen this supplier and resolve its LEI identity." (`sanctions_screening`)
+- **Sector comparison** - "Energy versus technology: valuations and flows side by side." (`sector_compare`)
+- **Climate, maritime and trade intelligence** - "Red Sea shipping this week: chokepoint transits, crude price, and weather on the route." (`earth_conditions` plus the transport and commodities catalog)
+- **Source discovery** - "What does the catalog offer for fixed income, and from which institutions?" (`source_overview`)
+
+Every answer carries source attribution and freshness metadata, so agents cite instead of guessing.
+
 ## Hosted MCP (recommended)
 
 No install. Point your client at the hosted Streamable HTTP endpoint:
@@ -154,7 +167,7 @@ In ChatGPT: Settings -> Connectors -> Add MCP server.
 
 ## Tool reference
 
-Current release: eight-tool surface with hosted OAuth activity validation for `https://app.sugra.ai/mcp`, plus ChatGPT Apps-compatible OAuth tool metadata. Curated tool names such as `get_market_price`, `get_macro_indicator`, and `get_news` are not part of this package. The package exposes exactly eight tools:
+The local package exposes eight gateway tools. The hosted endpoint adds three composed analysis tools on top (see Hosted MCP above). The package exposes exactly eight tools:
 
 | Tool | Purpose |
 |---|---|
@@ -262,6 +275,9 @@ Ask Claude:
 - "List available Sugra toolsets."
 
 ## Troubleshooting
+
+**Looking for `get_market_price`, `get_macro_indicator`, or `get_news`?** Those curated tool names appear in some older directory listings and never shipped in this package - use `fetch_data` for one-step natural-language calls or `search_endpoints` plus `call_endpoint` for explicit routing.
+
 
 **`missing_api_key` in tool responses**
 
