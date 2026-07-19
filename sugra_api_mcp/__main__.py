@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 from typing import Literal
 
@@ -157,14 +158,28 @@ def main() -> None:
 
     catalog = load_catalog()
     if args.command == "doctor":
+        api_key_set = bool(os.environ.get("SUGRA_API_KEY", "").strip())
         _print_json(
             {
                 "package": "sugra-api-mcp",
                 "version": __version__,
                 "catalog_source": catalog.source,
                 "endpoint_count": catalog.endpoint_count,
+                "api_key": "set" if api_key_set else "missing",
             }
         )
+        if not api_key_set:
+            # Warning, not a crash: the server starts and catalog tools work
+            # keyless; only outbound API calls need the key (they return the
+            # structured missing_api_key error until it is set).
+            from .config import MISSING_API_KEY_HINT
+
+            print(
+                "WARNING: SUGRA_API_KEY is not set. The server starts and "
+                "catalog tools work, but API calls will return the "
+                f"missing_api_key error. {MISSING_API_KEY_HINT}",
+                file=sys.stderr,
+            )
     elif args.command == "list-toolsets":
         counts: dict[str, int] = {}
         for endpoint in catalog.endpoints:

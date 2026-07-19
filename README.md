@@ -210,7 +210,7 @@ sugra-api-mcp call quotes_symbol_price --params '{"symbol":"AAPL"}'
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `SUGRA_API_KEY` | Yes (stdio) | - | Your Sugra API key. In HTTP mode with OAuth this becomes a fallback for requests without Bearer |
+| `SUGRA_API_KEY` | For API calls | - | Your Sugra API key. Not needed to start the server: the catalog tools (`search_endpoints`, `describe_endpoint`, `list_toolsets`, `list_sources`) work without it, and API-calling tools return a structured `missing_api_key` error until it is set. In HTTP mode with OAuth this becomes a fallback for requests without Bearer |
 | `SUGRA_API_BASE` | No | `https://sugra.ai` | Override for self-hosted or beta environments |
 | `SUGRA_TIMEOUT` | No | `30` | Request timeout in seconds |
 | `SUGRA_MCP_ALLOWED_HOSTS` | No (HTTP) | - | Comma-separated hostnames to allow behind a reverse proxy |
@@ -263,12 +263,14 @@ Ask Claude:
 
 ## Troubleshooting
 
-**`SUGRA_API_KEY environment variable is required`**
+**`missing_api_key` in tool responses**
 
-The server could not find your API key. Depending on how you run it:
+The server starts and lists its tools without a key, but API-calling tools (`call_endpoint`, `fetch_data`, the entity tools) return `{"error": "missing_api_key"}` until the server can find one. Depending on how you run it:
 - As an MCP tool from your client (Claude, ChatGPT, Gemini, xAI, IDE, etc.): check the `env` block in your MCP config file. Value should be a full key like `sugra_ao1_...`, not empty and not wrapped in extra quotes.
 - Shell / CI: `export SUGRA_API_KEY=sugra_...` before running `sugra-api-mcp`.
 - HTTP mode: set via `.env` or systemd `EnvironmentFile`, not the shell.
+
+`sugra-api-mcp doctor` reports whether the key is visible to the process.
 
 **`401 Unauthorized` or `403 Forbidden` in tool responses**
 

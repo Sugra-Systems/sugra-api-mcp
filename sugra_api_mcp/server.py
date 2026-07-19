@@ -15,7 +15,7 @@ from mcp.types import Tool as MCPTool
 
 from . import __version__
 from .client import SugraClient
-from .config import Config, load_allowed_origins, load_config
+from .config import MISSING_API_KEY_HINT, Config, load_allowed_origins, load_config
 
 api_key_ctx: ContextVar[str | None] = ContextVar("sugra_api_key", default=None)
 
@@ -187,6 +187,61 @@ _shared_client: SugraClient | None = None
 
 _per_key_clients: dict[str, SugraClient] = {}
 
+# Call-time key enforcement (keyless startup): the process must boot and
+# answer initialize / tools/list / prompts / resources without SUGRA_API_KEY -
+# directory evaluators and several MCP clients launch the server with no env
+# configured and only let the user add credentials after introspection
+# succeeds. The key requirement therefore lives here, on the first outbound
+# API call, not in load_config at process start.
+def missing_api_key_error() -> dict[str, Any]:
+    """Structured tool error returned when no API key is available at call time.
+
+    Mirrors the error contract used across tools/gateway.py: a dict with an
+    ``error`` code plus an actionable hint, never a raised exception (a raise
+    surfaces to MCP clients as an opaque "Error executing tool" message).
+    """
+    return {"error": "missing_api_key", "hint": MISSING_API_KEY_HINT}
+
+
+class _KeylessClient:
+    """Stand-in for SugraClient when no API key is available.
+
+    Every network method returns the structured ``missing_api_key`` error
+    instead of performing a request, so catalog-only tools keep working and
+    network-backed tools degrade to an actionable error. Not cached as the
+    shared client: if the environment gains a key later, the next
+    ``get_client()`` call builds a real client.
+    """
+
+    async def get(
+        self, path: str, params: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        return missing_api_key_error()
+
+    async def post(
+        self,
+        path: str,
+        json: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        return missing_api_key_error()
+
+    async def request(
+        self,
+        method: str,
+        path: str,
+        params: dict[str, Any] | None = None,
+        json: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        return missing_api_key_error()
+
+    async def aclose(self) -> None:
+        return None
+
+
+_keyless_client = _KeylessClient()
+
 
 def _build_client(api_key: str) -> SugraClient:
     return SugraClient(
@@ -198,14 +253,17 @@ def _build_client(api_key: str) -> SugraClient:
     )
 
 
-def get_client() -> SugraClient:
+def get_client() -> SugraClient | _KeylessClient:
     """Return the downstream HTTP client for the current request.
 
     HTTP transport: ``api_key_ctx`` is set per-request by ``AuthMiddleware`` after
     validating the Bearer token. We cache one client per distinct key to keep
     the httpx.AsyncClient alive across calls.
 
-    stdio transport / no middleware: fall back to SUGRA_API_KEY from env.
+    stdio transport / no middleware: fall back to SUGRA_API_KEY from env. When
+    that is empty too, return the keyless stand-in whose network methods answer
+    with the structured ``missing_api_key`` error - the key requirement is
+    enforced here at call time, never at process startup.
     """
     per_request_key = api_key_ctx.get()
     if per_request_key:
@@ -217,5 +275,8 @@ def get_client() -> SugraClient:
 
     global _shared_client
     if _shared_client is None:
-        _shared_client = SugraClient(load_config())
+        config = load_config()
+        if not config.api_key:
+            return _keyless_client
+        _shared_client = SugraClient(config)
     return _shared_client
