@@ -66,6 +66,17 @@ jobs:
     #   if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     if: ${{ github.event_name == 'workflow_dispatch' }}
     timeout-minutes: 15
+    # Serialize hosted deploys. This job SSHes to a shared host and runs
+    # sugra-mcp-deploy, which does git pull + pip install + systemctl restart
+    # against one directory, so two runs at once can tear the install tree.
+    # Inert while the freeze above keeps this job on workflow_dispatch, but it
+    # must already be in place when the dual-trigger condition is restored.
+    # JOB level so the `test` matrix still runs in parallel across runs;
+    # cancel-in-progress: false so a queued deploy waits instead of killing an
+    # in-flight pip install or service restart.
+    concurrency:
+      group: mcp-deploy-production
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - name: Pre-deploy sudo fail-fast probe (INFRA-11.1)
