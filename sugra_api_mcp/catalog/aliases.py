@@ -38,10 +38,10 @@ ALIASES: dict[str, list[str]] = {
     "day-ahead price": ["energy grid", "electricity price", "entso-e"],
     "entso-e": [
         "energy grid",
-        "energy grid fuel mix",
         "eu bidding zone",
         "european electricity",
         "day-ahead price",
+        "grid operating data",
     ],
     "eu electricity grid": [
         "energy grid",

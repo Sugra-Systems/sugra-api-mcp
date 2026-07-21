@@ -236,11 +236,12 @@ NAMESPACE_TOP_1_CASES = [
     ("Federal Reserve policy rate", ("fed_rates", "fed_policy")),
     ("EUR USD exchange rate", ("forex_", "frankfurter_", "exchangerate_")),
     # ENERGY-1.1.1.5: ENTSO-E / EU grid discovery after A44 day-ahead prices.
-    # Prefer ENTSO-E / bidding-zone vocabulary so retail utility tariffs do not win.
+    # Exact top-1 where possible - startswith("energy_grid") would also match
+    # energy_grid_fuel_mix, so price/load queries require exact energy_grid.
     ("ENTSO-E day-ahead electricity price", ("energy_grid",)),
     ("ENTSO-E bidding zone load", ("energy_grid",)),
     ("EU electricity grid demand", ("energy_grid",)),
-    ("grid fuel mix Germany", ("energy_grid_fuel_mix", "energy_grid")),
+    ("grid fuel mix Germany", ("energy_grid_fuel_mix",)),
 ]
 
 
@@ -251,8 +252,14 @@ def test_search_top_1_lands_in_correct_namespace(
     results = search_catalog(catalog, query, limit=5)
     assert results, f"search returned no results for {query!r}"
     actual = results[0]["operation_id"]
-    assert actual.startswith(allowed_prefixes), (
-        f"top-1 for {query!r} was {actual!r}; expected operation_id starting with "
+    # ENERGY-1.1.1.5: energy_* ids must match exactly - startswith("energy_grid")
+    # also accepts energy_grid_fuel_mix. Other cases keep prefix matching.
+    if any(p.startswith("energy_") for p in allowed_prefixes):
+        ok = actual in allowed_prefixes
+    else:
+        ok = actual.startswith(allowed_prefixes)
+    assert ok, (
+        f"top-1 for {query!r} was {actual!r}; expected operation_id equal to or starting with "
         f"one of {allowed_prefixes}. Full top-5: {[r['operation_id'] for r in results]}"
     )
 
