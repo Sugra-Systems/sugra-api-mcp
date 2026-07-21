@@ -1,5 +1,5 @@
 {
-  "endpoint_count": 1525,
+  "endpoint_count": 1537,
   "endpoints": [
     {
       "description": "Pre-configured key Australian datasets: CPI, GDP, Labour, Trade, Retail, Wages, Population.",
@@ -32950,7 +32950,7 @@
       "toolset": "trade"
     },
     {
-      "description": "List the IMF SDMX 3.0 dataflow families (BOP, IRFCL reserves, FSI, GFS,\nPCPS commodity prices, CPI) exposed by the generic series endpoint.",
+      "description": "List curated IMF SDMX 3.0 dataflow families served by /imf/series.",
       "method": "GET",
       "operation_id": "imf_dataflows",
       "parameters": [],
@@ -32973,13 +32973,13 @@
       "operation_id": "imf_dataflows_dataflow",
       "parameters": [
         {
-          "description": "Family slug: bop, irfcl, fsi, gfs, pcps, or cpi.",
+          "description": "Family slug: weo, bop, iip, irfcl, fsi, fas, gfs, pcps, cpi, dip, ctot.",
           "example": "pcps",
           "location": "path",
           "name": "dataflow",
           "required": true,
           "schema": {
-            "description": "Family slug: bop, irfcl, fsi, gfs, pcps, or cpi.",
+            "description": "Family slug: weo, bop, iip, irfcl, fsi, fas, gfs, pcps, cpi, dip, ctot.",
             "title": "Dataflow",
             "type": "string"
           }
@@ -32995,6 +32995,169 @@
         "trade"
       ],
       "summary": "IMF SDMX 3.0 dataflow metadata + indicator discovery",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
+    },
+    {
+      "description": "Maps to GET /availability/dataflow/{agency}/{flow}/+/{key}/{component}.",
+      "method": "GET",
+      "operation_id": "imf_dataflows_dataflow_availability_component",
+      "parameters": [
+        {
+          "description": "Family slug.",
+          "example": "cpi",
+          "location": "path",
+          "name": "dataflow",
+          "required": true,
+          "schema": {
+            "description": "Family slug.",
+            "title": "Dataflow",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Dimension id (e.g. FREQUENCY, COICOP_1999).",
+          "example": "FREQUENCY",
+          "location": "path",
+          "name": "component",
+          "required": true,
+          "schema": {
+            "description": "Dimension id (e.g. FREQUENCY, COICOP_1999).",
+            "title": "Component",
+            "type": "string"
+          }
+        },
+        {
+          "description": "ISO2/ISO3/name or all.",
+          "location": "query",
+          "name": "country",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ISO2/ISO3/name or all.",
+            "title": "Country"
+          }
+        },
+        {
+          "description": "Indicator code for this dataflow.",
+          "location": "query",
+          "name": "indicator",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Indicator code for this dataflow.",
+            "title": "Indicator"
+          }
+        },
+        {
+          "description": "month/quarter/annual or A/Q/M.",
+          "location": "query",
+          "name": "frequency",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "month/quarter/annual or A/Q/M.",
+            "title": "Frequency"
+          }
+        },
+        {
+          "description": "DIM:CODE pairs, comma-separated.",
+          "location": "query",
+          "name": "filters",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "DIM:CODE pairs, comma-separated.",
+            "title": "Filters"
+          }
+        },
+        {
+          "description": "exact or available (SDMX availability mode).",
+          "location": "query",
+          "name": "mode",
+          "required": false,
+          "schema": {
+            "default": "exact",
+            "description": "exact or available (SDMX availability mode).",
+            "title": "Mode",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/imf/dataflows/{dataflow}/availability/{component}",
+      "request_body_required": false,
+      "required_parameters": [
+        "dataflow",
+        "component"
+      ],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "IMF SDMX data availability for one dimension",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
+    },
+    {
+      "description": "",
+      "method": "GET",
+      "operation_id": "imf_dataflows_dataflow_dimensions",
+      "parameters": [
+        {
+          "description": "Family slug.",
+          "example": "cpi",
+          "location": "path",
+          "name": "dataflow",
+          "required": true,
+          "schema": {
+            "description": "Family slug.",
+            "title": "Dataflow",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/imf/dataflows/{dataflow}/dimensions",
+      "request_body_required": false,
+      "required_parameters": [
+        "dataflow"
+      ],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "Dimension order for one IMF SDMX dataflow",
       "tags": [
         "Global Economy & Trade"
       ],
@@ -33135,20 +33298,108 @@
       "toolset": "trade"
     },
     {
-      "description": "Fetch latest value for one indicator across all available countries.\n\nUse for cross-country comparison. Covers 190+ countries.\n`indicator` is a key from the IMF catalog (e.g. gdp_growth, inflation, unemployment).",
+      "description": "",
+      "method": "GET",
+      "operation_id": "imf_entities",
+      "parameters": [
+        {
+          "description": "Optional name/code substring filter.",
+          "location": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional name/code substring filter.",
+            "title": "Q"
+          }
+        },
+        {
+          "description": "country | region | analytical_group",
+          "location": "query",
+          "name": "entity_type",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "country | region | analytical_group",
+            "title": "Entity Type"
+          }
+        },
+        {
+          "description": "",
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 200,
+            "maximum": 2000,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/imf/entities",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "IMF geography entities (countries, regions, analytical groups)",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
+    },
+    {
+      "description": "Cross-country WEO values.\n\nPass `time_period=YYYY` so every country uses the same year. Without it each\ncountry returns its own latest year (not comparable).",
       "method": "GET",
       "operation_id": "imf_indicator_indicator",
       "parameters": [
         {
-          "description": "Indicator code (e.g. NY.GDP.MKTP.CD for GDP).",
+          "description": "Catalog key e.g. gdp_growth.",
           "example": "gdp_growth",
           "location": "path",
           "name": "indicator",
           "required": true,
           "schema": {
-            "description": "Indicator code (e.g. NY.GDP.MKTP.CD for GDP).",
+            "description": "Catalog key e.g. gdp_growth.",
             "title": "Indicator",
             "type": "string"
+          }
+        },
+        {
+          "description": "Fixed year for comparable cross-country snapshot (recommended).",
+          "location": "query",
+          "name": "time_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 2040,
+                "minimum": 1980,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fixed year for comparable cross-country snapshot (recommended).",
+            "title": "Time Period"
           }
         }
       ],
@@ -33161,7 +33412,106 @@
       "sources": [
         "trade"
       ],
-      "summary": "Latest value for one indicator across all IMF member countries",
+      "summary": "WEO indicator across countries (prefer time_period for comparison)",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
+    },
+    {
+      "description": "Delta between latest and an immutable vintage dataflow (revision view).",
+      "method": "GET",
+      "operation_id": "imf_revisions_dataflow_country_indicator",
+      "parameters": [
+        {
+          "description": "",
+          "example": "weo",
+          "location": "path",
+          "name": "dataflow",
+          "required": true,
+          "schema": {
+            "title": "Dataflow",
+            "type": "string"
+          }
+        },
+        {
+          "description": "",
+          "example": "GEO",
+          "location": "path",
+          "name": "country",
+          "required": true,
+          "schema": {
+            "title": "Country",
+            "type": "string"
+          }
+        },
+        {
+          "description": "SDMX indicator code (e.g. NGDP_RPCH).",
+          "example": "NGDP_RPCH",
+          "location": "path",
+          "name": "indicator",
+          "required": true,
+          "schema": {
+            "description": "SDMX indicator code (e.g. NGDP_RPCH).",
+            "title": "Indicator",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Vintage dataflow id e.g. WEO_2025_OCT_VINTAGE.",
+          "location": "query",
+          "name": "vintage",
+          "required": true,
+          "schema": {
+            "description": "Vintage dataflow id e.g. WEO_2025_OCT_VINTAGE.",
+            "title": "Vintage",
+            "type": "string"
+          }
+        },
+        {
+          "description": "",
+          "location": "query",
+          "name": "frequency",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frequency"
+          }
+        },
+        {
+          "description": "",
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "maximum": 200,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/imf/revisions/{dataflow}/{country}/{indicator}",
+      "request_body_required": false,
+      "required_parameters": [
+        "dataflow",
+        "country",
+        "indicator",
+        "vintage"
+      ],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "Compare latest vs a named vintage for one series",
       "tags": [
         "Global Economy & Trade"
       ],
@@ -33332,19 +33682,163 @@
       "toolset": "trade"
     },
     {
-      "description": "Fetch latest value for all 10 IMF WEO indicators for a country.\n\n`country` is an ISO 2-letter code (e.g. US, DE, GB, JP, CN).\nCovers 190+ countries.",
+      "description": "",
       "method": "GET",
-      "operation_id": "imf_country_overview",
+      "operation_id": "imf_signals_country_risk_country",
       "parameters": [
         {
-          "description": "Country code (ISO 3166-1 alpha-2/alpha-3) or slug.",
-          "example": "us",
+          "description": "ISO2/ISO3/name.",
+          "example": "GEO",
           "location": "path",
           "name": "country",
           "required": true,
           "schema": {
-            "description": "Country code (ISO 3166-1 alpha-2/alpha-3) or slug.",
+            "description": "ISO2/ISO3/name.",
             "title": "Country",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/imf/signals/country-risk/{country}",
+      "request_body_required": false,
+      "required_parameters": [
+        "country"
+      ],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "Country-risk heuristic from IMF WEO/FSI/IRFCL",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
+    },
+    {
+      "description": "",
+      "method": "GET",
+      "operation_id": "imf_signals_external_pressure_country",
+      "parameters": [
+        {
+          "description": "ISO2/ISO3/name.",
+          "example": "GEO",
+          "location": "path",
+          "name": "country",
+          "required": true,
+          "schema": {
+            "description": "ISO2/ISO3/name.",
+            "title": "Country",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/imf/signals/external-pressure/{country}",
+      "request_body_required": false,
+      "required_parameters": [
+        "country"
+      ],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "External-pressure heuristic from WEO CA + BOP/IIP/CTOT samples",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
+    },
+    {
+      "description": "",
+      "method": "GET",
+      "operation_id": "imf_signals_telecom_demand_country",
+      "parameters": [
+        {
+          "description": "ISO2/ISO3/name.",
+          "example": "GEO",
+          "location": "path",
+          "name": "country",
+          "required": true,
+          "schema": {
+            "description": "ISO2/ISO3/name.",
+            "title": "Country",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/imf/signals/telecom-demand/{country}",
+      "request_body_required": false,
+      "required_parameters": [
+        "country"
+      ],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "Telecom-demand heuristic from WEO growth/income/inflation + FAS",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
+    },
+    {
+      "description": "",
+      "method": "GET",
+      "operation_id": "imf_vintages_dataflow",
+      "parameters": [
+        {
+          "description": "Family slug (e.g. weo, cpi, bop).",
+          "example": "weo",
+          "location": "path",
+          "name": "dataflow",
+          "required": true,
+          "schema": {
+            "description": "Family slug (e.g. weo, cpi, bop).",
+            "title": "Dataflow",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/imf/vintages/{dataflow}",
+      "request_body_required": false,
+      "required_parameters": [
+        "dataflow"
+      ],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "List IMF dataflow vintages (latest + *_VINTAGE)",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
+    },
+    {
+      "description": "Fetch latest value for all WEO indicators for a country (SDMX-backed).",
+      "method": "GET",
+      "operation_id": "imf_country_overview",
+      "parameters": [
+        {
+          "description": "ISO alpha-2 (US, GE), ISO alpha-3 (USA, GEO), or name slug.",
+          "example": "GEO",
+          "location": "path",
+          "name": "country",
+          "required": true,
+          "schema": {
+            "description": "ISO alpha-2 (US, GE), ISO alpha-3 (USA, GEO), or name slug.",
+            "title": "Country",
+            "type": "string"
+          }
+        },
+        {
+          "description": "latest or a WEO_*_VINTAGE dataflow id.",
+          "location": "query",
+          "name": "vintage",
+          "required": false,
+          "schema": {
+            "default": "latest",
+            "description": "latest or a WEO_*_VINTAGE dataflow id.",
+            "title": "Vintage",
             "type": "string"
           }
         }
@@ -33365,30 +33859,30 @@
       "toolset": "trade"
     },
     {
-      "description": "Fetch IMF time series for a country and indicator.\n\nAnnual data. Includes forecasts for current+2 years.\n`country` is an ISO 2-letter code (e.g. US, DE, GB, JP, CN).\n`indicator` is a key from the IMF catalog (e.g. gdp_growth, inflation).",
+      "description": "Annual WEO series. Prefer ISO3; ISO2 is mapped. Includes is_forecast when SDMX attrs allow.",
       "method": "GET",
       "operation_id": "imf_country_indicator",
       "parameters": [
         {
-          "description": "Country code (ISO 3166-1 alpha-2/alpha-3) or slug.",
-          "example": "us",
+          "description": "ISO alpha-2 (GE), ISO alpha-3 (GEO), or name slug.",
+          "example": "GEO",
           "location": "path",
           "name": "country",
           "required": true,
           "schema": {
-            "description": "Country code (ISO 3166-1 alpha-2/alpha-3) or slug.",
+            "description": "ISO alpha-2 (GE), ISO alpha-3 (GEO), or name slug.",
             "title": "Country",
             "type": "string"
           }
         },
         {
-          "description": "Indicator code (e.g. NY.GDP.MKTP.CD for GDP).",
+          "description": "Catalog key e.g. gdp_growth.",
           "example": "gdp_growth",
           "location": "path",
           "name": "indicator",
           "required": true,
           "schema": {
-            "description": "Indicator code (e.g. NY.GDP.MKTP.CD for GDP).",
+            "description": "Catalog key e.g. gdp_growth.",
             "title": "Indicator",
             "type": "string"
           }
@@ -33402,10 +33896,22 @@
           "schema": {
             "default": 2000,
             "description": "Start year (YYYY).",
-            "maximum": 2030,
+            "maximum": 2035,
             "minimum": 1980,
             "title": "Start Year",
             "type": "integer"
+          }
+        },
+        {
+          "description": "latest or WEO_*_VINTAGE dataflow id.",
+          "location": "query",
+          "name": "vintage",
+          "required": false,
+          "schema": {
+            "default": "latest",
+            "description": "latest or WEO_*_VINTAGE dataflow id.",
+            "title": "Vintage",
+            "type": "string"
           }
         }
       ],
@@ -33419,7 +33925,7 @@
       "sources": [
         "trade"
       ],
-      "summary": "IMF time series for a country",
+      "summary": "IMF WEO time series for a country",
       "tags": [
         "Global Economy & Trade"
       ],
@@ -46686,7 +47192,7 @@
       "toolset": "trade"
     },
     {
-      "description": "Daily global maritime trade - port calls and import/export volumes (metric tons) by vessel type (container, dry bulk, tanker, roro, general cargo). Based on satellite AIS signals from ~90,000 ships. Updated weekly.",
+      "description": "Daily global maritime trade - world totals of port calls and import/export volumes (metric tons) by vessel type (container, dry bulk, tanker, roro, general cargo). Sourced from IMF PortWatch live world series (Daily_Trade_Data_REG, ISO3=WLD). Based on satellite AIS signals from ~90,000 ships. Cadence follows the live upstream series (not a fixed weekly publish claim).",
       "method": "GET",
       "operation_id": "maritime_global",
       "parameters": [
@@ -46842,7 +47348,7 @@
       "toolset": "trade"
     },
     {
-      "description": "Catalog of 2033 ports worldwide with country, coordinates, top industries, vessel counts by type, and share of country maritime trade.",
+      "description": "IMF PortWatch port catalog (~2000+ ports worldwide) with country, coordinates, top industries, vessel counts by type, and share of country maritime trade. Use limit up to 5000 to request the full catalog; the client pages ArcGIS results so requests are not silently capped at 1000.",
       "method": "GET",
       "operation_id": "maritime_ports",
       "parameters": [
@@ -46859,15 +47365,15 @@
           }
         },
         {
-          "description": "Maximum number of records to return.",
+          "description": "Maximum number of records to return (full PortWatch catalog is ~2000+ ports).",
           "example": 50,
           "location": "query",
           "name": "limit",
           "required": false,
           "schema": {
             "default": 100,
-            "description": "Maximum number of records to return.",
-            "maximum": 2000,
+            "description": "Maximum number of records to return (full PortWatch catalog is ~2000+ ports).",
+            "maximum": 5000,
             "minimum": 1,
             "title": "Limit",
             "type": "integer"
@@ -48018,7 +48524,7 @@
       "toolset": "network"
     },
     {
-      "description": "Derive country distribution by iterating atlas records for prefixes\nmatching the given ASN.\n\nSemantic note (SNT-P1-10.1, post 2026-05-25): The ``hq_country`` and\n``top_countries`` fields reflect **actual usage country** (Geofeed >\ncloud-region > PeeringDB > RIR allocation priority chain), NOT the\nRIR allocation country alone. For globally-distributed ASNs (cloud\nproviders, CDNs), the distribution now spreads across the regions\nwhere prefixes are actually announced (e.g., AWS AS16509 splits\nacross us-east-1=US, eu-west-1=IE, ap-northeast-1=JP, etc.) rather\nthan collapsing to a single RIR-alloc country. For traditional ISPs\nthe distribution is usually unchanged because they announce from\nthe same country their RIR allocated to. ``hq_country`` is the\ndominant (most-common) actual-usage country, not necessarily the\nlegal headquarters - the name predates the SNT-P1-10 semantic clarification.\n\nImplementation note: maxminddb does not provide a reverse index\n(ASN -> prefixes), so we walk the database. For top ASNs (most\nprefixes) this is O(N) in the atlas size (~1 M entries). v1.2-A\ncaches the response keyed by ``(asn, atlas_etag)`` so subsequent\nhits within the same atlas build bypass the full walk; the cache\ninvalidates automatically when the atlas blob ETag rotates (daily\nrebuild).",
+      "description": "Derive country distribution by iterating atlas records for prefixes\nmatching the given ASN.\n\nSemantic note (SNT-P1-10.1, post 2026-05-25): The ``hq_country`` and\n``top_countries`` fields reflect **actual usage country** (geofeed >\ncloud-region > peering-registry > RIR allocation priority chain), NOT\nthe RIR allocation country alone. For globally-distributed ASNs (cloud\nproviders, CDNs), the distribution now spreads across the regions\nwhere prefixes are actually announced (e.g., AWS AS16509 splits\nacross us-east-1=US, eu-west-1=IE, ap-northeast-1=JP, etc.) rather\nthan collapsing to a single RIR-alloc country. For traditional ISPs\nthe distribution is usually unchanged because they announce from\nthe same country their RIR allocated to. ``hq_country`` is the\ndominant (most-common) actual-usage country, not necessarily the\nlegal headquarters - the name predates the SNT-P1-10 semantic clarification.\n\nImplementation note: the atlas store does not provide a reverse index\n(ASN -> prefixes), so we walk the database. For top ASNs (most\nprefixes) this is O(N) in the atlas size (~1 M entries). v1.2-A\ncaches the response keyed by ``(asn, atlas_etag)`` so subsequent\nhits within the same atlas build bypass the full walk; the cache\ninvalidates automatically when the atlas blob ETag rotates (daily\nrebuild).",
       "method": "GET",
       "operation_id": "network_asn_asn_geo_distribution",
       "parameters": [
@@ -82872,6 +83378,227 @@
       "toolset": "transport"
     },
     {
+      "description": "The ground stops, ground delay programs, airport closures, arrival and departure delays and de-icing programs the FAA currently has in force across the United States National Airspace System, each with the FAA's verbatim reason plus a Sugra classification of that free text onto a published vocabulary (weather, runway, volume, equipment, staffing, security). Filter by airport, event type, reason class, delay length and bounding box. This is OBSERVED delay, reported alongside the conditions-based Weather-Disruption-Risk index and never blended into it. United States only; consultative and not a substitute for an official preflight briefing, ATC or your airline.",
+      "method": "GET",
+      "operation_id": "transport_aviation_delays",
+      "parameters": [
+        {
+          "description": "Comma-separated airport codes. Either the FAA three-letter identifier (JFK) or the four-letter US ICAO form (KJFK), which is normalized to it.",
+          "location": "query",
+          "name": "airports",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Comma-separated airport codes. Either the FAA three-letter identifier (JFK) or the four-letter US ICAO form (KJFK), which is normalized to it.",
+            "examples": [
+              "JFK,ORD"
+            ],
+            "title": "Airports"
+          }
+        },
+        {
+          "description": "Keep only events of this program type. Asking for `notam` opts into them regardless of `include_notams`.",
+          "location": "query",
+          "name": "type",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ground_stop",
+                  "ground_delay",
+                  "airport_closure",
+                  "notam",
+                  "arrival_delay",
+                  "departure_delay",
+                  "deicing"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Keep only events of this program type. Asking for `notam` opts into them regardless of `include_notams`.",
+            "title": "Type"
+          }
+        },
+        {
+          "description": "Keep only events matching this Sugra reason class. Matches ANY class the reason carries, not just the dominant one, so a runway closed for snow is found under both `weather` and `runway`.",
+          "location": "query",
+          "name": "reason_class",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "enum": [
+                  "weather",
+                  "runway",
+                  "volume",
+                  "equipment",
+                  "staffing",
+                  "security",
+                  "other",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Keep only events matching this Sugra reason class. Matches ANY class the reason carries, not just the dominant one, so a runway closed for snow is found under both `weather` and `runway`.",
+            "title": "Reason Class"
+          }
+        },
+        {
+          "description": "Keep only events whose upper delay bound reaches this many minutes. Events that publish no delay figure, such as most ground stops, are excluded by it.",
+          "location": "query",
+          "name": "min_delay_minutes",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 1440,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Keep only events whose upper delay bound reaches this many minutes. Events that publish no delay figure, such as most ground stops, are excluded by it.",
+            "title": "Min Delay Minutes"
+          }
+        },
+        {
+          "description": "Bounding-box south edge.",
+          "location": "query",
+          "name": "min_lat",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 90.0,
+                "minimum": -90.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Bounding-box south edge.",
+            "title": "Min Lat"
+          }
+        },
+        {
+          "description": "Bounding-box north edge.",
+          "location": "query",
+          "name": "max_lat",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 90.0,
+                "minimum": -90.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Bounding-box north edge.",
+            "title": "Max Lat"
+          }
+        },
+        {
+          "description": "Bounding-box west edge.",
+          "location": "query",
+          "name": "min_lon",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 180.0,
+                "minimum": -180.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Bounding-box west edge.",
+            "title": "Min Lon"
+          }
+        },
+        {
+          "description": "Bounding-box east edge.",
+          "location": "query",
+          "name": "max_lon",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 180.0,
+                "minimum": -180.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Bounding-box east edge.",
+            "title": "Max Lon"
+          }
+        },
+        {
+          "description": "Include standing airport NOTAMs. Off by default because they are STATUS, not delay: the live feed carries multi-week notices such as an airport closed to transient general aviation except by prior permission, which would otherwise make a perfectly clear airport appear in a delay list. They are still counted in `summary.by_type`, so their existence is never hidden.",
+          "location": "query",
+          "name": "include_notams",
+          "required": false,
+          "schema": {
+            "default": false,
+            "description": "Include standing airport NOTAMs. Off by default because they are STATUS, not delay: the live feed carries multi-week notices such as an airport closed to transient general aviation except by prior permission, which would otherwise make a perfectly clear airport appear in a delay list. They are still counted in `summary.by_type`, so their existence is never hidden.",
+            "title": "Include Notams",
+            "type": "boolean"
+          }
+        },
+        {
+          "description": "Maximum airports returned.",
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 200,
+            "description": "Maximum airports returned.",
+            "maximum": 1000,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v2/transport/aviation/delays",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "transport",
+      "sources": [
+        "transport"
+      ],
+      "summary": "Observed US air-traffic delay programs - FAA NAS Status",
+      "tags": [
+        "Transportation"
+      ],
+      "toolset": "transport"
+    },
+    {
       "description": "Worldwide current aerodrome observations (METAR/SPECI) from the NOAA/NWS Aviation Weather Center, decoded to structured fields plus the raw report. Filter by ICAO station ids, bounding box and flight category (VFR/MVFR/IFR/LIFR). Consultative only; not a substitute for an official preflight briefing.",
       "method": "GET",
       "operation_id": "transport_aviation_metar",
@@ -83152,6 +83879,288 @@
         "transport"
       ],
       "summary": "Terminal aerodrome forecasts - TAF (NOAA AWC)",
+      "tags": [
+        "Transportation"
+      ],
+      "toolset": "transport"
+    },
+    {
+      "description": "Conditions-based Weather-Disruption-Risk index (0-100 with a band) for any coordinate worldwide or any reporting airport, computed by Sugra from sovereign weather, aviation, wave and hazard surfaces. Glass-box: every factor returns its own sub-score, the dominant driver is named, and the full published threshold set is echoed so the number can be reproduced. This is NOT a delay probability - it scores how hostile the observed environment is to transport operations, and models no airline, air-traffic-control, mechanical or staffing cause.",
+      "method": "GET",
+      "operation_id": "transport_disruption_risk",
+      "parameters": [
+        {
+          "description": "Latitude, decimal degrees.",
+          "location": "query",
+          "name": "lat",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 90.0,
+                "minimum": -90.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Latitude, decimal degrees.",
+            "examples": [
+              40.64
+            ],
+            "title": "Lat"
+          }
+        },
+        {
+          "description": "Longitude, decimal degrees.",
+          "location": "query",
+          "name": "lon",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 360.0,
+                "minimum": -180.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Longitude, decimal degrees.",
+            "examples": [
+              -73.78
+            ],
+            "title": "Lon"
+          }
+        },
+        {
+          "description": "ICAO or IATA airport code to score instead of a coordinate, e.g. KJFK or JFK.",
+          "location": "query",
+          "name": "airport",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ICAO or IATA airport code to score instead of a coordinate, e.g. KJFK or JFK.",
+            "examples": [
+              "KJFK"
+            ],
+            "title": "Airport"
+          }
+        }
+      ],
+      "path": "/api/v2/transport/disruption-risk",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "transport",
+      "sources": [
+        "transport"
+      ],
+      "summary": "Weather-Disruption-Risk index at a point or airport (Sugra derived)",
+      "tags": [
+        "Transportation"
+      ],
+      "toolset": "transport"
+    },
+    {
+      "description": "The conditions-based Weather-Disruption-Risk index computed hour by hour across the forecast horizon for any coordinate worldwide or any reporting airport, with the first crossing into high and into severe called out. Same seven factors, same published thresholds and same MAX-dominant combination as the nowcast; only the inputs move to their forecast equivalents. Every value is a FORECAST and carries uncertainty that grows with lead. This is NOT a delay probability.",
+      "method": "GET",
+      "operation_id": "transport_disruption_risk_forecast",
+      "parameters": [
+        {
+          "description": "Latitude, decimal degrees.",
+          "location": "query",
+          "name": "lat",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 90.0,
+                "minimum": -90.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Latitude, decimal degrees.",
+            "examples": [
+              51.47
+            ],
+            "title": "Lat"
+          }
+        },
+        {
+          "description": "Longitude, decimal degrees.",
+          "location": "query",
+          "name": "lon",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 360.0,
+                "minimum": -180.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Longitude, decimal degrees.",
+            "examples": [
+              -0.46
+            ],
+            "title": "Lon"
+          }
+        },
+        {
+          "description": "ICAO or IATA airport code to score instead of a coordinate, e.g. EGLL or LHR.",
+          "location": "query",
+          "name": "airport",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ICAO or IATA airport code to score instead of a coordinate, e.g. EGLL or LHR.",
+            "examples": [
+              "EGLL"
+            ],
+            "title": "Airport"
+          }
+        },
+        {
+          "description": "Forecast horizon in hours, at hourly steps.",
+          "location": "query",
+          "name": "hours",
+          "required": false,
+          "schema": {
+            "default": 48,
+            "description": "Forecast horizon in hours, at hourly steps.",
+            "maximum": 120,
+            "minimum": 1,
+            "title": "Hours",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v2/transport/disruption-risk/forecast",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "transport",
+      "sources": [
+        "transport"
+      ],
+      "summary": "Weather-Disruption-Risk index across the forecast horizon (Sugra derived)",
+      "tags": [
+        "Transportation"
+      ],
+      "toolset": "transport"
+    },
+    {
+      "description": "The conditions-based Weather-Disruption-Risk index sampled along a great-circle corridor between two or more waypoints, with the worst stretch called out and a separate list of the hazards and convective advisories that intersect the corridor. Waypoints are lat,lon pairs or ICAO/IATA airport codes. The corridor is a SAMPLING GEOMETRY drawn by Sugra, not an airway, sea lane, cleared track or filed route, and this is not a routing or flight-planning product.",
+      "method": "GET",
+      "operation_id": "transport_disruption_risk_route",
+      "parameters": [
+        {
+          "description": "Start waypoint: a lat,lon pair or an ICAO/IATA airport code.",
+          "location": "query",
+          "name": "origin",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Start waypoint: a lat,lon pair or an ICAO/IATA airport code.",
+            "examples": [
+              "KJFK"
+            ],
+            "title": "Origin"
+          }
+        },
+        {
+          "description": "End waypoint: a lat,lon pair or an ICAO/IATA airport code.",
+          "location": "query",
+          "name": "destination",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "End waypoint: a lat,lon pair or an ICAO/IATA airport code.",
+            "examples": [
+              "EGLL"
+            ],
+            "title": "Destination"
+          }
+        },
+        {
+          "description": "Full corridor as a semicolon-separated list of waypoints, each a lat,lon pair or an airport code, e.g. KJFK;50,-40;EGLL. Overrides origin and destination.",
+          "location": "query",
+          "name": "path",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Full corridor as a semicolon-separated list of waypoints, each a lat,lon pair or an airport code, e.g. KJFK;50,-40;EGLL. Overrides origin and destination.",
+            "examples": [
+              "KJFK;EGLL"
+            ],
+            "title": "Path"
+          }
+        },
+        {
+          "description": "Number of points sampled along the corridor, spaced evenly by distance.",
+          "location": "query",
+          "name": "samples",
+          "required": false,
+          "schema": {
+            "default": 24,
+            "description": "Number of points sampled along the corridor, spaced evenly by distance.",
+            "maximum": 60,
+            "minimum": 2,
+            "title": "Samples",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v2/transport/disruption-risk/route",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "transport",
+      "sources": [
+        "transport"
+      ],
+      "summary": "Weather-Disruption-Risk along a corridor (Sugra derived)",
       "tags": [
         "Transportation"
       ],
@@ -83639,44 +84648,101 @@
       "operation_id": "weather",
       "parameters": [
         {
-          "description": "Latitude, decimal degrees.",
+          "description": "Latitude, decimal degrees. Alias: latitude.",
           "location": "query",
           "name": "lat",
-          "required": true,
+          "required": false,
           "schema": {
-            "description": "Latitude, decimal degrees.",
+            "anyOf": [
+              {
+                "maximum": 90.0,
+                "minimum": -90.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Latitude, decimal degrees. Alias: latitude.",
             "examples": [
               40.18
             ],
-            "maximum": 90.0,
-            "minimum": -90.0,
-            "title": "Lat",
-            "type": "number"
+            "title": "Lat"
           }
         },
         {
-          "description": "Longitude, decimal degrees.",
+          "description": "Longitude, decimal degrees. Alias: longitude.",
           "location": "query",
           "name": "lon",
-          "required": true,
+          "required": false,
           "schema": {
-            "description": "Longitude, decimal degrees.",
+            "anyOf": [
+              {
+                "maximum": 360.0,
+                "minimum": -180.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Longitude, decimal degrees. Alias: longitude.",
             "examples": [
               44.51
             ],
-            "maximum": 360.0,
-            "minimum": -180.0,
-            "title": "Lon",
-            "type": "number"
+            "title": "Lon"
+          }
+        },
+        {
+          "description": "Latitude alias (same as lat).",
+          "location": "query",
+          "name": "latitude",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 90.0,
+                "minimum": -90.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Latitude alias (same as lat).",
+            "examples": [
+              40.18
+            ],
+            "title": "Latitude"
+          }
+        },
+        {
+          "description": "Longitude alias (same as lon).",
+          "location": "query",
+          "name": "longitude",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 360.0,
+                "minimum": -180.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Longitude alias (same as lon).",
+            "examples": [
+              44.51
+            ],
+            "title": "Longitude"
           }
         }
       ],
       "path": "/api/v2/weather",
       "request_body_required": false,
-      "required_parameters": [
-        "lat",
-        "lon"
-      ],
+      "required_parameters": [],
       "source_family": "environment",
       "sources": [
         "environment"
@@ -83736,6 +84802,52 @@
               106.82
             ],
             "title": "Longitude"
+          }
+        },
+        {
+          "description": "Latitude alias (same as latitude).",
+          "location": "query",
+          "name": "lat",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 90,
+                "minimum": -90,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Latitude alias (same as latitude).",
+            "examples": [
+              -6.2
+            ],
+            "title": "Lat"
+          }
+        },
+        {
+          "description": "Longitude alias (same as longitude).",
+          "location": "query",
+          "name": "lon",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 180,
+                "minimum": -180,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Longitude alias (same as longitude).",
+            "examples": [
+              106.82
+            ],
+            "title": "Lon"
           }
         },
         {
@@ -84000,6 +85112,52 @@
           }
         },
         {
+          "description": "Latitude alias (same as latitude).",
+          "location": "query",
+          "name": "lat",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 90,
+                "minimum": -90,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Latitude alias (same as latitude).",
+            "examples": [
+              48.85
+            ],
+            "title": "Lat"
+          }
+        },
+        {
+          "description": "Longitude alias (same as longitude).",
+          "location": "query",
+          "name": "lon",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 180,
+                "minimum": -180,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Longitude alias (same as longitude).",
+            "examples": [
+              2.35
+            ],
+            "title": "Lon"
+          }
+        },
+        {
           "description": "City name (alternative to lat/lon), resolved globally.",
           "location": "query",
           "name": "city",
@@ -84151,5 +85309,5 @@
       "toolset": "environment"
     }
   ],
-  "source": "https://sugra.ai/openapi.json (live build 2026-07-19)"
+  "source": "https://sugra.ai/openapi.json (live build 2026-07-21)"
 }

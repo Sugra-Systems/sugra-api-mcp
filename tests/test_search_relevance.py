@@ -235,6 +235,12 @@ NAMESPACE_TOP_1_CASES = [
     ("FED interest rate", ("fed_rates", "fed_policy")),
     ("Federal Reserve policy rate", ("fed_rates", "fed_policy")),
     ("EUR USD exchange rate", ("forex_", "frankfurter_", "exchangerate_")),
+    # ENERGY-1.1.1.5: ENTSO-E / EU grid discovery after A44 day-ahead prices.
+    # Prefer ENTSO-E / bidding-zone vocabulary so retail utility tariffs do not win.
+    ("ENTSO-E day-ahead electricity price", ("energy_grid",)),
+    ("ENTSO-E bidding zone load", ("energy_grid",)),
+    ("EU electricity grid demand", ("energy_grid",)),
+    ("grid fuel mix Germany", ("energy_grid_fuel_mix", "energy_grid")),
 ]
 
 

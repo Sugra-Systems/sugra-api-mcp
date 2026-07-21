@@ -31,6 +31,27 @@ def test_load_bundled_catalog_has_endpoints() -> None:
     assert catalog.get("cot_financial").operation_id == "cot_financial"
 
 
+def test_bundled_catalog_energy_covers_entsoe_grid_surface() -> None:
+    """ENERGY-1.1.1.5: EU bidding-zone grid routes must be in the energy toolset
+    with ENTSO-E-aware descriptions so agents can discover day-ahead prices."""
+    catalog = load_catalog()
+    required = {
+        "energy_grid": "/api/v2/energy/grid",
+        "energy_grid_fuel_mix": "/api/v2/energy/grid/fuel-mix",
+        "energy_grid_interchange": "/api/v2/energy/grid/interchange",
+    }
+    for operation_id, path in required.items():
+        endpoint = catalog.get(operation_id)
+        assert endpoint is not None, f"missing {operation_id}"
+        assert endpoint.path == path
+        assert endpoint.toolset == "energy"
+    grid = catalog.get("energy_grid")
+    text = f"{grid.summary} {grid.description}".lower()
+    assert "entso" in text
+    assert any(p.name == "metric" for p in grid.parameters)
+    assert any(p.name == "region" for p in grid.parameters)
+
+
 def test_bundled_catalog_network_toolset_covers_net_atlas() -> None:
     """MCP-Imp-5: every /api/v1/network endpoint must live in the network
     toolset (they used to be invisible inside the catch-all core)."""

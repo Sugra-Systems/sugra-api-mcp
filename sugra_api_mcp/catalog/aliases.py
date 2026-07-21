@@ -25,6 +25,33 @@ ALIASES: dict[str, list[str]] = {
     "available data sources": ["list sources", "source catalog"],
     "data sources": ["list sources", "source families"],
     "news": ["latest news", "headlines"],
+    # ENERGY-1.1.1.5: EU bidding-zone / day-ahead discovery after ENTSO-E A44
+    # live prices (2026-07-21). Without these, agent queries for European
+    # electricity prices ranked commodities/OWID energy bulk over energy_grid.
+    "day ahead electricity price": [
+        "energy grid",
+        "electricity price",
+        "day-ahead price",
+        "entso-e",
+        "eu bidding zone",
+    ],
+    "day-ahead price": ["energy grid", "electricity price", "entso-e"],
+    "entso-e": [
+        "energy grid",
+        "energy grid fuel mix",
+        "eu bidding zone",
+        "european electricity",
+        "day-ahead price",
+    ],
+    "eu electricity grid": [
+        "energy grid",
+        "entso-e",
+        "bidding zone",
+        "european grid demand",
+    ],
+    "bidding zone": ["energy grid", "entso-e", "eu electricity"],
+    "grid fuel mix": ["energy grid fuel mix", "generation by fuel", "entso-e"],
+    "electricity grid demand": ["energy grid", "grid operating data", "entso-e"],
 }
 
 # Central bank symbols -> operation_id prefix to boost.
@@ -110,6 +137,9 @@ _NON_TICKER_WORDS: frozenset[str] = frozenset({
     "IMF", "BIS", "OECD", "WTO", "WHO", "UN", "ILO", "FAO", "OPEC", "NATO",
     "EIA", "BLS", "BEA", "CBO", "GAO", "ONS", "EIB", "EBRD", "ADB", "IFC",
     "WB",
+    # Energy / grid (ENERGY-1.1.1.5): ENTSO-E and regional grid codes are not
+    # equity tickers; keep them out of quotes_symbol_* boosts.
+    "ENTSO", "AEMO", "NESO", "NEM",
 })
 
 # Real NYSE tickers that collide with common English acronyms - AI (C3.ai Inc.)
