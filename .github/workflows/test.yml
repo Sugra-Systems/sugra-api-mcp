@@ -66,6 +66,18 @@ jobs:
     #   if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     if: ${{ github.event_name == 'workflow_dispatch' }}
     timeout-minutes: 15
+    # INFRA-35: serialize production deploys, mirroring APP/WEB and the API/ingest
+    # pattern (INFRA-13). Inert while the MCP-4.1 freeze keeps this job on
+    # workflow_dispatch only, but it must already be here when the dual-trigger
+    # condition above is restored - otherwise unfreezing reopens the same hole
+    # that broke APP twice: two runs of /usr/local/bin/sugra-mcp-deploy against
+    # /var/www/sugra-mcp at once (git pull + pip install + systemctl restart).
+    # JOB level so the `test` matrix still runs in parallel across runs;
+    # cancel-in-progress: false so a queued deploy waits instead of killing an
+    # in-flight pip install / service restart.
+    concurrency:
+      group: mcp-deploy-production
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - name: Pre-deploy sudo fail-fast probe (INFRA-11.1)
