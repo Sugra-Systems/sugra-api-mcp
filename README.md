@@ -12,6 +12,14 @@
   <a href="https://github.com/Sugra-Systems/sugra-api-mcp/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Sugra-Systems/sugra-api-mcp?label=License" alt="License"></a>
 </p>
 
+<p align="center">
+  <a href="https://chatgpt.com/plugins/plugin_asdk_app_6a33ce728e488191a82df247ab605e91"><img src="https://img.shields.io/badge/OpenAI_Plugins_Directory-Install_plugin-F5A623?style=for-the-badge" alt="Install Sugra API from the OpenAI Plugins Directory"></a>
+</p>
+
+<p align="center">
+  <sub>Published in the official OpenAI Plugins Directory. Available for ChatGPT and Codex.</sub>
+</p>
+
 **Give any AI agent access to 1,500+ data endpoints across markets, economics, companies, government, news, climate, maritime and entity screening - through one MCP server.**
 
 Works with ChatGPT, Claude, Gemini, xAI, Cursor, VS Code and any MCP client.
