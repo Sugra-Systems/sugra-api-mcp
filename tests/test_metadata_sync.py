@@ -168,3 +168,54 @@ def test_public_tool_count_wording_is_not_stale():
     assert f"{expected_word} gateway tools" in sugra_api_mcp.__doc__.lower(), (
         f"package docstring should advertise '{expected_word} gateway tools'"
     )
+
+
+# Operator-only secrets must not appear in the root README: public MCP
+# directories (Glama and similar) scrape README env tables into Try/sandbox
+# forms. Keep INTERNAL_API_TOKEN and OAuth wiring in docs/self-hosting.md only.
+_OPERATOR_ENV_NAMES = (
+    "INTERNAL_API_TOKEN",
+    "SUGRA_APP_URL",
+    "SUGRA_JWKS_URL",
+    "SUGRA_MCP_ALLOWED_HOSTS",
+    "SUGRA_MCP_ALLOWED_ORIGINS",
+)
+
+
+def test_server_json_exposes_only_user_facing_api_key_env():
+    """MCP registry / directory installers should only require SUGRA_API_KEY."""
+    packages = _server_json()["packages"]
+    assert packages, "server.json must declare at least one package"
+    env_vars = packages[0].get("environmentVariables") or []
+    names = [item["name"] for item in env_vars]
+    assert names == ["SUGRA_API_KEY"], (
+        "server.json environmentVariables must list only SUGRA_API_KEY "
+        f"(user-facing); got {names}"
+    )
+    key = env_vars[0]
+    assert key.get("isRequired") is True
+    assert key.get("isSecret") is True
+
+
+def test_readme_does_not_list_operator_env_in_root_docs():
+    """Root README must not document operator secrets in env tables.
+
+    Directory scrapers treat README tables as the public env schema for Try
+    forms. Operator vars live in docs/self-hosting.md instead.
+    """
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    for name in _OPERATOR_ENV_NAMES:
+        assert name not in readme, (
+            f"{name} must not appear in README.md (move to docs/self-hosting.md "
+            "so public directory sandboxes do not request operator secrets)"
+        )
+    assert "docs/self-hosting.md" in readme
+
+
+def test_self_hosting_doc_covers_operator_env():
+    path = REPO_ROOT / "docs" / "self-hosting.md"
+    assert path.is_file(), "docs/self-hosting.md is required for operator env docs"
+    body = path.read_text(encoding="utf-8")
+    for name in _OPERATOR_ENV_NAMES:
+        assert name in body, f"docs/self-hosting.md must document {name}"
+    assert "Never commit" in body or "never put" in body.lower()
