@@ -246,26 +246,35 @@ sugra-api-mcp call quotes_symbol_price --params '{"symbol":"AAPL"}'
 
 ## Environment variables
 
+User-facing configuration for local installs, MCP clients, Docker stdio, and
+directory sandboxes (for example Glama Try in Browser). Set only this:
+
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `SUGRA_API_KEY` | For API calls | - | Your Sugra API key. Not needed to start the server: the catalog tools (`search_endpoints`, `describe_endpoint`, `list_toolsets`, `list_sources`) work without it, and API-calling tools return a structured `missing_api_key` error until it is set. In HTTP mode with OAuth this becomes a fallback for requests without Bearer |
-| `SUGRA_API_BASE` | No | `https://sugra.ai` | Override for self-hosted or beta environments |
-| `SUGRA_TIMEOUT` | No | `30` | Request timeout in seconds |
-| `SUGRA_MCP_ALLOWED_HOSTS` | No (HTTP) | - | Comma-separated hostnames to allow behind a reverse proxy |
-| `SUGRA_MCP_ALLOWED_ORIGINS` | No (HTTP) | chatgpt.com, claude.ai, cursor.sh + others | Comma-separated allowed Origins for browser-based MCP clients. Applies to BOTH the outer Starlette CORS layer and the inner FastMCP DNS rebinding Origin check, so the two stay in sync. `*` disables the inner Origin check entirely (self-hosted / dev only); Bearer auth still gates tool calls |
+| `SUGRA_API_KEY` | For API calls | - | Your Sugra API key (`sugra_...`). Get a free key at [app.sugra.ai/settings/billing](https://app.sugra.ai/settings/billing) (Free tier: 50 req/day). Not needed to start the server: catalog tools (`search_endpoints`, `describe_endpoint`, `list_toolsets`, `list_sources`) work without it; API-calling tools return a structured `missing_api_key` error until it is set. In HTTP mode with a client Bearer token this is only a fallback. |
+
+Optional overrides (leave unset unless you need them):
+
+| Variable | Default | Description |
+|---|---|---|
+| `SUGRA_API_BASE` | `https://sugra.ai` | Override the Sugra API base URL (self-hosted or beta API only). |
+| `SUGRA_TIMEOUT` | `30` | Downstream HTTP timeout in seconds for calls from this server to the Sugra API. |
+
+Operator-only settings for self-hosted Streamable HTTP (reverse proxy CORS/hosts,
+OAuth authorization-server wiring, and shared secrets) are documented in
+[docs/self-hosting.md](docs/self-hosting.md). Do not put operator secrets into
+public directory sandboxes.
 
 ### HTTP transport with OAuth
 
-When running with `--transport streamable-http` the server allows unauthenticated MCP discovery requests (`initialize`, `notifications/initialized`, `tools/list`, `resources/list`, `prompts/list`, and `ping`) so ChatGPT Apps and other mixed-auth clients can discover tool metadata. CORS is enabled for major MCP clients (ChatGPT, Claude, Cursor) so browser connector UIs can complete the OAuth flow; override the allowlist with `SUGRA_MCP_ALLOWED_ORIGINS`. Tool calls still require `Authorization: Bearer ...`. Two token formats are accepted:
+When running with `--transport streamable-http` the server allows unauthenticated MCP discovery requests (`initialize`, `notifications/initialized`, `tools/list`, `resources/list`, `prompts/list`, and `ping`) so ChatGPT Apps and other mixed-auth clients can discover tool metadata. Tool calls still require `Authorization: Bearer ...`. Two token formats are accepted:
 
 - Raw API key (`sugra_...`) - passed through as the downstream `x-api-key`. Compatible with earlier local API-key setups.
 - OAuth JWT - signature verified against the issuer's JWKS. The audience must match `https://app.sugra.ai/mcp`, the token must include `sugra:read`, and hosted access is validated against APP before resolving the user's primary API key. Successful hosted OAuth requests update MCP connection activity in APP.
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `SUGRA_APP_URL` | HTTP + OAuth | `https://app.sugra.ai` | Base URL of the authorization server |
-| `SUGRA_JWKS_URL` | No | `$SUGRA_APP_URL/oauth/jwks.json` | JWKS endpoint |
-| `INTERNAL_API_TOKEN` | HTTP + OAuth | - | Shared secret for the user lookup and MCP activity endpoints on the authorization server. Same value must be set on both the MCP process and the app.sugra.ai Laravel process |
+Most users should use the hosted endpoint `https://app.sugra.ai/mcp` instead of
+self-hosting OAuth. If you run your own HTTP process, see
+[docs/self-hosting.md](docs/self-hosting.md).
 
 ## Timeouts and the error contract
 
@@ -326,7 +335,9 @@ Hit your plan's daily limit. Response headers include `X-RateLimit-Reset` with t
 
 **`Invalid Host header`** (only if self-hosting HTTP mode)
 
-FastMCP has DNS rebinding protection. Set `SUGRA_MCP_ALLOWED_HOSTS` to a comma-separated list of the public hostnames your reverse proxy serves. Example: `SUGRA_MCP_ALLOWED_HOSTS=mcp.example.com,example.com`.
+FastMCP has DNS rebinding protection for public hostnames behind a reverse
+proxy. See [docs/self-hosting.md](docs/self-hosting.md) for the allowed-hosts
+setting.
 
 **Tool result truncated with `meta.truncated` notice**
 
@@ -392,9 +403,16 @@ export SUGRA_API_KEY=sugra_...
 docker compose up -d
 ```
 
-Then point your MCP client at `http://localhost:8001/mcp`. The compose service passes `SUGRA_API_KEY`, `SUGRA_API_BASE`, `SUGRA_TIMEOUT`, `SUGRA_MCP_ALLOWED_ORIGINS`, and `SUGRA_MCP_ALLOWED_HOSTS` through from your shell environment when set, and checks container health against `http://localhost:8001/health`.
+Then point your MCP client at `http://localhost:8001/mcp`. The compose service
+passes `SUGRA_API_KEY` and the optional overrides (`SUGRA_API_BASE`,
+`SUGRA_TIMEOUT`) from your shell when set, and checks container health against
+`http://localhost:8001/health`. Reverse-proxy and OAuth operator settings are
+documented in [docs/self-hosting.md](docs/self-hosting.md).
 
-A note on auth: no environment variable is baked into the image and none is required for the container to start. In HTTP mode clients authenticate per request with `Authorization: Bearer sugra_...`, so `SUGRA_API_KEY` on the container is only a fallback for requests without a Bearer token (see the environment table above). Behind a reverse proxy, set `SUGRA_MCP_ALLOWED_HOSTS` to the public hostnames you serve.
+A note on auth: no environment variable is baked into the image and none is
+required for the container to start. In HTTP mode clients authenticate per
+request with `Authorization: Bearer sugra_...`, so `SUGRA_API_KEY` on the
+container is only a fallback for requests without a Bearer token.
 
 ## License
 
