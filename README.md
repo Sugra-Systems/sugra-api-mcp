@@ -169,6 +169,51 @@ export SUGRA_API_KEY=sugra_xxx_...
 
 Or edit `~/.claude/config.json` manually with the same shape as Claude Desktop above.
 
+### Usage with Gemini CLI
+
+Gemini CLI reads MCP servers from `~/.gemini/settings.json` (user scope) or
+`.gemini/settings.json` in the project. For a local stdio install, add:
+
+```json
+{
+  "mcpServers": {
+    "sugra": {
+      "command": "sugra-api-mcp",
+      "env": {
+        "SUGRA_API_KEY": "sugra_xxx_yourkey..."
+      }
+    }
+  }
+}
+```
+
+If the console script is not on `PATH`, use `"command": "python"` with
+`"args": ["-m", "sugra_api_mcp"]` instead. The equivalent Gemini CLI command
+is:
+
+```bash
+gemini mcp add --scope user -e SUGRA_API_KEY=sugra_xxx_yourkey... sugra sugra-api-mcp
+```
+
+Or connect to the hosted endpoint without installing the package:
+
+```bash
+gemini mcp add --scope user --transport http \
+  --header "Authorization: Bearer sugra_xxx_yourkey..." \
+  sugra https://app.sugra.ai/mcp
+```
+
+Run `gemini mcp list` to check the connection, then enter `/mcp` in an
+interactive session to inspect the available tools. A local stdio connection
+shows the eight gateway tools in [Tool reference](#tool-reference); the hosted
+endpoint also shows the three [hosted-only agent tools](#hosted-only-agent-tools-appsugraaimcp).
+If a local server does not connect from a new directory, review and trust that
+workspace with `gemini trust` before retrying.
+
+These examples were checked against the
+[Gemini CLI MCP documentation](https://github.com/google-gemini/gemini-cli/blob/main/docs/tools/mcp-server.md)
+and Gemini CLI v0.51.0.
+
 ### Cursor, Zed, Cline, Continue.dev, Windsurf
 
 Each of these has an MCP settings file (typically `mcp.json` or equivalent) with the same stdio config shape as Claude Desktop.
