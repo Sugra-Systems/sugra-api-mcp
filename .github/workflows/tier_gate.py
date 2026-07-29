@@ -1,4 +1,4 @@
-# tier-gate (INFRA-30.2): mechanical tier-floor check for a single-identity org.
+# tier-gate : mechanical tier-floor check for a single-identity org.
 #
 # Enforces FLEET-PROTOCOL section 3 as a required STATUS CHECK (approvals cannot
 # gate here: required_approving_review_count must stay 0 - no second identity
@@ -10,7 +10,7 @@
 #            (human release is a label event the loop's code path never emits)
 #   If the PR vendors a CHANGE.md, its `risk-tier:` must equal the declared label.
 #
-# OPS-5.2: those unmet states are PENDING, not FAILURE. Every one of them means
+# those unmet states are PENDING, not FAILURE. Every one of them means
 # "the author or a human has not acted yet" - the label is missing, the human-ok
 # is awaited, a declared value needs adjusting. They block merge (the posted
 # check-run is `in_progress`, which is not `success`) WITHOUT failing the workflow
@@ -39,7 +39,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PATHS_FILE = os.path.join(HERE, 'tier-floor-paths.txt')
 
 
-# Exit codes (OPS-5.2, same three-state contract as review_quorum.py). The
+# Exit codes . The
 # workflow maps each to the `tier-gate` CHECK-RUN it posts on the PR head:
 #   0 -> completed/success     the declared tier clears the floor.
 #   2 -> in_progress (pending) a NORMAL in-progress state: the tier label is not

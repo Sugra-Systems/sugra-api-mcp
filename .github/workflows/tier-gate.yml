@@ -1,10 +1,10 @@
-# tier-gate (INFRA-30.2, hardened INFRA-30.5): mechanical tier-floor per
+# tier-gate : mechanical tier-floor per
 # FLEET-PROTOCOL section 3. NON-required at introduction (green-before-require);
 # becomes required via APPEND-ONLY:
 #   gh api -X POST repos/<org>/<repo>/branches/main/protection/required_status_checks/contexts -f 'contexts[]=tier-gate'
 # (never PATCH the whole required_status_checks object - that risks dropping `test`).
 #
-# SECURITY (a review round, INFRA-30.5): pull_request_target, NOT pull_request. On
+# SECURITY (a review round, ): pull_request_target, NOT pull_request. On
 # pull_request the workflow + script execute from the PR's MERGE commit, so a PR
 # could tamper tier_gate.py/this yml and report a green `tier-gate` context -
 # a self-bypass of the gate (the exact move a prompt-injected agent would try).
@@ -13,7 +13,7 @@
 # NEVER checks out or executes PR code: it reads the PR's changed-file LIST and
 # labels via the API, and reads a vendored CHANGE.md via the contents API.
 #
-# OPS-5.2: an unmet tier-gate is a NORMAL in-progress state, not a failure. The
+# an unmet tier-gate is a NORMAL in-progress state, not a failure. The
 # gate reports as a `tier-gate` CHECK-RUN on the PR head:
 #   - satisfied      -> completed / success   (merge allowed)
 #   - not yet met    -> in_progress (pending) (blocks merge, NOT a failure)
@@ -58,8 +58,7 @@ on:
     branches:
       - main
 
-# One run at a time per PR. cancel-in-progress stays FALSE (OPS-5 review, a reviewer +
-# a reviewer): cancellation happens at the workflow level and a concurrency group holds
+# One run at a time per PR. cancel-in-progress stays FALSE : cancellation happens at the workflow level and a concurrency group holds
 # exactly ONE pending run - a newly queued run cancels the previously pending one.
 # Queueing keeps completion order so the newest state always gets posted. There is
 # no job-level skip filter here, so every queued run evaluates and reports; that is
@@ -78,7 +77,7 @@ permissions:
   checks: write
 
 jobs:
-  # Named `tier-gate-eval`, NOT `tier-gate` (OPS-5.2). The verdict-bearing required
+  # Named `tier-gate-eval`, NOT `tier-gate` . The verdict-bearing required
   # context is the `tier-gate` CHECK-RUN this job POSTs - never this job's own auto
   # check-run, because exiting 0 on a pending gate would turn a job literally named
   # `tier-gate` green and open the gate. `tier-gate-eval` should ALSO be required,
@@ -95,7 +94,7 @@ jobs:
       # gate script + tier-floor-paths.txt come from main, never from the PR.
       - uses: actions/checkout@v4
 
-      # FAIL-CLOSED baseline (OPS-5 review): mark the head `in_progress` BEFORE
+      # FAIL-CLOSED baseline : mark the head `in_progress` BEFORE
       # evaluating, so a run that dies mid-flight leaves the head BLOCKED rather
       # than carrying a stale `success` from an earlier run on the same sha (a
       # label removed after a green run is exactly that case). HARD-REQUIRED, not

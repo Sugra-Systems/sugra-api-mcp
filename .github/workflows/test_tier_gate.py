@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Tests for the tier-gate three-state contract (OPS-5.2).
+"""Tests for the tier-gate three-state contract .
 
 The regression being locked down: every unmet tier-gate state used to exit 1 and
 fail the whole workflow run, which emailed "Run failed" for what is ordinarily
@@ -167,7 +167,7 @@ class CheckRunPlan(unittest.TestCase):
 
 class UnmetStatesArePending(unittest.TestCase):
     """The whole point: an unmet gate blocks, it does not alert. Each of these was
-    a red workflow run and an email before OPS-5.2."""
+    a red workflow run and an email before """
 
     def test_a_missing_tier_label_is_pending(self):
         # the single biggest source: 181 failed runs org-wide were mostly this.

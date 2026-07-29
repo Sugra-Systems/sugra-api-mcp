@@ -1,4 +1,4 @@
-# Per-repo samples for the vendored gate contract tests (OPS-5.3).
+# Per-repo samples for the vendored gate contract tests .
 #
 # WHY THIS FILE EXISTS. test_tier_gate.py is vendored byte-identically into every
 # repo carrying the gate, so it cannot hardcode paths from any one of them. It used

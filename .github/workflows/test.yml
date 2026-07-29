@@ -105,7 +105,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
-      - name: Pre-deploy sudo fail-fast probe (INFRA-11.1)
+      - name: Pre-deploy sudo fail-fast probe
         # The MCP deploy runs `sudo /usr/local/bin/sugra-mcp-deploy` (general root
         # sudo) on the APP VM, so it needs the general waagent NOPASSWD intact -
         # `sudo -n true` is the faithful probe (same as APP; not WEB's scoped -l
