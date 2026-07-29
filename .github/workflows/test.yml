@@ -9,7 +9,7 @@ on:
       - '**/*.md'
   pull_request:
     branches: [main]
-  # workflow_dispatch preserved from the deleted deploy-app-vm.yml: the hosted MCP
+  # workflow_dispatch is preserved deliberately: the hosted MCP
   # deploy (the `deploy` job below) is gated on it as the reliable manual kick.
   workflow_dispatch:
 
@@ -31,6 +31,36 @@ jobs:
           pip install -e ".[dev,http]"
       - name: Ruff
         run: ruff check sugra_api_mcp tests
+      - name: Run the CI-gate contract tests
+        # The tier-gate script decides whether a change may merge, so its contract
+        # is enforced by the required test job. Pytest never collects these:
+        # its default norecursedirs excludes dot-directories, so
+        # .github/workflows/test_*.py is invisible to the suite above.
+        # working-directory is set EXPLICITLY rather than inherited - a sibling
+        # repository's test job defaults to a subdirectory, where a relative path
+        # failed the required check for every pull request.
+        # Only the tier-gate suite exists here; this repository carries no
+        # review-quorum gate, so the floor is set for that single suite.
+        # At the time of writing that suite reports 36 tests, hence a floor of
+        # 30. When a future vendor drop changes the suite size materially,
+        # retune this floor in the SAME change - otherwise the required job
+        # goes red for every pull request until someone notices (review note).
+        working-directory: ${{ github.workspace }}/.github/workflows
+        run: |
+          set -euo pipefail
+          out=$(python -m unittest discover -s . -p 'test_*.py' -v 2>&1) || { echo "$out"; exit 1; }
+          echo "$out"
+          n=$(printf '%s' "$out" | sed -n 's/^Ran \([0-9]*\) test.*/\1/p' | tail -1)
+          grep -qE "^test_.*\(test_tier_gate\." <<< "$out" || {
+            echo "::error::gate tests: the tier_gate suite contributed NO tests - deleted, renamed, or not discovered"
+            exit 1
+          }
+          if [ -z "$n" ] || [ "$n" -lt 30 ]; then
+            echo "::error::gate tests: only ${n:-0} ran (floor 30) - the suite shrank sharply"
+            exit 1
+          fi
+          echo "gate tests: $n executed"
+
       - name: Pytest
         run: pytest
       - name: Import check
@@ -54,37 +84,31 @@ jobs:
   deploy:
     needs: test
     runs-on: ubuntu-latest
-    # Hosted app.sugra.ai/mcp redeploy, folded in from the deleted deploy-app-vm.yml
-    # (which used a brittle `workflow_run: workflows: ["Test"]` NAME coupling that
-    # breaks silently if this workflow is renamed). `needs: test` chains off ALL
-    # matrix legs in-file.
-    # TEMPORARY FREEZE (board card MCP-4.1): hosted deploy is manual-only
-    # (workflow_dispatch) while the OpenAI Apps submission review runs against
-    # app.sugra.ai/mcp - runtime merges to main must not auto-change the endpoint
-    # under review. On the review verdict restore the original dual-trigger
-    # condition verbatim:
+    # Hosted redeploy of the public MCP endpoint. `needs: test` chains off ALL
+    # matrix legs in-file, rather than coupling to another workflow by name -
+    # a name coupling breaks silently the moment the workflow is renamed.
+    # TEMPORARY FREEZE: the hosted deploy is manual-only (workflow_dispatch)
+    # while an external submission review runs against the live endpoint -
+    # merges to main must not change what the reviewers are looking at. When the
+    # review concludes, restore the original dual-trigger condition verbatim:
     #   if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     if: ${{ github.event_name == 'workflow_dispatch' }}
     timeout-minutes: 15
-    # Serialize hosted deploys. This job SSHes to a shared host and runs
-    # sugra-mcp-deploy, which does git pull + pip install + systemctl restart
-    # against one directory, so two runs at once can tear the install tree.
-    # Inert while the freeze above keeps this job on workflow_dispatch, but it
-    # must already be in place when the dual-trigger condition is restored.
-    # JOB level so the `test` matrix still runs in parallel across runs;
-    # cancel-in-progress: false so a queued deploy waits instead of killing an
-    # in-flight pip install or service restart.
+    # Serialize hosted deploys: the deploy updates one install tree in place, so
+    # two runs at once can tear it. Inert while the freeze above keeps this job
+    # on workflow_dispatch, but it must already be in place when the dual-trigger
+    # condition is restored. JOB level, so the `test` matrix still runs in
+    # parallel across runs; cancel-in-progress: false so a queued deploy waits
+    # instead of killing an in-flight install or service restart.
     concurrency:
       group: mcp-deploy-production
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
-      - name: Pre-deploy sudo fail-fast probe (INFRA-11.1)
-        # The MCP deploy runs `sudo /usr/local/bin/sugra-mcp-deploy` (general root
-        # sudo) on the APP VM, so it needs the general waagent NOPASSWD intact -
-        # `sudo -n true` is the faithful probe (same as APP; not WEB's scoped -l
-        # form). Probe first so a waagent sudoers reset fails with a clear message
-        # instead of dying mid-deploy.
+      - name: Pre-deploy privilege probe
+        # The deploy needs passwordless sudo on the target host. Probe it FIRST,
+        # so a host-side permission problem fails here with a clear message
+        # instead of dying halfway through an install.
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.APP_VM_HOST }}
@@ -92,7 +116,7 @@ jobs:
           key: ${{ secrets.APP_VM_SSH_KEY }}
           script: |
             if ! sudo -n true 2>/dev/null; then
-              echo "FAIL: passwordless sudo is broken on the APP VM (waagent sudoers reset?). Re-assert NOPASSWD via 'az vm run-command', then re-run this workflow. Do NOT manual-SSH-deploy (CI/CD only)."
+              echo "FAIL: passwordless sudo is unavailable on the deploy host. Restore it through the platform's management channel, then re-run this workflow. Deploys go through CI only."
               exit 1
             fi
             echo "sudo -n OK"
