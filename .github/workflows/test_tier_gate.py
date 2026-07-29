@@ -325,8 +325,8 @@ class WorkflowContract(unittest.TestCase):
 class CiWiring(unittest.TestCase):
     """a reviewer S1: the gate suite is only worth something if the REQUIRED test job
     actually runs it - and the first attempt would have done the opposite, failing
-    that job for every PR. A CI job may set defaults.run.working-directory (WEB's
-    sets sugra-webSITE), and then any path relative to the repo root is wrong -
+    that job for every PR. A CI job may set defaults.run.working-directory to a
+    subdirectory, and then any path relative to the repo root is wrong -
     which is how this nearly shipped a CI outage. The step must be explicit."""
 
     @classmethod
