@@ -41,6 +41,10 @@ jobs:
         # failed the required check for every pull request.
         # Only the tier-gate suite exists here; this repository carries no
         # review-quorum gate, so the floor is set for that single suite.
+        # At the time of writing that suite reports 36 tests, hence a floor of
+        # 30. When a future vendor drop changes the suite size materially,
+        # retune this floor in the SAME change - otherwise the required job
+        # goes red for every pull request until someone notices (review note).
         working-directory: ${{ github.workspace }}/.github/workflows
         run: |
           set -euo pipefail
