@@ -5,7 +5,7 @@
 # to DERIVE a low-risk sample by probing candidate paths against tier-floor-paths.txt
 # - which was unsound: exhausting a fixed candidate list does not prove a repo has no
 # low-risk path, so ordinary floor patterns could silently skip real assertions
-# (codex). Declaring the samples here removes the guesswork; the suite then VALIDATES
+# (review feedback). Declaring the samples here removes the guesswork; the suite then VALIDATES
 # each one against the real gate and FAILS if the declaration is wrong.
 #
 # Format: key = value. Both keys are required.

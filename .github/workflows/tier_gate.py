@@ -76,7 +76,7 @@ def check_run_plan(exit_code):
 def pending(msg):
     """A normal not-yet-satisfied state: blocks merge, does NOT alert.
 
-    Classification tradeoff, named rather than implied (grok S3). Two of the five
+    Classification tradeoff, named rather than implied (review feedback). Two of the five
     pending states - declaring BELOW the floor, and a vendored CHANGE.md whose
     risk-tier disagrees with the label - read less like "the human has not acted
     yet" and more like a mis-declaration, which in an agent fleet is the shape a
@@ -128,7 +128,7 @@ def pr_state(repo, pr):
     # --slurp wraps each page's array into one outer array ([[...],[...]]) so
     # multi-page output stays valid JSON. Bare --paginate CONCATENATES the page
     # arrays ("[...][...]"), json.loads fails, and every large PR would be stuck
-    # red regardless of labels (Codex review S2 - a lockout, not a gate).
+    # red regardless of labels (review feedback - a lockout, not a gate).
     pages = gh_json(['api', f'repos/{repo}/pulls/{pr}/files', '--paginate', '--slurp'])
     files = [f for page in pages for f in page]
     paths, statuses = [], {}
@@ -145,7 +145,7 @@ def pr_state(repo, pr):
 
 
 def normalize_glob(g):
-    """agy MEDIUM: a bare directory entry (`dir/`) never matches children under
+    """Review feedback: a bare directory entry (`dir/`) never matches children under
     fnmatch - normalize it to `dir/**` so config editors cannot silently no-op."""
     return g + '**' if g.endswith('/') else g
 
@@ -172,14 +172,14 @@ def main():
         fault('need --pr/--repo or --files-list/--labels')
 
     globs = [normalize_glob(g) for g in load_globs()]
-    # case-insensitive matching (agy HIGH, belt-and-suspenders): no legit
+    # case-insensitive matching (review feedback, belt-and-suspenders): no legit
     # case-collisions exist in these repos, so lowering both sides only closes
     # the odd-casing path and can never widen a hole.
     hits = sorted({p for p in paths for g in globs if fnmatch.fnmatch(p.lower(), g.lower())})
     floor = 'T3' if hits else 'T0'
 
     # Any label in the tier: namespace counts toward "exactly one" - a malformed
-    # tier:T4 next to a valid tier:T3 must FAIL, not be silently ignored (Codex S4).
+    # tier:T4 next to a valid tier:T3 must FAIL, not be silently ignored (review feedback).
     tierish = [l for l in labels if l.lower().startswith('tier:')]
     tier_labels = [l for l in tierish if re.fullmatch(r'tier:T[0-3]', l)]
     if len(tierish) != 1 or len(tier_labels) != 1:
@@ -188,7 +188,7 @@ def main():
     declared = tier_labels[0].split(':')[1]
 
     # CHANGE.md cross-validation (vendored ticket must agree with the label).
-    # agy HIGH x2: (a) content comes from the PR HEAD via the contents API, never
+    # Review feedback: (a) content comes from the PR HEAD via the contents API, never
     # local disk - under pull_request_target the checkout is the BASE ref, so a
     # disk read would silently see nothing; (b) FAIL-LOUD - a vendored CHANGE.md
     # whose risk-tier is missing/unparseable is a red check, not a silent skip.
@@ -206,7 +206,7 @@ def main():
                                 '-H', 'Accept: application/vnd.github.raw+json'],
                                capture_output=True, encoding='utf-8', errors='replace')
             if r.returncode != 0:
-                # Codex delta S2: only a REMOVED file may 404; for an added/modified
+                # Review feedback: only a REMOVED file may 404; for an added/modified
                 # CHANGE.md a 404 means our fetch is wrong - fail loud, never skip.
                 fault(f'cannot fetch {p} (status {statuses.get(p, "unknown")!r}) at head: '
                      f'{r.stderr.strip()[:200]}')

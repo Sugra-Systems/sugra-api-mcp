@@ -4,7 +4,7 @@
 #   gh api -X POST repos/<org>/<repo>/branches/main/protection/required_status_checks/contexts -f 'contexts[]=tier-gate'
 # (never PATCH the whole required_status_checks object - that risks dropping `test`).
 #
-# SECURITY (agy round, INFRA-30.5): pull_request_target, NOT pull_request. On
+# SECURITY (a review round, INFRA-30.5): pull_request_target, NOT pull_request. On
 # pull_request the workflow + script execute from the PR's MERGE commit, so a PR
 # could tamper tier_gate.py/this yml and report a green `tier-gate` context -
 # a self-bypass of the gate (the exact move a prompt-injected agent would try).
@@ -31,7 +31,7 @@
 # default-branch sha). `tier-gate-eval` is therefore a FULL outage backstop here -
 # if the checks API cannot be written at all, the failing job still blocks the head.
 #
-# BOTH contexts are MANDATORY, not a suggestion (grok S2). Renaming the job removed
+# BOTH contexts are MANDATORY, not a suggestion (review feedback). Renaming the job removed
 # the instant block GitHub used to give for free: a job literally named `tier-gate`
 # created its check-run the moment the workflow dispatched, so the required context
 # went non-success immediately. Now `tier-gate` is written by the baseline step,
@@ -58,8 +58,8 @@ on:
     branches:
       - main
 
-# One run at a time per PR. cancel-in-progress stays FALSE (OPS-5 review, agy +
-# codex): cancellation happens at the workflow level and a concurrency group holds
+# One run at a time per PR. cancel-in-progress stays FALSE (OPS-5 review, a reviewer +
+# a reviewer): cancellation happens at the workflow level and a concurrency group holds
 # exactly ONE pending run - a newly queued run cancels the previously pending one.
 # Queueing keeps completion order so the newest state always gets posted. There is
 # no job-level skip filter here, so every queued run evaluates and reports; that is

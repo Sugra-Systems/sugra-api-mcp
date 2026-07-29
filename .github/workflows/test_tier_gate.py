@@ -43,7 +43,7 @@ STEP_NAME_RE = re.compile(r'^      - name:.*CI-gate contract tests.*$', re.M)
 def _samples():
     """Read the per-repo DECLARED samples.
 
-    Not derived (codex): exhausting a fixed candidate list never proved a repo has
+    Not derived (review feedback): exhausting a fixed candidate list never proved a repo has
     no low-risk path, so ordinary floor patterns could silently skip real
     assertions. Declaring them removes the guesswork, and SampleDeclaration below
     validates each against the REAL gate - a wrong declaration FAILS, never skips.
@@ -86,7 +86,7 @@ def run_gate(paths, labels):
 class SampleDeclaration(unittest.TestCase):
     """The derived sample must be low risk ACCORDING TO THE GATE ITSELF - a
     derivation that disagrees with tier_gate.py would make every test below it
-    assert the wrong thing. codex caught exactly that: the tracked-file fallback
+    assert the wrong thing. a reviewer caught exactly that: the tracked-file fallback
     returned subdirectory-relative names, so a floored workflow file read as low
     risk."""
 
@@ -98,7 +98,7 @@ class SampleDeclaration(unittest.TestCase):
         self.assertIn('no high-risk paths', out)
 
     def test_the_declared_change_md_is_usable_for_cross_validation(self):
-        """grok: low_risk had a validator and change_md did not - the same layer
+        """Review feedback: low_risk had a validator and change_md did not - the same layer
         must pin both, or a stale change_md is caught only indirectly.
 
         Runs the gate WITH a ticket body: a CHANGE.md in the file list and no
@@ -222,7 +222,7 @@ class SatisfiedStatesPass(unittest.TestCase):
 
 class VendoredChangeMdCrossValidation(unittest.TestCase):
     """The vendored-ticket cross-validation. Each case asserts the REASON in the
-    output, not only the exit code (codex): a below-floor result also yields
+    output, not only the exit code (review feedback): a below-floor result also yields
     PENDING, so a code-only assertion would pass even when the cross-validation
     never ran at all."""
 
@@ -264,7 +264,7 @@ class VendoredChangeMdCrossValidation(unittest.TestCase):
     def test_the_cross_validation_runs_on_a_nested_change_md(self):
         """The gate keys on the BASENAME, so a nested path must cross-validate
         too - and the assertion must prove it did, not merely that something
-        blocked (codex)."""
+        blocked (review feedback)."""
         rc, out = self._run('risk-tier: T2\n', path='ops/changes/CHANGE.md')
         self.assertEqual(rc, EXIT_PENDING, out)
         self.assertIn('risk-tier T2 != declared label T0', out)
@@ -323,7 +323,7 @@ class WorkflowContract(unittest.TestCase):
 
 
 class CiWiring(unittest.TestCase):
-    """grok S1: the gate suite is only worth something if the REQUIRED test job
+    """a reviewer S1: the gate suite is only worth something if the REQUIRED test job
     actually runs it - and the first attempt would have done the opposite, failing
     that job for every PR. A CI job may set defaults.run.working-directory (WEB's
     sets sugra-webSITE), and then any path relative to the repo root is wrong -
@@ -336,11 +336,11 @@ class CiWiring(unittest.TestCase):
         # main_api-sugra-ingest.yml, and other names. Hardcoding one name made
         # the suite error out on the first repo it was copied to.
         # Collect EVERY workflow carrying the marker, not the first alphabetically
-        # (agy): a repo with two matching files - a template, a backup, a second
+        # (review feedback): a repo with two matching files - a template, a backup, a second
         # pipeline - would otherwise validate the wrong one and leave the real
         # gate wiring unchecked. Exactly one is the contract; anything else is
         # reported as such rather than silently resolved.
-        # Match the anchored STEP-NAME line, not the bare phrase (codex): a
+        # Match the anchored STEP-NAME line, not the bare phrase (review feedback): a
         # workflow that merely MENTIONS the marker in a comment would otherwise
         # count as a wiring, producing false ambiguity and a cascade of confusing
         # assertion failures. Same regex the step extraction uses below, so the
@@ -354,7 +354,7 @@ class CiWiring(unittest.TestCase):
             if STEP_NAME_RE.search(text):
                 matches.append((name, text))
         cls.matches = [n for n, _ in matches]
-        # Populate from the first match even when there are SEVERAL (agy): blanking
+        # Populate from the first match even when there are SEVERAL (review feedback): blanking
         # it made every other assertion fail with "no CI workflow runs the gate
         # tests", which is misleading - the workflow exists, there are simply two of
         # them. The dedicated ambiguity test below reports the real problem, and the
@@ -363,7 +363,7 @@ class CiWiring(unittest.TestCase):
         cls.ci_file = matches[0][0] if matches else None
         # Extraction is deliberately defensive: a tripwire that fires on a
         # harmless edit fails the REQUIRED test job, which is the same class of
-        # damage this card exists to remove. Three brittleness modes agy found and
+        # damage this card exists to remove. Three brittleness modes a reviewer found and
         # each fix (text, not a YAML parse, so the suite needs no PyYAML on the
         # runner):
         #   - anchor on the step's NAME LINE, not a bare phrase: a comment
@@ -400,7 +400,7 @@ class CiWiring(unittest.TestCase):
                         'test job, or a broken gate merges with a green CI')
 
     def test_the_extraction_itself_is_not_silently_empty(self):
-        """agy: an extraction that returns '' makes every other assertion in this
+        """Review feedback: an extraction that returns '' makes every other assertion in this
         class fail for a reason that has nothing to do with the defect they guard.
         Fail HERE, with a message naming the real cause, instead."""
         self.assertTrue(self.step.strip(),
@@ -410,14 +410,14 @@ class CiWiring(unittest.TestCase):
                         'the step has no executable lines after comment stripping')
 
     def test_the_step_does_not_inherit_the_job_working_directory(self):
-        # The exact defect grok caught: `cd .github/workflows` under a job whose
+        # The exact defect a reviewer caught: `cd .github/workflows` under a job whose
         # job sets a default cwd resolves to a path that does not exist.
         head = self.code
         self.assertIn('working-directory: ${{ github.workspace }}/.github/workflows',
                       head,
                       'the step must set an absolute working-directory that '
                       'overrides any job-level working-directory default')
-        # Check the COMMAND POSITION, not a substring anywhere (agy): comment
+        # Check the COMMAND POSITION, not a substring anywhere (review feedback): comment
         # stripping is a naive split on '#' and would mangle a '#' inside a
         # string, so do not depend on it for the security-relevant assertion. A
         # real `cd` is the first token of its line; a mention inside prose or a
