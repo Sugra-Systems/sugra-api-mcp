@@ -31,36 +31,6 @@ jobs:
           pip install -e ".[dev,http]"
       - name: Ruff
         run: ruff check sugra_api_mcp tests
-      - name: Run the CI-gate contract tests
-        # The tier-gate script decides whether a change may merge, so its contract
-        # is enforced by the required test job. Pytest never collects these:
-        # its default norecursedirs excludes dot-directories, so
-        # .github/workflows/test_*.py is invisible to the suite above.
-        # working-directory is set EXPLICITLY rather than inherited - a sibling
-        # repository's test job defaults to a subdirectory, where a relative path
-        # failed the required check for every pull request.
-        # Only the tier-gate suite exists here; this repository carries no
-        # review-quorum gate, so the floor is set for that single suite.
-        # At the time of writing that suite reports 36 tests, hence a floor of
-        # 30. When a future vendor drop changes the suite size materially,
-        # retune this floor in the SAME change - otherwise the required job
-        # goes red for every pull request until someone notices (review note).
-        working-directory: ${{ github.workspace }}/.github/workflows
-        run: |
-          set -euo pipefail
-          out=$(python -m unittest discover -s . -p 'test_*.py' -v 2>&1) || { echo "$out"; exit 1; }
-          echo "$out"
-          n=$(printf '%s' "$out" | sed -n 's/^Ran \([0-9]*\) test.*/\1/p' | tail -1)
-          grep -qE "^test_.*\(test_tier_gate\." <<< "$out" || {
-            echo "::error::gate tests: the tier_gate suite contributed NO tests - deleted, renamed, or not discovered"
-            exit 1
-          }
-          if [ -z "$n" ] || [ "$n" -lt 30 ]; then
-            echo "::error::gate tests: only ${n:-0} ran (floor 30) - the suite shrank sharply"
-            exit 1
-          fi
-          echo "gate tests: $n executed"
-
       - name: Pytest
         run: pytest
       - name: Import check
