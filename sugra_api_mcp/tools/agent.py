@@ -1,7 +1,6 @@
 """Agent Context Layer tools - HOSTED-ONLY wrappers over /internal/agent/v1.
 
-Three thin read-only tools expose the M1 internal agent plane (API PR #224,
-design: sugra-internal-docs/docs/AGENT_CONTEXT_LAYER.md) to MCP agents:
+Three thin read-only tools expose the internal agent plane to MCP agents:
 
 - ``resolve_entity``    - free text -> canonical market/macro entity ids.
 - ``get_snapshot``      - entity + recipe -> composed current view.

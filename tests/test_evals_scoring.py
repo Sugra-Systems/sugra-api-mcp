@@ -17,7 +17,7 @@ def test_manifest_ids_unique_and_complete():
     ids = [q["id"] for q in manifest]
     assert len(ids) == len(set(ids)), "duplicate golden ids"
     assert len(ids) == EXPECTED_QUERY_COUNT
-    assert "B8" not in ids, "B8 was deferred by owner decision 2026-06-05"
+    assert "B8" not in ids, "B8 is intentionally excluded from the manifest"
 
 
 def test_manifest_tool_references_are_known():

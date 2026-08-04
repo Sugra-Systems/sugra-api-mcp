@@ -40,7 +40,7 @@ python -m evals.agent_eval --ids C5,E2
 ```
 
 Every M0 golden query (executable manifest: `golden_queries.json`; canonical
-prose: sugra-internal-docs `AGENT_GOLDEN_QUERIES.md`) is answered by a real
+prose table is maintained internally) is answered by a real
 agent whose only capabilities are the 11 hosted tools. Tool-selection accuracy
 is scored deterministically against the manifest's expected route; answer
 relevance is LLM-judged 0-2. Results land in `evals/results/` as JSON + a
