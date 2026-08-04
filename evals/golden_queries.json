@@ -1,5 +1,5 @@
 {
-  "$comment": "Executable copy of the M0 golden-query set (canonical prose table: sugra-internal-docs/docs/AGENT_GOLDEN_QUERIES.md; B8 deferred by owner 2026-06-05). required_tools: every listed tool must appear among the agent's calls; the special name 'gateway' matches any of search_endpoints / describe_endpoint / call_endpoint / fetch_data. forbidden_tools: calling any of these fails selection. known_failure: expected to score poorly today - reported, never a gate.",
+  "$comment": "Executable copy of the M0 golden-query set; the canonical prose table is maintained internally. required_tools: every listed tool must appear among the agent's calls; the special name 'gateway' matches any of search_endpoints / describe_endpoint / call_endpoint / fetch_data. forbidden_tools: calling any of these fails selection. known_failure: expected to score poorly today - reported, never a gate.",
   "queries": [
     {"id": "A1", "query": "What is Apple's current stock price and how has it moved this week?", "domains": ["markets"], "required_tools": ["get_snapshot", "get_timeseries"], "notes": "AAPL equity; live quote + daily series"},
     {"id": "A2", "query": "Show me VOO's NAV, AUM and top holdings", "domains": ["markets", "fundamentals"], "required_tools": ["get_snapshot"], "notes": "etf_snapshot recipe; VOO multi-class trap"},
