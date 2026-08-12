@@ -6,9 +6,17 @@ name: Catalog parity
 # stale-catalog condition this gate exists to catch can persist indefinitely
 # while every check stays green.
 on:
+  # Preferred trigger: the API repository announces that its OpenAPI document
+  # changed. This is the only signal that arrives exactly when drift is created,
+  # and unlike `schedule` it does not stop firing when this repository is quiet
+  # (GitHub disables scheduled workflows after 60 days without repository
+  # activity - precisely the inactive stretch in which drift would accumulate
+  # unseen).
+  repository_dispatch:
+    types: [api-spec-changed]
   schedule:
-    # Daily. Drift is not urgent-by-the-minute, but it must not wait for the next
-    # unrelated pull request in this repository.
+    # Backstop. Drift is not urgent-by-the-minute, but it must not wait for the
+    # next unrelated pull request here.
     - cron: '17 6 * * *'
   workflow_dispatch:
 
