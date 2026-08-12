@@ -121,6 +121,13 @@ class Catalog(BaseModel):
 
     source: str
     endpoints: list[Endpoint]
+    # Machine-readable provenance. `source` alone is a free-text label, so a stale
+    # bundle is only detectable by reading it - these let a check compare the
+    # bundle against a spec mechanically (an unrebuilt bundle after API routes
+    # land is exactly how the hosted surface silently drifted behind).
+    # Optional so an older bundle without them still loads.
+    spec_sha256: str | None = None
+    built_at: str | None = None
 
     def model_post_init(self, __context: Any) -> None:
         ids = [endpoint.operation_id for endpoint in self.endpoints]
@@ -141,10 +148,18 @@ class Catalog(BaseModel):
         except KeyError as exc:
             raise KeyError(f"Unknown operation_id: {operation_id}") from exc
 
+    @property
+    def operation_ids(self) -> set[str]:
+        return {endpoint.operation_id for endpoint in self.endpoints}
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Catalog:
+        spec_sha256 = data.get("spec_sha256")
+        built_at = data.get("built_at")
         return cls(
             source=str(data.get("source", "unknown")),
+            spec_sha256=str(spec_sha256) if spec_sha256 else None,
+            built_at=str(built_at) if built_at else None,
             endpoints=[
                 Endpoint.from_dict(endpoint)
                 for endpoint in data.get("endpoints", [])
@@ -153,8 +168,15 @@ class Catalog(BaseModel):
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "source": self.source,
             "endpoint_count": self.endpoint_count,
             "endpoints": [endpoint.to_dict() for endpoint in self.endpoints],
         }
+        # Omitted rather than emitted as null when absent, so an older bundle
+        # round-trips byte-identically through load -> dump.
+        if self.spec_sha256:
+            payload["spec_sha256"] = self.spec_sha256
+        if self.built_at:
+            payload["built_at"] = self.built_at
+        return payload

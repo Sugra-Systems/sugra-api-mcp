@@ -1,0 +1,36 @@
+name: Catalog parity
+
+# The bundled catalog goes stale because of changes in ANOTHER repository: a
+# route lands in the API and nothing here rebuilds the bundle. Repository events
+# in this repo therefore cannot be the only trigger - without a schedule the
+# stale-catalog condition this gate exists to catch can persist indefinitely
+# while every check stays green.
+on:
+  # Preferred trigger: the API repository announces that its OpenAPI document
+  # changed. This is the only signal that arrives exactly when drift is created,
+  # and unlike `schedule` it does not stop firing when this repository is quiet
+  # (GitHub disables scheduled workflows after 60 days without repository
+  # activity - precisely the inactive stretch in which drift would accumulate
+  # unseen).
+  repository_dispatch:
+    types: [api-spec-changed]
+  schedule:
+    # Backstop. Drift is not urgent-by-the-minute, but it must not wait for the
+    # next unrelated pull request here.
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,http]"
+      - name: Compare the bundled catalog with the live spec
+        run: python scripts/check_catalog_parity.py

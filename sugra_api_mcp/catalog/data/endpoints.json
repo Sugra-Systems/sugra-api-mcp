@@ -1,5 +1,6 @@
 {
-  "endpoint_count": 1537,
+  "built_at": "2026-08-12T20:43:35Z",
+  "endpoint_count": 1556,
   "endpoints": [
     {
       "description": "Pre-configured key Australian datasets: CPI, GDP, Labour, Trade, Retail, Wages, Population.",
@@ -1800,7 +1801,7 @@
       "parameters": [
         {
           "description": "BEA NIPA table identifier.",
-          "example": "t10105",
+          "example": "gdp-components",
           "location": "path",
           "name": "table",
           "required": true,
@@ -2149,7 +2150,7 @@
       "parameters": [
         {
           "description": "SDMX dataflow identifier.",
-          "example": "WS_CBPOL_M",
+          "example": "WS_CBPOL",
           "location": "path",
           "name": "dataflow",
           "required": true,
@@ -5896,18 +5897,18 @@
       "toolset": "core"
     },
     {
-      "description": "Daily OHLC history for any of 35 tracked indices. Volatility: VIX, RVX, VVIX, GVZ, OVX. Market: SPX, RUT, OEX, DJX, MXEA, MXEF, SKEW. Strategy: BXM (buy-write), PUT (protection), CLL (collar), CNDR (iron condor), BFLY (iron butterfly), CMBO (combo).",
+      "description": "Daily OHLC history for any index of the full catalog (see /indices/all; 2000+ symbols) - the curated quick set (VIX, SPX, RUT, BXM, PUT, ...) resolves fastest. Unknown symbols answer 400; a catalog symbol without a series answers 404. The payload catalog field names the taxonomy of category: curated symbols carry volatility|market|strategy, full-catalog symbols carry the exchange index family.",
       "method": "GET",
       "operation_id": "cboe_index_symbol",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Index symbol.",
           "example": "VIX",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Index symbol.",
             "title": "Symbol",
             "type": "string"
           }
@@ -5937,7 +5938,7 @@
       "sources": [
         "markets"
       ],
-      "summary": "Volatility and strategy index history",
+      "summary": "Index history (any catalog symbol)",
       "tags": [
         "Finance"
       ],
@@ -5962,7 +5963,203 @@
       "toolset": "markets"
     },
     {
-      "description": "15-minute delayed options quotes with full Greeks: delta, gamma, vega, theta, rho, implied volatility, theoretical price. Available for any US optionable stock or index. Symbols: AAPL, TSLA, SPY, _VIX (prefix _ for indices).",
+      "description": "The FULL index-definitions catalog - every listed index with name, description, currency, delay, family and launch date - paged (limit/offset, symbol-ascending) and filterable. The curated quick set stays on /indices; any symbol here works on /index/{symbol} (membership does not guarantee a series - an absent history answers 404). currency is the ISO code when the source publishes one and null otherwise (currency_raw keeps the published value - a literal 'dollar' is NOT assumed to be USD). family and launch-date filters apply only to the ~940 items that carry those fields.",
+      "method": "GET",
+      "operation_id": "cboe_indices_all",
+      "parameters": [
+        {
+          "description": "Case-insensitive substring over symbol and name.",
+          "location": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Case-insensitive substring over symbol and name.",
+            "title": "Q"
+          }
+        },
+        {
+          "description": "Currency code (ISO), e.g. USD.",
+          "location": "query",
+          "name": "currency",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maxLength": 8,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Currency code (ISO), e.g. USD.",
+            "title": "Currency"
+          }
+        },
+        {
+          "description": "Exact index family.",
+          "location": "query",
+          "name": "family",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exact index family.",
+            "title": "Family"
+          }
+        },
+        {
+          "description": "Only featured (true) or non-featured (false) indices.",
+          "location": "query",
+          "name": "featured",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Only featured (true) or non-featured (false) indices.",
+            "title": "Featured"
+          }
+        },
+        {
+          "description": "Launch date on/after (YYYY-MM-DD).",
+          "location": "query",
+          "name": "launched_after",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Launch date on/after (YYYY-MM-DD).",
+            "title": "Launched After"
+          }
+        },
+        {
+          "description": "Launch date on/before (YYYY-MM-DD).",
+          "location": "query",
+          "name": "launched_before",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Launch date on/before (YYYY-MM-DD).",
+            "title": "Launched Before"
+          }
+        },
+        {
+          "description": "Page size.",
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 100,
+            "description": "Page size.",
+            "maximum": 500,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        {
+          "description": "Page start.",
+          "location": "query",
+          "name": "offset",
+          "required": false,
+          "schema": {
+            "default": 0,
+            "description": "Page start.",
+            "maximum": 10000,
+            "minimum": 0,
+            "title": "Offset",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/cboe/indices/all",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "markets",
+      "sources": [
+        "markets"
+      ],
+      "summary": "Full index catalog (2000+ indices)",
+      "tags": [
+        "Finance"
+      ],
+      "toolset": "markets"
+    },
+    {
+      "description": "The latest session's one-minute bars for any optionable US symbol: price OHLC plus PER-MINUTE options flow (calls_volume / puts_volume / total_options_volume) and, for stocks, the stock volume - an intraday options-flow signal available nowhere else on this API. Symbols follow the /options convention: underscore prefix for indices (_VIX, _SPX), plain ticker for stocks (AAPL). Bar times are exchange-local (US/Eastern). Prices published as 0.0 while volume flows are placeholders and served null. 15-minute delayed data; unknown symbols answer 404.",
+      "method": "GET",
+      "operation_id": "cboe_intraday_symbol",
+      "parameters": [
+        {
+          "description": "Symbol; underscore prefix for indices.",
+          "example": "_VIX",
+          "location": "path",
+          "name": "symbol",
+          "required": true,
+          "schema": {
+            "description": "Symbol; underscore prefix for indices.",
+            "title": "Symbol",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/cboe/intraday/{symbol}",
+      "request_body_required": false,
+      "required_parameters": [
+        "symbol"
+      ],
+      "source_family": "markets",
+      "sources": [
+        "markets"
+      ],
+      "summary": "One-minute intraday bars with per-minute options flow",
+      "tags": [
+        "Finance"
+      ],
+      "toolset": "markets"
+    },
+    {
+      "description": "15-minute delayed options quotes with full Greeks: delta, gamma, vega, theta, rho, implied volatility, theoretical price. Available for any US optionable stock or index. Symbols: AAPL, TSLA, SPY, _VIX, _SPX, _NDX, _RUT (prefix _ for indices) - the cash-settled index chains are full-size (thousands of contracts); pass expiry=YYYY-MM-DD to slice one expiration (the expirations list is always included). Unknown symbols answer 404.",
       "method": "GET",
       "operation_id": "cboe_options_symbol",
       "parameters": [
@@ -5977,6 +6174,25 @@
             "title": "Symbol",
             "type": "string"
           }
+        },
+        {
+          "description": "Serve only this expiration (YYYY-MM-DD).",
+          "location": "query",
+          "name": "expiry",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Serve only this expiration (YYYY-MM-DD).",
+            "title": "Expiry"
+          }
         }
       ],
       "path": "/api/v1/cboe/options/{symbol}",
@@ -5989,6 +6205,116 @@
         "markets"
       ],
       "summary": "Delayed options with Greeks",
+      "tags": [
+        "Finance"
+      ],
+      "toolset": "markets"
+    },
+    {
+      "description": "EXCHANGE-WIDE daily options statistics for the latest session: all published put/call ratios (total, index, equity, etp, vix, spx, and every other listed product family) plus per-product volume and open interest by leg. A ratio is null when its product traded nothing that session - never a fabricated 0.0. Distinct from the per-underlier options put/call surfaces: this is the whole market. The latest closed session is served (weekends/holidays walk back).",
+      "method": "GET",
+      "operation_id": "cboe_put_call_ratio",
+      "parameters": [],
+      "path": "/api/v1/cboe/put-call-ratio",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "markets",
+      "sources": [
+        "markets"
+      ],
+      "summary": "Daily put/call ratios (exchange-wide)",
+      "tags": [
+        "Finance"
+      ],
+      "toolset": "markets"
+    },
+    {
+      "description": "EXCHANGE-WIDE daily put/call series per family (total, index, equity, etp, vix, spx), stitched from the frozen ratio archives (from 2006; spx from 2010) and the daily statistics feed (2019-10-07 onward). Dated definition edges are declared in definition_changes; response coverage (incl. any live-tail gap) is machine-readable in 'coverage'. Open-interest legs exist from 2019-10-07 only - the archive era is volume-only, declared null. Rules: rows filtered by [start, end]; dates after the committed dataset come from a bounded live tail; 'limit' keeps the NEWEST rows and sets truncated=true.",
+      "method": "GET",
+      "operation_id": "cboe_put_call_ratio_history",
+      "parameters": [
+        {
+          "description": "Series family.",
+          "example": "total",
+          "location": "query",
+          "name": "family",
+          "required": true,
+          "schema": {
+            "description": "Series family.",
+            "pattern": "^(total|index|equity|etp|vix|spx)$",
+            "title": "Family",
+            "type": "string"
+          }
+        },
+        {
+          "description": "First date (YYYY-MM-DD), inclusive.",
+          "location": "query",
+          "name": "start",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First date (YYYY-MM-DD), inclusive.",
+            "title": "Start"
+          }
+        },
+        {
+          "description": "Last date (YYYY-MM-DD), inclusive.",
+          "location": "query",
+          "name": "end",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last date (YYYY-MM-DD), inclusive.",
+            "title": "End"
+          }
+        },
+        {
+          "description": "Keep only the newest N rows after filtering.",
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 20000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Keep only the newest N rows after filtering.",
+            "title": "Limit"
+          }
+        }
+      ],
+      "path": "/api/v1/cboe/put-call-ratio/history",
+      "request_body_required": false,
+      "required_parameters": [
+        "family"
+      ],
+      "source_family": "markets",
+      "sources": [
+        "markets"
+      ],
+      "summary": "Put/call ratio history (20-year stitched series)",
       "tags": [
         "Finance"
       ],
@@ -6029,7 +6355,7 @@
       "toolset": "markets"
     },
     {
-      "description": "VIX across timeframes: 9-day, 30-day, 3-month, 6-month, 1-year. Contango (long > short) = normal. Backwardation (short > long) = market stress. Key signal for volatility traders and risk managers.",
+      "description": "VIX across timeframes: 1-day, 9-day, 30-day, 3-month, 6-month, 1-year. Contango (long > short) = normal. Backwardation (short > long) = market stress. Key signal for volatility traders and risk managers.",
       "method": "GET",
       "operation_id": "cboe_vix_term_structure",
       "parameters": [],
@@ -9241,7 +9567,7 @@
       "parameters": [
         {
           "description": "Commodity identifier slug.",
-          "example": "crude_oil",
+          "example": "crude-oil-brent",
           "location": "path",
           "name": "commodity_id",
           "required": true,
@@ -10625,7 +10951,7 @@
       "toolset": "hedge_fund_intelligence"
     },
     {
-      "description": "Hedge fund / speculator net positioning extremes across 200+ active futures contracts. Returns top N markets ranked by 5-year percentile-rank deviation from the median (50). Use to find crowded long/short trades that are contrarian reversal candidates. Picks the relevant trader category per report type: legacy=non-commercial, disaggregated=managed money, tff=leveraged funds, cit=commodity index traders. Defaults to TFF (financial futures, hedge fund leveraged-funds line). Cache TTL 24h - heavy single-query batch over 5 years of weekly data.",
+      "description": "Hedge fund / speculator net positioning extremes across 200+ active futures contracts. Returns top N markets ranked by 5-year percentile-rank deviation from the median (50). percentile_rank is 0-100 (50 = median), never a 0-1 fraction. Use to find crowded long/short trades that are contrarian reversal candidates. Picks the relevant trader category per report type: legacy=non-commercial, disaggregated=managed money, tff=leveraged funds, cit=commodity index traders. Defaults to TFF (financial futures, hedge fund leveraged-funds line). Cache TTL 24h - heavy single-query batch over 5 years of weekly data.",
       "method": "GET",
       "operation_id": "cot_extremes",
       "parameters": [
@@ -12891,7 +13217,7 @@
       "parameters": [
         {
           "description": "Pre-configured table key.",
-          "example": "cpi",
+          "example": "cpi-monthly",
           "location": "path",
           "name": "table",
           "required": true,
@@ -15449,11 +15775,11 @@
       "toolset": "entity_screening"
     },
     {
-      "description": "Screen a person or organization name against the OFAC SDN corpus and return a screening signal (`clear`, `review`, or `hit`) with matched records. Fail-CLOSED on staleness: if the underlying list is stale, a `hit` or `clear` result is downgraded to `review` and `meta.stale_screening` is set to `true`.",
+      "description": "Screen a person or organization name (name_fuzzy) or a Russian registry identifier (identifier_exact: inn/ogrn/snils/reg_number/domain/url) against Russian domestic regulatory lists currently loaded in the Entity corpus (Minjust extremist organizations / 114-FZ; foreign agents / undesirable when present). Provide name OR identifier, not both. Default listing is active-only; set include_excluded=true for research mode. This is NOT a Western sanctions screen - use POST /entity/screen for OFAC/EU/UN/... Fail-CLOSED: if no RF regulatory list is loaded, returns 503. Identifier mode requires the SQL RF package (ENTITY_RF_SQL).",
       "method": "POST",
-      "operation_id": "post_entity_screen",
+      "operation_id": "post_entity_rf_watchlists_screen",
       "parameters": [],
-      "path": "/api/v1/entity/screen",
+      "path": "/api/v1/entity/rf-watchlists/screen",
       "request_body_required": true,
       "request_body_schema": {
         "properties": {
@@ -15467,6 +15793,16 @@
               }
             ],
             "title": "As Of"
+          },
+          "corpus": {
+            "default": "sanctions",
+            "enum": [
+              "sanctions",
+              "rf_regulatory",
+              "all"
+            ],
+            "title": "Corpus",
+            "type": "string"
           },
           "country": {
             "anyOf": [
@@ -15490,11 +15826,59 @@
             ],
             "title": "Dob"
           },
+          "identifier": {
+            "anyOf": [
+              {
+                "description": "RF-only exact identifier (INN/OGRN/SNILS/domain/...). Not OFAC docs.",
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "inn",
+                      "ogrn",
+                      "snils",
+                      "reg_number",
+                      "domain",
+                      "url"
+                    ],
+                    "title": "Type",
+                    "type": "string"
+                  },
+                  "value": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "title": "Value",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "value"
+                ],
+                "title": "RfIdentifierRequest",
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "include_excluded": {
+            "default": false,
+            "title": "Include Excluded",
+            "type": "boolean"
+          },
           "name": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
           },
           "nationality": {
             "anyOf": [
@@ -15522,9 +15906,172 @@
             "type": "number"
           }
         },
-        "required": [
-          "name"
-        ],
+        "title": "EntityScreenRequest",
+        "type": "object"
+      },
+      "required_parameters": [
+        "body"
+      ],
+      "source_family": "entity_screening",
+      "sources": [
+        "entity_screening"
+      ],
+      "summary": "Screen a name or RF identifier against Russian regulatory watchlists",
+      "tags": [
+        "Sugra Entity"
+      ],
+      "toolset": "entity_screening"
+    },
+    {
+      "description": "Coverage and freshness for Russian domestic regulatory lists only (ENTITY-4). Western/IGO sanctions are out of scope here.",
+      "method": "GET",
+      "operation_id": "entity_rf_watchlists_sources",
+      "parameters": [],
+      "path": "/api/v1/entity/rf-watchlists/sources",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "entity_screening",
+      "sources": [
+        "entity_screening"
+      ],
+      "summary": "RF regulatory watchlists sources manifest",
+      "tags": [
+        "Sugra Entity"
+      ],
+      "toolset": "entity_screening"
+    },
+    {
+      "description": "Screen a person or organization name against the sanctions corpus and return a screening signal (`clear`, `review`, or `hit`) with matched records. Fail-CLOSED on staleness: if the underlying list is stale, a `hit` or `clear` result is downgraded to `review` and `meta.stale_screening` is set to `true`. ENTITY-4: optional `corpus` selects `sanctions` (default - Western/IGO + PEP), `rf_regulatory` (Russian domestic Minjust lists), or `all`.",
+      "method": "POST",
+      "operation_id": "post_entity_screen",
+      "parameters": [],
+      "path": "/api/v1/entity/screen",
+      "request_body_required": true,
+      "request_body_schema": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "corpus": {
+            "default": "sanctions",
+            "enum": [
+              "sanctions",
+              "rf_regulatory",
+              "all"
+            ],
+            "title": "Corpus",
+            "type": "string"
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "dob": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dob"
+          },
+          "identifier": {
+            "anyOf": [
+              {
+                "description": "RF-only exact identifier (INN/OGRN/SNILS/domain/...). Not OFAC docs.",
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "inn",
+                      "ogrn",
+                      "snils",
+                      "reg_number",
+                      "domain",
+                      "url"
+                    ],
+                    "title": "Type",
+                    "type": "string"
+                  },
+                  "value": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "title": "Value",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "value"
+                ],
+                "title": "RfIdentifierRequest",
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "include_excluded": {
+            "default": false,
+            "title": "Include Excluded",
+            "type": "boolean"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "nationality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nationality"
+          },
+          "threshold_hit": {
+            "default": 0.9,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Threshold Hit",
+            "type": "number"
+          },
+          "threshold_review": {
+            "default": 0.7,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Threshold Review",
+            "type": "number"
+          }
+        },
         "title": "EntityScreenRequest",
         "type": "object"
       },
@@ -17762,7 +18309,7 @@
         },
         {
           "description": "ISO 8601 date `YYYY-MM-DD` for the imagery snapshot. Required for time-enabled layers.",
-          "example": "2025-04-18",
+          "example": "2024-01-01",
           "location": "query",
           "name": "time",
           "required": false,
@@ -21880,7 +22427,7 @@
       "toolset": "funds"
     },
     {
-      "description": "Derived endpoint that computes per-ETF net flow estimates for one ETF over the requested lookback window by walking the ETF snapshot history and emitting ONE period per CHANGE of the SEC-derived (aum_usd, nav) pair. Formula per period: ``net_flow = Δ(shares_outstanding) × to_nav`` where ``shares_outstanding = aum_usd / nav``, ``from_date`` is the last snapshot carrying the old pair and ``to_date`` is the first snapshot carrying the new pair. This is the standard ETF creation/redemption proxy used by analysts; results are an ESTIMATE, not ICI-authoritative numbers. Snapshot aum_usd/nav derive from SEC filings (NPORT-P monthly, 485BPOS annual) and are constant between filings, so flows are reported on FILING CADENCE, not per calendar day (the previous per-day contract read 0.0 on every non-filing day). Consecutive snapshots with unchanged (aum_usd, nav) are a single plateau and produce NO entry. When fewer than 2 distinct plateaus exist in the window the response is 200 with ``period_flows=[]`` and ``total_net_flow_dollar_estimate=null`` (honest 'no change observed', not an error). Days where the snapshot blob is missing are silently skipped; plateaus span across missing dates. Use case: ``UC-3 Sector Rotation Detector`` per-ETF accumulation signal, complemented by ICI aggregate at /etf/flows/aggregate. BREAKING (DATA-N4.7.1): this endpoint replaced the per-calendar-day ``series`` contract with filing-cadence ``period_flows``, and renamed the ``days`` query param to ``lookback_days``. The old ``days`` param is SILENTLY IGNORED (FastAPI drops undeclared query params; it is not rejected) - a mid-migration client sending ``?days=30`` gets 200 with the default lookback window.",
+      "description": "Derived endpoint that computes per-ETF net flow estimates for one ETF over the requested lookback window by walking the ETF snapshot history and emitting ONE period per CHANGE of the SEC-derived (aum_usd, nav) pair. Formula per period: ``net_flow = Δ(shares_outstanding) × to_nav`` where ``shares_outstanding = aum_usd / nav``, ``from_date`` is the last snapshot carrying the old pair and ``to_date`` is the first snapshot carrying the new pair. This is the standard ETF creation/redemption proxy used by analysts; results are an ESTIMATE, not ICI-authoritative numbers. Snapshot aum_usd/nav derive from SEC filings (NPORT-P monthly, 485BPOS annual) and are constant between filings, so flows are reported on FILING CADENCE, not per calendar day (the previous per-day contract read 0.0 on every non-filing day). Consecutive snapshots with unchanged (aum_usd, nav) are a single plateau and produce NO entry. When fewer than 2 distinct plateaus exist in the window the response is 200 with ``period_flows=[]`` and ``total_net_flow_dollar_estimate=null`` (honest 'no change observed', not an error) - and since API-1.9 the BODY says why: ``reason`` (``single_filing_plateau`` / ``no_computable_shares``), ``plateaus_observed``, and the backing filing's ``rep_pd_date`` + ``accession``. Days where the snapshot blob is missing are silently skipped; plateaus span across missing dates. Use case: ``UC-3 Sector Rotation Detector`` per-ETF accumulation signal, complemented by ICI aggregate at /etf/flows/aggregate. BREAKING (DATA-N4.7.1): this endpoint replaced the per-calendar-day ``series`` contract with filing-cadence ``period_flows``, and renamed the ``days`` query param to ``lookback_days``. The old ``days`` param is SILENTLY IGNORED (FastAPI drops undeclared query params; it is not rejected) - a mid-migration client sending ``?days=30`` gets 200 with the default lookback window.",
       "method": "GET",
       "operation_id": "etf_symbol_flows",
       "parameters": [
@@ -22320,7 +22867,7 @@
       "parameters": [
         {
           "description": "Dataset key.",
-          "example": "policy-rates",
+          "example": "hicp-inflation",
           "location": "path",
           "name": "dataset",
           "required": true,
@@ -25398,17 +25945,17 @@
       "toolset": "central_banks"
     },
     {
-      "description": "Region-keyed cross-sections from the GeoFRED (FRED Maps) API. In series-group mode (is_series_group=true) pass a series_group ID with region_type, units, and frequency to get every region's value; in single-series mode pass a series ID and the server resolves its region group. ONE call returns the whole region map. Discover series_group IDs and units via /fred/search (series_id mode).",
+      "description": "Region-keyed cross-sections from the GeoFRED (FRED Maps) API. ONE call returns the whole region map.\n\nBoth modes put their identifier in `symbol` - there is no `series_group` parameter. Series-group mode (`is_series_group=true`) needs `region_type`, `units` and `frequency` alongside it; single-series mode takes a series ID and the server resolves its region group.\n\nWorking example, copy it as-is:\n`/api/v1/fred/regional?symbol=882&is_series_group=true&region_type=state&units=Dollars&frequency=a&season=nsa&date=2023-01-01`\n\n`season` values are lowercase (`sa`, `nsa`, `ssa`); `NSA` is rejected.",
       "method": "GET",
       "operation_id": "fred_regional",
       "parameters": [
         {
-          "description": "series_group ID (group mode) or series ID (single mode).",
+          "description": "The identifier itself. In series-group mode this is the FRED series_group ID (e.g. 882); in single-series mode a series ID. Named `symbol` for both - there is no separate `series_group` parameter to send.",
           "location": "query",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "series_group ID (group mode) or series ID (single mode).",
+            "description": "The identifier itself. In series-group mode this is the FRED series_group ID (e.g. 882); in single-series mode a series ID. Named `symbol` for both - there is no separate `series_group` parameter to send.",
             "examples": [
               "882"
             ],
@@ -25512,13 +26059,13 @@
           }
         },
         {
-          "description": "Seasonal adjustment.",
+          "description": "Seasonal adjustment. Lowercase only - 'NSA' is rejected.",
           "location": "query",
           "name": "season",
           "required": false,
           "schema": {
             "default": "nsa",
-            "description": "Seasonal adjustment.",
+            "description": "Seasonal adjustment. Lowercase only - 'NSA' is rejected.",
             "enum": [
               "sa",
               "nsa",
@@ -25816,30 +26363,36 @@
           }
         },
         {
-          "description": "Attribute to order results by.",
+          "description": "Attribute to order results by. Left unset, a search orders by search_rank (relevance, and FRED's own default for search) and a release listing orders by observation_end, unchanged. Ordering a broad match set by a data attribute makes FRED sort the entire set: measured on 'unemployment rate', order_by=observation_end took 63s and failed, while search_rank returned in 2.2s for the same query and limit.",
           "location": "query",
           "name": "order_by",
           "required": false,
           "schema": {
-            "default": "observation_end",
-            "description": "Attribute to order results by.",
-            "enum": [
-              "search_rank",
-              "series_id",
-              "title",
-              "units",
-              "frequency",
-              "seasonal_adjustment",
-              "realtime_start",
-              "realtime_end",
-              "last_updated",
-              "observation_start",
-              "observation_end",
-              "popularity",
-              "group_popularity"
+            "anyOf": [
+              {
+                "enum": [
+                  "search_rank",
+                  "series_id",
+                  "title",
+                  "units",
+                  "frequency",
+                  "seasonal_adjustment",
+                  "realtime_start",
+                  "realtime_end",
+                  "last_updated",
+                  "observation_start",
+                  "observation_end",
+                  "popularity",
+                  "group_popularity"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Order By",
-            "type": "string"
+            "description": "Attribute to order results by. Left unset, a search orders by search_rank (relevance, and FRED's own default for search) and a release listing orders by observation_end, unchanged. Ordering a broad match set by a data attribute makes FRED sort the entire set: measured on 'unemployment rate', order_by=observation_end took 63s and failed, while search_rank returned in 2.2s for the same query and limit.",
+            "title": "Order By"
           }
         },
         {
@@ -33524,7 +34077,7 @@
       "parameters": [
         {
           "description": "Family slug: bop, irfcl, fsi, gfs, pcps, or cpi.",
-          "example": "pcps",
+          "example": "cpi",
           "location": "path",
           "name": "dataflow",
           "required": true,
@@ -33535,19 +34088,19 @@
           }
         },
         {
-          "description": "Reporter: ISO3 code, snake_case name, region alias, or 'all'. PCPS commodity prices are global - use 'world' or 'all'.",
-          "example": "all",
+          "description": "Reporter: ISO3 code, snake_case name, region alias, or 'all'. PCPS commodity prices are global - use 'world' or 'all' with a pinned indicator.",
+          "example": "US",
           "location": "path",
           "name": "country",
           "required": true,
           "schema": {
-            "description": "Reporter: ISO3 code, snake_case name, region alias, or 'all'. PCPS commodity prices are global - use 'world' or 'all'.",
+            "description": "Reporter: ISO3 code, snake_case name, region alias, or 'all'. PCPS commodity prices are global - use 'world' or 'all' with a pinned indicator.",
             "title": "Country",
             "type": "string"
           }
         },
         {
-          "description": "Indicator code from /imf/dataflows/{dataflow} (for CPI this is the COICOP expenditure code). Omit to fetch all indicators (bounded to the latest N).",
+          "description": "Indicator code from /imf/dataflows/{dataflow} (for CPI this is the COICOP expenditure code). Omit to fetch all indicators (bounded to the latest N). Required when country is 'all'.",
           "location": "query",
           "name": "indicator",
           "required": false,
@@ -33560,9 +34113,9 @@
                 "type": "null"
               }
             ],
-            "description": "Indicator code from /imf/dataflows/{dataflow} (for CPI this is the COICOP expenditure code). Omit to fetch all indicators (bounded to the latest N).",
+            "description": "Indicator code from /imf/dataflows/{dataflow} (for CPI this is the COICOP expenditure code). Omit to fetch all indicators (bounded to the latest N). Required when country is 'all'.",
             "examples": [
-              "POILAPSP"
+              "CP01"
             ],
             "title": "Indicator"
           }
@@ -33644,7 +34197,7 @@
           }
         },
         {
-          "description": "Pin extra dimensions, comma-separated DIMENSION:CODE (e.g. SECTOR:S1311, UNIT:USD, BOP_ACCOUNTING_ENTRY:B_CA).",
+          "description": "Pin extra dimensions, comma-separated DIMENSION:CODE. Use a dimension the chosen dataflow has (see /imf/dataflows/{dataflow}): e.g. TYPE_OF_TRANSFORMATION:IX for cpi, SECTOR:S1311 for gfs, BOP_ACCOUNTING_ENTRY:B_CA for bop.",
           "location": "query",
           "name": "filters",
           "required": false,
@@ -33657,9 +34210,9 @@
                 "type": "null"
               }
             ],
-            "description": "Pin extra dimensions, comma-separated DIMENSION:CODE (e.g. SECTOR:S1311, UNIT:USD, BOP_ACCOUNTING_ENTRY:B_CA).",
+            "description": "Pin extra dimensions, comma-separated DIMENSION:CODE. Use a dimension the chosen dataflow has (see /imf/dataflows/{dataflow}): e.g. TYPE_OF_TRANSFORMATION:IX for cpi, SECTOR:S1311 for gfs, BOP_ACCOUNTING_ENTRY:B_CA for bop.",
             "examples": [
-              "SECTOR:S1311"
+              "TYPE_OF_TRANSFORMATION:IX"
             ],
             "title": "Filters"
           }
@@ -46367,6 +46920,191 @@
       "toolset": "macro"
     },
     {
+      "description": "Scheduled monetary policy meetings and announcement days of six central banks, as PUBLISHED on each bank's own site - a static committed table refreshed yearly, independent of any data-release feed. Every row carries the decision publication day (decision_date), the meeting window for two-day formats, and whether the decision ships with the bank's forecast publication (type=projections). Defaults to upcoming meetings; pass upcoming=false for the full published table, or from/to for a window.",
+      "method": "GET",
+      "operation_id": "macro_cb_calendar",
+      "parameters": [
+        {
+          "description": "Narrow to one bank: fomc, ecb, boe, boj, snb, riksbank.",
+          "example": "fomc",
+          "location": "query",
+          "name": "bank",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Narrow to one bank: fomc, ecb, boe, boj, snb, riksbank.",
+            "title": "Bank"
+          }
+        },
+        {
+          "description": "True keeps meetings whose decision day is today or later - the default WITHOUT a window. With from/to the window states the range and upcoming defaults to false, so a historical window is not silently emptied; pass it explicitly to combine.",
+          "example": true,
+          "location": "query",
+          "name": "upcoming",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "True keeps meetings whose decision day is today or later - the default WITHOUT a window. With from/to the window states the range and upcoming defaults to false, so a historical window is not silently emptied; pass it explicitly to combine.",
+            "title": "Upcoming"
+          }
+        },
+        {
+          "description": "Window lower bound on decision_date, YYYY-MM-DD inclusive.",
+          "example": "2026-09-01",
+          "location": "query",
+          "name": "from",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Window lower bound on decision_date, YYYY-MM-DD inclusive.",
+            "title": "From"
+          }
+        },
+        {
+          "description": "Window upper bound on decision_date, YYYY-MM-DD inclusive.",
+          "example": "2026-12-31",
+          "location": "query",
+          "name": "to",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Window upper bound on decision_date, YYYY-MM-DD inclusive.",
+            "title": "To"
+          }
+        }
+      ],
+      "path": "/api/v1/macro/cb-calendar",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "macro",
+      "sources": [
+        "macro"
+      ],
+      "summary": "Central bank meeting calendar (FOMC, ECB, BoE, BoJ, SNB, Riksbank)",
+      "tags": [
+        "Economics"
+      ],
+      "toolset": "macro"
+    },
+    {
+      "description": "A single bank's scheduled policy meetings with its conventions spelled out (meeting format, decision time, what type=projections means for this bank) and the official page the dates were read from. Same filters as the merged calendar.",
+      "method": "GET",
+      "operation_id": "macro_cb_calendar_bank",
+      "parameters": [
+        {
+          "description": "fomc, ecb, boe, boj, snb or riksbank.",
+          "example": "fomc",
+          "location": "path",
+          "name": "bank",
+          "required": true,
+          "schema": {
+            "description": "fomc, ecb, boe, boj, snb or riksbank.",
+            "title": "Bank",
+            "type": "string"
+          }
+        },
+        {
+          "description": "True keeps meetings whose decision day is today or later - the default without a from/to window; a window defaults it to false.",
+          "example": true,
+          "location": "query",
+          "name": "upcoming",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "True keeps meetings whose decision day is today or later - the default without a from/to window; a window defaults it to false.",
+            "title": "Upcoming"
+          }
+        },
+        {
+          "description": "Window lower bound on decision_date, YYYY-MM-DD inclusive.",
+          "example": "2026-09-01",
+          "location": "query",
+          "name": "from",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Window lower bound on decision_date, YYYY-MM-DD inclusive.",
+            "title": "From"
+          }
+        },
+        {
+          "description": "Window upper bound on decision_date, YYYY-MM-DD inclusive.",
+          "example": "2026-12-31",
+          "location": "query",
+          "name": "to",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Window upper bound on decision_date, YYYY-MM-DD inclusive.",
+            "title": "To"
+          }
+        }
+      ],
+      "path": "/api/v1/macro/cb-calendar/{bank}",
+      "request_body_required": false,
+      "required_parameters": [
+        "bank"
+      ],
+      "source_family": "macro",
+      "sources": [
+        "macro"
+      ],
+      "summary": "One central bank's published meeting schedule",
+      "tags": [
+        "Economics"
+      ],
+      "toolset": "macro"
+    },
+    {
       "description": "A one-call macroeconomic snapshot for a country: GDP (level + QoQ/YoY growth), inflation (CPI/core YoY), retail sales, industrial production, policy rate, 10Y yield, government debt to GDP, current account to GDP, and the jobless rate. Pass a country name or ISO code; comma-separate for several (max 8). Set latest=false for the full history of each indicator. Growth/rate fields are normalized fractions (0.025 = 2.5%).",
       "method": "GET",
       "operation_id": "macro_country_profile",
@@ -46448,6 +47186,98 @@
       "tags": [
         "Economics",
         "Global Economy & Trade"
+      ],
+      "toolset": "macro"
+    },
+    {
+      "description": "Narrow the ~800,000-series FRED catalogue by facets instead of guessing words. Eight facets: geo, source, frequency, seasonality, geo_type, concept, license, release. Call with no arguments for the top values of every facet; pass tags= (semicolon-joined, e.g. tags=bis;france) to see what remains after that selection; pass q= to facet a free-text search; pass BOTH to drill down inside the search - they compose. Every value carries the exact `tag` token - paste it straight into tags= here or on /api/v1/macro/series (carry the same q= there too), which returns the matching series themselves.",
+      "method": "GET",
+      "operation_id": "macro_facets",
+      "parameters": [
+        {
+          "description": "Current selection, semicolon- or comma-joined exact tag tokens (e.g. bis;france). Composes with q: together they drill down inside the search.",
+          "example": "bis;france",
+          "location": "query",
+          "name": "tags",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Current selection, semicolon- or comma-joined exact tag tokens (e.g. bis;france). Composes with q: together they drill down inside the search.",
+            "title": "Tags"
+          }
+        },
+        {
+          "description": "Free-text seed: facets of the series matching this search. Composes with tags.",
+          "example": "residential property prices",
+          "location": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Free-text seed: facets of the series matching this search. Composes with tags.",
+            "title": "Q"
+          }
+        },
+        {
+          "description": "Return one facet only: geo, source, frequency, seasonality, geo_type, concept, license or release.",
+          "example": "geo",
+          "location": "query",
+          "name": "group",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Return one facet only: geo, source, frequency, seasonality, geo_type, concept, license or release.",
+            "title": "Group"
+          }
+        },
+        {
+          "description": "Values per facet.",
+          "example": 10,
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 10,
+            "description": "Values per facet.",
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/macro/facets",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "macro",
+      "sources": [
+        "macro"
+      ],
+      "summary": "Facet navigation over every FRED series",
+      "tags": [
+        "Economics"
       ],
       "toolset": "macro"
     },
@@ -46720,34 +47550,186 @@
       "toolset": "macro"
     },
     {
-      "description": "FRED data release schedule - when CPI, jobs report, GDP, and other key economic data will be published. Shows recent and upcoming release dates.",
+      "description": "US net liquidity computed by Sugra from the Federal Reserve H.4.1 release and Treasury operations data (WALCL minus the Treasury General Account minus overnight reverse repo), in USD billions, with a 13-week change and its direction. The weekly balance-sheet date anchors the figure; the daily reverse-repo input contributes its newest observation on or before that anchor - never after it. Every input, series id and date is disclosed. Not a resold vendor table. Cache 6h.",
+      "method": "GET",
+      "operation_id": "macro_net_liquidity",
+      "parameters": [],
+      "path": "/api/v1/macro/net-liquidity",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "macro",
+      "sources": [
+        "macro"
+      ],
+      "summary": "Derived US net liquidity (Sugra-computed): WALCL - TGA - RRP",
+      "tags": [
+        "Economics"
+      ],
+      "toolset": "macro"
+    },
+    {
+      "description": "One machine-readable regime label - expanding / neutral / contracting - folded by simple majority from three votes, each the sign of a 13-week change with an inclusive neutral band: liquidity (net-liquidity delta_13w, band 75 USD bn), credit (Chicago Fed credit-conditions subindex change, SIGN INVERTED - the index rises when conditions tighten; band 0.06) and policy (US policy rate change from the Bank for International Settlements dataset, band 12.5 bp). The liquidity and credit bands are the middle tercile of each series' own measured 13-week move distribution (a third of history reads neutral by construction); the policy band is FIXED at half a standard 25 bp step, so any real move clears it - hikes vote contracting, cuts expanding. A vote with an unavailable input is null - absent, never fabricated - and fewer than two cast votes is 503, never a label from one input. Every vote discloses its route, dates, change and band, so the classification is reproducible from public data. This endpoint REPLACES the six-request client-side recipe. Cache 6h.",
+      "method": "GET",
+      "operation_id": "macro_regime",
+      "parameters": [],
+      "path": "/api/v1/macro/regime",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "macro",
+      "sources": [
+        "macro"
+      ],
+      "summary": "Derived US macro regime (Sugra-computed): liquidity / credit / policy majority",
+      "tags": [
+        "Economics"
+      ],
+      "toolset": "macro"
+    },
+    {
+      "description": "FRED data release schedule - when CPI, jobs report, GDP, and other key economic data will be published. Returns the next scheduled releases in chronological order; set upcoming=false for the most recent past releases. Narrow it to one release with release=cpi, release=50 or release=employment; /macro/releases/catalog lists what can be named.",
       "method": "GET",
       "operation_id": "macro_releases",
       "parameters": [
         {
           "description": "Maximum number of records to return.",
-          "example": 50,
+          "example": 200,
           "location": "query",
           "name": "limit",
           "required": false,
           "schema": {
-            "default": 50,
+            "default": 200,
             "description": "Maximum number of records to return.",
+            "maximum": 1000,
+            "minimum": 1,
             "title": "Limit",
             "type": "integer"
           }
         },
         {
-          "description": "Include records with empty values.",
-          "example": false,
+          "description": "Pagination offset (zero-indexed).",
+          "example": 0,
+          "location": "query",
+          "name": "offset",
+          "required": false,
+          "schema": {
+            "default": 0,
+            "description": "Pagination offset (zero-indexed).",
+            "minimum": 0,
+            "title": "Offset",
+            "type": "integer"
+          }
+        },
+        {
+          "description": "Narrow the calendar to one release: an id (10), a short alias (cpi, nfp, fomc), or part of a name (consumer price). See /macro/releases/catalog.",
+          "example": "cpi",
+          "location": "query",
+          "name": "release",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Narrow the calendar to one release: an id (10), a short alias (cpi, nfp, fomc), or part of a name (consumer price). See /macro/releases/catalog.",
+            "title": "Release"
+          }
+        },
+        {
+          "description": "Narrow the calendar to SEVERAL releases: a comma-separated list of ids, aliases or name fragments (each resolved like `release`), up to 10 entries. Mutually exclusive with `release`.",
+          "example": "cpi,nfp,fomc",
+          "location": "query",
+          "name": "release_ids",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Narrow the calendar to SEVERAL releases: a comma-separated list of ids, aliases or name fragments (each resolved like `release`), up to 10 entries. Mutually exclusive with `release`.",
+            "title": "Release Ids"
+          }
+        },
+        {
+          "description": "Window lower bound, YYYY-MM-DD inclusive. With `start`/`end` the calendar is served ascending inside the window; `upcoming` cannot be combined with an explicit window.",
+          "example": "2026-09-01",
+          "location": "query",
+          "name": "start",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Window lower bound, YYYY-MM-DD inclusive. With `start`/`end` the calendar is served ascending inside the window; `upcoming` cannot be combined with an explicit window.",
+            "title": "Start"
+          }
+        },
+        {
+          "description": "Window upper bound, YYYY-MM-DD inclusive. See `start`.",
+          "example": "2026-09-30",
+          "location": "query",
+          "name": "end",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Window upper bound, YYYY-MM-DD inclusive. See `start`.",
+            "title": "End"
+          }
+        },
+        {
+          "description": "True returns releases scheduled from today onward, soonest first - the default. False returns the most recent past releases, newest first. Cannot be combined with an explicit `start`/`end` window.",
+          "example": true,
+          "location": "query",
+          "name": "upcoming",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "True returns releases scheduled from today onward, soonest first - the default. False returns the most recent past releases, newest first. Cannot be combined with an explicit `start`/`end` window.",
+            "title": "Upcoming"
+          }
+        },
+        {
+          "description": "Include release dates that carry no data yet. Scheduled future dates are always in this state, so it defaults to true when upcoming=true and false otherwise.",
           "location": "query",
           "name": "include_empty",
           "required": false,
           "schema": {
-            "default": false,
-            "description": "Include records with empty values.",
-            "title": "Include Empty",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Include release dates that carry no data yet. Scheduled future dates are always in this state, so it defaults to true when upcoming=true and false otherwise.",
+            "title": "Include Empty"
           }
         }
       ],
@@ -46765,7 +47747,45 @@
       "toolset": "macro"
     },
     {
-      "description": "Full-text search across 800,000+ FRED economic series. Returns series metadata including ID, title, frequency, units, popularity. Use the series section name in /{country}/{section} to fetch data.",
+      "description": "Every economic release FRED publishes a schedule for, with its id and any short alias accepted by the `release` parameter of /macro/releases. Without this list an id is not discoverable.",
+      "method": "GET",
+      "operation_id": "macro_releases_catalog",
+      "parameters": [
+        {
+          "description": "Case-insensitive substring of the release name.",
+          "example": "price",
+          "location": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Case-insensitive substring of the release name.",
+            "title": "Q"
+          }
+        }
+      ],
+      "path": "/api/v1/macro/releases/catalog",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "macro",
+      "sources": [
+        "macro"
+      ],
+      "summary": "Releases that can be named in the calendar",
+      "tags": [
+        "Economics"
+      ],
+      "toolset": "macro"
+    },
+    {
+      "description": "Full-text search across 800,000+ FRED economic series. Returns series metadata including series_id, title, frequency, units and popularity.\n\nFetch a result with GET /api/v1/fred/series/{series_id}, which accepts any series_id in the FRED catalogue. The /macro/{country}/{section} route is a different thing: it serves about 450 curated series and takes a section name, not a series_id, so it cannot fetch an arbitrary search result.\n\nTITLES ARE NOT UNIQUE - read `units` before choosing. 'Real Residential Property Prices for France' is the title of BOTH QFRR628BIS (Index 2010=100, the price level) and QFRR368BIS (Percent per Annum, the growth rate). Picking by title alone returns the wrong one about half the time, and the response looks entirely valid either way. `popularity` is a reasonable tiebreak, not a guarantee.",
       "method": "GET",
       "operation_id": "macro_search",
       "parameters": [
@@ -46837,6 +47857,243 @@
         "macro"
       ],
       "summary": "Search FRED series",
+      "tags": [
+        "Economics"
+      ],
+      "toolset": "macro"
+    },
+    {
+      "description": "The series matching a facet selection - the same set every time, no text-match luck. Combine exact tags (tags=bis;france) with validated named facets: geo=, source=, frequency=, seasonality=, concept= (a value in the wrong facet is refused with the right one named). q= keeps a free-text constraint: the same q you faceted with on /api/v1/macro/facets, so counts seen there stay true here. exclude= removes tags; /api/v1/macro/facets shows what exists. Fetch any returned series from /api/v1/fred/series/{series_id}. TITLES ARE NOT UNIQUE - read `units` before choosing between identically titled series. Page with the returned next_offset, never your own arithmetic: later waves may annotate and filter rows, and next_offset is the upstream continuation point that stays correct.",
+      "method": "GET",
+      "operation_id": "macro_series",
+      "parameters": [
+        {
+          "description": "Exact tag tokens, semicolon- or comma-joined. Unknown tags reach FRED and come back as 400 naming the offender.",
+          "example": "bis;france;real",
+          "location": "query",
+          "name": "tags",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exact tag tokens, semicolon- or comma-joined. Unknown tags reach FRED and come back as 400 naming the offender.",
+            "title": "Tags"
+          }
+        },
+        {
+          "description": "Free-text constraint carried over from /macro/facets?q=... - keeps the selection inside that search.",
+          "example": "residential property prices",
+          "location": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Free-text constraint carried over from /macro/facets?q=... - keeps the selection inside that search.",
+            "title": "Q"
+          }
+        },
+        {
+          "description": "Tags to exclude.",
+          "example": "annual",
+          "location": "query",
+          "name": "exclude",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tags to exclude.",
+            "title": "Exclude"
+          }
+        },
+        {
+          "description": "Country/region facet value.",
+          "example": "france",
+          "location": "query",
+          "name": "geo",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Country/region facet value.",
+            "title": "Geo"
+          }
+        },
+        {
+          "description": "Originator facet value.",
+          "example": "bis",
+          "location": "query",
+          "name": "source",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Originator facet value.",
+            "title": "Source"
+          }
+        },
+        {
+          "description": "Frequency facet value.",
+          "example": "quarterly",
+          "location": "query",
+          "name": "frequency",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Frequency facet value.",
+            "title": "Frequency"
+          }
+        },
+        {
+          "description": "Seasonality facet value.",
+          "example": "nsa",
+          "location": "query",
+          "name": "seasonality",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Seasonality facet value.",
+            "title": "Seasonality"
+          }
+        },
+        {
+          "description": "Concept facet value(s), comma-joined.",
+          "example": "real,residential",
+          "location": "query",
+          "name": "concept",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Concept facet value(s), comma-joined.",
+            "title": "Concept"
+          }
+        },
+        {
+          "description": "Filter by measure: index, level, money, money_saar, rate_pct, spread_pct, count, growth_pct, share_pct, ratio, price. Every row carries `measure` regardless; rows dropped by this filter are counted in filtered_out_by_measure. ambiguous and unclassified are visible values a concrete filter excludes.",
+          "example": "index",
+          "location": "query",
+          "name": "measure",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Filter by measure: index, level, money, money_saar, rate_pct, spread_pct, count, growth_pct, share_pct, ratio, price. Every row carries `measure` regardless; rows dropped by this filter are counted in filtered_out_by_measure. ambiguous and unclassified are visible values a concrete filter excludes.",
+            "title": "Measure"
+          }
+        },
+        {
+          "description": "popularity: most-used first. series_id: stable alphabetical, best for full walks.",
+          "example": "popularity",
+          "location": "query",
+          "name": "order",
+          "required": false,
+          "schema": {
+            "default": "popularity",
+            "description": "popularity: most-used first. series_id: stable alphabetical, best for full walks.",
+            "enum": [
+              "popularity",
+              "series_id"
+            ],
+            "title": "Order",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Series per page (upstream ceiling, measured).",
+          "example": 50,
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 50,
+            "description": "Series per page (upstream ceiling, measured).",
+            "maximum": 1000,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        {
+          "description": "Upstream offset. Use the next_offset from the previous response.",
+          "example": 0,
+          "location": "query",
+          "name": "offset",
+          "required": false,
+          "schema": {
+            "default": 0,
+            "description": "Upstream offset. Use the next_offset from the previous response.",
+            "minimum": 0,
+            "title": "Offset",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/macro/series",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "macro",
+      "sources": [
+        "macro"
+      ],
+      "summary": "Deterministic series selection by facets",
       "tags": [
         "Economics"
       ],
@@ -47846,7 +49103,7 @@
       "parameters": [
         {
           "description": "URL-friendly identifier (lowercase).",
-          "example": "shiller-pe-ratio",
+          "example": "shiller-pe",
           "location": "path",
           "name": "slug",
           "required": true,
@@ -48392,18 +49649,11 @@
           "example": "US",
           "location": "query",
           "name": "country",
-          "required": false,
+          "required": true,
           "schema": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
             "description": "ISO 3166-1 alpha-2 country code.",
-            "title": "Country"
+            "title": "Country",
+            "type": "string"
           }
         },
         {
@@ -48436,7 +49686,9 @@
       ],
       "path": "/api/v1/network/asn",
       "request_body_required": false,
-      "required_parameters": [],
+      "required_parameters": [
+        "country"
+      ],
       "source_family": "network",
       "sources": [
         "network"
@@ -50479,6 +51731,7 @@
           "schema": {
             "anyOf": [
               {
+                "minimum": 1,
                 "type": "integer"
               },
               {
@@ -50626,7 +51879,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Origin changes recorded in the BGP hijack archive for this exact prefix. An empty timeline means no hijack was recorded, which is not a statement about the prefix's routing - see /prefix/{cidr}/history for that.",
       "method": "GET",
       "operation_id": "network_prefix_cidr_hijacks",
       "parameters": [
@@ -50671,7 +51924,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Announcement history for the exact prefix over the trailing window: which ASNs originated it, when, and how widely each announcement was seen. Less-specific prefixes covering this one are reported separately under covering_prefixes - they are context, not this prefix's own routing.",
       "method": "GET",
       "operation_id": "network_prefix_cidr_history",
       "parameters": [
@@ -50856,25 +52109,19 @@
           "example": 15169,
           "location": "query",
           "name": "asn",
-          "required": false,
+          "required": true,
           "schema": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
             "description": "Origin ASN (required).",
-            "title": "Asn"
+            "title": "Asn",
+            "type": "integer"
           }
         }
       ],
       "path": "/api/v1/network/prefix/{cidr}/rpki",
       "request_body_required": false,
       "required_parameters": [
-        "cidr"
+        "cidr",
+        "asn"
       ],
       "source_family": "network",
       "sources": [
@@ -51413,7 +52660,7 @@
       "toolset": "news"
     },
     {
-      "description": "Latest headlines from 43 RSS feeds across 15 regions. Updated every 5 minutes. Filter by region, category, or source.",
+      "description": "Latest headlines from 42 curated world-news RSS feeds across 11 regions. Updated every 5 minutes. Filter by region, category, or source.",
       "method": "GET",
       "operation_id": "news_latest",
       "parameters": [
@@ -51531,18 +52778,19 @@
       "toolset": "news"
     },
     {
-      "description": "Search headlines and descriptions across all 43 feeds by keyword.",
+      "description": "Keyword search over the current 42-feed world-news corpus. All query terms must be present as whole words in the headline or description; wrap the query in double quotes for a literal phrase. This is a rolling window of what the feeds currently publish, not an archive, so a story that has aged out of every feed is gone. For company or ticker news use /api/v2/quotes/{symbol}/news, and for free-text search over the wider global press use /api/v1/gdelt/articles.",
       "method": "GET",
       "operation_id": "news_search",
       "parameters": [
         {
-          "description": "Free-text search query.",
-          "example": "inflation",
+          "description": "Free-text search query. All terms must be present as whole words; double-quote the query for a literal phrase.",
+          "example": "Iran ceasefire",
           "location": "query",
           "name": "q",
           "required": true,
           "schema": {
-            "description": "Free-text search query.",
+            "description": "Free-text search query. All terms must be present as whole words; double-quote the query for a literal phrase.",
+            "maxLength": 200,
             "minLength": 2,
             "title": "Q",
             "type": "string"
@@ -51560,6 +52808,20 @@
             "maximum": 500,
             "minimum": 1,
             "title": "Limit",
+            "type": "integer"
+          }
+        },
+        {
+          "description": "Number of matches to skip, for paging past the limit.",
+          "example": 0,
+          "location": "query",
+          "name": "offset",
+          "required": false,
+          "schema": {
+            "default": 0,
+            "description": "Number of matches to skip, for paging past the limit.",
+            "minimum": 0,
+            "title": "Offset",
             "type": "integer"
           }
         }
@@ -51580,7 +52842,7 @@
       "toolset": "news"
     },
     {
-      "description": "Catalog of all 43 RSS feeds with name, region, category, and slug.",
+      "description": "Catalog of all 42 RSS feeds with name, region, category, and slug.",
       "method": "GET",
       "operation_id": "news_sources",
       "parameters": [],
@@ -55642,6 +56904,56 @@
       "toolset": "markets"
     },
     {
+      "description": "Ranks the CURRENT nearest-expiry ATM IV against the symbol's own dated snapshot history, so the consumer no longer has to accumulate and store that history client-side. ``window`` counts OBSERVATIONS (dated snapshots that yielded a gated ATM IV), default 252 - the annual convention - but the dated store retains 90 days, so ``observations_found`` discloses what the rank actually rested on. ``iv_rank`` is min-max scaled (null when the window's range is degenerate); ``iv_percentile`` is the share of observations at or below current. Fewer than 2 observations is a 503 ``insufficient_history``, never a rank fabricated from one point. Error codes match ``/snapshot``.",
+      "method": "GET",
+      "operation_id": "options_symbol_iv_rank",
+      "parameters": [
+        {
+          "description": "Underlier ticker.",
+          "location": "path",
+          "name": "symbol",
+          "required": true,
+          "schema": {
+            "description": "Underlier ticker.",
+            "examples": [
+              "SPY"
+            ],
+            "pattern": "^[A-Z][A-Z0-9.\\-]{0,9}$",
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Window size in observations (30..504, default 252). Bounded in practice by the 90-day dated-snapshot retention; observations_found reports the reality.",
+          "location": "query",
+          "name": "window",
+          "required": false,
+          "schema": {
+            "default": 252,
+            "description": "Window size in observations (30..504, default 252). Bounded in practice by the 90-day dated-snapshot retention; observations_found reports the reality.",
+            "maximum": 504,
+            "minimum": 30,
+            "title": "Window",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/options/{symbol}/iv-rank",
+      "request_body_required": false,
+      "required_parameters": [
+        "symbol"
+      ],
+      "source_family": "markets",
+      "sources": [
+        "markets"
+      ],
+      "summary": "IV rank + percentile of current ATM IV vs the snapshot history",
+      "tags": [
+        "Options"
+      ],
+      "toolset": "markets"
+    },
+    {
       "description": "Returns the precomputed implied-volatility surface (strike x expiry grid as call_iv_skew + put_iv_skew per expiry) and the ATM-IV term structure for the requested underlier. Computed during the ingest cycle and stored on the snapshot payload (saves API hot-path compute). Defaults to the latest cycle; pass ``?date=YYYY-MM-DD`` to read a historical surface. ``date`` must lie within the 90-day retention window.",
       "method": "GET",
       "operation_id": "options_symbol_iv_surface",
@@ -55745,7 +57057,81 @@
       "toolset": "markets"
     },
     {
-      "description": "Single underlier options snapshot at the latest cycle (default) or at a specific calendar date via ``?date=YYYY-MM-DD``. Returns the full payload: underlier spot price, ATM IV, per-expiry calls/puts contracts with Greeks (Black-Scholes for the Sugra Finance feed, native for the VIX volatility feed), per-expiry aggregates (volume / OI / put-call ratios / max-pain strike), and precomputed IV surface + term structure. Passing ``?expiry=YYYY-MM-DD`` narrows the response to a single expiry block; an unmatched expiry returns 404. Returns 410 Gone when the symbol is flagged delisted_candidate by the upstream cycle.",
+      "description": "25-delta skew computed IN DELTA SPACE from the snapshot's contract deltas: implied volatility is linearly interpolated at call delta +0.25 and put delta -0.25 between the adjacent bracketing contracts, and ``skew_25d = iv_put_25d - iv_call_25d`` (positive = downside protection priced over upside). The raw ``call_iv_skew``/``put_iv_skew`` strike rows of ``/iv-surface`` are the strike-space INPUT view; this endpoint answers in the delta convention practitioners quote. Contracts failing the shared IV plausibility gate (API-1.8) or missing a delta are excluded and counted - the literal-0.0 IV marker never enters the formula. A target outside the reliable chain's delta range yields null, never an extrapolated number. Defaults to the nearest expiry; error codes match ``/snapshot``.",
+      "method": "GET",
+      "operation_id": "options_symbol_skew",
+      "parameters": [
+        {
+          "description": "Underlier ticker.",
+          "location": "path",
+          "name": "symbol",
+          "required": true,
+          "schema": {
+            "description": "Underlier ticker.",
+            "examples": [
+              "SPY"
+            ],
+            "pattern": "^[A-Z][A-Z0-9.\\-]{0,9}$",
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Optional expiry (YYYY-MM-DD). Defaults to the nearest by days_to_expiration.",
+          "location": "query",
+          "name": "expiry",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional expiry (YYYY-MM-DD). Defaults to the nearest by days_to_expiration.",
+            "title": "Expiry"
+          }
+        },
+        {
+          "description": "Optional snapshot date (YYYY-MM-DD). Defaults to the latest cycle.",
+          "location": "query",
+          "name": "date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional snapshot date (YYYY-MM-DD). Defaults to the latest cycle.",
+            "title": "Date"
+          }
+        }
+      ],
+      "path": "/api/v1/options/{symbol}/skew",
+      "request_body_required": false,
+      "required_parameters": [
+        "symbol"
+      ],
+      "source_family": "markets",
+      "sources": [
+        "markets"
+      ],
+      "summary": "Delta-based 25-delta skew + ATM IV for one expiry",
+      "tags": [
+        "Options"
+      ],
+      "toolset": "markets"
+    },
+    {
+      "description": "Single underlier options snapshot at the latest cycle (default) or at a specific calendar date via ``?date=YYYY-MM-DD``. Returns the full payload: underlier spot price, ATM IV, per-expiry calls/puts contracts with Greeks (Black-Scholes for the Sugra Finance feed, native for the VIX volatility feed), per-expiry aggregates (volume / OI / put-call ratios / max-pain strike), and precomputed IV surface + term structure. Passing ``?expiry=YYYY-MM-DD`` narrows the response to a single expiry block; an unmatched expiry returns 404. Returns 410 Gone when the symbol is flagged delisted_candidate by the upstream cycle. NOTE (API-1.15): the per-expiry aggregate block - total volume / OI, put-call ratios, max-pain - is ALREADY served here on every expiry, but only inside the full chain (~256 KB for a large underlier; ``?expiry=`` narrows expiries, not contracts). A contracts-free summary projection is a possible future tail. For single-contract selection use ``/strike-by-delta``; for the delta convention of skew use ``/skew``.",
       "method": "GET",
       "operation_id": "options_symbol_snapshot",
       "parameters": [
@@ -55915,6 +57301,105 @@
         "markets"
       ],
       "summary": "Sparse snapshot time-series for one underlier",
+      "tags": [
+        "Options"
+      ],
+      "toolset": "markets"
+    },
+    {
+      "description": "Returns the single contract whose delta is CLOSEST to the requested target on the requested expiry - the 'which strike is the 25-delta call' answer as one small response instead of the ~256 KB full chain plus a client-side search. Delta is SIGNED: positive selects from calls, negative from puts; the optional ``right`` parameter must agree with the sign when given. Contracts whose implied volatility fails the shared plausibility gate (including the upstream's literal 0.0 no-data marker, API-1.8) or that carry no usable delta are EXCLUDED before selection and disclosed in the ``dropped_*`` counters, so a gated chain can never silently select an empty contract. Error codes match ``/snapshot``: ``unknown_symbol``, ``expiry_not_in_snapshot``, ``snapshot_not_available``.",
+      "method": "GET",
+      "operation_id": "options_symbol_strike_by_delta",
+      "parameters": [
+        {
+          "description": "Underlier ticker.",
+          "location": "path",
+          "name": "symbol",
+          "required": true,
+          "schema": {
+            "description": "Underlier ticker.",
+            "examples": [
+              "SPY"
+            ],
+            "pattern": "^[A-Z][A-Z0-9.\\-]{0,9}$",
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Expiry to select from (YYYY-MM-DD). Required - delta targeting is per-expiry.",
+          "location": "query",
+          "name": "expiry",
+          "required": true,
+          "schema": {
+            "description": "Expiry to select from (YYYY-MM-DD). Required - delta targeting is per-expiry.",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "title": "Expiry",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Target delta, SIGNED: calls in (0, 1), puts in (-1, 0). 0.25 = the 25-delta call; -0.25 = the 25-delta put.",
+          "location": "query",
+          "name": "delta",
+          "required": true,
+          "schema": {
+            "description": "Target delta, SIGNED: calls in (0, 1), puts in (-1, 0). 0.25 = the 25-delta call; -0.25 = the 25-delta put.",
+            "title": "Delta",
+            "type": "number"
+          }
+        },
+        {
+          "description": "Optional side. When given it must agree with the delta sign; when omitted the sign decides.",
+          "location": "query",
+          "name": "right",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^(call|put)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional side. When given it must agree with the delta sign; when omitted the sign decides.",
+            "title": "Right"
+          }
+        },
+        {
+          "description": "Optional snapshot date (YYYY-MM-DD). Defaults to the latest cycle.",
+          "location": "query",
+          "name": "date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional snapshot date (YYYY-MM-DD). Defaults to the latest cycle.",
+            "title": "Date"
+          }
+        }
+      ],
+      "path": "/api/v1/options/{symbol}/strike-by-delta",
+      "request_body_required": false,
+      "required_parameters": [
+        "symbol",
+        "expiry",
+        "delta"
+      ],
+      "source_family": "markets",
+      "sources": [
+        "markets"
+      ],
+      "summary": "Select one contract by closest delta (no full-chain download)",
       "tags": [
         "Options"
       ],
@@ -61144,10 +62629,32 @@
       "toolset": "research"
     },
     {
-      "description": "Canonical US business cycle peaks and troughs as dated by the National Bureau of Economic Research (NBER) Business Cycle Dating Committee. Returns 35 cycles spanning December 1854 through the April 2020 trough. Each record includes the peak and trough months (YYYY-MM), the same dates as full ISO 8601 UTC timestamps (day 1 of the month), and the recession duration in months. Sourced from the static JSON file at `data.nber.org/data/cycles/business_cycle_dates.json`. No new recession has been declared by the BCDC since the April 2020 trough, so this dataset changes only when the committee announces a new peak or trough.",
+      "description": "Canonical US business cycle peaks and troughs as dated by the National Bureau of Economic Research (NBER) Business Cycle Dating Committee. Returns 35 cycles spanning December 1854 through the April 2020 trough. Each record includes the peak and trough months (YYYY-MM), the same dates as full ISO 8601 UTC timestamps (day 1 of the month), and the recession duration in months. Sourced from the static JSON file at `data.nber.org/data/cycles/business_cycle_dates.json`. No new recession has been declared by the BCDC since the April 2020 trough, so this dataset changes only when the committee announces a new peak or trough. `limit` returns only the N most recent cycles; without it all 35 are returned, oldest first.",
       "method": "GET",
       "operation_id": "research_nber_recession_dates",
-      "parameters": [],
+      "parameters": [
+        {
+          "description": "Return only the N most recent business cycles. The full dataset holds 35 cycles; omitting the parameter returns all of them. Order stays oldest-first either way.",
+          "example": 5,
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 35,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Return only the N most recent business cycles. The full dataset holds 35 cycles; omitting the parameter returns all of them. Order stays oldest-first either way.",
+            "title": "Limit"
+          }
+        }
+      ],
       "path": "/api/v1/research/nber/recession-dates",
       "request_body_required": false,
       "required_parameters": [],
@@ -63306,14 +64813,14 @@
           }
         },
         {
-          "description": "Top-N institutional managers by AUM to include in the scan (10..300, default 100).",
+          "description": "Top-N institutional managers by AUM to include in the scan (10..80, default 50). The ceiling is measured, not chosen: on prod, one request at a time, 80 answers in about 7s and 90 kills the worker outright (INFRA-46). The previous range allowed up to 300 and defaulted to 100, so the DEFAULT call took the whole API down. Raising this bound means re-measuring MemoryWorkingSet under a scan, not reasoning about it.",
           "location": "query",
           "name": "filer_top_n",
           "required": false,
           "schema": {
-            "default": 100,
-            "description": "Top-N institutional managers by AUM to include in the scan (10..300, default 100).",
-            "maximum": 300,
+            "default": 50,
+            "description": "Top-N institutional managers by AUM to include in the scan (10..80, default 50). The ceiling is measured, not chosen: on prod, one request at a time, 80 answers in about 7s and 90 kills the worker outright (INFRA-46). The previous range allowed up to 300 and defaulted to 100, so the DEFAULT call took the whole API down. Raising this bound means re-measuring MemoryWorkingSet under a scan, not reasoning about it.",
+            "maximum": 80,
             "minimum": 10,
             "title": "Filer Top N",
             "type": "integer"
@@ -66736,7 +68243,7 @@
       "parameters": [
         {
           "description": "Vector ID(s), comma-separated",
-          "example": "v41690973",
+          "example": "41690973",
           "location": "query",
           "name": "vectors",
           "required": true,
@@ -66784,7 +68291,7 @@
       "parameters": [
         {
           "description": "Vector ID(s), comma-separated",
-          "example": "v41690973",
+          "example": "41690973",
           "location": "query",
           "name": "vectors",
           "required": true,
@@ -69149,13 +70656,13 @@
       "operation_id": "treasury_data_dataset",
       "parameters": [
         {
-          "description": "Treasury Fiscal Data dataset key (e.g. debt-to-the-penny).",
-          "example": "debt-to-the-penny",
+          "description": "Treasury Fiscal Data dataset key (e.g. debt_to_penny).",
+          "example": "debt_to_penny",
           "location": "path",
           "name": "dataset",
           "required": true,
           "schema": {
-            "description": "Treasury Fiscal Data dataset key (e.g. debt-to-the-penny).",
+            "description": "Treasury Fiscal Data dataset key (e.g. debt_to_penny).",
             "title": "Dataset",
             "type": "string"
           }
@@ -74753,7 +76260,7 @@
       "parameters": [
         {
           "description": "Series code(s) comma-separated.",
-          "example": "GDP",
+          "example": "unemployment",
           "location": "path",
           "name": "series",
           "required": true,
@@ -74812,13 +76319,13 @@
       "operation_id": "worldbank_compare_indicator",
       "parameters": [
         {
-          "description": "Indicator code (e.g. NY.GDP.MKTP.CD for GDP).",
-          "example": "NY.GDP.MKTP.CD",
+          "description": "Indicator code (e.g. gdp).",
+          "example": "gdp",
           "location": "path",
           "name": "indicator",
           "required": true,
           "schema": {
-            "description": "Indicator code (e.g. NY.GDP.MKTP.CD for GDP).",
+            "description": "Indicator code (e.g. gdp).",
             "title": "Indicator",
             "type": "string"
           }
@@ -74951,13 +76458,13 @@
           }
         },
         {
-          "description": "Indicator code (e.g. NY.GDP.MKTP.CD for GDP).",
-          "example": "NY.GDP.MKTP.CD",
+          "description": "Indicator code (e.g. gdp).",
+          "example": "gdp",
           "location": "path",
           "name": "indicator",
           "required": true,
           "schema": {
-            "description": "Indicator code (e.g. NY.GDP.MKTP.CD for GDP).",
+            "description": "Indicator code (e.g. gdp).",
             "title": "Indicator",
             "type": "string"
           }
@@ -78055,7 +79562,7 @@
       "toolset": "fixed_income"
     },
     {
-      "description": "Curated futures roots with sector, exchange, currency and contract multiplier. Filter by sector or exchange.",
+      "description": "Curated futures roots with sector, exchange, currency and contract multiplier - including the volatility sector (settlement-basis roots). Filter by sector or exchange.",
       "method": "GET",
       "operation_id": "futures_roots",
       "parameters": [
@@ -78112,7 +79619,7 @@
       "toolset": "markets"
     },
     {
-      "description": "Dated-contract chain for a futures root: expiration, last price, open interest and volume per contract, front to back.",
+      "description": "Dated-contract chain for a futures root: expiration, last price, open interest and volume per contract, front to back. Volatility roots (VX) list monthly AND weekly contracts (weekly flag) on a settlement basis.",
       "method": "GET",
       "operation_id": "futures_root_contracts",
       "parameters": [
@@ -78160,7 +79667,7 @@
       "toolset": "markets"
     },
     {
-      "description": "Term-structure (forward curve) snapshot: last price across consecutive expirations for a futures root, with a contango / backwardation label.",
+      "description": "Term-structure (forward curve) snapshot: last price across consecutive expirations for a futures root, with a contango / backwardation label. Volatility roots (VX) price the curve from daily settlement values (price_type=settlement, settlement_date declared); weekly expirations join via include_weeklies=true.",
       "method": "GET",
       "operation_id": "futures_root_curve",
       "parameters": [
@@ -78190,6 +79697,18 @@
             "title": "Max Contracts",
             "type": "integer"
           }
+        },
+        {
+          "description": "Include weekly expirations in the curve (settlement-basis volatility roots only).",
+          "location": "query",
+          "name": "include_weeklies",
+          "required": false,
+          "schema": {
+            "default": false,
+            "description": "Include weekly expirations in the curve (settlement-basis volatility roots only).",
+            "title": "Include Weeklies",
+            "type": "boolean"
+          }
         }
       ],
       "path": "/api/v2/futures/{root}/curve",
@@ -78208,7 +79727,7 @@
       "toolset": "markets"
     },
     {
-      "description": "OHLCV history for a futures root. Returns the continuous front-month series by default, or a specific dated contract when 'expiration' (YYYY-MM) is supplied. Use period OR start/end, not both.",
+      "description": "OHLCV history for a futures root. Returns the continuous front-month series by default, or a specific dated contract when 'expiration' (YYYY-MM) is supplied. Use period OR start/end, not both. Volatility roots (VX) are settlement-basis (price_type=settlement, T-1 daily bars with a settle column): expiration also accepts an exact YYYY-MM-DD date (weekly contracts); with no expiration the current front monthly contract is served (contract=front_month) - no continuous series exists on a settlement basis.",
       "method": "GET",
       "operation_id": "futures_root_historical",
       "parameters": [
@@ -79533,8 +81052,8 @@
       "operation_id": "market_calendar",
       "parameters": [
         {
-          "description": "YYYY-MM-DD (default: today)",
-          "example": "2024-01-01",
+          "description": "YYYY-MM-DD (default: today). Max 31-day range.",
+          "example": "2026-07-21",
           "location": "query",
           "name": "start_date",
           "required": false,
@@ -79547,13 +81066,13 @@
                 "type": "null"
               }
             ],
-            "description": "YYYY-MM-DD (default: today)",
+            "description": "YYYY-MM-DD (default: today). Max 31-day range.",
             "title": "Start Date"
           }
         },
         {
-          "description": "YYYY-MM-DD (default: today + 7 days)",
-          "example": "2024-12-31",
+          "description": "YYYY-MM-DD (default: today + 7 days). Max 31-day range.",
+          "example": "2026-07-28",
           "location": "query",
           "name": "end_date",
           "required": false,
@@ -79566,7 +81085,7 @@
                 "type": "null"
               }
             ],
-            "description": "YYYY-MM-DD (default: today + 7 days)",
+            "description": "YYYY-MM-DD (default: today + 7 days). Max 31-day range.",
             "title": "End Date"
           }
         }
@@ -79578,7 +81097,7 @@
       "sources": [
         "markets"
       ],
-      "summary": "Economic and earnings calendar",
+      "summary": "Market calendar (earnings, dividends, splits, economic events)",
       "tags": [
         "Finance"
       ],
@@ -80039,7 +81558,7 @@
           }
         },
         {
-          "description": "1d,5d,1mo,3mo,6mo,1y,2y,5y,10y,ytd,max",
+          "description": "Lookback window: 1d,5d,1mo,3mo,6mo,1y,2y,5y,10y,ytd,max. Alias of `period`.",
           "example": "1mo",
           "location": "query",
           "name": "range",
@@ -80053,8 +81572,27 @@
                 "type": "null"
               }
             ],
-            "description": "1d,5d,1mo,3mo,6mo,1y,2y,5y,10y,ytd,max",
+            "description": "Lookback window: 1d,5d,1mo,3mo,6mo,1y,2y,5y,10y,ytd,max. Alias of `period`.",
             "title": "Range"
+          }
+        },
+        {
+          "description": "Alias of `range`, the spelling used by /api/v2/quotes/{symbol}/historical.",
+          "example": "1mo",
+          "location": "query",
+          "name": "period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Alias of `range`, the spelling used by /api/v2/quotes/{symbol}/historical.",
+            "title": "Period"
           }
         },
         {
@@ -80482,8 +82020,108 @@
       "operation_id": "post_market_screener",
       "parameters": [],
       "path": "/api/v2/market/screener",
-      "request_body_required": false,
-      "required_parameters": [],
+      "request_body_required": true,
+      "request_body_schema": {
+        "additionalProperties": true,
+        "description": "Request body for the custom screener and visualization POST endpoints\n(API-1.13b / audit P1-12).\n\nBefore this model both routes took a bare ``Request`` and hand-parsed the\nJSON, so FastAPI emitted NO requestBody in the OpenAPI spec - the whole\nMCP describe/construct chain then had nothing to build and a body-less\ncall 400'd. A typed body makes the required `query` and the optional\npaging/sort fields discoverable in the spec.\n\n``extra='allow'`` because `query` is a Sugra Finance screener DSL\npassthrough and callers may carry additional DSL keys the connector\nforwards verbatim; the model shape is a discoverable floor, not a closed\ncontract.",
+        "properties": {
+          "offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Result offset for pagination.",
+            "title": "Offset"
+          },
+          "query": {
+            "additionalProperties": true,
+            "description": "Screener/visualization query DSL: a nested {operator, operands} tree forwarded to the upstream screener.",
+            "examples": [
+              {
+                "operands": [
+                  {
+                    "operands": [
+                      "intradaymarketcap",
+                      1000000000
+                    ],
+                    "operator": "gt"
+                  },
+                  {
+                    "operands": [
+                      "region",
+                      "us"
+                    ],
+                    "operator": "eq"
+                  }
+                ],
+                "operator": "and"
+              }
+            ],
+            "title": "Query",
+            "type": "object"
+          },
+          "quoteType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Instrument-type filter, e.g. EQUITY or ETF.",
+            "title": "Quotetype"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Maximum number of results to return.",
+            "title": "Size"
+          },
+          "sortField": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Field to sort results by.",
+            "title": "Sortfield"
+          },
+          "sortType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Sort direction, e.g. ASC or DESC.",
+            "title": "Sorttype"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "MarketQueryBody",
+        "type": "object"
+      },
+      "required_parameters": [
+        "body"
+      ],
       "source_family": "markets",
       "sources": [
         "markets"
@@ -80580,7 +82218,7 @@
       "parameters": [
         {
           "description": "Screener ID.",
-          "example": "most_actives",
+          "example": "MOST_ACTIVES",
           "location": "path",
           "name": "scr_id",
           "required": true,
@@ -80888,8 +82526,108 @@
       "operation_id": "post_market_visualization",
       "parameters": [],
       "path": "/api/v2/market/visualization",
-      "request_body_required": false,
-      "required_parameters": [],
+      "request_body_required": true,
+      "request_body_schema": {
+        "additionalProperties": true,
+        "description": "Request body for the custom screener and visualization POST endpoints\n(API-1.13b / audit P1-12).\n\nBefore this model both routes took a bare ``Request`` and hand-parsed the\nJSON, so FastAPI emitted NO requestBody in the OpenAPI spec - the whole\nMCP describe/construct chain then had nothing to build and a body-less\ncall 400'd. A typed body makes the required `query` and the optional\npaging/sort fields discoverable in the spec.\n\n``extra='allow'`` because `query` is a Sugra Finance screener DSL\npassthrough and callers may carry additional DSL keys the connector\nforwards verbatim; the model shape is a discoverable floor, not a closed\ncontract.",
+        "properties": {
+          "offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Result offset for pagination.",
+            "title": "Offset"
+          },
+          "query": {
+            "additionalProperties": true,
+            "description": "Screener/visualization query DSL: a nested {operator, operands} tree forwarded to the upstream screener.",
+            "examples": [
+              {
+                "operands": [
+                  {
+                    "operands": [
+                      "intradaymarketcap",
+                      1000000000
+                    ],
+                    "operator": "gt"
+                  },
+                  {
+                    "operands": [
+                      "region",
+                      "us"
+                    ],
+                    "operator": "eq"
+                  }
+                ],
+                "operator": "and"
+              }
+            ],
+            "title": "Query",
+            "type": "object"
+          },
+          "quoteType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Instrument-type filter, e.g. EQUITY or ETF.",
+            "title": "Quotetype"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Maximum number of results to return.",
+            "title": "Size"
+          },
+          "sortField": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Field to sort results by.",
+            "title": "Sortfield"
+          },
+          "sortType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Sort direction, e.g. ASC or DESC.",
+            "title": "Sorttype"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "MarketQueryBody",
+        "type": "object"
+      },
+      "required_parameters": [
+        "body"
+      ],
       "source_family": "markets",
       "sources": [
         "markets"
@@ -81491,7 +83229,7 @@
       "parameters": [
         {
           "description": "Security ticker symbol.",
-          "example": "AAPL",
+          "example": "SPY",
           "location": "path",
           "name": "symbol",
           "required": true,
@@ -81634,7 +83372,7 @@
           }
         },
         {
-          "description": "1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, ytd, max",
+          "description": "Lookback window: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max. Alias of `range`.",
           "example": "1y",
           "location": "query",
           "name": "period",
@@ -81648,8 +83386,27 @@
                 "type": "null"
               }
             ],
-            "description": "1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, ytd, max",
+            "description": "Lookback window: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max. Alias of `range`.",
             "title": "Period"
+          }
+        },
+        {
+          "description": "Alias of `period`, the spelling used by /api/v2/market/chart and the indicators family.",
+          "example": "1y",
+          "location": "query",
+          "name": "range",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Alias of `period`, the spelling used by /api/v2/market/chart and the indicators family.",
+            "title": "Range"
           }
         },
         {
@@ -81691,14 +83448,14 @@
           }
         },
         {
-          "description": "1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo",
+          "description": "1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo. A long window is downsampled upstream; the response reports the granularity actually served.",
           "example": "1d",
           "location": "query",
           "name": "interval",
           "required": false,
           "schema": {
             "default": "1d",
-            "description": "1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo",
+            "description": "1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo. A long window is downsampled upstream; the response reports the granularity actually served.",
             "title": "Interval",
             "type": "string"
           }
@@ -81713,6 +83470,26 @@
             "description": "Include pre/post-market bars (intraday intervals only; ignored on 1d+).",
             "title": "Extended Hours",
             "type": "boolean"
+          }
+        },
+        {
+          "description": "Return only the most recent N bars. Applied after the window is fetched, so it does not change what is cached.",
+          "example": 300,
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Return only the most recent N bars. Applied after the window is fetched, so it does not change what is cached.",
+            "title": "Limit"
           }
         }
       ],
@@ -82215,7 +83992,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Price or profile data for up to 10 symbols in one request. Pass the symbols as a comma-separated path segment, for example `/api/v2/quotes/AAPL,MSFT,NVDA/multiple`. The response payload is keyed by symbol. `type=price` returns the merged quote modules per symbol, and a symbol the upstream does not recognise is absent from the payload. `type=info` returns the fuller company profile and keeps every requested symbol, wrapped as `{\"data\": {...}}` on success or `{\"error\": \"...\"}` on failure. For price alone across a wider set, `/api/v2/market/batch-quotes` takes up to 20 symbols as a query parameter.",
       "method": "GET",
       "operation_id": "quotes_symbol_multiple",
       "parameters": [
@@ -82398,7 +84175,7 @@
       "toolset": "markets"
     },
     {
-      "description": "Calls and puts for a specific expiration date.",
+      "description": "Calls and puts for a specific expiration date. Contract fields use snake_case (DATA-21); the seven historical camelCase names (``contractSymbol``, ``lastPrice``, ``percentChange``, ``openInterest``, ``impliedVolatility``, ``inTheMoney``, ``lastTradeDate``) remain as deprecated aliases with the same values until the next major API version.",
       "method": "GET",
       "operation_id": "quotes_symbol_options_date",
       "parameters": [
@@ -84221,6 +85998,401 @@
       "toolset": "transport"
     },
     {
+      "description": "For a set of the world's ports, how far the latest port-call count sits from each port's own recent baseline (a throughput DEVIATION, not a congestion, dwell or wait measurement - IMF PortWatch publishes none of those), reported ALONGSIDE a Weather-Disruption-Risk overlay and never blended into it. Pick the busiest ports (default), one country, or specific port ids. Directionally ambiguous and several days stale by construction; not for navigation or operational routing.",
+      "method": "GET",
+      "operation_id": "transport_ports_congestion",
+      "parameters": [
+        {
+          "description": "ISO3 country code, e.g. CHN, USA, NLD.",
+          "location": "query",
+          "name": "country",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ISO3 country code, e.g. CHN, USA, NLD.",
+            "examples": [
+              "CHN"
+            ],
+            "title": "Country"
+          }
+        },
+        {
+          "description": "Comma-separated PortWatch port ids, e.g. port1201,port1114.",
+          "location": "query",
+          "name": "ports",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Comma-separated PortWatch port ids, e.g. port1201,port1114.",
+            "title": "Ports"
+          }
+        },
+        {
+          "description": "Number of ports to return (busiest first when no country/ports filter).",
+          "location": "query",
+          "name": "top",
+          "required": false,
+          "schema": {
+            "default": 25,
+            "description": "Number of ports to return (busiest first when no country/ports filter).",
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Top",
+            "type": "integer"
+          }
+        },
+        {
+          "description": "Keep only ports whose absolute throughput z-score reaches this.",
+          "location": "query",
+          "name": "min_abs_z",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Keep only ports whose absolute throughput z-score reaches this.",
+            "title": "Min Abs Z"
+          }
+        },
+        {
+          "description": "anomaly = by absolute throughput deviation; activity = by call count.",
+          "location": "query",
+          "name": "sort",
+          "required": false,
+          "schema": {
+            "default": "anomaly",
+            "description": "anomaly = by absolute throughput deviation; activity = by call count.",
+            "enum": [
+              "anomaly",
+              "activity"
+            ],
+            "title": "Sort",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v2/transport/ports/congestion",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "transport",
+      "sources": [
+        "transport"
+      ],
+      "summary": "Port-call throughput deviation with a weather risk overlay - IMF PortWatch",
+      "tags": [
+        "Transportation"
+      ],
+      "toolset": "transport"
+    },
+    {
+      "description": "Finnish port-call schedule with estimated (ETA/ETD) and actual (ATA/ATD) arrival and departure times, plus the Sugra-computed delay (actual minus estimate) per call, from Fintraffic Digitraffic Portnet. Filter by port (UN/LOCODE), vessel (MMSI or IMO), date and status. Finnish ports only; schedule data filed by agents and the port, revised as they update it - not a navigational product.",
+      "method": "GET",
+      "operation_id": "transport_ports_port_calls",
+      "parameters": [
+        {
+          "description": "Port filter, UN/LOCODE, e.g. FIHEL (Helsinki), FIKTK (Kotka).",
+          "location": "query",
+          "name": "port",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Port filter, UN/LOCODE, e.g. FIHEL (Helsinki), FIKTK (Kotka).",
+            "examples": [
+              "FIHEL"
+            ],
+            "title": "Port"
+          }
+        },
+        {
+          "description": "Port calls RECEIVED (registered or updated) on this date, YYYY-MM-DD UTC; default today. Portnet 'received' semantics - the record date, not the arrival date, so a call received today may have an ETA on another day.",
+          "location": "query",
+          "name": "date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Port calls RECEIVED (registered or updated) on this date, YYYY-MM-DD UTC; default today. Portnet 'received' semantics - the record date, not the arrival date, so a call received today may have an ETA on another day.",
+            "examples": [
+              "2026-07-24"
+            ],
+            "title": "Date"
+          }
+        },
+        {
+          "description": "Filter to one vessel by MMSI.",
+          "location": "query",
+          "name": "mmsi",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Filter to one vessel by MMSI.",
+            "title": "Mmsi"
+          }
+        },
+        {
+          "description": "Filter to one vessel by IMO number.",
+          "location": "query",
+          "name": "imo",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Filter to one vessel by IMO number.",
+            "title": "Imo"
+          }
+        },
+        {
+          "description": "Filter by call status: scheduled | arrived | departed.",
+          "location": "query",
+          "name": "status",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "enum": [
+                  "scheduled",
+                  "arrived",
+                  "departed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Filter by call status: scheduled | arrived | departed.",
+            "title": "Status"
+          }
+        },
+        {
+          "description": "Maximum port calls to return.",
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 100,
+            "description": "Maximum port calls to return.",
+            "maximum": 500,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v2/transport/ports/port-calls",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "transport",
+      "sources": [
+        "transport"
+      ],
+      "summary": "Port calls - schedule vs actual arrival/departure (Fintraffic Portnet)",
+      "tags": [
+        "Transportation"
+      ],
+      "toolset": "transport"
+    },
+    {
+      "description": "Current road-disruption events on the French non-concessioned national road network - closures, roadworks, obstructions, accidents and weather-related road conditions - from the Bison Fute open DATEX II feed. Filter by category, weather-related, or bounding box. France non-concessioned national roads only (not tolled motorways, not local roads); informational, not an official traffic advisory.",
+      "method": "GET",
+      "operation_id": "transport_road_events",
+      "parameters": [
+        {
+          "description": "DATEX II record class, e.g. Accident, MaintenanceWorks, EnvironmentalObstruction.",
+          "location": "query",
+          "name": "category",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "DATEX II record class, e.g. Accident, MaintenanceWorks, EnvironmentalObstruction.",
+            "examples": [
+              "Accident"
+            ],
+            "title": "Category"
+          }
+        },
+        {
+          "description": "Keep only events whose DATEX II situation type (class or subtype) is weather or environment. Detection is by situation type; this feed does not use DATEX cause elements.",
+          "location": "query",
+          "name": "weather_related",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Keep only events whose DATEX II situation type (class or subtype) is weather or environment. Detection is by situation type; this feed does not use DATEX cause elements.",
+            "title": "Weather Related"
+          }
+        },
+        {
+          "description": "Bounding-box south edge.",
+          "location": "query",
+          "name": "min_lat",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 90.0,
+                "minimum": -90.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Bounding-box south edge.",
+            "title": "Min Lat"
+          }
+        },
+        {
+          "description": "Bounding-box north edge.",
+          "location": "query",
+          "name": "max_lat",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 90.0,
+                "minimum": -90.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Bounding-box north edge.",
+            "title": "Max Lat"
+          }
+        },
+        {
+          "description": "Bounding-box west edge.",
+          "location": "query",
+          "name": "min_lon",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 180.0,
+                "minimum": -180.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Bounding-box west edge.",
+            "title": "Min Lon"
+          }
+        },
+        {
+          "description": "Bounding-box east edge.",
+          "location": "query",
+          "name": "max_lon",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 180.0,
+                "minimum": -180.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Bounding-box east edge.",
+            "title": "Max Lon"
+          }
+        },
+        {
+          "description": "Maximum events returned.",
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 200,
+            "description": "Maximum events returned.",
+            "maximum": 2000,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v2/transport/road/events",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "transport",
+      "sources": [
+        "transport"
+      ],
+      "summary": "Road-disruption events - France (DATEX II, Bison Fute)",
+      "tags": [
+        "Transportation"
+      ],
+      "toolset": "transport"
+    },
+    {
       "description": "Astronomical tide predictions (high/low extremes, or hourly / 6-minute water levels) for a US NOAA CO-OPS station - by station id, or by the nearest station to a coordinate. Harmonic PREDICTIONS, not measured levels and not real-time; NOT of navigational class. US stations only.",
       "method": "GET",
       "operation_id": "transport_tides",
@@ -85309,5 +87481,6 @@
       "toolset": "environment"
     }
   ],
-  "source": "https://sugra.ai/openapi.json (live build 2026-07-21)"
+  "source": "https://sugra.ai/openapi.json",
+  "spec_sha256": "b9ea803689eb88c0f3b5d42b187c35681ea3de781ca02b75bc080519eee02711"
 }

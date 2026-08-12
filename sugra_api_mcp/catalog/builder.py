@@ -65,7 +65,13 @@ def _parameter_from_openapi(data: dict[str, Any]) -> EndpointParameter:
     )
 
 
-def build_catalog_from_openapi(openapi: dict[str, Any], *, source: str = "fixture") -> Catalog:
+def build_catalog_from_openapi(
+    openapi: dict[str, Any],
+    *,
+    source: str = "fixture",
+    spec_sha256: str | None = None,
+    built_at: str | None = None,
+) -> Catalog:
     """Distill an OpenAPI document into a compact operation_id catalog."""
     endpoints: list[Endpoint] = []
     paths = openapi.get("paths", {})
@@ -79,6 +85,16 @@ def build_catalog_from_openapi(openapi: dict[str, Any], *, source: str = "fixtur
     for path, methods in sorted(paths.items()):
         if not isinstance(methods, dict):
             continue
+        # OpenAPI allows `parameters` on the Path Item itself, where they apply
+        # to EVERY operation under that path. Reading only the operation's own
+        # list silently drops them: the catalog would then advertise an
+        # incomplete signature and a client calling it would be rejected for a
+        # parameter it was never told about.
+        shared_parameters = [
+            param
+            for param in methods.get("parameters", [])
+            if isinstance(param, dict) and param.get("name")
+        ]
         for method, operation in sorted(methods.items()):
             if method.lower() not in SUPPORTED_METHODS or not isinstance(operation, dict):
                 continue
@@ -88,10 +104,20 @@ def build_catalog_from_openapi(openapi: dict[str, Any], *, source: str = "fixtur
 
             tags = [str(tag) for tag in operation.get("tags", [])]
             toolset = toolset_for_tags(tags)
-            parameters = [
-                _parameter_from_openapi(param)
+            # Path-item parameters first, then the operation's own: an operation
+            # parameter with the same (name, in) overrides the shared one, per
+            # OpenAPI. Keyed insertion keeps the order stable, and a spec that
+            # declares nothing at the path level (the common case) produces
+            # exactly the previous list.
+            merged_parameters: dict[tuple[str, str], dict[str, Any]] = {}
+            for param in shared_parameters + [
+                param
                 for param in operation.get("parameters", [])
                 if isinstance(param, dict) and param.get("name")
+            ]:
+                merged_parameters[(str(param["name"]), str(param.get("in", "")))] = param
+            parameters = [
+                _parameter_from_openapi(param) for param in merged_parameters.values()
             ]
             request_body = operation.get("requestBody")
             request_body_required = (
@@ -115,4 +141,9 @@ def build_catalog_from_openapi(openapi: dict[str, Any], *, source: str = "fixtur
                 )
             )
 
-    return Catalog(source=source, endpoints=endpoints)
+    return Catalog(
+        source=source,
+        endpoints=endpoints,
+        spec_sha256=spec_sha256,
+        built_at=built_at,
+    )

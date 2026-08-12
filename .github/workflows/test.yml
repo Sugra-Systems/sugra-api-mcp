@@ -35,6 +35,15 @@ jobs:
         run: pytest
       - name: Import check
         run: python -c "import sugra_api_mcp; from sugra_api_mcp import tools"
+      # Nothing rebuilds the bundled catalog when API routes land, so it drifts
+      # behind the live spec silently and the new operations are simply absent
+      # from search. Compare here and fail with the rebuild command. Runs on one
+      # matrix leg only (the result is python-version independent) and reports
+      # SKIPPED, not failed, when the spec host is unreachable - an outage must
+      # not read as "the catalog drifted".
+      - name: Catalog parity with the live spec
+        if: matrix.python-version == '3.13'
+        run: python scripts/check_catalog_parity.py
       - name: Tools registered
         env:
           SUGRA_API_KEY: dummy_test_key
