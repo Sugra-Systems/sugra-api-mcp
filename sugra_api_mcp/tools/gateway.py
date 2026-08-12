@@ -10,7 +10,7 @@ from pydantic import Field
 from ..catalog.hints import hints_for
 from ..catalog.loader import load_catalog
 from ..catalog.response import shape_response
-from ..catalog.search import search_catalog
+from ..catalog.search import known_sources, known_toolsets, search_catalog
 from ..catalog.toolsets import ordered_toolsets
 from ..observability import trace_mcp_tool
 from ..server import get_client, mcp, read_only
@@ -46,6 +46,35 @@ async def search_endpoints(
 ) -> dict[str, Any]:
     """Search the bundled Sugra endpoint catalog by natural-language query."""
     catalog = load_catalog()
+    # An unknown filter value used to fall through the per-endpoint comparison and
+    # return an empty result list - indistinguishable from "this catalog genuinely
+    # has nothing for your query". A misspelling, or a client written against a
+    # different catalog vintage (the toolset taxonomy is versioned WITH the
+    # bundle), therefore surfaced as a silent zero instead of a diagnosable error.
+    # Validate against the accept-set derived from the catalog and say what is
+    # valid, so the caller can correct the filter in one step.
+    # Activate validation on exactly the predicate the search filter uses
+    # (truthiness, not `is not None`): an empty string has always meant "no
+    # filter" - clients serialize unset optional strings that way - so validating
+    # it would turn a working call into a bogus unknown_* error.
+    if toolset:
+        valid_toolsets = known_toolsets(catalog)
+        if toolset not in valid_toolsets:
+            return {
+                "error": "unknown_toolset",
+                "requested": toolset,
+                "known_toolsets": sorted(valid_toolsets),
+                "catalog_source": catalog.source,
+            }
+    if source:
+        valid_sources = known_sources(catalog)
+        if source not in valid_sources:
+            return {
+                "error": "unknown_source",
+                "requested": source,
+                "known_sources": sorted(valid_sources),
+                "catalog_source": catalog.source,
+            }
     results = search_catalog(catalog, query, toolset=toolset, source=source, limit=limit)
     return {"results": results, "total_matched": len(results), "catalog_source": catalog.source}
 
