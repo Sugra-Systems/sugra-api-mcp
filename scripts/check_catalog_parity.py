@@ -68,11 +68,14 @@ def read_spec(source: str) -> bytes:
             with urllib.request.urlopen(source, timeout=60) as response:
                 return response.read()
         except urllib.error.HTTPError as exc:
-            # 4xx is the server telling us this URL is wrong - that never fixes
-            # itself. 5xx is the server having a bad day.
-            if 400 <= exc.code < 500:
-                raise SpecMisconfigured(f"{source} returned HTTP {exc.code}") from exc
-            raise SpecUnavailable(f"{source} returned HTTP {exc.code}") from exc
+            # ONLY 5xx is the server having a bad day. Everything else that
+            # reaches here is standing misconfiguration: 4xx says this URL is
+            # wrong, and a 3xx surfacing as an error means a redirect loop or a
+            # redirect to an unsupported scheme - neither fixes itself, so
+            # neither may skip.
+            if 500 <= exc.code < 600:
+                raise SpecUnavailable(f"{source} returned HTTP {exc.code}") from exc
+            raise SpecMisconfigured(f"{source} returned HTTP {exc.code}") from exc
         except urllib.error.URLError as exc:
             # urllib wraps certificate-verification failures in URLError, but an
             # expired or untrusted certificate is a standing misconfiguration:
@@ -123,11 +126,23 @@ def main() -> int:
     missing = sorted(current.operation_ids - bundle.operation_ids)
     extra = sorted(bundle.operation_ids - current.operation_ids)
 
-    if not missing and not extra:
-        print(f"OK: operation sets match ({bundle.endpoint_count} operations); "
-              f"spec sha256 {spec_sha[:12]}... "
+    # Matching operation IDs are NOT a matching contract. A path, method,
+    # parameter, required-body flag or body schema can change while the id stays
+    # put, and a client would then call a stale signature against the live API -
+    # exactly the failure this gate exists to prevent, so compare the whole
+    # generated endpoint, not just its name.
+    bundle_by_id = {e.operation_id: e.to_dict() for e in bundle.endpoints}
+    current_by_id = {e.operation_id: e.to_dict() for e in current.endpoints}
+    changed = sorted(
+        op_id for op_id in bundle_by_id.keys() & current_by_id.keys()
+        if bundle_by_id[op_id] != current_by_id[op_id]
+    )
+
+    if not missing and not extra and not changed:
+        print(f"OK: {bundle.endpoint_count} operations match the spec in full "
+              f"(ids, paths, parameters, bodies); spec sha256 {spec_sha[:12]}... "
               + ("matches the bundle stamp." if stamp_matches
-                 else "differs from the bundle stamp (spec text changed, operations did not)."))
+                 else "differs from the bundle stamp (spec text changed, catalog did not)."))
         return 0
 
     print(f"DRIFT: bundled catalog does not match {args.spec}")
@@ -142,6 +157,16 @@ def main() -> int:
     if extra:
         print(f"  not in the spec ({len(extra)}): {', '.join(extra[:20])}"
               + (" ..." if len(extra) > 20 else ""))
+    if changed:
+        print(f"  same id, changed contract ({len(changed)}):")
+        for op_id in changed[:10]:
+            fields = sorted(
+                key for key in bundle_by_id[op_id].keys() | current_by_id[op_id].keys()
+                if bundle_by_id[op_id].get(key) != current_by_id[op_id].get(key)
+            )
+            print(f"    {op_id}: {', '.join(fields)}")
+        if len(changed) > 10:
+            print(f"    ... and {len(changed) - 10} more")
     print("  Rebuild the bundle:  python scripts/build_endpoint_catalog.py "
           f"--source {args.spec}")
     return 1

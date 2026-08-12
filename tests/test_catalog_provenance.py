@@ -174,6 +174,25 @@ def test_transient_fetch_failure_skips_but_a_4xx_fails() -> None:
     with pytest.raises(module.SpecUnavailable):
         module.read_spec("https://x/openapi.json")
 
+    # A certificate problem arrives wrapped in URLError but is standing
+    # misconfiguration - skipping it would keep every run green while nothing is
+    # ever compared.
+    import ssl
+
+    module.urllib.request.urlopen = _raise(
+        urllib.error.URLError(ssl.SSLError("certificate verify failed"))
+    )
+    with pytest.raises(module.SpecMisconfigured):
+        module.read_spec("https://x/openapi.json")
+
+    # A 3xx that surfaces as an error is a redirect loop or an unsupported
+    # redirect target: persistent, so it must not skip either.
+    module.urllib.request.urlopen = _raise(
+        urllib.error.HTTPError("https://x/openapi.json", 310, "Too many redirects", {}, None)
+    )
+    with pytest.raises(module.SpecMisconfigured):
+        module.read_spec("https://x/openapi.json")
+
 
 def test_matching_spec_stamp_does_not_excuse_a_tampered_bundle(tmp_path) -> None:
     """The stamp authenticates the SOURCE bytes, not the generated catalog. A
@@ -200,3 +219,54 @@ def test_matching_spec_stamp_does_not_excuse_a_tampered_bundle(tmp_path) -> None
     assert result.returncode == 1, result.stdout
     assert "DRIFT" in result.stdout
     assert dropped in result.stdout
+
+
+def _spec_with_first_operation_mutated(mutate) -> tuple[dict, str]:
+    """Return a spec whose first operation is altered by `mutate`, keeping its
+    operationId, plus that operationId."""
+    spec = _fixture_spec()
+    for path, item in spec["paths"].items():
+        for method, operation in item.items():
+            if isinstance(operation, dict) and operation.get("operationId"):
+                op_id = operation["operationId"]
+                mutate(spec, path, method, operation)
+                return spec, op_id
+    raise AssertionError("fixture has no operation with an operationId")
+
+
+@pytest.mark.parametrize(
+    ("label", "mutate"),
+    [
+        # the path moves but the operation keeps its name - a client built from
+        # the stale bundle would call the old URL
+        ("path", lambda spec, path, method, op: spec["paths"].__setitem__(
+            path + "/moved", spec["paths"].pop(path))),
+        # a parameter becomes required - the stale bundle would omit it
+        ("required parameter", lambda spec, path, method, op: op.setdefault(
+            "parameters", []).append(
+                {"name": "newly_required", "in": "query", "required": True,
+                 "schema": {"type": "string"}})),
+        # the request body gains a required field
+        ("request body", lambda spec, path, method, op: op.__setitem__(
+            "requestBody", {"required": True, "content": {"application/json": {
+                "schema": {"type": "object", "required": ["added"],
+                           "properties": {"added": {"type": "string"}}}}}})),
+    ],
+)
+def test_a_changed_contract_under_the_same_operation_id_is_drift(tmp_path, label, mutate) -> None:
+    """Matching ids are not a matching contract: paths, parameters and bodies can
+    change while the operationId stays put, leaving clients calling a stale
+    signature. Every such change must be reported as drift."""
+    spec, op_id = _spec_with_first_operation_mutated(mutate)
+    # the bundle is the PRE-change build; the spec is the post-change one
+    bundle_catalog = build_catalog_from_openapi(_fixture_spec(), source="unit")
+    bundle_path = tmp_path / "endpoints.json"
+    bundle_path.write_text(json.dumps(bundle_catalog.to_dict()), encoding="utf-8")
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps(spec), encoding="utf-8")
+
+    result = _run_checker(spec_path, bundle_path)
+
+    assert result.returncode == 1, f"{label} change not reported as drift: {result.stdout}"
+    assert "DRIFT" in result.stdout
+    assert op_id in result.stdout, f"the checker must name the operation ({label})"
