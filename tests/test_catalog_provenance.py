@@ -251,6 +251,13 @@ def _spec_with_first_operation_mutated(mutate) -> tuple[dict, str]:
             "requestBody", {"required": True, "content": {"application/json": {
                 "schema": {"type": "object", "required": ["added"],
                            "properties": {"added": {"type": "string"}}}}}})),
+        # a PATH-ITEM parameter is added: OpenAPI applies it to every operation
+        # under that path, so it changes the signature without touching the
+        # operation object at all
+        ("path-item parameter", lambda spec, path, method, op: spec["paths"][path].setdefault(
+            "parameters", []).append(
+                {"name": "shared_required", "in": "query", "required": True,
+                 "schema": {"type": "string"}})),
     ],
 )
 def test_a_changed_contract_under_the_same_operation_id_is_drift(tmp_path, label, mutate) -> None:
