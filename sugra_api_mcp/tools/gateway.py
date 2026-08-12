@@ -53,7 +53,11 @@ async def search_endpoints(
     # bundle), therefore surfaced as a silent zero instead of a diagnosable error.
     # Validate against the accept-set derived from the catalog and say what is
     # valid, so the caller can correct the filter in one step.
-    if toolset is not None:
+    # Activate validation on exactly the predicate the search filter uses
+    # (truthiness, not `is not None`): an empty string has always meant "no
+    # filter" - clients serialize unset optional strings that way - so validating
+    # it would turn a working call into a bogus unknown_* error.
+    if toolset:
         valid_toolsets = known_toolsets(catalog)
         if toolset not in valid_toolsets:
             return {
@@ -62,7 +66,7 @@ async def search_endpoints(
                 "known_toolsets": sorted(valid_toolsets),
                 "catalog_source": catalog.source,
             }
-    if source is not None:
+    if source:
         valid_sources = known_sources(catalog)
         if source not in valid_sources:
             return {

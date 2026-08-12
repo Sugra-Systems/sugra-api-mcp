@@ -233,6 +233,19 @@ async def test_valid_filter_still_searches_after_validation(monkeypatch) -> None
     assert ok["results"] and "error" not in ok
 
 
+async def test_empty_string_filters_still_mean_no_filter(monkeypatch) -> None:
+    """The search filter activates on truthiness, so an empty string has always
+    meant "no filter" - clients serialize unset optional strings that way.
+    Validation must activate on the SAME predicate, or "" would regress from a
+    working unfiltered search into a bogus unknown_* error."""
+    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
+
+    for kwargs in ({"toolset": ""}, {"source": ""}, {"toolset": "", "source": ""}):
+        result = await gateway.search_endpoints("NASDAQ futures", **kwargs)
+        assert "error" not in result, f"{kwargs} wrongly rejected: {result}"
+        assert result["results"], f"{kwargs} should search unfiltered"
+
+
 def _catalog_with_divergent_sources() -> Catalog:
     """A catalog where an endpoint's `sources` list carries a value its
     `source_family` does not.
