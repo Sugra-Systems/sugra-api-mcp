@@ -65,7 +65,13 @@ def _parameter_from_openapi(data: dict[str, Any]) -> EndpointParameter:
     )
 
 
-def build_catalog_from_openapi(openapi: dict[str, Any], *, source: str = "fixture") -> Catalog:
+def build_catalog_from_openapi(
+    openapi: dict[str, Any],
+    *,
+    source: str = "fixture",
+    spec_sha256: str | None = None,
+    built_at: str | None = None,
+) -> Catalog:
     """Distill an OpenAPI document into a compact operation_id catalog."""
     endpoints: list[Endpoint] = []
     paths = openapi.get("paths", {})
@@ -115,4 +121,9 @@ def build_catalog_from_openapi(openapi: dict[str, Any], *, source: str = "fixtur
                 )
             )
 
-    return Catalog(source=source, endpoints=endpoints)
+    return Catalog(
+        source=source,
+        endpoints=endpoints,
+        spec_sha256=spec_sha256,
+        built_at=built_at,
+    )
