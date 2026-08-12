@@ -246,6 +246,31 @@ def _score(
     return score, list(dict.fromkeys(why))[:6]
 
 
+def known_toolsets(catalog: Catalog) -> set[str]:
+    """Every toolset value the toolset filter below can match.
+
+    Derived from the catalog itself, so it is exactly the accept-set of the
+    filter in search_catalog - a caller can validate against this and be sure a
+    passing value cannot silently match zero endpoints for taxonomy reasons.
+    """
+    return {endpoint.toolset for endpoint in catalog.endpoints}
+
+
+def known_sources(catalog: Catalog) -> set[str]:
+    """Every source value the source filter below can match.
+
+    The filter accepts a value present in an endpoint's `sources` list OR equal
+    to its `source_family`, so the accept-set is the union of both - wider than
+    the source_family-only list reported by the sources listing. Deriving it
+    here, next to the filter, keeps the two from drifting apart.
+    """
+    values: set[str] = set()
+    for endpoint in catalog.endpoints:
+        values.update(endpoint.sources or [endpoint.source_family])
+        values.add(endpoint.source_family)
+    return values
+
+
 def search_catalog(
     catalog: Catalog,
     query: str,

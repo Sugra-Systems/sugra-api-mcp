@@ -64,6 +64,11 @@ _KNOWN_ERROR_CODES: frozenset[str] = frozenset({
     "unsupported_method",
     "unresolved_path_parameters",
     "no_endpoint_found",
+    # search_endpoints filter validation: an unknown toolset/source value is
+    # reported as a typed error naming the valid values, never a silent empty
+    # result list (an empty list cannot be told apart from "nothing matched").
+    "unknown_toolset",
+    "unknown_source",
     "stale_search_result",
     "response_too_large",
     "validation_failed",

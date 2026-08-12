@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from sugra_api_mcp.catalog.builder import build_catalog_from_openapi
+from sugra_api_mcp.catalog.models import Catalog, Endpoint
+from sugra_api_mcp.catalog.search import known_sources, known_toolsets
 from sugra_api_mcp.tools import gateway
 
 FIXTURE = Path(__file__).parent / "fixtures" / "openapi_minimal.json"
@@ -177,6 +179,114 @@ async def test_search_endpoints_accepts_source_family_filter(monkeypatch) -> Non
 
     assert result["results"][0]["operation_id"] == "air_quality_current"
     assert {item["source_family"] for item in result["results"]} == {"environment"}
+
+
+# ---- unknown filter values are a typed error, never a silent empty list ----
+
+
+async def test_search_endpoints_unknown_toolset_returns_typed_error(monkeypatch) -> None:
+    """A misspelled or unknown toolset must name the valid values, not return []
+    (an empty list is indistinguishable from "nothing matched your query")."""
+    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
+
+    result = await gateway.search_endpoints("futures", toolset="definitely_not_a_toolset")
+
+    assert result["error"] == "unknown_toolset"
+    assert result["requested"] == "definitely_not_a_toolset"
+    assert "results" not in result
+    # the caller can correct the filter from the response alone
+    assert "markets" in result["known_toolsets"]
+    assert result["known_toolsets"] == sorted(result["known_toolsets"])
+
+
+async def test_search_endpoints_toolset_absent_from_this_catalog_is_an_error(monkeypatch) -> None:
+    """The taxonomy is versioned WITH the bundle: a toolset a client knows but
+    this catalog vintage lacks must be diagnosable, not a silent zero."""
+    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
+    catalog = _fixture_catalog()
+    missing = "statistics"
+    assert missing not in {endpoint.toolset for endpoint in catalog.endpoints}
+
+    result = await gateway.search_endpoints("population", toolset=missing)
+
+    assert result["error"] == "unknown_toolset"
+    assert result["requested"] == missing
+
+
+async def test_search_endpoints_unknown_source_returns_typed_error(monkeypatch) -> None:
+    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
+
+    result = await gateway.search_endpoints("air quality", source="no_such_source")
+
+    assert result["error"] == "unknown_source"
+    assert result["requested"] == "no_such_source"
+    assert "results" not in result
+    assert "environment" in result["known_sources"]
+
+
+async def test_valid_filter_still_searches_after_validation(monkeypatch) -> None:
+    """Validation must not regress the happy path."""
+    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
+
+    ok = await gateway.search_endpoints("NASDAQ futures", toolset="markets")
+
+    assert ok["results"] and "error" not in ok
+
+
+def _catalog_with_divergent_sources() -> Catalog:
+    """A catalog where an endpoint's `sources` list carries a value its
+    `source_family` does not.
+
+    Neither the fixture nor the current bundle has such an endpoint (both have
+    sources == [source_family]), so this property is invisible to them - yet the
+    search filter matches on EITHER list. Build the divergent case explicitly so
+    the accept-set contract below is actually exercised rather than passing by
+    accident on degenerate data.
+    """
+    return Catalog(
+        source="test-divergent",
+        endpoints=[
+            Endpoint(
+                operation_id="vendor_quote",
+                method="GET",
+                path="/api/v1/vendor/quote",
+                summary="Vendor quote lookup",
+                toolset="markets",
+                source_family="core",
+                sources=["alpha_vendor"],
+            )
+        ],
+    )
+
+
+async def test_validation_accepts_every_source_the_filter_honours(monkeypatch) -> None:
+    """The validator's accept-set must be exactly the search filter's: the filter
+    matches a value in `sources` OR equal to `source_family`, so validating against
+    source_family alone would reject a value the filter would have honoured -
+    turning a WORKING query into a bogus unknown_source error."""
+    catalog = _catalog_with_divergent_sources()
+    monkeypatch.setattr(gateway, "load_catalog", lambda: catalog)
+
+    # the divergent value is advertised as known ...
+    assert "alpha_vendor" in known_sources(catalog)
+    # ... the filter really does honour it (results, not an empty list) ...
+    honoured = await gateway.search_endpoints("vendor quote", source="alpha_vendor")
+    assert "error" not in honoured, honoured
+    assert honoured["results"], "filter dropped a source it is documented to match"
+    # ... and the source_family value keeps working too
+    fam = await gateway.search_endpoints("vendor quote", source="core")
+    assert "error" not in fam and fam["results"]
+
+
+async def test_list_toolsets_count_equals_distinct_catalog_toolsets(monkeypatch) -> None:
+    """list_toolsets is the surface a client reads to pick a filter value; it must
+    report exactly the distinct toolsets the filter accepts."""
+    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
+    catalog = _fixture_catalog()
+
+    payload = await gateway.list_toolsets()
+
+    assert {t["name"] for t in payload["toolsets"]} == known_toolsets(catalog)
 
 
 # ---- fetch_data: combined search+call MCP tool ----
