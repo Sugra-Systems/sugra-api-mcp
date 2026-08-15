@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from contextvars import ContextVar
@@ -10,12 +11,13 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
-from mcp.types import Icon, ToolAnnotations
+from mcp.types import CallToolResult, Icon, TextContent, ToolAnnotations
 from mcp.types import Tool as MCPTool
 
 from . import __version__
 from .client import SugraClient
 from .config import MISSING_API_KEY_HINT, Config, load_allowed_origins, load_config
+from .errors import is_error_payload
 
 api_key_ctx: ContextVar[str | None] = ContextVar("sugra_api_key", default=None)
 
@@ -105,6 +107,44 @@ class SugraFastMCP(FastMCP):
             _with_ui_template(_with_oauth_security(tool))
             for tool in await super().list_tools()
         ]
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+        """Report a failed tool call as a protocol-level error.
+
+        Tools return their failures as structured payloads instead of raising,
+        which the SDK cannot distinguish from data: anything returned becomes
+        `isError=false`, and only a raised exception sets the flag - at the cost
+        of discarding the payload and, for an exception with no message, saying
+        nothing at all. Agents were left to notice the failure by inspecting the
+        body, and clients that branch on the protocol flag never saw one.
+
+        Returning a CallToolResult keeps both halves: the SDK passes it through
+        untouched, so the flag is set AND the explanation survives.
+
+        The text block is rebuilt from the same payload so it cannot be empty,
+        which is the whole reason failures are returned instead of raised.
+        Nothing is lost: every tool declares a dict result, so the block being
+        replaced is the JSON rendering of that same dict.
+        """
+        result = await super().call_tool(name, arguments)
+
+        # Tools declaring a dict return arrive as (content, structured); the
+        # bare forms are accepted so this cannot depend on that detail.
+        if isinstance(result, tuple) and len(result) == 2:
+            _content, structured = result
+        elif isinstance(result, dict):
+            structured = result
+        else:
+            return result
+
+        if not is_error_payload(structured):
+            return result
+
+        return CallToolResult(
+            isError=True,
+            content=[TextContent(type="text", text=json.dumps(structured, indent=2, default=str))],
+            structuredContent=structured,
+        )
 
 
 def read_only(title: str) -> ToolAnnotations:

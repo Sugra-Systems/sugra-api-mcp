@@ -237,6 +237,12 @@ class SugraClient:
             retry_after = _retry_after(response)
             if retry_after is not None:
                 result["retry_after"] = retry_after
+            # The API stamps every response with a request id; carrying it on the
+            # failure is what lets a user quote one line and have the exact call
+            # found in the logs, instead of describing what they think happened.
+            request_id = response.headers.get("X-Request-ID")
+            if request_id:
+                result["request_id"] = str(request_id)
             return result
         return _enforce_size_limit(payload, str(response.request.url))
 

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from ..errors import is_error_payload
 from ..observability import trace_mcp_tool
 from ..server import get_client, mcp, read_only
 
@@ -61,7 +62,7 @@ _FALLBACK_DISCLAIMER = (
 
 def _is_error(payload: Any) -> bool:
     """The client returns a flat {error, status_code, url} dict on >=400."""
-    return isinstance(payload, dict) and "error" in payload and "data" not in payload
+    return is_error_payload(payload)
 
 
 def _clean_error(payload: dict[str, Any]) -> dict[str, Any]:
@@ -84,7 +85,21 @@ def _clean_error(payload: dict[str, Any]) -> dict[str, Any]:
     # and timing - pass them through so the entity tools keep contract parity
     # with call_endpoint instead of stripping the actionable fields. "hint"
     # carries the missing_api_key remediation from the keyless stand-in client.
-    for key in ("reason", "retry_hint", "hint", "elapsed_ms", "timeout_s", "retry_after"):
+    # status_code and request_id are not decoration: the first is what decides
+    # whether a failure is worth retrying, and the second is what ties it to the
+    # server's own log line. Folding the status into free-text `detail` and
+    # dropping it here left a 429 or 503 from these tools indistinguishable from
+    # a permanent one.
+    for key in (
+        "reason",
+        "retry_hint",
+        "hint",
+        "elapsed_ms",
+        "timeout_s",
+        "retry_after",
+        "status_code",
+        "request_id",
+    ):
         value = payload.get(key)
         if value is not None:
             result[key] = value
