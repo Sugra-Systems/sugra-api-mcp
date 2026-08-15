@@ -12,6 +12,7 @@ from ..catalog.loader import load_catalog
 from ..catalog.response import shape_response
 from ..catalog.search import known_sources, known_toolsets, search_catalog
 from ..catalog.toolsets import ordered_toolsets
+from ..errors import is_error_payload
 from ..observability import trace_mcp_tool
 from ..server import get_client, mcp, read_only
 
@@ -197,7 +198,7 @@ async def call_endpoint(
                 "method": endpoint.method,
             }
 
-        if isinstance(payload, dict) and "error" in payload and "data" not in payload:
+        if is_error_payload(payload):
             # Structured error contract from SugraClient (transport failure,
             # HTTP 4xx/5xx, or size-limit refusal). Return it untouched:
             # shaping an error dict would only decorate it with misleading

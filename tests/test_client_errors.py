@@ -245,3 +245,44 @@ async def test_success_payload_is_unmodified_no_telemetry_keys() -> None:
         await client.aclose()
 
     assert result == {"data": [{"v": 1}], "meta": {}}
+
+
+# ---- the request id that ties a failure to the server's own logs ----
+
+
+async def test_error_carries_the_request_id_when_the_api_sends_one() -> None:
+    """A user reporting a failure can quote one value and have the exact call
+    located, instead of describing what they think happened."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            503,
+            json={"error": "upstream_unavailable"},
+            headers={"X-Request-ID": "req_01HZY7"},
+            request=request,
+        )
+
+    client = _client(handler)
+    try:
+        result = await client.get("/api/v1/quotes/AAPL/price")
+    finally:
+        await client.aclose()
+
+    assert result["request_id"] == "req_01HZY7"
+    assert result["status_code"] == 503
+
+
+async def test_the_request_id_key_is_absent_when_the_header_is_not_sent() -> None:
+    """Absent rather than null: a key that is always present but usually empty
+    trains readers to ignore it."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"error": "not_found"}, request=request)
+
+    client = _client(handler)
+    try:
+        result = await client.get("/api/v1/quotes/AAPL/price")
+    finally:
+        await client.aclose()
+
+    assert "request_id" not in result
