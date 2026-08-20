@@ -66,12 +66,9 @@ jobs:
     # Hosted redeploy of the public MCP endpoint. `needs: test` chains off ALL
     # matrix legs in-file, rather than coupling to another workflow by name -
     # a name coupling breaks silently the moment the workflow is renamed.
-    # TEMPORARY FREEZE: the hosted deploy is manual-only (workflow_dispatch)
-    # while an external submission review runs against the live endpoint -
-    # merges to main must not change what the reviewers are looking at. When the
-    # review concludes, restore the original dual-trigger condition verbatim:
-    #   if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    # The 2026-07..08 temporary freeze (manual-only while an external submission
+    # review ran against the live endpoint) concluded and was lifted 2026-08-20.
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     timeout-minutes: 15
     # Serialize hosted deploys: the deploy updates one install tree in place, so
     # two runs at once can tear it. Inert while the freeze above keeps this job

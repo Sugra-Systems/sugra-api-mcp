@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-08-12T20:43:35Z",
+  "built_at": "2026-08-20T01:38:49Z",
   "endpoint_count": 1556,
   "endpoints": [
     {
@@ -57307,7 +57307,7 @@
       "toolset": "markets"
     },
     {
-      "description": "Returns the single contract whose delta is CLOSEST to the requested target on the requested expiry - the 'which strike is the 25-delta call' answer as one small response instead of the ~256 KB full chain plus a client-side search. Delta is SIGNED: positive selects from calls, negative from puts; the optional ``right`` parameter must agree with the sign when given. Contracts whose implied volatility fails the shared plausibility gate (including the upstream's literal 0.0 no-data marker, API-1.8) or that carry no usable delta are EXCLUDED before selection and disclosed in the ``dropped_*`` counters, so a gated chain can never silently select an empty contract. Error codes match ``/snapshot``: ``unknown_symbol``, ``expiry_not_in_snapshot``, ``snapshot_not_available``.",
+      "description": "Returns the single contract whose delta is CLOSEST to the requested target on the requested expiry - the 'which strike is the 25-delta call' answer as one small response instead of the ~256 KB full chain plus a client-side search. Delta is SIGNED: positive selects from calls, negative from puts; the optional ``right`` parameter must agree with the sign when given. Contracts whose implied volatility fails the shared plausibility gate (including the upstream's literal 0.0 no-data marker, API-1.8) or that carry no usable delta are EXCLUDED before selection and disclosed in the ``dropped_*`` counters, so a gated chain can never silently select an empty contract. Error codes match ``/snapshot``: ``unknown_symbol``, ``expiry_not_in_snapshot``, ``snapshot_not_available``. ``unknown_symbol`` covers two different situations, told apart by the ``reason`` field of the error body: a symbol that does not resolve on this platform, and one that resolves but is not among the underliers options data is collected for. The body names the size of that roster and the endpoint listing it.",
       "method": "GET",
       "operation_id": "options_symbol_strike_by_delta",
       "parameters": [
@@ -64593,6 +64593,47 @@
             "title": "Offset",
             "type": "integer"
           }
+        },
+        {
+          "description": "Case-insensitive substring of the manager name.",
+          "example": "BlackRock",
+          "location": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 2,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Case-insensitive substring of the manager name.",
+            "title": "Q"
+          }
+        },
+        {
+          "description": "Exact CIK, with or without leading zeros.",
+          "example": "1364742",
+          "location": "query",
+          "name": "cik",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{1,10}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exact CIK, with or without leading zeros.",
+            "title": "Cik"
+          }
         }
       ],
       "path": "/api/v1/sec/13f/filers",
@@ -65989,14 +66030,14 @@
           }
         },
         {
-          "description": "Number of days",
+          "description": "How many of the MOST RECENT rows to return.",
           "example": 20,
           "location": "query",
           "name": "limit",
           "required": false,
           "schema": {
             "default": 20,
-            "description": "Number of days",
+            "description": "How many of the MOST RECENT rows to return.",
             "maximum": 100,
             "minimum": 1,
             "title": "Limit",
@@ -66132,14 +66173,14 @@
           }
         },
         {
-          "description": "Number of reports",
+          "description": "How many of the MOST RECENT reports to return.",
           "example": 20,
           "location": "query",
           "name": "limit",
           "required": false,
           "schema": {
             "default": 20,
-            "description": "Number of reports",
+            "description": "How many of the MOST RECENT reports to return.",
             "maximum": 100,
             "minimum": 1,
             "title": "Limit",
@@ -87482,5 +87523,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "b9ea803689eb88c0f3b5d42b187c35681ea3de781ca02b75bc080519eee02711"
+  "spec_sha256": "73d479b073dae9dcaee913dfa5af13fd71c3063308745cb819b95551c3674d0e"
 }
