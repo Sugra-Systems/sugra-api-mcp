@@ -596,3 +596,79 @@ def test_imf_reserves_lands_in_the_imf_namespace(catalog) -> None:
         f"'IMF reserves' top-1 left the imf namespace: "
         f"{[r['operation_id'] for r in results]}"
     )
+
+
+# ---- MCP-9 (audit P1-3): versioned semantic eval set --------------------------
+# The six audit scenarios with semantic top-1 oracles plus acronym negatives.
+# PASS is stricter than "technically callable": right domain, right geography,
+# right data type, never a deprecated route above its available replacement.
+
+AUDIT_EVAL_TOP1 = [
+    # (query, oracle: top-1 operation_id predicate description)
+    ("current AAPL stock price", lambda op: op == "quotes_symbol_price"),
+    ("weather forecast Tbilisi next 5 days",
+     lambda op: op == "v2_weather_forecast"),
+    ("geocode a postal address",
+     lambda op: op.startswith("geocoding_")),
+    ("search FRED series for gold", lambda op: op.startswith("fred_")),
+    ("Apple earnings news from the last 7 days",
+     lambda op: op.startswith("news_")),
+]
+
+
+@pytest.mark.parametrize("query,oracle", AUDIT_EVAL_TOP1,
+                         ids=[q for q, _ in AUDIT_EVAL_TOP1])
+def test_audit_eval_semantic_top1(catalog, query, oracle) -> None:
+    results = search_catalog(catalog, query, limit=5)
+    assert results, f"no results for {query!r}"
+    top = results[0]["operation_id"]
+    assert oracle(top), (
+        f"semantic oracle failed for {query!r}: top-1 {top!r}; "
+        f"top-5 {[r['operation_id'] for r in results]}"
+    )
+
+
+def test_audit_eval_georgia_cpi_no_silent_country_substitution(catalog) -> None:
+    """'Georgia CPI' must not silently return another country's CPI top-1."""
+    from sugra_api_mcp.catalog.aliases import SOURCE_COUNTRY_PREFIXES
+
+    results = search_catalog(catalog, "Georgia CPI inflation", limit=5)
+    assert results
+    top = results[0]["operation_id"]
+    for prefix, country in SOURCE_COUNTRY_PREFIXES.items():
+        if top.startswith(prefix):
+            assert country == "GE", (
+                f"top-1 {top!r} belongs to {country}, silently substituted "
+                f"for the Georgia query")
+
+
+def test_audit_eval_deprecated_never_above_replacement(catalog) -> None:
+    """Property over the whole bundle: for every deprecated endpoint whose
+    replacement exists in the catalog, a query built from its summary must not
+    rank the deprecated route above the replacement."""
+    deprecated = [e for e in catalog.endpoints
+                  if e.deprecated and e.replaced_by]
+    assert deprecated, "bundle carries no deprecated endpoints - rebuild it"
+    by_id = {e.operation_id: e for e in catalog.endpoints}
+    for endpoint in deprecated:
+        replacement = by_id.get(endpoint.replaced_by)
+        if replacement is None:
+            continue
+        results = search_catalog(catalog, endpoint.summary or endpoint.path,
+                                 limit=len(catalog.endpoints))
+        ranks = {r["operation_id"]: i for i, r in enumerate(results)}
+        dep_rank = ranks.get(endpoint.operation_id)
+        rep_rank = ranks.get(replacement.operation_id)
+        if dep_rank is not None and rep_rank is not None:
+            assert rep_rank < dep_rank, (
+                f"deprecated {endpoint.operation_id} (rank {dep_rank}) above "
+                f"its replacement {replacement.operation_id} (rank {rep_rank})")
+
+
+@pytest.mark.parametrize("query", [
+    "search FRED series for gold",
+    "AIS vessel density in the North Sea",
+    "RF propagation for MMSI vessel tracking",
+])
+def test_audit_eval_acronyms_are_not_tickers(query) -> None:
+    assert detect_tickers(query) == []

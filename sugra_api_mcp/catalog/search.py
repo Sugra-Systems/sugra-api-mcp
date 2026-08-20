@@ -6,17 +6,31 @@ import re
 from typing import Any
 
 from .aliases import (
+    CENTRAL_BANK_PREFIX_BOOSTS,
+    SOURCE_COUNTRY_PREFIXES,
     detect_currency_pairs,
     detect_network_terms,
+    detect_query_countries,
     detect_tickers,
     detect_us_macro_query,
     matching_aliases,
     matching_central_bank_prefixes,
     query_has_equity_context,
 )
+from .aliases import (
+    COUNTRY_QUERY_TERMS as _COUNTRY_TERMS_FOR_COVERAGE,
+)
 from .models import Catalog, Endpoint
 
 TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+_ALL_CB_PREFIXES = frozenset(CENTRAL_BANK_PREFIX_BOOSTS.values())
+
+# Compounds whose constituent tokens must not read as standalone domain words
+# (token-normalized, lowercase). Curated and tiny on purpose.
+_PROPER_NAME_COMPOUNDS: tuple[str, ...] = (
+    "federal funds",   # the federal funds RATE - not the funds toolset
+)
 
 # English function words stripped from QUERY terms only (never from endpoint
 # tokenization or the raw-query ticker/fx/central-bank/us-macro detectors).
@@ -74,6 +88,23 @@ CRYPTO_NAMESPACE_BOOST = 18
 # inflation" because non-US endpoints out-ranked fred_series_series_id.
 US_MACRO_FRED_BOOST = 30
 US_MACRO_FED_BOOST = 20
+# MCP-9 (audit P1-3) ranking mechanisms:
+# - COVERAGE: matching MORE DISTINCT query terms must beat one token repeated
+#   across prose fields ('address' x4 in a crypto endpoint outranked the
+#   geocoding endpoint that matched 'geocode' + 'address').
+COVERAGE_BONUS_PER_TERM = 3
+# - TOOLSET INTENT: a query word naming a toolset (news, weather, geocoding)
+#   is the strongest domain signal a user can give.
+TOOLSET_INTENT_BOOST = 10
+# - GEOGRAPHY: a national source whose country differs from the one the query
+#   names is a silent substitution ('Georgia CPI' returned the UK ons_cpi).
+WRONG_COUNTRY_PENALTY = 22
+# - CB MISMATCH: the query named a specific central bank (the cb pattern
+#   fired); every OTHER bank's namespace is the wrong answer by construction.
+CENTRAL_BANK_MISMATCH_PENALTY = 10
+# - DEPRECATION: a deprecated route with a live replacement in the catalog
+#   must never outrank it; the penalty exceeds every token-luck margin.
+DEPRECATED_REPLACED_PENALTY = 25
 
 
 def _tokens(value: str) -> list[str]:
@@ -149,6 +180,8 @@ def _score(
     boost_crypto: bool,
     boost_us_macro: bool,
     central_bank_prefixes: list[str],
+    query_countries: set[str],
+    coverage_excluded: frozenset[str] = frozenset(),
 ) -> tuple[int, list[str]]:
     alias_terms = [term for terms in aliases.values() for term in terms]
     all_terms = [*query_terms, *_tokens(" ".join(alias_terms))]
@@ -156,10 +189,15 @@ def _score(
     score = 0
     endpoint_text = _endpoint_text(endpoint)
 
+    alias_consumed: set[str] = set()
     for phrase, expansions in aliases.items():
         if any(_alias_matches(endpoint_text, expansion) for expansion in expansions):
             score += ALIAS_PHRASE_BOOST
             why.append(f"alias:{phrase}")
+            # The alias boost IS the phrase's contribution - its tokens must
+            # not be re-paid through the coverage bonus (double-paying
+            # 'exchange rate' lifted CB converters over the forex namespace).
+            alias_consumed.update(_tokens(phrase))
             break
 
     # Pattern-detection boosts: tilt the ranking toward the right domain when the
@@ -203,6 +241,16 @@ def _score(
             score += CENTRAL_BANK_PREFIX_BOOST
             why.append(f"pattern:cb->{prefix}")
             break
+    else:
+        if central_bank_prefixes:
+            # The query named a SPECIFIC bank; a different bank's namespace is
+            # the wrong answer by construction (SARB outranked the Fed on the
+            # word 'reserve' in 'Federal Reserve').
+            for other in _ALL_CB_PREFIXES:
+                if endpoint.operation_id.startswith(other):
+                    score -= CENTRAL_BANK_MISMATCH_PENALTY
+                    why.append(f"cb-mismatch:{other}")
+                    break
 
     if boost_us_macro:
         # FRED is the canonical primary source for US macro time series. The
@@ -224,25 +272,78 @@ def _score(
         f"{parameter.name} {parameter.description}" for parameter in endpoint.parameters
     )
 
+    matched_query_terms: set[str] = set()
     for term in all_terms:
+        hit = False
         if _field_has(endpoint.operation_id, term):
             score += 5
+            hit = True
             why.append(f"operation_id:{term}")
         if _field_has(tag_text, term):
             score += 4
+            hit = True
             why.append(f"tag_toolset:{term}")
         if _field_has(endpoint.summary, term):
             score += 3
+            hit = True
             why.append(f"summary:{term}")
         if _field_has(endpoint.path, term):
             score += 2
+            hit = True
             why.append(f"path:{term}")
         if _field_has(param_text, term):
             score += 2
+            hit = True
             why.append(f"params:{term}")
         if _field_has(endpoint.description, term):
             score += 1
             why.append(f"description:{term}")
+        # Coverage counts STRONG-field hits only (a description-only match
+        # is too weak), skips sub-3-letter noise ('is' matched a parameter and
+        # re-ranked the NVDA prompt), and skips tokens a pattern detector
+        # already consumed (EUR/USD fired the forex boost - counting them
+        # again double-paid central-bank converters over the forex namespace).
+        if (hit and term in query_terms and len(term) >= 3
+                and term not in coverage_excluded
+                and term not in alias_consumed):
+            matched_query_terms.add(term)
+
+    # MCP-9 coverage: breadth of DISTINCT query-term matches beats depth of
+    # one term repeated across prose fields.
+    if len(matched_query_terms) >= 2:
+        score += COVERAGE_BONUS_PER_TERM * len(matched_query_terms)
+        why.append(f"coverage:{len(matched_query_terms)}")
+
+    # MCP-9 toolset intent: a query term that IS the toolset name (or its
+    # stem: 'geocode' -> 'geocoding') pins the domain. Except when the term
+    # only appears inside a proper-name compound ('federal FUNDS rate' names
+    # an interest rate, not the funds toolset).
+    toolset_lower = endpoint.toolset.lower()
+    for term in query_terms:
+        if term in coverage_excluded:
+            continue
+        if term == toolset_lower or (
+            len(term) >= 4 and (toolset_lower.startswith(term) or term.startswith(toolset_lower))
+        ):
+            score += TOOLSET_INTENT_BOOST
+            why.append(f"toolset-intent:{term}")
+            break
+
+    # MCP-9 geography: the query names a country; a NATIONAL source of a
+    # different country is a silent substitution, never a top answer.
+    if query_countries:
+        for prefix, country in SOURCE_COUNTRY_PREFIXES.items():
+            if endpoint.operation_id.startswith(prefix):
+                if country not in query_countries:
+                    score -= WRONG_COUNTRY_PENALTY
+                    why.append(f"geo-mismatch:{country}")
+                break
+
+    # MCP-9 deprecation: never above the live replacement.
+    if endpoint.deprecated and endpoint.replaced_by:
+        score -= DEPRECATED_REPLACED_PENALTY
+        why.append(f"deprecated->{endpoint.replaced_by}")
+
     return score, list(dict.fromkeys(why))[:6]
 
 
@@ -349,6 +450,31 @@ def search_catalog(
     boost_forex = bool(currency_pairs)
     boost_crypto = has_crypto_context
     boost_us_macro = detect_us_macro_query(query)
+    query_countries = detect_query_countries(query)
+    # Tokens consumed by pattern detectors are excluded from the coverage
+    # bonus - the pattern boost IS their contribution.
+    consumed: set[str] = {t.lower() for t in tickers}
+    for base, quote in currency_pairs:
+        consumed.update((base.lower(), quote.lower()))
+    # Central-bank phrases that fired the cb pattern are consumed too:
+    # 'federal reserve' tokens re-counted as coverage lifted the Z.1 flow-of-
+    # funds op over the policy-rate op inside the SAME namespace. Token-
+    # bounded: 'fed' the phrase must not consume via the substring 'FEDeral'.
+    normalized_query = f" {' '.join(_tokens(query))} "
+    if central_bank_prefixes:
+        for cb_phrase in CENTRAL_BANK_PREFIX_BOOSTS:
+            if f" {' '.join(_tokens(cb_phrase))} " in normalized_query:
+                consumed.update(_tokens(cb_phrase))
+    # Proper-name compounds: the constituent token names a toolset only by
+    # accident ('federal FUNDS rate' is an interest rate, not the funds
+    # toolset) - consume it so neither coverage nor toolset intent fires.
+    for compound in _PROPER_NAME_COMPOUNDS:
+        if f" {compound} " in normalized_query:
+            consumed.update(compound.split())
+    for term, code in _COUNTRY_TERMS_FOR_COVERAGE.items():
+        if code in query_countries:
+            consumed.update(_tokens(term))
+    coverage_excluded = frozenset(consumed)
 
     scored: list[tuple[int, Endpoint, list[str]]] = []
     for endpoint in catalog.endpoints:
@@ -368,6 +494,8 @@ def search_catalog(
             boost_crypto=boost_crypto,
             boost_us_macro=boost_us_macro,
             central_bank_prefixes=central_bank_prefixes,
+            query_countries=query_countries,
+            coverage_excluded=coverage_excluded,
         )
         if score > 0:
             scored.append((score, endpoint, why))

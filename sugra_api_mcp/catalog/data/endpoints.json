@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-08-20T01:38:49Z",
+  "built_at": "2026-08-20T23:38:30Z",
   "endpoint_count": 1556,
   "endpoints": [
     {
@@ -8927,7 +8927,7 @@
         },
         {
           "description": "Projection end year (2025-2050)",
-          "example": 2024,
+          "example": 2050,
           "location": "query",
           "name": "end_year",
           "required": false,
@@ -29657,7 +29657,7 @@
           "name": "page_size",
           "required": false,
           "schema": {
-            "default": 250,
+            "default": 200,
             "description": "Entries per page (1 to 200; upstream total is 250).",
             "maximum": 200,
             "minimum": 1,
@@ -48483,6 +48483,7 @@
       "toolset": "trade"
     },
     {
+      "deprecated": true,
       "description": "Coarse vessel-density grid folded from NOAA MarineCadastre daily AIS files. Historical analytics, months-lagged - NOT live and NOT a current snapshot. Coverage is United States historical analytics. Each grid cell carries a vessel observation count and an AIS ship-type breakdown. Optional bbox filters cells; optional date reads a specific day's shard (defaults to the latest folded day). Source: NOAA / BOEM MarineCadastre (public domain, CC0).",
       "method": "GET",
       "operation_id": "maritime_history_density",
@@ -48528,6 +48529,7 @@
       "toolset": "trade"
     },
     {
+      "deprecated": true,
       "description": "Per-port AIS activity proxy folded from NOAA MarineCadastre daily AIS files. Historical analytics, months-lagged - NOT live. Coverage is United States historical analytics. Each port carries an activity-observation count and an AIS ship-type breakdown. This serves the latest computed snapshot - port activity has no by-date dimension. Source: NOAA / BOEM MarineCadastre (public domain, CC0).",
       "method": "GET",
       "operation_id": "maritime_history_port_activity",
@@ -48801,6 +48803,7 @@
       "toolset": "trade"
     },
     {
+      "deprecated": true,
       "description": "Aggregate vessel-density intensity (hours per km2 over the period) for European waters, downsampled to a coarse grid by ship type. This is an aggregate density product, not live positions. Sourced from EMODnet Human Activities (CC BY 4.0) and refreshed monthly by the ingest Function App. Optionally filter the grid by a bounding box.",
       "method": "GET",
       "operation_id": "maritime_vessels_density",
@@ -48861,6 +48864,7 @@
       "toolset": "trade"
     },
     {
+      "deprecated": true,
       "description": "Northern Europe regional near-live AIS vessel positions from sovereign open data feeds (Baltic + Norway), refreshed every 5 minutes by the ingest Function App. Regional coverage only - terrestrial AIS reaches roughly 200 km from shore, so coverage is bounded to these waters and updates on a 5-minute cadence. AIS is self-reported. Filter by bbox (minLon,minLat,maxLon,maxLat) and/or region. Attribution travels with every response in data.sources[].",
       "method": "GET",
       "operation_id": "maritime_vessels_live",
@@ -48937,6 +48941,7 @@
       "toolset": "trade"
     },
     {
+      "deprecated": true,
       "description": "Look up one vessel's latest known position by MMSI within the Northern Europe regional near-live snapshot (Baltic + Norway). Scans both regions when region is omitted. Regional coverage only, bounded to these waters on a 5-minute cadence. AIS is self-reported. Returns 404 when the MMSI is not present in the current snapshot.",
       "method": "GET",
       "operation_id": "maritime_vessels_mmsi",
@@ -73092,6 +73097,7 @@
       "toolset": "environment"
     },
     {
+      "deprecated": true,
       "description": "Get current weather conditions: temperature, humidity, wind, precipitation, weather code.\n\nProvide either latitude+longitude OR city (optionally with country).\nWeather codes follow WMO standard (0=clear, 1-3=cloudy, 45-48=fog, 51-67=drizzle/rain, etc.).",
       "method": "GET",
       "operation_id": "weather_current",
@@ -73495,6 +73501,7 @@
       "toolset": "environment"
     },
     {
+      "deprecated": true,
       "description": "Get daily forecast: max/min temperature, precipitation, wind, sunrise/sunset.\n\nProvide either latitude+longitude OR city (optionally with country).",
       "method": "GET",
       "operation_id": "weather_forecast",
@@ -73611,6 +73618,7 @@
         }
       ],
       "path": "/api/v1/weather/forecast",
+      "replaced_by": "v2_weather_forecast",
       "request_body_required": false,
       "required_parameters": [],
       "source_family": "environment",
@@ -73624,6 +73632,7 @@
       "toolset": "environment"
     },
     {
+      "deprecated": true,
       "description": "Search for a location by name and get coordinates (latitude/longitude).",
       "method": "GET",
       "operation_id": "weather_geocode",
@@ -73674,6 +73683,7 @@
       "toolset": "environment"
     },
     {
+      "deprecated": true,
       "description": "Get historical daily weather data for a date range.\n\nProvide either latitude+longitude OR city (optionally with country).\nMaximum range: ~2 years per request. Data available from 1940 onwards.",
       "method": "GET",
       "operation_id": "weather_history",
@@ -73799,6 +73809,7 @@
         }
       ],
       "path": "/api/v1/weather/history",
+      "replaced_by": "v2_weather_history",
       "request_body_required": false,
       "required_parameters": [
         "start_date",
@@ -75699,7 +75710,7 @@
       "parameters": [
         {
           "description": "SPARQL query",
-          "example": "gold",
+          "example": "SELECT ?item ?itemLabel WHERE { ?item wdt:P31 wd:Q3624078 . SERVICE wikibase:label { bd:serviceParam wikibase:language \"en\" } } LIMIT 5",
           "location": "query",
           "name": "q",
           "required": true,
@@ -87523,5 +87534,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "73d479b073dae9dcaee913dfa5af13fd71c3063308745cb819b95551c3674d0e"
+  "spec_sha256": "652554d2aae1dd624413439b010d951ec6d8dda846ac7b32380b3f218440a77e"
 }

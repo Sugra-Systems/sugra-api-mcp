@@ -23,6 +23,9 @@ ALIASES: dict[str, list[str]] = {
     "treasury yield": ["treasury rates", "bond yield"],
     "ip geolocation": ["network atlas", "ip address", "asn"],
     "available data sources": ["list sources", "source catalog"],
+    # MCP-9: screening-metadata intent - the sources manifest, not a screen call.
+    "corpus coverage": ["sources manifest", "screening sources", "source lists"],
+    "screening coverage": ["sources manifest", "screening sources"],
     "data sources": ["list sources", "source families"],
     "news": ["latest news", "headlines"],
     # ENERGY-1.1.1.5: EU bidding-zone / day-ahead discovery after ENTSO-E A44
@@ -142,17 +145,89 @@ _NON_TICKER_WORDS: frozenset[str] = frozenset({
     "ENTSO", "AEMO", "NESO", "NEM",
 })
 
-# Real NYSE tickers that collide with common English acronyms - AI (C3.ai Inc.)
-# and IT (Gartner Inc.) are real listed companies. These are still
-# default-excluded above, but `detect_tickers()` re-admits them when the query
-# carries strong equity-context vocabulary, so "AI revolution" stays a generic
-# AI query while "AI stock price" routes to quotes_symbol_*.
-_AMBIGUOUS_TICKERS: frozenset[str] = frozenset({
-    "AI",   # C3.ai Inc. (NYSE: AI)
-    "IT",   # Gartner Inc. (NYSE: IT)
-    "IP",   # International Paper (NYSE: IP) - also the networking acronym
-    "NAT",  # Nordic American Tankers (NYSE: NAT) - also network address translation
+# MCP-9 (audit P1-3): the ticker gate is INVERTED. The old default-allow
+# blacklist was patched three times (IXP 2026-06-07, IMF/org acronyms MCP-4.9,
+# ENTSO/grid ENERGY-1.1.1.5) - a guard patched three times is the wrong guard.
+# Now a ticker-shaped token counts as a ticker ONLY when the query carries
+# equity-context vocabulary, OR the token is on this short high-liquidity
+# whitelist where a bare mention almost always means the instrument. The
+# _NON_TICKER_WORDS list above remains a hard NEVER list (currencies, org
+# acronyms) that wins even over equity context.
+_TICKER_WHITELIST: frozenset[str] = frozenset({
+    # Mega-cap equities
+    "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "NVDA", "TSLA", "META", "NFLX",
+    "AMD", "INTC", "ORCL", "IBM", "CRM", "AVGO", "QCOM", "ADBE", "CSCO",
+    "JPM", "BAC", "GS", "WFC", "BRK.A", "BRK.B",
+    "XOM", "CVX", "WMT", "KO", "PEP", "DIS", "BA", "CAT", "JNJ", "PFE",
+    "UNH", "HD", "MCD", "NKE",
+    # Index ETFs
+    "SPY", "QQQ", "IWM", "DIA", "VTI", "VOO",
 })
+
+# National-source geography (MCP-9): operation_id prefix -> ISO2 country of
+# the NATIONAL source. Used by search to demote a national source when the
+# query names a DIFFERENT country - the audit's 'Georgia CPI' returned the UK
+# ons_cpi top-1. Global/multi-country sources are deliberately absent (never
+# demoted). Curated, like the central-bank prefix map above.
+SOURCE_COUNTRY_PREFIXES: dict[str, str] = {
+    "ons_": "GB", "boe_": "GB",
+    "rba_": "AU", "abs_": "AU",
+    "boc_": "CA", "statcan_": "CA",
+    "boj_": "JP", "estat_": "JP",
+    "snb_": "CH",
+    "riksbank_": "SE",
+    "norges_bank_": "NO",
+    "stat_finland_": "FI",
+    "statistical_agencies_statbank_dk_": "DK",
+    "destatis_": "DE",
+    "ibge_": "BR", "bcb_": "BR",
+    "bcra_": "AR", "bcrp_": "PE",
+    "rbi_": "IN", "pboc_": "CN", "cbr_": "RU",
+    "nbp_": "PL", "cnb_": "CZ", "bnm_": "MY",
+    "stat_estonia_": "EE",
+    "fred_": "US", "fed_": "US", "bls_": "US", "bea_": "US", "census_": "US",
+    "ine_": "ES", "istat_": "IT", "insee_": "FR",
+    "geostat_": "GE",
+}
+
+# Query-side country vocabulary for the countries above plus common mentions.
+# Lowercase token or phrase -> ISO2. Georgia maps to the COUNTRY: in a macro
+# data query ("Georgia CPI") the sovereign reading is the intended one - the
+# audit oracle explicitly treats the US-state reading as the wrong branch.
+COUNTRY_QUERY_TERMS: dict[str, str] = {
+    "united kingdom": "GB", "uk": "GB", "britain": "GB", "british": "GB",
+    "australia": "AU", "australian": "AU",
+    "canada": "CA", "canadian": "CA",
+    "japan": "JP", "japanese": "JP",
+    "switzerland": "CH", "swiss": "CH",
+    "sweden": "SE", "swedish": "SE",
+    "norway": "NO", "norwegian": "NO",
+    "finland": "FI", "finnish": "FI",
+    "denmark": "DK", "danish": "DK",
+    "germany": "DE", "german": "DE",
+    "brazil": "BR", "brazilian": "BR",
+    "argentina": "AR", "peru": "PE",
+    "india": "IN", "indian": "IN",
+    "china": "CN", "chinese": "CN",
+    "russia": "RU", "russian": "RU",
+    "poland": "PL", "polish": "PL",
+    "czech": "CZ", "czechia": "CZ",
+    "malaysia": "MY",
+    "estonia": "EE", "estonian": "EE",
+    "spain": "ES", "spanish": "ES",
+    "italy": "IT", "italian": "IT",
+    "france": "FR", "french": "FR",
+    "georgia": "GE", "georgian": "GE",
+    "united states": "US", "usa": "US", "america": "US", "american": "US",
+}
+
+
+def detect_query_countries(query: str) -> set[str]:
+    """ISO2 countries the query explicitly names (token/phrase-bounded)."""
+    return {
+        COUNTRY_QUERY_TERMS[term]
+        for term in _match_vocabulary(query, tuple(COUNTRY_QUERY_TERMS))
+    }
 
 # Strong-signal tokens that indicate an equity query when present near an
 # otherwise-ambiguous ticker. Kept narrow on purpose; expanding too far would
@@ -239,27 +314,27 @@ def matching_aliases(query: str) -> dict[str, list[str]]:
 def detect_tickers(query: str) -> list[str]:
     """Return likely stock ticker tokens (e.g. AAPL, MSFT, BRK.A) found in the raw query.
 
-    Heuristic: 2-5 uppercase letters not in the known non-ticker word list (CPI,
-    USD, CEO, etc.). Ambiguous symbols that are both common acronyms AND real
-    NYSE tickers (AI, IT) are re-admitted when the query carries equity-context
-    vocabulary - so "AI revolution" stays a generic AI question while "AI stock
-    price" lands on quotes_symbol_*.
+    MCP-9 inverted gate: a 2-5 uppercase token is a ticker ONLY when the query
+    carries equity-context vocabulary (price, stock, dividend, ...) or the
+    token is on the short high-liquidity whitelist (AAPL, SPY, ...). The
+    _NON_TICKER_WORDS hard list (CPI, USD, IMF, ...) always wins. So "AI
+    revolution" and "search FRED series" stay non-equity while "AI stock
+    price" and bare "NVDA today" land on quotes_symbol_*.
     """
     matches = TICKER_TOKEN_RE.findall(query)
     if not matches:
         return []
 
+    # MCP-9 inverted gate: equity context (or the high-liquidity whitelist)
+    # ADMITS a ticker-shaped token; the hard NEVER list still wins over both.
+    # The old default-allow blacklist misread FRED, AIS, RF, MMSI, IMF and
+    # every future acronym as equities until someone patched the list again.
     has_equity_context = query_has_equity_context(query)
     result: list[str] = []
     for token in matches:
-        # Ambiguous tickers (AI = C3.ai, IT = Gartner) are gated on equity
-        # context first to suppress "AI revolution" / "IT support" cases.
-        if token in _AMBIGUOUS_TICKERS:
-            if has_equity_context:
-                result.append(token)
+        if token in _NON_TICKER_WORDS:
             continue
-        # Everything else flows through the non-ticker blacklist.
-        if token not in _NON_TICKER_WORDS:
+        if token in _TICKER_WHITELIST or has_equity_context:
             result.append(token)
     return result
 

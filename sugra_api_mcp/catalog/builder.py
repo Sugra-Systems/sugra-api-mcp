@@ -138,8 +138,21 @@ def build_catalog_from_openapi(
                     parameters=parameters,
                     request_body_required=request_body_required,
                     request_body_schema=_request_body_schema(operation, schemas),
+                    deprecated=bool(operation.get("deprecated", False)),
                 )
             )
+
+    # MCP-9: resolve replaced_by for deprecated operations. The platform's
+    # deprecation pattern is a v1 path re-published under /v2/ with the same
+    # trailing path; when exactly that live twin exists, name it so search can
+    # keep the deprecated route strictly below its replacement.
+    by_path = {(e.method, e.path): e.operation_id for e in endpoints}
+    for i, e in enumerate(endpoints):
+        if not e.deprecated or "/v1/" not in e.path:
+            continue
+        twin = by_path.get((e.method, e.path.replace("/v1/", "/v2/", 1)))
+        if twin:
+            endpoints[i] = e.model_copy(update={"replaced_by": twin})
 
     return Catalog(
         source=source,
