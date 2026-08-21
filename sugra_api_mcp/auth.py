@@ -145,7 +145,9 @@ class Authenticator:
         # legitimate JWTs), and a failing JWKS endpoint puts the whole JWT
         # path on a short cooldown instead of hammering the pool.
         self._jwks_gate = asyncio.Semaphore(JWKS_ADMISSION_SLOTS)
-        self._jwks_failed_at = 0.0
+        # -inf: monotonic() can be near zero right after boot -
+        # a 0.0 init would false-arm the cooldown (agy r3).
+        self._jwks_failed_at = float("-inf")
         # Short-TTL cache of a PASSING activity validation per token jti:
         # the check ran an internal HTTP round-trip on EVERY tool call.
         # Failures are never cached; the TTL only coarsens the activity
