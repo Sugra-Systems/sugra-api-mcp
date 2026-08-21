@@ -204,9 +204,10 @@ from ._countries import COUNTRY_QUERY_TERMS  # noqa: E402 - documented above
 # ambiguous name is DROPPED when the query carries explicit US-state cues -
 # 'Georgia census states' must not penalize the US census namespace.
 _AMBIGUOUS_US_STATE_COUNTRIES: dict[str, str] = {"georgia": "GE"}
+# NOTE: deliberately excludes "us"/"usa" - those tokens are the US COUNTRY
+# reading itself ('US CPI inflation'); a state needs a state-shaped cue.
 _US_STATE_CUES: tuple[str, ...] = (
-    "state", "states", "census", "county", "counties", "acs",
-    "atlanta", "us", "usa", "u.s.",
+    "state", "states", "census", "county", "counties", "acs", "atlanta",
 )
 
 # codex review: compact queries use bare ISO2 codes ('NL CPI inflation').
@@ -218,20 +219,6 @@ _ISO2_QUERY_RE = re.compile(r"\b[A-Z]{2}\b")
 # US postal codes that are ALSO valid ISO2 countries (agy r3 + codex r3):
 # resolved by surrounding intent in detect_query_countries - macro vocabulary
 # keeps the country reading, a US-state cue (or no cue) keeps the postal one.
-# grok clearing round: ONE admission policy. Every valid ISO2 country code
-# that collides with anything - a US postal code OR an uppercase English
-# word - resolves through the same macro-vs-state-cue intent gate. Codes
-# that are not countries never get here (the _ISO2_CODES_ALL membership
-# check drops them), so no separate blanket list exists to shadow the gate.
-_ISO2_INTENT_GATED: frozenset[str] = frozenset({
-    # postal collisions
-    "CA", "IL", "AZ", "MN", "NC",
-    "PA", "LA", "MA", "MD", "MO", "AL", "AR", "CO", "DE", "GA", "ID",
-    "KY", "MS", "MT", "NE", "SC", "SD", "TN", "VA",
-    "IN", "ME", "AS", "PR", "GU", "VI",
-    # uppercase-English-word collisions that ARE countries
-    "IS", "IT", "BE", "AT", "NO", "DO", "TO", "AM", "BY", "SO", "MY",
-})
 
 # Macro vocabulary that marks a bare colliding code as a COUNTRY.
 _COUNTRY_MACRO_CUES: tuple[str, ...] = (
@@ -245,10 +232,11 @@ _ISO2_CODES_ALL: frozenset[str] = frozenset(COUNTRY_QUERY_TERMS.values())
 def detect_query_countries(query: str) -> set[str]:
     """ISO2 countries the query explicitly names.
 
-    Token/phrase-bounded names and demonyms, plus bare UPPERCASE ISO2 codes
-    from the raw query (ambiguous English-word and US-postal collisions
-    excluded). Sovereign readings of country/US-state homonyms are dropped
-    when explicit US-state cues are present.
+    Token/phrase-bounded names and demonyms resolve directly. Bare
+    UPPERCASE ISO2 codes resolve only under the uniform intent gate: macro
+    vocabulary present and no US-state cue - one rule for every collision
+    class (English words, US postal codes, acronyms). Sovereign readings of
+    country/US-state homonym NAMES are likewise dropped under state cues.
     """
     # codex r3: overlapping matches resolve longest-phrase-first -
     # 'American Samoa' must be AS alone, not AS+US ('american')+WS ('samoa'),
@@ -282,19 +270,18 @@ def detect_query_countries(query: str) -> set[str]:
         if term_alive:
             kept.append(term)
     found = {COUNTRY_QUERY_TERMS[term] for term in kept}
+    # grok confirmation (terminal simplification): NO enumerated collision
+    # sets - every bare uppercase ISO2 code resolves through the SAME rule:
+    # macro vocabulary present and no US-state cue. Hand-enumerated gated
+    # sets leaked a new collision every round (AS, MP, AI, TV, HR...);
+    # a uniform gate has nothing to leak. Full country names and demonyms
+    # (above) still resolve without a cue.
     macro_cue = bool(_match_vocabulary(query, _COUNTRY_MACRO_CUES))
     state_cue = bool(_match_vocabulary(query, _US_STATE_CUES))
-    for code in _ISO2_QUERY_RE.findall(query):
-        if code not in _ISO2_CODES_ALL:
-            continue
-        if code in _ISO2_INTENT_GATED:
-            # A colliding code keeps its COUNTRY reading only when the query
-            # carries macro vocabulary and no US-state cue ('IT CPI
-            # inflation' is Italy; 'IT support costs' is not).
-            if macro_cue and not state_cue:
+    if macro_cue and not state_cue:
+        for code in _ISO2_QUERY_RE.findall(query):
+            if code in _ISO2_CODES_ALL:
                 found.add(code)
-            continue
-        found.add(code)
     if found & set(_AMBIGUOUS_US_STATE_COUNTRIES.values()):
         cues = set(_match_vocabulary(query, _US_STATE_CUES))
         if cues:

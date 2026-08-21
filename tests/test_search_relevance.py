@@ -855,18 +855,20 @@ def test_all_territory_postal_codes_pass_the_intent_gate() -> None:
     assert d("ME state census") == set()
 
 
-def test_one_iso2_admission_policy() -> None:
-    """grok clearing round: every colliding valid country code goes through
-    the SAME intent gate - no blanket list can shadow it ('AS' was dead)."""
-    from sugra_api_mcp.catalog.aliases import _ISO2_CODES_ALL, _ISO2_INTENT_GATED
+def test_uniform_iso2_intent_gate() -> None:
+    """grok terminal round: NO enumerated collision sets - every bare
+    uppercase ISO2 code resolves through one macro-vs-state rule, so there
+    is no list to leak the next collision (AS, MP, AI, TV, HR...)."""
     from sugra_api_mcp.catalog.aliases import detect_query_countries as d
 
-    assert _ISO2_INTENT_GATED <= _ISO2_CODES_ALL, (
-        "gated entries must all be valid countries")
     assert d("AS CPI inflation") == {"AS"}
     assert d("IT CPI inflation") == {"IT"}
+    assert d("MP CPI inflation") == {"MP"}
+    assert d("HR unemployment") == {"HR"}
+    assert d("US CPI inflation") == {"US"}
     assert d("IS THE MARKET OPEN") == set()
-
+    assert d("IT support costs") == set()
+    assert d("IL state census") == set()
 
 def test_american_samoa_macro_does_not_route_to_fred(catalog) -> None:
     """codex final: cross-detector conflict - 'American' inside 'American
