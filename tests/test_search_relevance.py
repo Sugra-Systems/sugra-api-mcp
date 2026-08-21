@@ -793,12 +793,35 @@ def test_unmatched_replacement_clamps_the_deprecated_route_out(catalog) -> None:
             assert rep in ids and ids.index(rep) < ids.index(dep)
 
 
-def test_us_postal_country_collisions_are_not_bare_codes() -> None:
-    """agy r3: CA/IL/AZ/MN/NC are US postal codes first - the bare-code
-    country reading is dropped; full names still detect."""
+def test_us_postal_country_collisions_resolve_by_intent() -> None:
+    """agy r3 + codex r4 (deliberate refinement): colliding codes read as a
+    COUNTRY under macro vocabulary, as postal under state cues or none."""
     from sugra_api_mcp.catalog.aliases import detect_query_countries
 
-    for q in ("CA CPI inflation", "IL unemployment", "AZ housing"):
-        assert detect_query_countries(q) == set(), q
+    assert detect_query_countries("CA CPI inflation") == {"CA"}
+    assert detect_query_countries("IL unemployment") == {"IL"}
+    assert detect_query_countries("AZ housing") == set()
     assert detect_query_countries("Canada CPI inflation") == {"CA"}
     assert detect_query_countries("Israel CPI") == {"IL"}
+
+
+def test_compound_country_phrases_resolve_longest_first() -> None:
+    """codex r4: 'American Samoa' is AS alone - component matches (american
+    -> US, samoa -> WS) must not survive and defeat the geo guard."""
+    from sugra_api_mcp.catalog.aliases import detect_query_countries
+
+    assert detect_query_countries("American Samoa CPI inflation") == {"AS"}
+
+
+def test_colliding_codes_resolve_by_intent() -> None:
+    from sugra_api_mcp.catalog.aliases import detect_query_countries
+
+    assert detect_query_countries("IL CPI inflation") == {"IL"}
+    assert detect_query_countries("CA central bank rate") == {"CA"}
+    assert detect_query_countries("IL state census") == set()
+    assert detect_query_countries("AZ housing permits") == set()
+
+
+def test_bare_dotted_ticker_is_sole_token() -> None:
+    assert detect_tickers("HEI.A") == ["HEI.A"]
+    assert detect_tickers("HEI.A today") == ["HEI.A"]

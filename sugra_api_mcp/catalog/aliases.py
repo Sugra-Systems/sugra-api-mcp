@@ -220,10 +220,21 @@ _ISO2_AMBIGUOUS: frozenset[str] = frozenset({
     "OK", "HI", "OH", "PA", "LA", "MA", "MD", "MO", "AL", "AR", "CO", "CT",
     "DE", "GA", "ID", "KY", "MS", "MT", "NE", "NV", "SC", "SD", "TN", "UT",
     "VA", "WA", "WI", "WY",
-    # agy r3: US postal codes that are ALSO valid ISO2 countries - the
-    # bare-code reading is dropped (full country names still work).
+})
+
+# US postal codes that are ALSO valid ISO2 countries (agy r3 + codex r3):
+# resolved by surrounding intent in detect_query_countries - macro vocabulary
+# keeps the country reading, a US-state cue (or no cue) keeps the postal one.
+_ISO2_POSTAL_COLLISIONS: frozenset[str] = frozenset({
     "CA", "IL", "AZ", "MN", "NC",
 })
+
+# Macro vocabulary that marks a bare colliding code as a COUNTRY.
+_COUNTRY_MACRO_CUES: tuple[str, ...] = (
+    "cpi", "inflation", "gdp", "unemployment", "central bank",
+    "interest rate", "policy rate", "exchange rate", "trade balance",
+    "current account", "bond yield",
+)
 _ISO2_CODES_ALL: frozenset[str] = frozenset(COUNTRY_QUERY_TERMS.values())
 
 
@@ -235,13 +246,31 @@ def detect_query_countries(query: str) -> set[str]:
     excluded). Sovereign readings of country/US-state homonyms are dropped
     when explicit US-state cues are present.
     """
-    found = {
-        COUNTRY_QUERY_TERMS[term]
-        for term in _match_vocabulary(query, tuple(COUNTRY_QUERY_TERMS))
-    }
+    # codex r3: overlapping matches resolve longest-phrase-first -
+    # 'American Samoa' must be AS alone, not AS+US ('american')+WS ('samoa'),
+    # or the US component defeats the wrong-country guard entirely.
+    matched = _match_vocabulary(query, tuple(COUNTRY_QUERY_TERMS))
+    matched = [
+        term for term in matched
+        if not any(term != other and f" {term} " in f" {other} "
+                   for other in matched)
+    ]
+    found = {COUNTRY_QUERY_TERMS[term] for term in matched}
+    macro_cue = bool(_match_vocabulary(query, _COUNTRY_MACRO_CUES))
+    state_cue = bool(_match_vocabulary(query, _US_STATE_CUES))
     for code in _ISO2_QUERY_RE.findall(query):
-        if code in _ISO2_CODES_ALL and code not in _ISO2_AMBIGUOUS:
-            found.add(code)
+        if code not in _ISO2_CODES_ALL:
+            continue
+        if code in _ISO2_AMBIGUOUS:
+            continue
+        if code in _ISO2_POSTAL_COLLISIONS:
+            # codex r3: a colliding code keeps its COUNTRY reading when the
+            # query carries macro vocabulary and no US-state cue ('IL CPI
+            # inflation' is Israel); otherwise it stays a postal code.
+            if macro_cue and not state_cue:
+                found.add(code)
+            continue
+        found.add(code)
     if found & set(_AMBIGUOUS_US_STATE_COUNTRIES.values()):
         cues = set(_match_vocabulary(query, _US_STATE_CUES))
         if cues:
@@ -358,15 +387,17 @@ def detect_tickers(query: str) -> list[str]:
     # with temporal filler) is a quote lookup - there is no other intent the
     # query could carry. Acronym safety is preserved: multi-token queries
     # ('search FRED series for gold') still require context or whitelist.
-    substantive = [
-        t for t in _WORD_TOKEN_RE.findall(query.lower())
+    # codex r3: judge sole-ness on what REMAINS after removing the ticker
+    # match itself - the word tokenizer splits dotted class shares (HEI.A)
+    # into two tokens and wrongly disqualified them.
+    remainder = query
+    if len(matches) == 1:
+        remainder = remainder.replace(matches[0], " ", 1)
+    leftover = [
+        t for t in _WORD_TOKEN_RE.findall(remainder.lower())
         if t not in _BARE_TICKER_FILLER
     ]
-    sole = (
-        len(matches) == 1
-        and len(substantive) == 1
-        and substantive[0] == matches[0].lower()
-    )
+    sole = len(matches) == 1 and not leftover
     result: list[str] = []
     for token in matches:
         if token in _NON_TICKER_WORDS:
