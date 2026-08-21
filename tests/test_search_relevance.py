@@ -836,3 +836,20 @@ def test_postal_iso2_countries_resolve_by_intent_everywhere() -> None:
     assert d("AR central bank rate") == {"AR"}
     assert d("CO inflation") == {"CO"}
     assert d("DE state census") == set()
+
+
+def test_component_country_survives_outside_the_compound() -> None:
+    """codex confirm: a component term dies only where its span lies inside
+    a longer match - separate occurrences survive."""
+    from sugra_api_mcp.catalog.aliases import detect_query_countries as d
+
+    assert d("American Samoa and American government TIPS") == {"AS", "US"}
+    assert d("American Samoa CPI inflation") == {"AS"}
+
+
+def test_all_territory_postal_codes_pass_the_intent_gate() -> None:
+    from sugra_api_mcp.catalog.aliases import detect_query_countries as d
+
+    assert d("IN CPI inflation") == {"IN"}
+    assert d("PR CPI inflation") == {"PR"}
+    assert d("ME state census") == set()

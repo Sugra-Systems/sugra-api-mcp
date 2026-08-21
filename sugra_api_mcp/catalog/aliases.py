@@ -215,7 +215,7 @@ _US_STATE_CUES: tuple[str, ...] = (
 # country the US-macro path expects).
 _ISO2_QUERY_RE = re.compile(r"\b[A-Z]{2}\b")
 _ISO2_AMBIGUOUS: frozenset[str] = frozenset({
-    "IN", "IS", "IT", "BE", "AT", "ON", "OR", "SO", "NO", "ME", "MY", "WE",
+    "IS", "IT", "BE", "AT", "ON", "OR", "SO", "NO", "MY", "WE",
     "DO", "GO", "HE", "AN", "AS", "BY", "IF", "OF", "TO", "UP", "AM", "PM",
     # Postal codes that are NOT valid ISO2 countries stay here outright.
     "OK", "HI", "OH", "CT", "NV", "UT", "WA", "WI", "WY",
@@ -231,6 +231,10 @@ _ISO2_POSTAL_COLLISIONS: frozenset[str] = frozenset({
     "CA", "IL", "AZ", "MN", "NC",
     "PA", "LA", "MA", "MD", "MO", "AL", "AR", "CO", "DE", "GA", "ID",
     "KY", "MS", "MT", "NE", "SC", "SD", "TN", "VA",
+    # agy confirm: IN/ME/AS are countries too (uppercase + macro cue gates
+    # the English-word risk); PR/GU/VI are US-territory ISO codes that must
+    # also pass the intent gate, not resolve unconditionally.
+    "IN", "ME", "AS", "PR", "GU", "VI",
 })
 
 # Macro vocabulary that marks a bare colliding code as a COUNTRY.
@@ -254,12 +258,34 @@ def detect_query_countries(query: str) -> set[str]:
     # 'American Samoa' must be AS alone, not AS+US ('american')+WS ('samoa'),
     # or the US component defeats the wrong-country guard entirely.
     matched = _match_vocabulary(query, tuple(COUNTRY_QUERY_TERMS))
-    matched = [
-        term for term in matched
-        if not any(term != other and f" {term} " in f" {other} "
-                   for other in matched)
-    ]
-    found = {COUNTRY_QUERY_TERMS[term] for term in matched}
+    # codex confirm: suppression is OCCURRENCE-aware - a component term dies
+    # only where every one of its spans lies inside a longer match ('American
+    # Samoa and American government' keeps the separate US reading).
+    tokens = _WORD_TOKEN_RE.findall(query.lower())
+    normalized = " " + " ".join(tokens) + " "
+    def _spans(term):
+        needle = f" {term} "
+        out, i = [], 0
+        while True:
+            j = normalized.find(needle, i)
+            if j < 0:
+                return out
+            out.append((j, j + len(needle)))
+            i = j + 1
+    kept = []
+    for term in matched:
+        longer = [o for o in matched if o != term and f" {term} " in f" {o} "]
+        if not longer:
+            kept.append(term)
+            continue
+        covered_spans = [sp for o in longer for sp in _spans(o)]
+        term_alive = any(
+            not any(cs[0] <= ts[0] and ts[1] <= cs[1] for cs in covered_spans)
+            for ts in _spans(term)
+        )
+        if term_alive:
+            kept.append(term)
+    found = {COUNTRY_QUERY_TERMS[term] for term in kept}
     macro_cue = bool(_match_vocabulary(query, _COUNTRY_MACRO_CUES))
     state_cue = bool(_match_vocabulary(query, _US_STATE_CUES))
     for code in _ISO2_QUERY_RE.findall(query):
