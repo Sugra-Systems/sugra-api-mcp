@@ -892,3 +892,24 @@ def test_adjectival_compound_territories_do_not_read_as_us(catalog) -> None:
     assert results
     assert not results[0]["operation_id"].startswith(("fred_", "fed_")), (
         f"adjectival AS query routed US: {[r['operation_id'] for r in results]}")
+
+
+def test_ticker_whitelist_never_shadows_a_country_code() -> None:
+    """grok final: an unconditional whitelist entry that is ALSO a valid
+    ISO2 country defeats the geography guard ('BA CPI inflation' read as
+    Boeing). Invariant: no whitelist entry is a country code; the bare quote
+    lookups still work through sole-token and equity-context admission."""
+    from sugra_api_mcp.catalog.aliases import (
+        _ISO2_CODES_ALL,
+        _TICKER_WHITELIST,
+        detect_query_countries,
+        detect_tickers,
+    )
+
+    overlap = {t for t in _TICKER_WHITELIST if t in _ISO2_CODES_ALL}
+    assert not overlap, f"whitelist entries shadowing countries: {sorted(overlap)}"
+    assert detect_tickers("BA CPI inflation") == []
+    assert detect_query_countries("BA CPI inflation") == {"BA"}
+    assert detect_tickers("BA") == ["BA"]          # sole token
+    assert detect_tickers("GS today") == ["GS"]    # sole + filler
+    assert detect_tickers("BA stock price") == ["BA"]  # equity context
