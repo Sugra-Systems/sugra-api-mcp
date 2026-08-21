@@ -326,3 +326,33 @@ async def test_one_diagnostic_carries_flat_and_group_requirements(monkeypatch):
     assert result["missing"] == ["start_date"]
     assert result["required_groups"] == [["latitude", "longitude"], ["city"]]
     assert "at least one group" in result["groups_hint"]
+
+
+@pytest.mark.anyio
+async def test_fetch_data_one_diagnostic_carries_both(monkeypatch):
+    """codex r4: fetch_data reports flat missing AND groups in one shot."""
+    import sugra_api_mcp.tools.gateway as gw
+
+    ep = _endpoint(
+        parameters=[
+            {"name": "start_date", "location": "query", "required": True},
+            {"name": "latitude", "location": "query", "required": False},
+            {"name": "longitude", "location": "query", "required": False},
+            {"name": "city", "location": "query", "required": False},
+        ],
+        required_parameters=["start_date"],
+        required_groups=[["latitude", "longitude"], ["city"]],
+    )
+
+    class _FakeCatalog:
+        def get(self, operation_id):
+            return ep
+
+    monkeypatch.setattr(gw, "load_catalog", lambda: _FakeCatalog())
+    monkeypatch.setattr(gw, "search_catalog",
+                        lambda *a, **k: [{"operation_id": "weather_current",
+                                          "summary": "Current weather"}])
+    result = await gw.fetch_data(query="weather history", params={})
+    assert result["needs_params"] == ["start_date"]
+    assert result["selected_endpoint"]["required_groups"] == [
+        ["latitude", "longitude"], ["city"]]

@@ -373,17 +373,6 @@ async def fetch_data(
             }
 
         clean_params = {key: value for key, value in (params or {}).items() if value is not None}
-        violation = _group_violation(endpoint, clean_params)
-        if violation:
-            return {
-                "error": "missing_required_parameter_groups",
-                "operation_id": operation_id,
-                "groups": [list(group) for group in endpoint.required_groups],
-                "hint": ("supply every parameter of EXACTLY one group"
-                         if violation == "multiple"
-                         else "supply every parameter of at least one group"),
-                "candidate_endpoints": results,
-            }
         missing = _missing_required(endpoint, clean_params, body)
 
         if missing:
@@ -423,6 +412,18 @@ async def fetch_data(
                     f"Retry as fetch_data(query, params={{...}}) with those keys filled in, "
                     f"or call describe_endpoint(operation_id) for full schema."
                 ),
+            }
+
+        violation = _group_violation(endpoint, clean_params)
+        if violation:
+            return {
+                "error": "missing_required_parameter_groups",
+                "operation_id": operation_id,
+                "groups": [list(group) for group in endpoint.required_groups],
+                "hint": ("supply every parameter of EXACTLY one group"
+                         if violation == "multiple"
+                         else "supply every parameter of at least one group"),
+                "candidate_endpoints": results,
             }
 
         # All required params satisfied — delegate to the same call path as
