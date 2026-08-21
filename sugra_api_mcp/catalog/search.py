@@ -17,9 +17,6 @@ from .aliases import (
     matching_central_bank_prefixes,
     query_has_equity_context,
 )
-from .aliases import (
-    COUNTRY_QUERY_TERMS as _COUNTRY_TERMS_FOR_COVERAGE,
-)
 from .models import Catalog, Endpoint
 
 TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -318,8 +315,10 @@ def _score(
     # stem: 'geocode' -> 'geocoding') pins the domain. Except when the term
     # only appears inside a proper-name compound ('federal FUNDS rate' names
     # an interest rate, not the funds toolset).
+    # agy review: an EMPTY toolset made startswith('') true for every term
+    # and handed the intent boost to toolset-less endpoints on any query.
     toolset_lower = endpoint.toolset.lower()
-    for term in query_terms:
+    for term in query_terms if len(toolset_lower) >= 4 else ():
         if term in coverage_excluded:
             continue
         if term == toolset_lower or (
@@ -471,9 +470,9 @@ def search_catalog(
     for compound in _PROPER_NAME_COMPOUNDS:
         if f" {compound} " in normalized_query:
             consumed.update(compound.split())
-    for term, code in _COUNTRY_TERMS_FOR_COVERAGE.items():
-        if code in query_countries:
-            consumed.update(_tokens(term))
+    # Country tokens are NOT consumed (agy review): geography grants no
+    # positive boost, so consuming them would strip the CORRECT national
+    # source of the coverage credit for the country the user typed.
     coverage_excluded = frozenset(consumed)
 
     scored: list[tuple[int, Endpoint, list[str]]] = []
@@ -499,6 +498,18 @@ def search_catalog(
         )
         if score > 0:
             scored.append((score, endpoint, why))
+
+    # MCP-9 structural guarantee: a deprecated route never outranks its live
+    # replacement, whatever the token luck (a query built from the legacy
+    # summary text otherwise always wins textually). Clamp strictly below.
+    by_id = {endpoint.operation_id: score for score, endpoint, _ in scored}
+    for i, (score, endpoint, why) in enumerate(scored):
+        if endpoint.deprecated and endpoint.replaced_by:
+            rep_score = by_id.get(endpoint.replaced_by)
+            if rep_score is not None and score >= rep_score:
+                scored[i] = (rep_score - 1, endpoint,
+                             [*why, f"clamped-below:{endpoint.replaced_by}"])
+
     scored.sort(key=lambda item: (-item[0], item[1].operation_id))
     return [
         {

@@ -672,3 +672,72 @@ def test_audit_eval_deprecated_never_above_replacement(catalog) -> None:
 ])
 def test_audit_eval_acronyms_are_not_tickers(query) -> None:
     assert detect_tickers(query) == []
+
+
+# ---- MCP-9 review round: codex + agy findings pinned -------------------------
+
+@pytest.mark.parametrize("query,expected", [
+    ("PLTR", ["PLTR"]),               # sole substantive token = quote lookup
+    ("PLTR today", ["PLTR"]),         # temporal filler does not change it
+    ("search FRED series for gold", []),   # multi-token stays context-gated
+])
+def test_bare_sole_ticker_is_admitted(query, expected) -> None:
+    assert detect_tickers(query) == expected
+
+
+def test_bare_ticker_routes_to_quotes(catalog) -> None:
+    results = search_catalog(catalog, "PLTR today", limit=3)
+    assert results and results[0]["operation_id"].startswith("quotes_symbol_"), (
+        f"bare ticker lost symbol routing: {[r['operation_id'] for r in results]}")
+
+
+def test_unlisted_country_is_still_detected(catalog) -> None:
+    """codex review: the closed vocabulary recreated silent substitution for
+    every omitted country - the generated module must know them all."""
+    from sugra_api_mcp.catalog.aliases import SOURCE_COUNTRY_PREFIXES, detect_query_countries
+
+    assert detect_query_countries("Netherlands CPI inflation") == {"NL"}
+    results = search_catalog(catalog, "Netherlands CPI inflation", limit=3)
+    assert results
+    top = results[0]["operation_id"]
+    for prefix, country in SOURCE_COUNTRY_PREFIXES.items():
+        if top.startswith(prefix):
+            assert country == "NL", (
+                f"top-1 {top!r} is a {country} national source for a NL query")
+
+
+def test_source_country_prefixes_match_live_operations(catalog) -> None:
+    """Dead-prefix guard (codex review: bcra_/bcrp_ mapped a namespace that
+    does not exist in the bundle while central_banks_bcra_ evaded the
+    penalty). Every mapped prefix must match at least one bundled op."""
+    from sugra_api_mcp.catalog.aliases import SOURCE_COUNTRY_PREFIXES
+
+    ids = [e.operation_id for e in catalog.endpoints]
+    dead = [p for p in SOURCE_COUNTRY_PREFIXES
+            if not any(op.startswith(p) for op in ids)]
+    assert not dead, f"country prefixes matching no bundled operation: {dead}"
+
+
+def test_every_deprecated_operation_resolves_or_is_allowlisted(catalog) -> None:
+    from sugra_api_mcp.catalog.builder import DEPRECATED_WITHOUT_REPLACEMENT
+
+    unresolved = [e.operation_id for e in catalog.endpoints
+                  if e.deprecated and not e.replaced_by
+                  and e.operation_id not in DEPRECATED_WITHOUT_REPLACEMENT]
+    assert not unresolved, f"deprecated without twin or allowlist: {unresolved}"
+
+
+def test_empty_toolset_gets_no_intent_boost() -> None:
+    """agy review: startswith('') is True for every term - a toolset-less
+    endpoint must never collect the intent boost."""
+    from sugra_api_mcp.catalog.models import Endpoint
+    from sugra_api_mcp.catalog.search import _score
+
+    endpoint = Endpoint(operation_id="x_op", method="GET", path="/x",
+                        summary="anything at all", toolset="")
+    _score_value, why = _score(
+        endpoint, ["anything"], {},
+        boost_quotes_symbol=False, boost_markets_toolset=False,
+        boost_symbol_input=False, boost_forex=False, boost_crypto=False,
+        boost_us_macro=False, central_bank_prefixes=[], query_countries=set())
+    assert not any(w.startswith("toolset-intent") for w in why), why

@@ -180,46 +180,25 @@ SOURCE_COUNTRY_PREFIXES: dict[str, str] = {
     "stat_finland_": "FI",
     "statistical_agencies_statbank_dk_": "DK",
     "destatis_": "DE",
-    "ibge_": "BR", "bcb_": "BR",
-    "bcra_": "AR", "bcrp_": "PE",
-    "rbi_": "IN", "pboc_": "CN", "cbr_": "RU",
+    "statistical_agencies_ibge_": "BR", "bcb_": "BR",
+    "central_banks_bcra_": "AR",
+    "central_banks_bcrp_": "PE",
+    "central_banks_sarb_": "ZA",
+    "forex_cbr_": "RU",
     "nbp_": "PL", "cnb_": "CZ", "bnm_": "MY",
-    "stat_estonia_": "EE",
-    "fred_": "US", "fed_": "US", "bls_": "US", "bea_": "US", "census_": "US",
-    "ine_": "ES", "istat_": "IT", "insee_": "FR",
-    "geostat_": "GE",
+    "statistical_agencies_stat_estonia_": "EE",
+    "fred_": "US", "fed_": "US", "worldbank_bls_": "US", "bea_": "US",
+    "census_": "US",
+    "ine_": "ES",
 }
+# The dead-prefix test (tests/test_search_relevance.py) guards this map: every
+# entry must match at least one bundled operation, so a source rename or
+# removal fails loudly instead of silently disarming the geography penalty.
 
-# Query-side country vocabulary for the countries above plus common mentions.
-# Lowercase token or phrase -> ISO2. Georgia maps to the COUNTRY: in a macro
-# data query ("Georgia CPI") the sovereign reading is the intended one - the
-# audit oracle explicitly treats the US-state reading as the wrong branch.
-COUNTRY_QUERY_TERMS: dict[str, str] = {
-    "united kingdom": "GB", "uk": "GB", "britain": "GB", "british": "GB",
-    "australia": "AU", "australian": "AU",
-    "canada": "CA", "canadian": "CA",
-    "japan": "JP", "japanese": "JP",
-    "switzerland": "CH", "swiss": "CH",
-    "sweden": "SE", "swedish": "SE",
-    "norway": "NO", "norwegian": "NO",
-    "finland": "FI", "finnish": "FI",
-    "denmark": "DK", "danish": "DK",
-    "germany": "DE", "german": "DE",
-    "brazil": "BR", "brazilian": "BR",
-    "argentina": "AR", "peru": "PE",
-    "india": "IN", "indian": "IN",
-    "china": "CN", "chinese": "CN",
-    "russia": "RU", "russian": "RU",
-    "poland": "PL", "polish": "PL",
-    "czech": "CZ", "czechia": "CZ",
-    "malaysia": "MY",
-    "estonia": "EE", "estonian": "EE",
-    "spain": "ES", "spanish": "ES",
-    "italy": "IT", "italian": "IT",
-    "france": "FR", "french": "FR",
-    "georgia": "GE", "georgian": "GE",
-    "united states": "US", "usa": "US", "america": "US", "american": "US",
-}
+# Query-side country vocabulary: comprehensive generated module (codex/agy
+# review: a closed 30-entry list recreated silent substitution for every
+# omitted country - Netherlands CPI still returned the UK ons_cpi).
+from ._countries import COUNTRY_QUERY_TERMS  # noqa: E402 - documented above
 
 
 def detect_query_countries(query: str) -> set[str]:
@@ -234,6 +213,11 @@ def detect_query_countries(query: str) -> set[str]:
 # re-introduce the false positives that motivated the exclusion list.
 # Bare "exchange" was dropped (Codex S3 review): it collides with "internet
 # exchange" and "exchange rate" - the phrase form below keeps the equity case.
+# Temporal/filler words that do not change a bare-ticker quote lookup.
+_BARE_TICKER_FILLER: frozenset[str] = frozenset({
+    "today", "now", "currently", "please", "latest",
+})
+
 _EQUITY_CONTEXT_TERMS: tuple[str, ...] = (
     "price", "stock", "ticker", "shares", "share price",
     "market cap", "dividend", "earnings", "p/e",
@@ -330,11 +314,24 @@ def detect_tickers(query: str) -> list[str]:
     # The old default-allow blacklist misread FRED, AIS, RF, MMSI, IMF and
     # every future acronym as equities until someone patched the list again.
     has_equity_context = query_has_equity_context(query)
+    # Sole-substantive-token rule (codex review): a bare 'PLTR' (optionally
+    # with temporal filler) is a quote lookup - there is no other intent the
+    # query could carry. Acronym safety is preserved: multi-token queries
+    # ('search FRED series for gold') still require context or whitelist.
+    substantive = [
+        t for t in _WORD_TOKEN_RE.findall(query.lower())
+        if t not in _BARE_TICKER_FILLER
+    ]
+    sole = (
+        len(matches) == 1
+        and len(substantive) == 1
+        and substantive[0] == matches[0].lower()
+    )
     result: list[str] = []
     for token in matches:
         if token in _NON_TICKER_WORDS:
             continue
-        if token in _TICKER_WHITELIST or has_equity_context:
+        if token in _TICKER_WHITELIST or has_equity_context or sole:
             result.append(token)
     return result
 

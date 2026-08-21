@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-08-20T23:38:30Z",
+  "built_at": "2026-08-21T00:05:03Z",
   "endpoint_count": 1556,
   "endpoints": [
     {
@@ -48516,6 +48516,7 @@
         }
       ],
       "path": "/api/v1/maritime/history/density",
+      "replaced_by": "transport_vessels_history_density",
       "request_body_required": false,
       "required_parameters": [],
       "source_family": "trade",
@@ -48548,6 +48549,7 @@
         }
       ],
       "path": "/api/v1/maritime/history/port-activity",
+      "replaced_by": "transport_vessels_history_port_activity",
       "request_body_required": false,
       "required_parameters": [],
       "source_family": "trade",
@@ -48851,6 +48853,7 @@
         }
       ],
       "path": "/api/v1/maritime/vessels/density",
+      "replaced_by": "transport_vessels_density",
       "request_body_required": false,
       "required_parameters": [],
       "source_family": "trade",
@@ -48928,6 +48931,7 @@
         }
       ],
       "path": "/api/v1/maritime/vessels/live",
+      "replaced_by": "transport_vessels_live",
       "request_body_required": false,
       "required_parameters": [],
       "source_family": "trade",
@@ -48977,6 +48981,7 @@
         }
       ],
       "path": "/api/v1/maritime/vessels/{mmsi}",
+      "replaced_by": "transport_vessels_mmsi",
       "request_body_required": false,
       "required_parameters": [
         "mmsi"
@@ -73199,6 +73204,7 @@
         }
       ],
       "path": "/api/v1/weather/current",
+      "replaced_by": "weather",
       "request_body_required": false,
       "required_parameters": [],
       "source_family": "environment",
