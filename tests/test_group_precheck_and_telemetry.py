@@ -185,3 +185,86 @@ def test_resolve_entity_docstring_mentions_new_statuses():
     doc = agent.resolve_entity.__doc__ or ""
     assert "low_confidence" in doc
     assert "crypto" in doc.lower()
+
+
+@pytest.mark.anyio
+async def test_mutually_exclusive_groups_reject_multiple(monkeypatch):
+    """codex r1: exclusivity is ENFORCED, not just recorded - completing
+    more than one exclusive group refuses before any HTTP call."""
+    import sugra_api_mcp.tools.gateway as gw
+
+    ep = _endpoint(required_groups=[["latitude", "longitude"], ["city"]],
+                   groups_mutually_exclusive=True)
+
+    class _FakeCatalog:
+        def get(self, operation_id):
+            return ep
+
+    monkeypatch.setattr(gw, "load_catalog", lambda: _FakeCatalog())
+    http = []
+
+    class _NoClient:
+        async def get(self, *a, **k):
+            http.append(1)
+            raise AssertionError("no HTTP")
+
+    monkeypatch.setattr(gw, "get_client", lambda: _NoClient())
+    result = await gw.call_endpoint(
+        operation_id="weather_current",
+        params={"latitude": 60.2, "longitude": 24.9, "city": "Helsinki"})
+    assert result["error"] == "missing_required_parameter_groups"
+    assert "EXACTLY one" in result["hint"]
+    assert http == []
+
+
+@pytest.mark.anyio
+async def test_non_exclusive_multiple_groups_dispatch(monkeypatch):
+    import sugra_api_mcp.tools.gateway as gw
+
+    ep = _endpoint(required_groups=[["latitude", "longitude"], ["city"]],
+                   groups_mutually_exclusive=False)
+
+    class _FakeCatalog:
+        def get(self, operation_id):
+            return ep
+
+    monkeypatch.setattr(gw, "load_catalog", lambda: _FakeCatalog())
+
+    class _FakeClient:
+        async def get(self, path, params=None):
+            return {"data": {"ok": True}}
+
+    monkeypatch.setattr(gw, "get_client", lambda: _FakeClient())
+    result = await gw.call_endpoint(
+        operation_id="weather_current",
+        params={"latitude": 60.2, "longitude": 24.9, "city": "Helsinki"})
+    assert "error" not in result
+
+
+@pytest.mark.anyio
+async def test_fetch_data_group_precheck(monkeypatch):
+    """agy r1: fetch_data carries the same precheck as call_endpoint."""
+    import sugra_api_mcp.tools.gateway as gw
+
+    ep = _endpoint(required_groups=[["latitude", "longitude"], ["city"]])
+
+    class _FakeCatalog:
+        def get(self, operation_id):
+            return ep
+
+    monkeypatch.setattr(gw, "load_catalog", lambda: _FakeCatalog())
+    monkeypatch.setattr(gw, "search_catalog",
+                        lambda *a, **k: [{"operation_id": "weather_current",
+                                          "summary": "Current weather"}])
+    http = []
+
+    class _NoClient:
+        async def get(self, *a, **k):
+            http.append(1)
+            raise AssertionError("no HTTP")
+
+    monkeypatch.setattr(gw, "get_client", lambda: _NoClient())
+    result = await gw.fetch_data(query="current weather",
+                                 params={"latitude": 60.2})
+    assert result["error"] == "missing_required_parameter_groups"
+    assert http == []
