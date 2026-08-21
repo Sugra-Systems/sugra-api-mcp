@@ -15,7 +15,7 @@ import time
 
 import pytest
 
-from sugra_api_mcp.auth import Authenticator, _JwtClaims
+from sugra_api_mcp.auth import AuthError, Authenticator, _JwtClaims
 from sugra_api_mcp.config import AuthConfig
 
 pytestmark = pytest.mark.anyio
@@ -145,7 +145,7 @@ async def test_activity_validation_failure_is_never_cached() -> None:
     auth._http = deny
     claims = _JwtClaims(user_id=9, access_token_id="jti-2")
     for _ in range(2):
-        with pytest.raises(Exception):
+        with pytest.raises(AuthError):
             await auth._validate_mcp_access(claims)
     assert deny.post_calls == 2, "a DENIAL must never be served from cache"
 
@@ -157,7 +157,7 @@ async def test_malformed_bearer_never_reaches_the_executor() -> None:
     submitted = []
     original = auth._jwks_executor.submit
     auth._jwks_executor.submit = lambda *a, **k: submitted.append(1) or original(*a, **k)
-    with pytest.raises(Exception):
+    with pytest.raises(AuthError):
         await auth.resolve("not.a.jwt")
     assert not submitted, "malformed token was submitted to the JWKS executor"
 
