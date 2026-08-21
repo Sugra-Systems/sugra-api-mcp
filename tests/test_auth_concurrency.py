@@ -186,13 +186,14 @@ async def test_access_cache_is_hard_bounded() -> None:
     assert len(auth._access_cache) <= auth_mod.ACCESS_CACHE_MAX_ENTRIES
 
 
-async def test_user_locks_table_is_pruned() -> None:
-    import sugra_api_mcp.auth as auth_mod
-
+async def test_user_locks_clean_themselves() -> None:
+    """codex r3: reference-counted entries - no sweep to race the release
+    window, and nothing left behind after the last user leaves."""
     auth, _ = _authenticator()
-    for uid in range(auth_mod.USER_LOCKS_PRUNE_THRESHOLD + 10):
+    for uid in range(64):
         await auth._lookup_api_key(uid)
-    assert len(auth._user_locks) <= auth_mod.USER_LOCKS_PRUNE_THRESHOLD + 1
+    assert auth._user_locks == {}, (
+        f"{len(auth._user_locks)} lock entries survived their users")
 
 
 # A structurally valid JWT shape (header.payload.signature) that parses at the
@@ -211,6 +212,7 @@ async def test_kid_path_network_failure_arms_the_cooldown() -> None:
     """agy r3: an unreachable JWKS on the STANDARD kid path must classify as
     503 and arm the cooldown - not read as an invalid token."""
     import jwt.exceptions as jexc
+
     import sugra_api_mcp.auth as auth_mod
 
     auth, _ = _authenticator()

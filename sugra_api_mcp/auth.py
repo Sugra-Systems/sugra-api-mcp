@@ -49,7 +49,6 @@ ACCESS_CACHE_MAX_ENTRIES = 4096
 # Prune BELOW the cap (agy r2): shrinking to exactly the cap re-runs the
 # O(N log N) sweep on every subsequent miss.
 ACCESS_CACHE_PRUNE_WATERMARK = ACCESS_CACHE_MAX_ENTRIES - 512
-USER_LOCKS_PRUNE_THRESHOLD = 2048
 JWKS_ADMISSION_SLOTS = 4
 JWKS_ADMISSION_WAIT_SECONDS = 2.0
 JWKS_FAILURE_COOLDOWN_SECONDS = 5.0
@@ -108,6 +107,14 @@ class ResolvedAuth:
     access_token_id: str | None = None
 
 
+class _UserLockEntry:
+    __slots__ = ("lock", "refs")
+
+    def __init__(self) -> None:
+        self.lock = asyncio.Lock()
+        self.refs = 0
+
+
 @dataclass(frozen=True)
 class _JwtClaims:
     user_id: int
@@ -126,7 +133,7 @@ class Authenticator:
         # MCP-10 (audit P1-5): per-user single-flight locks. The old single
         # Authenticator-wide lock was HELD ACROSS the internal HTTP call, so
         # every user's cold-cache lookup serialized behind every other's.
-        self._user_locks: dict[int, asyncio.Lock] = {}
+        self._user_locks: dict[int, _UserLockEntry] = {}
         # PyJWKClient does SYNCHRONOUS network I/O; on the event loop it
         # stalled every request in the process (including raw sugra_ keys)
         # whenever the key cache was cold. A DEDICATED executor keeps the
@@ -226,6 +233,14 @@ class Authenticator:
                 raise
             finally:
                 stages["key_ms"] = int((time.monotonic() - t2) * 1000)
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
+        except AuthError:
+            raise
+        except Exception:
+            outcome = "error"
+            raise
         finally:
             logger.info(
                 "auth_stages outcome=%s user_id=%d jwks_ms=%d "
@@ -324,15 +339,23 @@ class Authenticator:
         # Per-user single-flight: concurrent requests for the SAME user share
         # one fetch; different users never wait on each other. setdefault is
         # atomic under the GIL, so the occasional extra Lock object is inert.
-        # agy r2: the lock table is pruned once it grows past the
-        # threshold - an idle lock nobody holds is safe to drop (a racing
-        # setdefault simply creates a fresh one).
-        if len(self._user_locks) > USER_LOCKS_PRUNE_THRESHOLD:
-            self._user_locks = {
-                uid: lock for uid, lock in self._user_locks.items()
-                if lock.locked()
-            }
-        async with self._user_locks.setdefault(user_id, asyncio.Lock()):
+        # codex r3: entries are reference-counted and remove themselves
+        # when the last user leaves - a locked()-based sweep raced the
+        # release/wakeup window and could split the single-flight exactly
+        # on degraded lookups.
+        entry = self._user_locks.setdefault(user_id, _UserLockEntry())
+        entry.refs += 1
+        try:
+            return await self._locked_lookup(user_id, entry, now)
+        finally:
+            entry.refs -= 1
+            if entry.refs == 0 and self._user_locks.get(user_id) is entry:
+                del self._user_locks[user_id]
+
+    async def _locked_lookup(
+        self, user_id: int, entry: _UserLockEntry, now: float
+    ) -> str:
+        async with entry.lock:
             cached = self._api_key_cache.get(user_id)
             if cached and cached.expires_at > now:
                 return cached.api_key
