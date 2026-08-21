@@ -24,15 +24,23 @@ def _resolve_path(path: str, params: dict[str, Any]) -> str:
     return resolved
 
 
-def _group_uncovered(endpoint, params: dict[str, Any]) -> bool:
-    """True when the endpoint declares required parameter groups and NO
-    group is fully covered by the supplied params (audit P1-8 MCP half):
-    the runtime would answer 400, so refuse BEFORE the HTTP call with the
-    groups spelled out."""
+def _group_violation(endpoint, params: dict[str, Any]) -> str | None:
+    """Group-contract verdict BEFORE any HTTP call (audit P1-8 MCP half).
+
+    Returns "uncovered" when NO declared group is fully covered, and
+    "multiple" when the endpoint declares its groups mutually exclusive
+    and the params complete MORE than one - both would be upstream 4xxs,
+    so the gateway refuses with the groups spelled out. None = dispatch.
+    """
     groups = getattr(endpoint, "required_groups", ()) or ()
     if not groups:
-        return False
-    return not any(all(name in params for name in group) for group in groups)
+        return None
+    covered = sum(1 for group in groups if all(name in params for name in group))
+    if covered == 0:
+        return "uncovered"
+    if covered > 1 and getattr(endpoint, "groups_mutually_exclusive", False):
+        return "multiple"
+    return None
 
 
 def _missing_required(
@@ -176,12 +184,15 @@ async def call_endpoint(
                 "operation_id": operation_id,
                 "missing": missing,
             }
-        if _group_uncovered(endpoint, clean_params):
+        violation = _group_violation(endpoint, clean_params)
+        if violation:
             return {
                 "error": "missing_required_parameter_groups",
                 "operation_id": operation_id,
                 "groups": [list(group) for group in endpoint.required_groups],
-                "hint": ("supply every parameter of at least one group"
+                "hint": ("supply every parameter of EXACTLY one group"
+                         if violation == "multiple"
+                         else "supply every parameter of at least one group"
                          + (" (groups are mutually exclusive)"
                             if endpoint.groups_mutually_exclusive else "")),
             }
@@ -346,6 +357,17 @@ async def fetch_data(
             }
 
         clean_params = {key: value for key, value in (params or {}).items() if value is not None}
+        violation = _group_violation(endpoint, clean_params)
+        if violation:
+            return {
+                "error": "missing_required_parameter_groups",
+                "operation_id": operation_id,
+                "groups": [list(group) for group in endpoint.required_groups],
+                "hint": ("supply every parameter of EXACTLY one group"
+                         if violation == "multiple"
+                         else "supply every parameter of at least one group"),
+                "candidate_endpoints": results,
+            }
         missing = _missing_required(endpoint, clean_params, body)
 
         if missing:
