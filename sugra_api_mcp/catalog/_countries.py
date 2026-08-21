@@ -326,4 +326,7 @@ COUNTRY_QUERY_TERMS: dict[str, str] = {
     "zambia": "ZM",
     "zimbabwe": "ZW",
     "åland islands": "AX",
+    "american samoan": "AS",
+    "puerto rican": "PR",
+    "samoan": "WS",
 }

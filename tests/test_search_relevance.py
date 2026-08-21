@@ -877,3 +877,15 @@ def test_american_samoa_macro_does_not_route_to_fred(catalog) -> None:
         assert not top.startswith(("fred_", "fed_")), (
             f"{q!r} routed to the US source {top!r}: "
             f"{[r['operation_id'] for r in results]}")
+
+
+def test_adjectival_compound_territories_do_not_read_as_us(catalog) -> None:
+    """codex confirm 2: 'American Samoan GDP' is the adjectival form - it
+    must resolve AS (longest phrase) and never arm the US FRED boost."""
+    from sugra_api_mcp.catalog.aliases import detect_query_countries as d
+
+    assert d("American Samoan GDP") == {"AS"}
+    results = search_catalog(catalog, "American Samoan GDP", limit=3)
+    assert results
+    assert not results[0]["operation_id"].startswith(("fred_", "fed_")), (
+        f"adjectival AS query routed US: {[r['operation_id'] for r in results]}")
