@@ -925,3 +925,50 @@ def test_uk_short_form_resolves_to_gb() -> None:
     assert detect_query_countries("uk unemployment rate") == {"GB"}
     assert detect_query_countries("Ukraine GDP") == {"UA"}
     assert detect_query_countries("ukulele market size") == set()
+
+
+def test_untagged_us_source_no_longer_wins_german_cpi() -> None:
+    """MCP-12: fixed_income_treasury (US TIPS) escaped the wrong-country
+    penalty and ranked top-1 for 'Germany CPI inflation' (measured live
+    2026-08-21). The full-bundle sweep tagged it - and every other
+    single-country prefix - so no untagged national source outruns the
+    geography guard again."""
+    from sugra_api_mcp.catalog.loader import load_catalog
+    from sugra_api_mcp.catalog.search import search_catalog
+
+    catalog = load_catalog()
+    results = search_catalog(catalog, "Germany CPI inflation", limit=3)
+    ids = [r["operation_id"] for r in results]
+    assert not ids[0].startswith("fixed_income_treasury_"), ids
+    assert not ids[0].startswith("fred_"), ids
+
+
+def test_country_tag_sweep_examples() -> None:
+    """Representative pins from the verified sweep: the tagged national
+    sources win their OWN country's queries."""
+    from sugra_api_mcp.catalog.loader import load_catalog
+    from sugra_api_mcp.catalog.search import search_catalog
+
+    catalog = load_catalog()
+    res = search_catalog(catalog, "Sweden CPI", limit=3)
+    assert res[0]["operation_id"].startswith("scb_")
+    res = search_catalog(catalog, "Japan corporate filings EDINET", limit=3)
+    assert res[0]["operation_id"].startswith("edinet_")
+
+
+def test_all_country_prefixes_cover_live_operations() -> None:
+    """Both directions of drift are loud: every map entry matches at least
+    one bundled operation (no phantom tags), and the measured single-country
+    prefixes from the MCP-12 sweep are all present."""
+    from sugra_api_mcp.catalog.aliases import SOURCE_COUNTRY_PREFIXES
+    from sugra_api_mcp.catalog.loader import load_catalog
+
+    catalog = load_catalog()
+    ids = [e.operation_id for e in catalog.endpoints]
+    for prefix in SOURCE_COUNTRY_PREFIXES:
+        assert any(i.startswith(prefix) for i in ids), prefix
+    for prefix, country in (("fixed_income_treasury_", "US"), ("scb_", "SE"),
+                            ("edinet_", "JP"), ("data_gov_", "HK"),
+                            ("fca_shorts_", "GB"), ("insee_", "FR"),
+                            ("statistical_agencies_ssb_", "NO")):
+        assert SOURCE_COUNTRY_PREFIXES.get(prefix) == country, prefix

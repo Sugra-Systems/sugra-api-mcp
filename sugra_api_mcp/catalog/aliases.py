@@ -194,6 +194,31 @@ SOURCE_COUNTRY_PREFIXES: dict[str, str] = {
     "fred_": "US", "fed_": "US", "worldbank_bls_": "US", "bea_": "US",
     "census_": "US",
     "ine_": "ES",
+    # MCP-12: single-country prefixes swept from the FULL bundle (600
+    # untagged clusters judged + adversarially verified per proposal;
+    # 28 refutations kept global/parameterized sources untagged).
+    "insee_": "FR", "transport_road_": "FR",
+    "fca_shorts_": "GB",
+    "data_gov_": "HK",
+    "edinet_": "JP",
+    "post_statistical_": "NO", "statistical_agencies_ssb_": "NO",
+    "scb_": "SE",
+    "commodities_agriculture_grains": "US", "commodities_energy_natural_": "US",
+    "congress_amendments_": "US", "congress_committee_": "US", "congress_committees_": "US",
+    "congress_communications_": "US", "congress_hearings": "US", "congress_laws": "US",
+    "congress_members_": "US", "congress_nominations": "US", "congress_record": "US",
+    "congress_sessions": "US", "congress_summaries": "US", "cot_index_": "US",
+    "energy_retail_": "US", "energy_tariffs": "US", "energy_utilities_": "US",
+    "environment_usgs_": "US", "equities_sp500_": "US", "etf_flows_": "US",
+    "etf_sectors_": "US", "fixed_income_treasury_": "US", "macro_net_liquidity": "US",
+    "macro_regime": "US", "maritime_history_": "US", "markets_equity_": "US", "multpl_": "US",
+    "post_congress_": "US", "short_interest_": "US", "treasury_auctions": "US",
+    "treasury_daily_": "US", "treasury_debt_": "US", "treasury_deficit": "US",
+    "treasury_gold": "US", "treasury_interest_": "US", "treasury_rates": "US",
+    "usaspending_agencies": "US", "usaspending_agency_": "US", "usaspending_budget_": "US",
+    "usaspending_last_": "US", "usaspending_spending_": "US", "weather_nws_aviation_": "US",
+    "weather_nws_forecast_": "US", "weather_nws_office_": "US", "weather_nws_point": "US",
+    "weather_nws_zones": "US", "weather_us_alerts": "US", "weather_us_forecast_": "US",
 }
 # The dead-prefix test (tests/test_search_relevance.py) guards this map: every
 # entry must match at least one bundled operation, so a source rename or
