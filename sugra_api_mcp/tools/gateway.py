@@ -385,7 +385,8 @@ async def fetch_data(
                 "path": endpoint.path,
                 "summary": endpoint.summary,
                 "agent_hints": hints_for(endpoint),
-                **({"required_groups": [list(g) for g in endpoint.required_groups]}
+                **({"required_groups": [list(g) for g in endpoint.required_groups],
+                    "groups_mutually_exclusive": endpoint.groups_mutually_exclusive}
                    if endpoint.required_groups else {}),
                 "required_parameters": endpoint.required_parameters,
                 "parameter_examples": [
@@ -422,7 +423,9 @@ async def fetch_data(
                 "groups": [list(group) for group in endpoint.required_groups],
                 "hint": ("supply every parameter of EXACTLY one group"
                          if violation == "multiple"
-                         else "supply every parameter of at least one group"),
+                         else "supply every parameter of at least one group"
+                         + (" (groups are mutually exclusive)"
+                            if endpoint.groups_mutually_exclusive else "")),
                 "candidate_endpoints": results,
             }
 

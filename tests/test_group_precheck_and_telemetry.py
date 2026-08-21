@@ -372,3 +372,36 @@ def test_search_results_advertise_required_groups():
     top = results[0]
     assert top["required_groups"] == [["latitude", "longitude"], ["city"]]
     assert top["groups_mutually_exclusive"] is True
+
+
+@pytest.mark.anyio
+async def test_fetch_data_needs_params_advertises_exclusivity(monkeypatch):
+    import sugra_api_mcp.tools.gateway as gw
+
+    ep = _endpoint(
+        parameters=[
+            {"name": "start_date", "location": "query", "required": True},
+            {"name": "latitude", "location": "query", "required": False},
+            {"name": "longitude", "location": "query", "required": False},
+            {"name": "city", "location": "query", "required": False},
+        ],
+        required_parameters=["start_date"],
+        required_groups=[["latitude", "longitude"], ["city"]],
+        groups_mutually_exclusive=True,
+    )
+
+    class _FakeCatalog:
+        def get(self, operation_id):
+            return ep
+
+    monkeypatch.setattr(gw, "load_catalog", lambda: _FakeCatalog())
+    monkeypatch.setattr(gw, "search_catalog",
+                        lambda *a, **k: [{"operation_id": "weather_current",
+                                          "summary": "Current weather"}])
+    result = await gw.fetch_data(query="weather history", params={})
+    assert result["selected_endpoint"]["groups_mutually_exclusive"] is True
+
+    result2 = await gw.fetch_data(query="weather history",
+                                  params={"start_date": "2026-01-01"})
+    assert result2["error"] == "missing_required_parameter_groups"
+    assert "mutually exclusive" in result2["hint"]
