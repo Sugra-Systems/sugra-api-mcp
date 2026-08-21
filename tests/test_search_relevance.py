@@ -825,3 +825,14 @@ def test_colliding_codes_resolve_by_intent() -> None:
 def test_bare_dotted_ticker_is_sole_token() -> None:
     assert detect_tickers("HEI.A") == ["HEI.A"]
     assert detect_tickers("HEI.A today") == ["HEI.A"]
+
+
+def test_postal_iso2_countries_resolve_by_intent_everywhere() -> None:
+    """agy final: EVERY postal/ISO2 collision resolves by intent - the
+    blanket drop suppressed valid country queries like DE CPI (Germany)."""
+    from sugra_api_mcp.catalog.aliases import detect_query_countries as d
+
+    assert d("DE CPI inflation") == {"DE"}
+    assert d("AR central bank rate") == {"AR"}
+    assert d("CO inflation") == {"CO"}
+    assert d("DE state census") == set()

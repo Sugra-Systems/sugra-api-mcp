@@ -217,16 +217,20 @@ _ISO2_QUERY_RE = re.compile(r"\b[A-Z]{2}\b")
 _ISO2_AMBIGUOUS: frozenset[str] = frozenset({
     "IN", "IS", "IT", "BE", "AT", "ON", "OR", "SO", "NO", "ME", "MY", "WE",
     "DO", "GO", "HE", "AN", "AS", "BY", "IF", "OF", "TO", "UP", "AM", "PM",
-    "OK", "HI", "OH", "PA", "LA", "MA", "MD", "MO", "AL", "AR", "CO", "CT",
-    "DE", "GA", "ID", "KY", "MS", "MT", "NE", "NV", "SC", "SD", "TN", "UT",
-    "VA", "WA", "WI", "WY",
+    # Postal codes that are NOT valid ISO2 countries stay here outright.
+    "OK", "HI", "OH", "CT", "NV", "UT", "WA", "WI", "WY",
 })
 
 # US postal codes that are ALSO valid ISO2 countries (agy r3 + codex r3):
 # resolved by surrounding intent in detect_query_countries - macro vocabulary
 # keeps the country reading, a US-state cue (or no cue) keeps the postal one.
 _ISO2_POSTAL_COLLISIONS: frozenset[str] = frozenset({
+    # agy final: every US postal code that is ALSO a valid ISO2 country
+    # resolves by intent - the blanket drop suppressed valid country queries
+    # (DE CPI = Germany, AR central bank = Argentina).
     "CA", "IL", "AZ", "MN", "NC",
+    "PA", "LA", "MA", "MD", "MO", "AL", "AR", "CO", "DE", "GA", "ID",
+    "KY", "MS", "MT", "NE", "SC", "SD", "TN", "VA",
 })
 
 # Macro vocabulary that marks a bare colliding code as a COUNTRY.
