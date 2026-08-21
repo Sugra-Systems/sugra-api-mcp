@@ -46,10 +46,14 @@ INTERNAL_HTTP_TIMEOUT_SECONDS = 10.0
 ACCESS_VALIDATION_TTL_SECONDS = 60.0
 # MCP-10 r2: hard bounds and flood protection for the auth layer.
 ACCESS_CACHE_MAX_ENTRIES = 4096
+# Prune BELOW the cap (agy r2): shrinking to exactly the cap re-runs the
+# O(N log N) sweep on every subsequent miss.
+ACCESS_CACHE_PRUNE_WATERMARK = ACCESS_CACHE_MAX_ENTRIES - 512
 USER_LOCKS_PRUNE_THRESHOLD = 2048
 JWKS_ADMISSION_SLOTS = 4
 JWKS_ADMISSION_WAIT_SECONDS = 2.0
 JWKS_FAILURE_COOLDOWN_SECONDS = 5.0
+JWKS_FETCH_TIMEOUT_SECONDS = 5.0
 # codex r2: the tool deadline started AFTER the auth path, so cold auth
 # (JWKS + two internal calls) ran on top of the 40s budget. Auth gets its own
 # bounded slice, and the request start is stamped so the tool budget consumes
@@ -115,7 +119,9 @@ class Authenticator:
 
     def __init__(self, config: AuthConfig) -> None:
         self._config = config
-        self._jwks = PyJWKClient(config.jwks_url, cache_keys=True, lifespan=3600)
+        self._jwks = PyJWKClient(
+            config.jwks_url, cache_keys=True, lifespan=3600,
+            timeout=JWKS_FETCH_TIMEOUT_SECONDS)
         self._api_key_cache: dict[int, _CachedKey] = {}
         # MCP-10 (audit P1-5): per-user single-flight locks. The old single
         # Authenticator-wide lock was HELD ACROSS the internal HTTP call, so
@@ -242,6 +248,11 @@ class Authenticator:
         if has_kid:
             try:
                 signing_key = self._jwks.get_signing_key_from_jwt(token)
+            except jwt.exceptions.PyJWKClientConnectionError as e:
+                # agy r2: an unreachable JWKS on the STANDARD path must be a
+                # 503 - it is what arms the failure cooldown.
+                raise AuthError(
+                    f"Unable to load signing keys: {e}", status=503) from e
             except Exception as e:
                 raise AuthError(f"Unknown signing key: {e}") from e
         else:
@@ -327,10 +338,15 @@ class Authenticator:
                 return cached.api_key
 
             url = f"{self._config.app_url}/api/internal/user/{user_id}/primary-api-key"
-            resp = await self._http.get(
-                url,
-                headers={"X-Internal-Token": self._config.internal_token},
-            )
+            try:
+                resp = await self._http.get(
+                    url,
+                    headers={"X-Internal-Token": self._config.internal_token},
+                )
+            except Exception as e:  # httpx transport class - mirror activity
+                raise AuthError(
+                    f"Internal lookup failed: {e.__class__.__name__}",
+                    status=502) from e
 
             if resp.status_code == 404:
                 body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
@@ -384,10 +400,10 @@ class Authenticator:
             if len(self._access_cache) > ACCESS_CACHE_MAX_ENTRIES:
                 live = {jti: exp for jti, exp in self._access_cache.items()
                         if exp > now}
-                if len(live) > ACCESS_CACHE_MAX_ENTRIES:
+                if len(live) > ACCESS_CACHE_PRUNE_WATERMARK:
                     live = dict(sorted(
                         live.items(), key=lambda kv: kv[1],
-                    )[-ACCESS_CACHE_MAX_ENTRIES:])
+                    )[-ACCESS_CACHE_PRUNE_WATERMARK:])
                 self._access_cache = live
             return
 

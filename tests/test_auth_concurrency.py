@@ -205,3 +205,55 @@ _FAKE_JWT = ".".join([
     _b64.urlsafe_b64encode(_json.dumps({"sub": "1"}).encode()).rstrip(b"=").decode(),
     "sig",
 ])
+
+
+async def test_kid_path_network_failure_arms_the_cooldown() -> None:
+    """agy r3: an unreachable JWKS on the STANDARD kid path must classify as
+    503 and arm the cooldown - not read as an invalid token."""
+    import jwt.exceptions as jexc
+    import sugra_api_mcp.auth as auth_mod
+
+    auth, _ = _authenticator()
+
+    def _conn_fail(_token):
+        raise jexc.PyJWKClientConnectionError("connect timeout")
+
+    auth._jwks.get_signing_key_from_jwt = _conn_fail
+    with pytest.raises(auth_mod.AuthError) as e:
+        await auth.resolve(_FAKE_JWT_WITH_KID)
+    assert e.value.status == 503
+    assert auth._jwks_failed_at > 0, "cooldown was not armed"
+
+
+async def test_lookup_transport_failure_is_a_typed_502() -> None:
+    import sugra_api_mcp.auth as auth_mod
+
+    auth, _ = _authenticator()
+
+    class _Boom(_FakeHttp):
+        async def get(self, url, headers=None):
+            raise ConnectionError("reset")
+
+    auth._http = _Boom()
+    with pytest.raises(auth_mod.AuthError) as e:
+        await auth._lookup_api_key(3)
+    assert e.value.status == 502
+
+
+async def test_access_cache_prunes_to_the_watermark() -> None:
+    import sugra_api_mcp.auth as auth_mod
+
+    auth, _ = _authenticator()
+    for i in range(auth_mod.ACCESS_CACHE_MAX_ENTRIES + 5):
+        claims = _JwtClaims(user_id=1, access_token_id=f"jti-{i}")
+        await auth._validate_mcp_access(claims)
+    assert len(auth._access_cache) <= auth_mod.ACCESS_CACHE_PRUNE_WATERMARK + 5, (
+        "pruning to exactly the cap re-triggers the O(N log N) sweep per miss")
+
+
+_FAKE_JWT_WITH_KID = ".".join([
+    _b64.urlsafe_b64encode(
+        _json.dumps({"alg": "RS256", "kid": "k1"}).encode()).rstrip(b"=").decode(),
+    _b64.urlsafe_b64encode(_json.dumps({"sub": "1"}).encode()).rstrip(b"=").decode(),
+    "sig",
+])
