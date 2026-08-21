@@ -216,7 +216,7 @@ _US_STATE_CUES: tuple[str, ...] = (
 _ISO2_QUERY_RE = re.compile(r"\b[A-Z]{2}\b")
 _ISO2_AMBIGUOUS: frozenset[str] = frozenset({
     "IS", "IT", "BE", "AT", "ON", "OR", "SO", "NO", "MY", "WE",
-    "DO", "GO", "HE", "AN", "AS", "BY", "IF", "OF", "TO", "UP", "AM", "PM",
+    "DO", "GO", "HE", "AN", "BY", "IF", "OF", "TO", "UP", "AM", "PM",
     # Postal codes that are NOT valid ISO2 countries stay here outright.
     "OK", "HI", "OH", "CT", "NV", "UT", "WA", "WI", "WY",
 })

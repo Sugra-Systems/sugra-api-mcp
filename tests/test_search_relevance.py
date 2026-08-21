@@ -853,3 +853,15 @@ def test_all_territory_postal_codes_pass_the_intent_gate() -> None:
     assert d("IN CPI inflation") == {"IN"}
     assert d("PR CPI inflation") == {"PR"}
     assert d("ME state census") == set()
+
+
+def test_ambiguous_and_collision_sets_are_disjoint() -> None:
+    """agy clearing round: an entry in BOTH sets is dead code - the ambiguous
+    check short-circuits before the intent gate ('AS' bypassed it). Class
+    invariant instead of another instance fix."""
+    from sugra_api_mcp.catalog.aliases import _ISO2_AMBIGUOUS, _ISO2_POSTAL_COLLISIONS
+
+    overlap = _ISO2_AMBIGUOUS & _ISO2_POSTAL_COLLISIONS
+    assert not overlap, f"codes short-circuited before their intent gate: {sorted(overlap)}"
+    from sugra_api_mcp.catalog.aliases import detect_query_countries as d
+    assert d("AS CPI inflation") == {"AS"}
