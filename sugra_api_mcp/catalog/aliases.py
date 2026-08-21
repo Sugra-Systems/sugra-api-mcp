@@ -220,6 +220,9 @@ _ISO2_AMBIGUOUS: frozenset[str] = frozenset({
     "OK", "HI", "OH", "PA", "LA", "MA", "MD", "MO", "AL", "AR", "CO", "CT",
     "DE", "GA", "ID", "KY", "MS", "MT", "NE", "NV", "SC", "SD", "TN", "UT",
     "VA", "WA", "WI", "WY",
+    # agy r3: US postal codes that are ALSO valid ISO2 countries - the
+    # bare-code reading is dropped (full country names still work).
+    "CA", "IL", "AZ", "MN", "NC",
 })
 _ISO2_CODES_ALL: frozenset[str] = frozenset(COUNTRY_QUERY_TERMS.values())
 

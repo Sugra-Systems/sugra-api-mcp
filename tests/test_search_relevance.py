@@ -791,3 +791,14 @@ def test_unmatched_replacement_clamps_the_deprecated_route_out(catalog) -> None:
             rep = next(e.replaced_by for e in catalog.endpoints
                        if e.operation_id == dep)
             assert rep in ids and ids.index(rep) < ids.index(dep)
+
+
+def test_us_postal_country_collisions_are_not_bare_codes() -> None:
+    """agy r3: CA/IL/AZ/MN/NC are US postal codes first - the bare-code
+    country reading is dropped; full names still detect."""
+    from sugra_api_mcp.catalog.aliases import detect_query_countries
+
+    for q in ("CA CPI inflation", "IL unemployment", "AZ housing"):
+        assert detect_query_countries(q) == set(), q
+    assert detect_query_countries("Canada CPI inflation") == {"CA"}
+    assert detect_query_countries("Israel CPI") == {"IL"}
