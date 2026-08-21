@@ -61,7 +61,7 @@ _registered_global = False
 
 # Envelope statuses allowed onto telemetry spans. Anything outside this set is
 # dropped so free-text upstream values can never reach App Insights.
-_KNOWN_STATUSES = frozenset({"full", "partial", "resolved", "ambiguous", "none"})
+_KNOWN_STATUSES = frozenset({"full", "partial", "resolved", "ambiguous", "none", "low_confidence"})
 
 logger = logging.getLogger("sugra_mcp.agent")
 
@@ -137,7 +137,10 @@ async def resolve_entity(query: str, type_hint: str | None = None) -> dict[str, 
     get_timeseries. A cross-namespace collision (e.g. a ticker that is both an
     equity and a coin) returns status "ambiguous" with ranked candidates and
     NEVER silently picks one; pass type_hint (e.g. "equity", "etf", "coin") to
-    narrow the universe. For compliance KYB lookups by LEI/VAT or sanctions
+    narrow the universe. Crypto aliases resolve too (e.g. "bitcoin" -> the
+    BTC coin entity). Status "low_confidence" means the best match cleared
+    resolution but scored weakly - verify the returned entity before
+    building on it, or re-query with a more specific name or type_hint. For compliance KYB lookups by LEI/VAT or sanctions
     screening use sugra_entity_lookup / sugra_entity_screen instead - this tool
     is for market-data entities.
 

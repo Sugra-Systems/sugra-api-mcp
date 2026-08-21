@@ -24,6 +24,17 @@ def _resolve_path(path: str, params: dict[str, Any]) -> str:
     return resolved
 
 
+def _group_uncovered(endpoint, params: dict[str, Any]) -> bool:
+    """True when the endpoint declares required parameter groups and NO
+    group is fully covered by the supplied params (audit P1-8 MCP half):
+    the runtime would answer 400, so refuse BEFORE the HTTP call with the
+    groups spelled out."""
+    groups = getattr(endpoint, "required_groups", ()) or ()
+    if not groups:
+        return False
+    return not any(all(name in params for name in group) for group in groups)
+
+
 def _missing_required(
     endpoint, params: dict[str, Any], body: dict[str, Any] | list[Any] | None
 ) -> list[str]:
@@ -126,7 +137,10 @@ async def call_endpoint(
             ),
         ),
     ] = None,
-    limit: int | None = None,
+    limit: Annotated[
+        int | None,
+        Field(description="Bounds ONLY the top-level list: the envelope data list (or a bare top-level array). Nested lists inside records are never truncated; meta.shaped reports whether the limit applied."),
+    ] = None,
     fields: list[str] | None = None,
     include_raw: bool = False,
 ) -> dict[str, Any]:
@@ -161,6 +175,15 @@ async def call_endpoint(
                 "error": "missing_required_parameters",
                 "operation_id": operation_id,
                 "missing": missing,
+            }
+        if _group_uncovered(endpoint, clean_params):
+            return {
+                "error": "missing_required_parameter_groups",
+                "operation_id": operation_id,
+                "groups": [list(group) for group in endpoint.required_groups],
+                "hint": ("supply every parameter of at least one group"
+                         + (" (groups are mutually exclusive)"
+                            if endpoint.groups_mutually_exclusive else "")),
             }
 
         path_param_names = {
@@ -263,7 +286,10 @@ async def fetch_data(
             ),
         ),
     ] = None,
-    limit: int | None = None,
+    limit: Annotated[
+        int | None,
+        Field(description="Bounds ONLY the top-level list: the envelope data list (or a bare top-level array). Nested lists inside records are never truncated; meta.shaped reports whether the limit applied."),
+    ] = None,
     fields: list[str] | None = None,
     include_raw: bool = False,
 ) -> dict[str, Any]:
