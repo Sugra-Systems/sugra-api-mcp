@@ -141,12 +141,30 @@ class SugraFastMCP(FastMCP):
 
         total = load_config(require_api_key=False).tool_deadline
         stamped = request_started_at.get()
+        started = time.monotonic()
         if stamped is None:
             deadline = total  # stdio transport: no auth leg, full budget
         else:
-            # Floor keeps a real attempt possible after slow-but-passing auth.
-            deadline = max(2.0, total - max(0.0, time.monotonic() - stamped))
-        started = time.monotonic()
+            # codex final: the TOTAL is total - no floor (a floor let slow-
+            # but-passing auth push the request past the configured budget).
+            deadline = total - max(0.0, started - stamped)
+            if deadline <= 0:
+                payload = {
+                    "error": "deadline_exceeded",
+                    "message": (
+                        f"The {total:.0f}s request budget was consumed "
+                        "before tool dispatch."
+                    ),
+                    "tool": name,
+                    "deadline_s": total,
+                    "elapsed_ms": int((started - stamped) * 1000),
+                    "retry_hint": "Retry; if it repeats, the auth path is slow.",
+                }
+                return CallToolResult(
+                    isError=True,
+                    content=[TextContent(type="text", text=json.dumps(payload))],
+                    structuredContent=payload,
+                )
         try:
             async with asyncio.timeout(deadline):
                 result = await super().call_tool(name, arguments)

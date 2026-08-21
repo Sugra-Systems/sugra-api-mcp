@@ -113,3 +113,28 @@ async def test_next_call_after_a_deadline_is_not_delayed(monkeypatch) -> None:
     assert second.isError is not True
     assert elapsed < 1.0, (
         f"the call AFTER a deadline took {elapsed:.1f}s - the wedge survived")
+
+
+async def test_total_budget_is_never_exceeded_by_the_floor(monkeypatch) -> None:
+    """codex final: slow-but-passing auth must not add a floor on top of the
+    configured total - a stamped request whose budget is consumed answers
+    immediately with the typed envelope."""
+    from sugra_api_mcp.auth import request_started_at
+
+    monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "1.0")
+    monkeypatch.setattr(gateway, "get_client", lambda: _StallingClient())
+    token = request_started_at.set(time.monotonic() - 5.0)  # budget long gone
+    try:
+        started = time.monotonic()
+        async with create_connected_server_and_client_session(mcp) as session:
+            result = await session.call_tool(
+                "call_endpoint", {"operation_id": "quotes_symbol_price",
+                                  "params": {"symbol": "AAPL"}})
+        elapsed = time.monotonic() - started
+    finally:
+        request_started_at.reset(token)
+    assert result.isError is True
+    payload = _structured(result)
+    assert payload["error"] == "deadline_exceeded"
+    assert "before tool dispatch" in payload["message"]
+    assert elapsed < 1.0, f"consumed-budget call still ran {elapsed:.1f}s"

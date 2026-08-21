@@ -525,13 +525,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
         token = header[7:].strip()
         request_started_at.set(time.monotonic())
         try:
-            async with asyncio.timeout(AUTH_BUDGET_SECONDS):
+            # codex final: the auth slice also respects a SMALL total budget.
+            from .config import load_config as _load_config
+
+            total_budget = _load_config(require_api_key=False).tool_deadline
+            auth_budget = min(AUTH_BUDGET_SECONDS, total_budget)
+            async with asyncio.timeout(auth_budget):
                 resolved = await self._auth.resolve(token)
         except TimeoutError:
             return JSONResponse(
                 {"error": "auth_timeout",
                  "message": (
-                     f"Authentication exceeded its {AUTH_BUDGET_SECONDS:.0f}s "
+                     f"Authentication exceeded its {auth_budget:.0f}s "
                      "budget and was cancelled."
                  )},
                 status_code=503,
