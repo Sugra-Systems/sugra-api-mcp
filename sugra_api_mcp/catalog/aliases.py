@@ -207,7 +207,7 @@ SOURCE_COUNTRY_PREFIXES: dict[str, str] = {
     "congress_amendments_": "US", "congress_committee_": "US", "congress_committees_": "US",
     "congress_communications_": "US", "congress_hearings": "US", "congress_laws": "US",
     "congress_members_": "US", "congress_nominations": "US", "congress_record": "US",
-    "congress_sessions": "US", "congress_summaries": "US", "cot_index_": "US",
+    "congress_sessions": "US", "congress_summaries": "US",
     "energy_retail_": "US", "energy_tariffs": "US", "energy_utilities_": "US",
     "environment_usgs_": "US", "equities_sp500_": "US", "etf_flows_": "US",
     "etf_sectors_": "US", "fixed_income_treasury_": "US", "macro_net_liquidity": "US",

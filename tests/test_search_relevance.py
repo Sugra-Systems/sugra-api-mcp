@@ -972,3 +972,13 @@ def test_all_country_prefixes_cover_live_operations() -> None:
                             ("fca_shorts_", "GB"), ("insee_", "FR"),
                             ("statistical_agencies_ssb_", "NO")):
         assert SOURCE_COUNTRY_PREFIXES.get(prefix) == country, prefix
+
+
+def test_market_parameterized_cot_stays_untagged() -> None:
+    """agy MCP-12: cot_index_traders takes a free market parameter over
+    CFTC futures including globally-relevant commodities - the same class
+    as its six sibling clusters the sweep refuted. No cot_ prefix may
+    carry a country tag."""
+    from sugra_api_mcp.catalog.aliases import SOURCE_COUNTRY_PREFIXES
+
+    assert not any(p.startswith("cot_") for p in SOURCE_COUNTRY_PREFIXES)
