@@ -38,8 +38,14 @@ def _group_violation(endpoint, params: dict[str, Any]) -> str | None:
     covered = sum(1 for group in groups if all(name in params for name in group))
     if covered == 0:
         return "uncovered"
-    if covered > 1 and getattr(endpoint, "groups_mutually_exclusive", False):
-        return "multiple"
+    if getattr(endpoint, "groups_mutually_exclusive", False):
+        # Exclusivity judges ACTIVE groups (any member supplied), not just
+        # complete ones: a complete group mixed with a stray member of a
+        # competing group is still a mixed-mode request the upstream will
+        # reject (codex r2).
+        active = sum(1 for group in groups if any(name in params for name in group))
+        if active > 1:
+            return "multiple"
     return None
 
 

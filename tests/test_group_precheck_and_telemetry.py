@@ -268,3 +268,32 @@ async def test_fetch_data_group_precheck(monkeypatch):
                                  params={"latitude": 60.2})
     assert result["error"] == "missing_required_parameter_groups"
     assert http == []
+
+
+@pytest.mark.anyio
+async def test_exclusive_mixed_mode_partial_member_rejected(monkeypatch):
+    """codex r2: a complete group plus a stray member of a competing
+    exclusive group is mixed-mode - refused before HTTP."""
+    import sugra_api_mcp.tools.gateway as gw
+
+    ep = _endpoint(required_groups=[["latitude", "longitude"], ["city"]],
+                   groups_mutually_exclusive=True)
+
+    class _FakeCatalog:
+        def get(self, operation_id):
+            return ep
+
+    monkeypatch.setattr(gw, "load_catalog", lambda: _FakeCatalog())
+    http = []
+
+    class _NoClient:
+        async def get(self, *a, **k):
+            http.append(1)
+            raise AssertionError("no HTTP")
+
+    monkeypatch.setattr(gw, "get_client", lambda: _NoClient())
+    result = await gw.call_endpoint(
+        operation_id="weather_current",
+        params={"city": "Helsinki", "latitude": 60.2})
+    assert result["error"] == "missing_required_parameter_groups"
+    assert http == []
