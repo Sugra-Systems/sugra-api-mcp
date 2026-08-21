@@ -450,6 +450,12 @@ def search_catalog(
     boost_crypto = has_crypto_context
     boost_us_macro = detect_us_macro_query(query)
     query_countries = detect_query_countries(query)
+    # codex final: geography resolves BEFORE the US-macro heuristic - the
+    # word 'American' inside 'American Samoa' read as US context and the +30
+    # FRED boost out-muscled the wrong-country penalty. An explicitly named
+    # non-US geography suppresses the US-macro boost outright.
+    if boost_us_macro and query_countries and "US" not in query_countries:
+        boost_us_macro = False
     # Tokens consumed by pattern detectors are excluded from the coverage
     # bonus - the pattern boost IS their contribution.
     consumed: set[str] = {t.lower() for t in tickers}

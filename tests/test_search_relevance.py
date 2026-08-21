@@ -865,3 +865,15 @@ def test_ambiguous_and_collision_sets_are_disjoint() -> None:
     assert not overlap, f"codes short-circuited before their intent gate: {sorted(overlap)}"
     from sugra_api_mcp.catalog.aliases import detect_query_countries as d
     assert d("AS CPI inflation") == {"AS"}
+
+
+def test_american_samoa_macro_does_not_route_to_fred(catalog) -> None:
+    """codex final: cross-detector conflict - 'American' inside 'American
+    Samoa' must not arm the US-macro FRED boost. End-to-end ranking pin."""
+    for q in ("American Samoa CPI inflation", "American Samoa GDP"):
+        results = search_catalog(catalog, q, limit=3)
+        assert results, q
+        top = results[0]["operation_id"]
+        assert not top.startswith(("fred_", "fed_")), (
+            f"{q!r} routed to the US source {top!r}: "
+            f"{[r['operation_id'] for r in results]}")
