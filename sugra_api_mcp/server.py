@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
+import time
 from contextvars import ContextVar
 from copy import deepcopy
 from typing import Any
@@ -126,7 +128,66 @@ class SugraFastMCP(FastMCP):
         Nothing is lost: every tool declares a dict result, so the block being
         replaced is the JSON rendering of that same dict.
         """
-        result = await super().call_tool(name, arguments)
+        # MCP-10 (audit P1-4): ONE end-to-end budget for the whole call.
+        # Without it, a wedged upstream held the session past every client's
+        # read timeout and the typed envelope never reached the agent; the
+        # asyncio scope also CANCELS the outbound request instead of letting
+        # it complete server-side after the caller has given up.
+        # codex r2: the budget is END-TO-END - auth already consumed part
+        # of it. The middleware stamps the request start; what remains (with
+        # a small floor so a slow-auth call still gets a real attempt) is the
+        # tool budget. Stdio transport has no middleware stamp - full budget.
+        from .auth import request_started_at
+
+        total = load_config(require_api_key=False).tool_deadline
+        stamped = request_started_at.get()
+        started = time.monotonic()
+        if stamped is None:
+            deadline = total  # stdio transport: no auth leg, full budget
+        else:
+            # codex final: the TOTAL is total - no floor (a floor let slow-
+            # but-passing auth push the request past the configured budget).
+            deadline = total - max(0.0, started - stamped)
+            if deadline <= 0:
+                payload = {
+                    "error": "deadline_exceeded",
+                    "message": (
+                        f"The {total:.0f}s request budget was consumed "
+                        "before tool dispatch."
+                    ),
+                    "tool": name,
+                    "deadline_s": total,
+                    "elapsed_ms": int((started - stamped) * 1000),
+                    "retry_hint": "Retry; if it repeats, the auth path is slow.",
+                }
+                return CallToolResult(
+                    isError=True,
+                    content=[TextContent(type="text", text=json.dumps(payload))],
+                    structuredContent=payload,
+                )
+        try:
+            async with asyncio.timeout(deadline):
+                result = await super().call_tool(name, arguments)
+        except TimeoutError:
+            payload = {
+                "error": "deadline_exceeded",
+                "message": (
+                    f"Tool call exceeded the {deadline:.0f}s end-to-end "
+                    "budget and was cancelled server-side."
+                ),
+                "tool": name,
+                "deadline_s": deadline,
+                "elapsed_ms": int((time.monotonic() - started) * 1000),
+                "retry_hint": (
+                    "Retry once; if it repeats, narrow the request "
+                    "(fewer points, tighter filters)."
+                ),
+            }
+            return CallToolResult(
+                isError=True,
+                content=[TextContent(type="text", text=json.dumps(payload))],
+                structuredContent=payload,
+            )
 
         # Tools declaring a dict return arrive as (content, structured); the
         # bare forms are accepted so this cannot depend on that detail.
