@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import time
 import os
 from contextvars import ContextVar
 from copy import deepcopy
@@ -126,7 +128,36 @@ class SugraFastMCP(FastMCP):
         Nothing is lost: every tool declares a dict result, so the block being
         replaced is the JSON rendering of that same dict.
         """
-        result = await super().call_tool(name, arguments)
+        # MCP-10 (audit P1-4): ONE end-to-end budget for the whole call.
+        # Without it, a wedged upstream held the session past every client's
+        # read timeout and the typed envelope never reached the agent; the
+        # asyncio scope also CANCELS the outbound request instead of letting
+        # it complete server-side after the caller has given up.
+        deadline = load_config(require_api_key=False).tool_deadline
+        started = time.monotonic()
+        try:
+            async with asyncio.timeout(deadline):
+                result = await super().call_tool(name, arguments)
+        except TimeoutError:
+            payload = {
+                "error": "deadline_exceeded",
+                "message": (
+                    f"Tool call exceeded the {deadline:.0f}s end-to-end "
+                    "budget and was cancelled server-side."
+                ),
+                "tool": name,
+                "deadline_s": deadline,
+                "elapsed_ms": int((time.monotonic() - started) * 1000),
+                "retry_hint": (
+                    "Retry once; if it repeats, narrow the request "
+                    "(fewer points, tighter filters)."
+                ),
+            }
+            return CallToolResult(
+                isError=True,
+                content=[TextContent(type="text", text=json.dumps(payload))],
+                structuredContent=payload,
+            )
 
         # Tools declaring a dict return arrive as (content, structured); the
         # bare forms are accepted so this cannot depend on that detail.

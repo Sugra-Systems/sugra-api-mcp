@@ -14,6 +14,7 @@ On success the resolved x-api-key is stored in a ContextVar that
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import logging
 import time
 from dataclasses import dataclass
@@ -38,6 +39,10 @@ REQUIRED_SCOPE = "sugra:read"
 API_KEY_CACHE_TTL_SECONDS = 300
 
 INTERNAL_HTTP_TIMEOUT_SECONDS = 10.0
+# MCP-10: how long a PASSING activity validation is trusted per token jti.
+# Short on purpose - it coarsens the activity heartbeat, never the denial
+# path (failures are not cached).
+ACCESS_VALIDATION_TTL_SECONDS = 60.0
 
 MAX_PUBLIC_MCP_CONTENT_LENGTH = 64 * 1024
 
@@ -94,7 +99,28 @@ class Authenticator:
         self._config = config
         self._jwks = PyJWKClient(config.jwks_url, cache_keys=True, lifespan=3600)
         self._api_key_cache: dict[int, _CachedKey] = {}
-        self._lock = asyncio.Lock()
+        # MCP-10 (audit P1-5): per-user single-flight locks. The old single
+        # Authenticator-wide lock was HELD ACROSS the internal HTTP call, so
+        # every user's cold-cache lookup serialized behind every other's.
+        self._user_locks: dict[int, asyncio.Lock] = {}
+        # PyJWKClient does SYNCHRONOUS network I/O; on the event loop it
+        # stalled every request in the process (including raw sugra_ keys)
+        # whenever the key cache was cold. A DEDICATED executor keeps the
+        # offload from competing with the default pool (fleet review rule).
+        self._jwks_executor = ThreadPoolExecutor(
+            max_workers=2, thread_name_prefix="jwks")
+        # Short-TTL cache of a PASSING activity validation per token jti:
+        # the check ran an internal HTTP round-trip on EVERY tool call.
+        # Failures are never cached; the TTL only coarsens the activity
+        # heartbeat, not the access decision it grants.
+        self._access_cache: dict[str, float] = {}
+        # One pooled client for all internal calls (a fresh client per call
+        # paid TCP+TLS setup on every tool invocation).
+        self._http = httpx.AsyncClient(timeout=INTERNAL_HTTP_TIMEOUT_SECONDS)
+
+    async def aclose(self) -> None:
+        self._jwks_executor.shutdown(wait=False, cancel_futures=True)
+        await self._http.aclose()
 
     @property
     def protected_resource_metadata_url(self) -> str:
@@ -112,9 +138,26 @@ class Authenticator:
         if token.startswith("sugra_"):
             return ResolvedAuth(api_key=token)
 
-        claims = self._validate_jwt(token)
+        t0 = time.monotonic()
+        loop = asyncio.get_running_loop()
+        claims = await loop.run_in_executor(
+            self._jwks_executor, self._validate_jwt, token)
+        t1 = time.monotonic()
         await self._validate_mcp_access(claims)
+        t2 = time.monotonic()
         api_key = await self._lookup_api_key(claims.user_id)
+        t3 = time.monotonic()
+        # MCP-10 stage attribution: the audit observed 45-120s holds that no
+        # log could attribute to a stage. One structured line per JWT resolve
+        # (logs, not span attributes - the observability privacy contract
+        # allowlists span dimensions, and these are operational timings).
+        logger.info(
+            "auth_stages user_id=%d jwks_ms=%d activity_ms=%d key_ms=%d",
+            claims.user_id,
+            int((t1 - t0) * 1000),
+            int((t2 - t1) * 1000),
+            int((t3 - t2) * 1000),
+        )
         resolved = ResolvedAuth(
             api_key=api_key,
             user_id=claims.user_id,
@@ -193,17 +236,19 @@ class Authenticator:
         if not self._config.internal_token:
             raise AuthError("INTERNAL_API_TOKEN not configured on MCP server", status=500)
 
-        async with self._lock:
+        # Per-user single-flight: concurrent requests for the SAME user share
+        # one fetch; different users never wait on each other. setdefault is
+        # atomic under the GIL, so the occasional extra Lock object is inert.
+        async with self._user_locks.setdefault(user_id, asyncio.Lock()):
             cached = self._api_key_cache.get(user_id)
             if cached and cached.expires_at > now:
                 return cached.api_key
 
             url = f"{self._config.app_url}/api/internal/user/{user_id}/primary-api-key"
-            async with httpx.AsyncClient(timeout=INTERNAL_HTTP_TIMEOUT_SECONDS) as client:
-                resp = await client.get(
-                    url,
-                    headers={"X-Internal-Token": self._config.internal_token},
-                )
+            resp = await self._http.get(
+                url,
+                headers={"X-Internal-Token": self._config.internal_token},
+            )
 
             if resp.status_code == 404:
                 body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
@@ -227,22 +272,36 @@ class Authenticator:
         if not self._config.internal_token:
             raise AuthError("INTERNAL_API_TOKEN not configured on MCP server", status=500)
 
+        # jti-TTL cache: a PASS within the window skips the round-trip.
+        now = time.time()
+        expires = self._access_cache.get(claims.access_token_id)
+        if expires is not None and expires > now:
+            return
+
         url = f"{self._config.app_url}/api/internal/mcp/activity"
         try:
-            async with httpx.AsyncClient(timeout=INTERNAL_HTTP_TIMEOUT_SECONDS) as client:
-                resp = await client.post(
-                    url,
-                    headers={"X-Internal-Token": self._config.internal_token},
-                    json={
-                        "user_id": claims.user_id,
-                        "access_token_id": claims.access_token_id,
-                    },
-                )
+            resp = await self._http.post(
+                url,
+                headers={"X-Internal-Token": self._config.internal_token},
+                json={
+                    "user_id": claims.user_id,
+                    "access_token_id": claims.access_token_id,
+                },
+            )
         except Exception as e:
             logger.info("mcp_access_validation_exception user_id=%d error=%s", claims.user_id, e)
             raise AuthError("Internal MCP access validation failed", status=502) from e
 
         if 200 <= resp.status_code < 300:
+            self._access_cache[claims.access_token_id] = (
+                now + ACCESS_VALIDATION_TTL_SECONDS)
+            # The cache only ever holds passes; prune opportunistically so a
+            # long-lived process does not accumulate dead jtis.
+            if len(self._access_cache) > 4096:
+                self._access_cache = {
+                    jti: exp for jti, exp in self._access_cache.items()
+                    if exp > now
+                }
             return
 
         logger.info(

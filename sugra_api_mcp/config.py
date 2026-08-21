@@ -27,6 +27,7 @@ class Config:
     api_base: str
     api_key: str
     timeout: float
+    tool_deadline: float = 40.0
 
 
 @dataclass(frozen=True)
@@ -59,6 +60,12 @@ def load_config(*, require_api_key: bool = True) -> Config:
         api_base=os.environ.get("SUGRA_API_BASE", "https://sugra.ai").rstrip("/"),
         api_key=api_key,
         timeout=float(os.environ.get("SUGRA_TIMEOUT", "30")),
+        # MCP-10 (audit P1-4): end-to-end budget for ONE tool call, wrapped
+        # around dispatch in SugraFastMCP.call_tool. Must sit BELOW common
+        # client read timeouts (the audit harness cut at ~45s while the
+        # gateway kept working to its 60s outbound budget, so the typed
+        # timeout envelope never reached the agent).
+        tool_deadline=float(os.environ.get("SUGRA_TOOL_DEADLINE", "40")),
     )
 
 

@@ -81,6 +81,9 @@ _KNOWN_ERROR_CODES: frozenset[str] = frozenset({
     "upstream_transport_error",
     # Gateway safety net for unexpected exceptions inside call_endpoint.
     "tool_execution_failed",
+    # MCP-10: the end-to-end per-call budget fired and the call was
+    # cancelled server-side (audit P1-4).
+    "deadline_exceeded",
     # Agent Context Layer plane: infra-level credential rejected (hosted-only
     # tools, tools/agent.py remaps the plane 403 to this distinct code).
     "agent_plane_unavailable",
