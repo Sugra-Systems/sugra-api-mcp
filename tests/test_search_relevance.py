@@ -913,3 +913,15 @@ def test_ticker_whitelist_never_shadows_a_country_code() -> None:
     assert detect_tickers("BA") == ["BA"]          # sole token
     assert detect_tickers("GS today") == ["GS"]    # sole + filler
     assert detect_tickers("BA stock price") == ["BA"]  # equity context
+
+
+def test_uk_short_form_resolves_to_gb() -> None:
+    """'UK' is not an ISO2 code (ISO assigns GB), so the uppercase ISO2
+    intent gate cannot admit it; the curated vocabulary short form must.
+    Word-boundary matching keeps 'ukulele'/'Ukraine' unaffected."""
+    from sugra_api_mcp.catalog.aliases import detect_query_countries
+
+    assert detect_query_countries("UK CPI inflation") == {"GB"}
+    assert detect_query_countries("uk unemployment rate") == {"GB"}
+    assert detect_query_countries("Ukraine GDP") == {"UA"}
+    assert detect_query_countries("ukulele market size") == set()
