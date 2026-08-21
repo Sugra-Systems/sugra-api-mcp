@@ -596,3 +596,332 @@ def test_imf_reserves_lands_in_the_imf_namespace(catalog) -> None:
         f"'IMF reserves' top-1 left the imf namespace: "
         f"{[r['operation_id'] for r in results]}"
     )
+
+
+# ---- MCP-9 (audit P1-3): versioned semantic eval set --------------------------
+# The six audit scenarios with semantic top-1 oracles plus acronym negatives.
+# PASS is stricter than "technically callable": right domain, right geography,
+# right data type, never a deprecated route above its available replacement.
+
+AUDIT_EVAL_TOP1 = [
+    # (query, oracle: top-1 operation_id predicate description)
+    ("current AAPL stock price", lambda op: op == "quotes_symbol_price"),
+    ("weather forecast Tbilisi next 5 days",
+     lambda op: op == "v2_weather_forecast"),
+    ("geocode a postal address",
+     lambda op: op.startswith("geocoding_")),
+    ("search FRED series for gold", lambda op: op.startswith("fred_")),
+    ("Apple earnings news from the last 7 days",
+     lambda op: op.startswith("news_")),
+]
+
+
+@pytest.mark.parametrize("query,oracle", AUDIT_EVAL_TOP1,
+                         ids=[q for q, _ in AUDIT_EVAL_TOP1])
+def test_audit_eval_semantic_top1(catalog, query, oracle) -> None:
+    results = search_catalog(catalog, query, limit=5)
+    assert results, f"no results for {query!r}"
+    top = results[0]["operation_id"]
+    assert oracle(top), (
+        f"semantic oracle failed for {query!r}: top-1 {top!r}; "
+        f"top-5 {[r['operation_id'] for r in results]}"
+    )
+
+
+def test_audit_eval_georgia_cpi_no_silent_country_substitution(catalog) -> None:
+    """'Georgia CPI' must not silently return another country's CPI top-1."""
+    from sugra_api_mcp.catalog.aliases import SOURCE_COUNTRY_PREFIXES
+
+    results = search_catalog(catalog, "Georgia CPI inflation", limit=5)
+    assert results
+    top = results[0]["operation_id"]
+    for prefix, country in SOURCE_COUNTRY_PREFIXES.items():
+        if top.startswith(prefix):
+            assert country == "GE", (
+                f"top-1 {top!r} belongs to {country}, silently substituted "
+                f"for the Georgia query")
+
+
+def test_audit_eval_deprecated_never_above_replacement(catalog) -> None:
+    """Property over the whole bundle: for every deprecated endpoint whose
+    replacement exists in the catalog, a query built from its summary must not
+    rank the deprecated route above the replacement."""
+    deprecated = [e for e in catalog.endpoints
+                  if e.deprecated and e.replaced_by]
+    assert deprecated, "bundle carries no deprecated endpoints - rebuild it"
+    by_id = {e.operation_id: e for e in catalog.endpoints}
+    for endpoint in deprecated:
+        replacement = by_id.get(endpoint.replaced_by)
+        if replacement is None:
+            continue
+        results = search_catalog(catalog, endpoint.summary or endpoint.path,
+                                 limit=len(catalog.endpoints))
+        ranks = {r["operation_id"]: i for i, r in enumerate(results)}
+        dep_rank = ranks.get(endpoint.operation_id)
+        rep_rank = ranks.get(replacement.operation_id)
+        if dep_rank is not None and rep_rank is not None:
+            assert rep_rank < dep_rank, (
+                f"deprecated {endpoint.operation_id} (rank {dep_rank}) above "
+                f"its replacement {replacement.operation_id} (rank {rep_rank})")
+
+
+@pytest.mark.parametrize("query", [
+    "search FRED series for gold",
+    "AIS vessel density in the North Sea",
+    "RF propagation for MMSI vessel tracking",
+])
+def test_audit_eval_acronyms_are_not_tickers(query) -> None:
+    assert detect_tickers(query) == []
+
+
+# ---- MCP-9 review round: codex + agy findings pinned -------------------------
+
+@pytest.mark.parametrize("query,expected", [
+    ("PLTR", ["PLTR"]),               # sole substantive token = quote lookup
+    ("PLTR today", ["PLTR"]),         # temporal filler does not change it
+    ("search FRED series for gold", []),   # multi-token stays context-gated
+])
+def test_bare_sole_ticker_is_admitted(query, expected) -> None:
+    assert detect_tickers(query) == expected
+
+
+def test_bare_ticker_routes_to_quotes(catalog) -> None:
+    results = search_catalog(catalog, "PLTR today", limit=3)
+    assert results and results[0]["operation_id"].startswith("quotes_symbol_"), (
+        f"bare ticker lost symbol routing: {[r['operation_id'] for r in results]}")
+
+
+def test_unlisted_country_is_still_detected(catalog) -> None:
+    """codex review: the closed vocabulary recreated silent substitution for
+    every omitted country - the generated module must know them all."""
+    from sugra_api_mcp.catalog.aliases import SOURCE_COUNTRY_PREFIXES, detect_query_countries
+
+    assert detect_query_countries("Netherlands CPI inflation") == {"NL"}
+    results = search_catalog(catalog, "Netherlands CPI inflation", limit=3)
+    assert results
+    top = results[0]["operation_id"]
+    for prefix, country in SOURCE_COUNTRY_PREFIXES.items():
+        if top.startswith(prefix):
+            assert country == "NL", (
+                f"top-1 {top!r} is a {country} national source for a NL query")
+
+
+def test_source_country_prefixes_match_live_operations(catalog) -> None:
+    """Dead-prefix guard (codex review: bcra_/bcrp_ mapped a namespace that
+    does not exist in the bundle while central_banks_bcra_ evaded the
+    penalty). Every mapped prefix must match at least one bundled op."""
+    from sugra_api_mcp.catalog.aliases import SOURCE_COUNTRY_PREFIXES
+
+    ids = [e.operation_id for e in catalog.endpoints]
+    dead = [p for p in SOURCE_COUNTRY_PREFIXES
+            if not any(op.startswith(p) for op in ids)]
+    assert not dead, f"country prefixes matching no bundled operation: {dead}"
+
+
+def test_every_deprecated_operation_resolves_or_is_allowlisted(catalog) -> None:
+    from sugra_api_mcp.catalog.builder import DEPRECATED_WITHOUT_REPLACEMENT
+
+    unresolved = [e.operation_id for e in catalog.endpoints
+                  if e.deprecated and not e.replaced_by
+                  and e.operation_id not in DEPRECATED_WITHOUT_REPLACEMENT]
+    assert not unresolved, f"deprecated without twin or allowlist: {unresolved}"
+
+
+def test_empty_toolset_gets_no_intent_boost() -> None:
+    """agy review: startswith('') is True for every term - a toolset-less
+    endpoint must never collect the intent boost."""
+    from sugra_api_mcp.catalog.models import Endpoint
+    from sugra_api_mcp.catalog.search import _score
+
+    endpoint = Endpoint(operation_id="x_op", method="GET", path="/x",
+                        summary="anything at all", toolset="")
+    _score_value, why = _score(
+        endpoint, ["anything"], {},
+        boost_quotes_symbol=False, boost_markets_toolset=False,
+        boost_symbol_input=False, boost_forex=False, boost_crypto=False,
+        boost_us_macro=False, central_bank_prefixes=[], query_countries=set())
+    assert not any(w.startswith("toolset-intent") for w in why), why
+
+
+# ---- MCP-9 review round 2 pins ----------------------------------------------
+
+def test_georgia_us_state_cues_suppress_the_country_reading(catalog) -> None:
+    """codex r2: 'Georgia census states' is a US-state query - the sovereign
+    GE reading must not strip the US census namespace out of the results."""
+    from sugra_api_mcp.catalog.aliases import detect_query_countries
+
+    assert detect_query_countries("Georgia census states") == set()
+    assert detect_query_countries("Georgia CPI inflation") == {"GE"}
+    results = search_catalog(catalog, "Georgia census states", limit=10)
+    assert any(r["operation_id"].startswith("census_") for r in results), (
+        f"US census ops vanished: {[r['operation_id'] for r in results][:5]}")
+
+
+def test_bare_iso2_code_is_recognized(catalog) -> None:
+    """codex r2: 'NL CPI inflation' must trigger geography protection."""
+    from sugra_api_mcp.catalog.aliases import SOURCE_COUNTRY_PREFIXES, detect_query_countries
+
+    assert detect_query_countries("NL CPI inflation") == {"NL"}
+    results = search_catalog(catalog, "NL CPI inflation", limit=3)
+    assert results
+    top = results[0]["operation_id"]
+    for prefix, country in SOURCE_COUNTRY_PREFIXES.items():
+        if top.startswith(prefix):
+            assert country == "NL"
+
+
+def test_ambiguous_iso2_words_are_not_countries() -> None:
+    from sugra_api_mcp.catalog.aliases import detect_query_countries
+
+    assert detect_query_countries("IT support costs") == set()
+    assert detect_query_countries("IN the beginning") == set()
+    assert detect_query_countries("US CPI inflation") == {"US"}
+
+
+def test_unmatched_replacement_clamps_the_deprecated_route_out(catalog) -> None:
+    """agy r2: a deprecated route whose replacement matches nothing must not
+    stand on its legacy text alone."""
+    from sugra_api_mcp.catalog.search import search_catalog as sc
+
+    results = sc(catalog, "deprecated legacy maritime vessels density grid",
+                 limit=50)
+    ids = [r["operation_id"] for r in results]
+    for dep in ("maritime_vessels_density", "maritime_history_density"):
+        if dep in ids:
+            rep = next(e.replaced_by for e in catalog.endpoints
+                       if e.operation_id == dep)
+            assert rep in ids and ids.index(rep) < ids.index(dep)
+
+
+def test_us_postal_country_collisions_resolve_by_intent() -> None:
+    """agy r3 + codex r4 (deliberate refinement): colliding codes read as a
+    COUNTRY under macro vocabulary, as postal under state cues or none."""
+    from sugra_api_mcp.catalog.aliases import detect_query_countries
+
+    assert detect_query_countries("CA CPI inflation") == {"CA"}
+    assert detect_query_countries("IL unemployment") == {"IL"}
+    assert detect_query_countries("AZ housing") == set()
+    assert detect_query_countries("Canada CPI inflation") == {"CA"}
+    assert detect_query_countries("Israel CPI") == {"IL"}
+
+
+def test_compound_country_phrases_resolve_longest_first() -> None:
+    """codex r4: 'American Samoa' is AS alone - component matches (american
+    -> US, samoa -> WS) must not survive and defeat the geo guard."""
+    from sugra_api_mcp.catalog.aliases import detect_query_countries
+
+    assert detect_query_countries("American Samoa CPI inflation") == {"AS"}
+
+
+def test_colliding_codes_resolve_by_intent() -> None:
+    from sugra_api_mcp.catalog.aliases import detect_query_countries
+
+    assert detect_query_countries("IL CPI inflation") == {"IL"}
+    assert detect_query_countries("CA central bank rate") == {"CA"}
+    assert detect_query_countries("IL state census") == set()
+    assert detect_query_countries("AZ housing permits") == set()
+
+
+def test_bare_dotted_ticker_is_sole_token() -> None:
+    assert detect_tickers("HEI.A") == ["HEI.A"]
+    assert detect_tickers("HEI.A today") == ["HEI.A"]
+
+
+def test_postal_iso2_countries_resolve_by_intent_everywhere() -> None:
+    """agy final: EVERY postal/ISO2 collision resolves by intent - the
+    blanket drop suppressed valid country queries like DE CPI (Germany)."""
+    from sugra_api_mcp.catalog.aliases import detect_query_countries as d
+
+    assert d("DE CPI inflation") == {"DE"}
+    assert d("AR central bank rate") == {"AR"}
+    assert d("CO inflation") == {"CO"}
+    assert d("DE state census") == set()
+
+
+def test_component_country_survives_outside_the_compound() -> None:
+    """codex confirm: a component term dies only where its span lies inside
+    a longer match - separate occurrences survive."""
+    from sugra_api_mcp.catalog.aliases import detect_query_countries as d
+
+    assert d("American Samoa and American government TIPS") == {"AS", "US"}
+    assert d("American Samoa CPI inflation") == {"AS"}
+
+
+def test_all_territory_postal_codes_pass_the_intent_gate() -> None:
+    from sugra_api_mcp.catalog.aliases import detect_query_countries as d
+
+    assert d("IN CPI inflation") == {"IN"}
+    assert d("PR CPI inflation") == {"PR"}
+    assert d("ME state census") == set()
+
+
+def test_uniform_iso2_intent_gate() -> None:
+    """grok terminal round: NO enumerated collision sets - every bare
+    uppercase ISO2 code resolves through one macro-vs-state rule, so there
+    is no list to leak the next collision (AS, MP, AI, TV, HR...)."""
+    from sugra_api_mcp.catalog.aliases import detect_query_countries as d
+
+    assert d("AS CPI inflation") == {"AS"}
+    assert d("IT CPI inflation") == {"IT"}
+    assert d("MP CPI inflation") == {"MP"}
+    assert d("HR unemployment") == {"HR"}
+    assert d("US CPI inflation") == {"US"}
+    assert d("IS THE MARKET OPEN") == set()
+    assert d("IT support costs") == set()
+    assert d("IL state census") == set()
+
+def test_american_samoa_macro_does_not_route_to_fred(catalog) -> None:
+    """codex final: cross-detector conflict - 'American' inside 'American
+    Samoa' must not arm the US-macro FRED boost. End-to-end ranking pin."""
+    for q in ("American Samoa CPI inflation", "American Samoa GDP"):
+        results = search_catalog(catalog, q, limit=3)
+        assert results, q
+        top = results[0]["operation_id"]
+        assert not top.startswith(("fred_", "fed_")), (
+            f"{q!r} routed to the US source {top!r}: "
+            f"{[r['operation_id'] for r in results]}")
+
+
+def test_adjectival_compound_territories_do_not_read_as_us(catalog) -> None:
+    """codex confirm 2: 'American Samoan GDP' is the adjectival form - it
+    must resolve AS (longest phrase) and never arm the US FRED boost."""
+    from sugra_api_mcp.catalog.aliases import detect_query_countries as d
+
+    assert d("American Samoan GDP") == {"AS"}
+    results = search_catalog(catalog, "American Samoan GDP", limit=3)
+    assert results
+    assert not results[0]["operation_id"].startswith(("fred_", "fed_")), (
+        f"adjectival AS query routed US: {[r['operation_id'] for r in results]}")
+
+
+def test_ticker_whitelist_never_shadows_a_country_code() -> None:
+    """An unconditional whitelist entry that is ALSO a valid ISO2 country
+    defeats the geography guard ('BA CPI inflation' read as Boeing).
+    Invariant: no whitelist entry is a country code; the bare quote
+    lookups still work through sole-token and equity-context admission."""
+    from sugra_api_mcp.catalog.aliases import (
+        _ISO2_CODES_ALL,
+        _TICKER_WHITELIST,
+        detect_query_countries,
+        detect_tickers,
+    )
+
+    overlap = {t for t in _TICKER_WHITELIST if t in _ISO2_CODES_ALL}
+    assert not overlap, f"whitelist entries shadowing countries: {sorted(overlap)}"
+    assert detect_tickers("BA CPI inflation") == []
+    assert detect_query_countries("BA CPI inflation") == {"BA"}
+    assert detect_tickers("BA") == ["BA"]          # sole token
+    assert detect_tickers("GS today") == ["GS"]    # sole + filler
+    assert detect_tickers("BA stock price") == ["BA"]  # equity context
+
+
+def test_uk_short_form_resolves_to_gb() -> None:
+    """'UK' is not an ISO2 code (ISO assigns GB), so the uppercase ISO2
+    intent gate cannot admit it; the curated vocabulary short form must.
+    Word-boundary matching keeps 'ukulele'/'Ukraine' unaffected."""
+    from sugra_api_mcp.catalog.aliases import detect_query_countries
+
+    assert detect_query_countries("UK CPI inflation") == {"GB"}
+    assert detect_query_countries("uk unemployment rate") == {"GB"}
+    assert detect_query_countries("Ukraine GDP") == {"UA"}
+    assert detect_query_countries("ukulele market size") == set()
