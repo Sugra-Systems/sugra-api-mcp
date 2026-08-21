@@ -7,6 +7,21 @@ from typing import Any
 from .models import Catalog, Endpoint, EndpointParameter
 from .toolsets import toolset_for_tags
 
+# MCP-9 (codex review): the v1->v2 rewrite alone resolved only 2 of 9
+# deprecated twins. Family renames are enumerated - each rewrite is tried in
+# order and the first that lands on a live operation wins. Deprecated ops with
+# genuinely no single successor are allowlisted for the bundle test.
+_DEPRECATED_PATH_REWRITES: tuple[tuple[str, str], ...] = (
+    ("/api/v1/maritime/history/", "/api/v2/transport/vessels/history/"),
+    ("/api/v1/maritime/vessels/", "/api/v2/transport/vessels/"),
+    ("/api/v1/weather/current", "/api/v2/weather"),
+    ("/api/v1/", "/api/v2/"),
+)
+
+# weather_geocode's successor is a PARAMETER PATTERN (v2 city params), not an
+# endpoint - the only deprecated operation without a nameable replacement.
+DEPRECATED_WITHOUT_REPLACEMENT: frozenset[str] = frozenset({"weather_geocode"})
+
 SUPPORTED_METHODS = {"get", "post"}
 
 _SCHEMA_REF_PREFIX = "#/components/schemas/"
@@ -138,8 +153,26 @@ def build_catalog_from_openapi(
                     parameters=parameters,
                     request_body_required=request_body_required,
                     request_body_schema=_request_body_schema(operation, schemas),
+                    deprecated=bool(operation.get("deprecated", False)),
                 )
             )
+
+    # MCP-9: resolve replaced_by for deprecated operations. The platform's
+    # deprecation pattern is a v1 path re-published under /v2/ with the same
+    # trailing path; when exactly that live twin exists, name it so search can
+    # keep the deprecated route strictly below its replacement.
+    by_path = {(e.method, e.path): e.operation_id for e in endpoints}
+    for i, e in enumerate(endpoints):
+        if not e.deprecated or "/v1/" not in e.path:
+            continue
+        twin = None
+        for old, new in _DEPRECATED_PATH_REWRITES:
+            if old in e.path:
+                twin = by_path.get((e.method, e.path.replace(old, new, 1)))
+                if twin:
+                    break
+        if twin:
+            endpoints[i] = e.model_copy(update={"replaced_by": twin})
 
     return Catalog(
         source=source,

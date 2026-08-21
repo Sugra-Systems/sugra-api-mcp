@@ -63,6 +63,11 @@ class Endpoint(BaseModel):
     # time); {} for endpoints without a JSON body. Lets describe_endpoint
     # show the exact body shape instead of clients guessing keys.
     request_body_schema: dict[str, Any] = Field(default_factory=dict)
+    # MCP-9 (audit P1-3): the spec's deprecated flag, carried into the bundle
+    # so search can penalize deprecated routes; replaced_by names the live
+    # replacement operation when one exists (v1 path re-published under v2).
+    deprecated: bool = False
+    replaced_by: str | None = None
 
     @property
     def required_parameters(self) -> list[str]:
@@ -90,6 +95,9 @@ class Endpoint(BaseModel):
             ],
             request_body_required=bool(data.get("request_body_required", False)),
             request_body_schema=dict(data.get("request_body_schema") or {}),
+            deprecated=bool(data.get("deprecated", False)),
+            replaced_by=(str(data["replaced_by"])
+                         if data.get("replaced_by") else None),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -111,6 +119,11 @@ class Endpoint(BaseModel):
         # keys in the bundled catalog and in describe_endpoint output.
         if self.request_body_schema:
             result["request_body_schema"] = self.request_body_schema
+        # Omit-when-default keeps 1500+ live endpoints free of dead keys.
+        if self.deprecated:
+            result["deprecated"] = True
+        if self.replaced_by:
+            result["replaced_by"] = self.replaced_by
         return result
 
 
