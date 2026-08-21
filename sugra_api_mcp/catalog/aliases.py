@@ -158,10 +158,10 @@ _TICKER_WHITELIST: frozenset[str] = frozenset({
     "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "NVDA", "TSLA", "META", "NFLX",
     "AMD", "INTC", "ORCL", "IBM", "CRM", "AVGO", "QCOM", "ADBE", "CSCO",
     "JPM", "BAC", "WFC", "BRK.A", "BRK.B",
-    # grok final: no 2-letter whitelist entry may be a valid ISO2
-    # country (BA=Bosnia beat Boeing into the geo guard; GS=South
-    # Georgia likewise) - equity context or sole-token still admits
-    # the bare quote lookups.
+    # No entry here may be a valid ISO2 country code (BA is Bosnia,
+    # GS is South Georgia): an unconditional entry would defeat the
+    # geography guard. Equity context or sole-token admission still
+    # covers the bare quote lookups for such symbols.
     "XOM", "CVX", "WMT", "KO", "PEP", "DIS", "CAT", "JNJ", "PFE",
     "UNH", "HD", "MCD", "NKE",
     # Index ETFs

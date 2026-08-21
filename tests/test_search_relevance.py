@@ -895,9 +895,9 @@ def test_adjectival_compound_territories_do_not_read_as_us(catalog) -> None:
 
 
 def test_ticker_whitelist_never_shadows_a_country_code() -> None:
-    """grok final: an unconditional whitelist entry that is ALSO a valid
-    ISO2 country defeats the geography guard ('BA CPI inflation' read as
-    Boeing). Invariant: no whitelist entry is a country code; the bare quote
+    """An unconditional whitelist entry that is ALSO a valid ISO2 country
+    defeats the geography guard ('BA CPI inflation' read as Boeing).
+    Invariant: no whitelist entry is a country code; the bare quote
     lookups still work through sole-token and equity-context admission."""
     from sugra_api_mcp.catalog.aliases import (
         _ISO2_CODES_ALL,
