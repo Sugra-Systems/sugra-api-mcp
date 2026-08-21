@@ -11,11 +11,14 @@ assertion that fails on the pre-MCP-10 implementation.
 from __future__ import annotations
 
 import asyncio
+import base64 as _b64
+import contextlib
+import json as _json
 import time
 
 import pytest
 
-from sugra_api_mcp.auth import AuthError, Authenticator, _JwtClaims
+from sugra_api_mcp.auth import Authenticator, AuthError, _JwtClaims
 from sugra_api_mcp.config import AuthConfig
 
 pytestmark = pytest.mark.anyio
@@ -104,10 +107,8 @@ async def test_stalled_jwks_does_not_block_the_raw_key_path() -> None:
     auth._validate_jwt = _stall  # type: ignore[method-assign]
 
     async def _jwt_resolve():
-        try:
+        with contextlib.suppress(Exception):
             await auth.resolve("not-a-sugra-token")
-        except Exception:
-            pass
 
     jwt_task = asyncio.create_task(_jwt_resolve())
     await asyncio.sleep(0.05)  # let the JWT path enter its stall
@@ -132,7 +133,7 @@ async def test_activity_validation_cached_per_jti() -> None:
 
 
 async def test_activity_validation_failure_is_never_cached() -> None:
-    auth, fake = _authenticator()
+    auth, _ = _authenticator()
 
     class _Deny(_FakeHttp):
         async def post(self, url, headers=None, json=None):
@@ -198,9 +199,6 @@ async def test_user_locks_clean_themselves() -> None:
 
 # A structurally valid JWT shape (header.payload.signature) that parses at the
 # unverified-header level but carries no kid; never validates.
-import base64 as _b64
-import json as _json
-
 _FAKE_JWT = ".".join([
     _b64.urlsafe_b64encode(_json.dumps({"alg": "RS256"}).encode()).rstrip(b"=").decode(),
     _b64.urlsafe_b64encode(_json.dumps({"sub": "1"}).encode()).rstrip(b"=").decode(),
