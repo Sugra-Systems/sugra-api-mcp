@@ -505,11 +505,16 @@ def search_catalog(
     by_id = {endpoint.operation_id: score for score, endpoint, _ in scored}
     for i, (score, endpoint, why) in enumerate(scored):
         if endpoint.deprecated and endpoint.replaced_by:
-            rep_score = by_id.get(endpoint.replaced_by)
-            if rep_score is not None and score >= rep_score:
+            # agy review: a replacement matching NOTHING (absent from scored)
+            # must not leave the deprecated route standing on its legacy
+            # text - default 0 clamps it out of the results entirely; the
+            # why-pointer to the successor still ships on any surviving entry.
+            rep_score = by_id.get(endpoint.replaced_by, 0)
+            if score >= rep_score:
                 scored[i] = (rep_score - 1, endpoint,
                              [*why, f"clamped-below:{endpoint.replaced_by}"])
 
+    scored = [item for item in scored if item[0] > 0]
     scored.sort(key=lambda item: (-item[0], item[1].operation_id))
     return [
         {

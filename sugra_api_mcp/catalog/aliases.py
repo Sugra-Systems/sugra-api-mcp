@@ -200,13 +200,50 @@ SOURCE_COUNTRY_PREFIXES: dict[str, str] = {
 # omitted country - Netherlands CPI still returned the UK ons_cpi).
 from ._countries import COUNTRY_QUERY_TERMS  # noqa: E402 - documented above
 
+# codex review: country/US-state homonyms. The sovereign reading of an
+# ambiguous name is DROPPED when the query carries explicit US-state cues -
+# 'Georgia census states' must not penalize the US census namespace.
+_AMBIGUOUS_US_STATE_COUNTRIES: dict[str, str] = {"georgia": "GE"}
+_US_STATE_CUES: tuple[str, ...] = (
+    "state", "states", "census", "county", "counties", "acs",
+    "atlanta", "us", "usa", "u.s.",
+)
+
+# codex review: compact queries use bare ISO2 codes ('NL CPI inflation').
+# Uppercase-only in the RAW query, and codes colliding with English words or
+# US postal abbreviations are excluded - with US itself kept (it IS the
+# country the US-macro path expects).
+_ISO2_QUERY_RE = re.compile(r"\b[A-Z]{2}\b")
+_ISO2_AMBIGUOUS: frozenset[str] = frozenset({
+    "IN", "IS", "IT", "BE", "AT", "ON", "OR", "SO", "NO", "ME", "MY", "WE",
+    "DO", "GO", "HE", "AN", "AS", "BY", "IF", "OF", "TO", "UP", "AM", "PM",
+    "OK", "HI", "OH", "PA", "LA", "MA", "MD", "MO", "AL", "AR", "CO", "CT",
+    "DE", "GA", "ID", "KY", "MS", "MT", "NE", "NV", "SC", "SD", "TN", "UT",
+    "VA", "WA", "WI", "WY",
+})
+_ISO2_CODES_ALL: frozenset[str] = frozenset(COUNTRY_QUERY_TERMS.values())
+
 
 def detect_query_countries(query: str) -> set[str]:
-    """ISO2 countries the query explicitly names (token/phrase-bounded)."""
-    return {
+    """ISO2 countries the query explicitly names.
+
+    Token/phrase-bounded names and demonyms, plus bare UPPERCASE ISO2 codes
+    from the raw query (ambiguous English-word and US-postal collisions
+    excluded). Sovereign readings of country/US-state homonyms are dropped
+    when explicit US-state cues are present.
+    """
+    found = {
         COUNTRY_QUERY_TERMS[term]
         for term in _match_vocabulary(query, tuple(COUNTRY_QUERY_TERMS))
     }
+    for code in _ISO2_QUERY_RE.findall(query):
+        if code in _ISO2_CODES_ALL and code not in _ISO2_AMBIGUOUS:
+            found.add(code)
+    if found & set(_AMBIGUOUS_US_STATE_COUNTRIES.values()):
+        cues = set(_match_vocabulary(query, _US_STATE_CUES))
+        if cues:
+            found -= set(_AMBIGUOUS_US_STATE_COUNTRIES.values())
+    return found
 
 # Strong-signal tokens that indicate an equity query when present near an
 # otherwise-ambiguous ticker. Kept narrow on purpose; expanding too far would

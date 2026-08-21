@@ -741,3 +741,53 @@ def test_empty_toolset_gets_no_intent_boost() -> None:
         boost_symbol_input=False, boost_forex=False, boost_crypto=False,
         boost_us_macro=False, central_bank_prefixes=[], query_countries=set())
     assert not any(w.startswith("toolset-intent") for w in why), why
+
+
+# ---- MCP-9 review round 2 pins ----------------------------------------------
+
+def test_georgia_us_state_cues_suppress_the_country_reading(catalog) -> None:
+    """codex r2: 'Georgia census states' is a US-state query - the sovereign
+    GE reading must not strip the US census namespace out of the results."""
+    from sugra_api_mcp.catalog.aliases import detect_query_countries
+
+    assert detect_query_countries("Georgia census states") == set()
+    assert detect_query_countries("Georgia CPI inflation") == {"GE"}
+    results = search_catalog(catalog, "Georgia census states", limit=10)
+    assert any(r["operation_id"].startswith("census_") for r in results), (
+        f"US census ops vanished: {[r['operation_id'] for r in results][:5]}")
+
+
+def test_bare_iso2_code_is_recognized(catalog) -> None:
+    """codex r2: 'NL CPI inflation' must trigger geography protection."""
+    from sugra_api_mcp.catalog.aliases import SOURCE_COUNTRY_PREFIXES, detect_query_countries
+
+    assert detect_query_countries("NL CPI inflation") == {"NL"}
+    results = search_catalog(catalog, "NL CPI inflation", limit=3)
+    assert results
+    top = results[0]["operation_id"]
+    for prefix, country in SOURCE_COUNTRY_PREFIXES.items():
+        if top.startswith(prefix):
+            assert country == "NL"
+
+
+def test_ambiguous_iso2_words_are_not_countries() -> None:
+    from sugra_api_mcp.catalog.aliases import detect_query_countries
+
+    assert detect_query_countries("IT support costs") == set()
+    assert detect_query_countries("IN the beginning") == set()
+    assert detect_query_countries("US CPI inflation") == {"US"}
+
+
+def test_unmatched_replacement_clamps_the_deprecated_route_out(catalog) -> None:
+    """agy r2: a deprecated route whose replacement matches nothing must not
+    stand on its legacy text alone."""
+    from sugra_api_mcp.catalog.search import search_catalog as sc
+
+    results = sc(catalog, "deprecated legacy maritime vessels density grid",
+                 limit=50)
+    ids = [r["operation_id"] for r in results]
+    for dep in ("maritime_vessels_density", "maritime_history_density"):
+        if dep in ids:
+            rep = next(e.replaced_by for e in catalog.endpoints
+                       if e.operation_id == dep)
+            assert rep in ids and ids.index(rep) < ids.index(dep)
