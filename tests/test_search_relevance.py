@@ -855,16 +855,17 @@ def test_all_territory_postal_codes_pass_the_intent_gate() -> None:
     assert d("ME state census") == set()
 
 
-def test_ambiguous_and_collision_sets_are_disjoint() -> None:
-    """agy clearing round: an entry in BOTH sets is dead code - the ambiguous
-    check short-circuits before the intent gate ('AS' bypassed it). Class
-    invariant instead of another instance fix."""
-    from sugra_api_mcp.catalog.aliases import _ISO2_AMBIGUOUS, _ISO2_POSTAL_COLLISIONS
-
-    overlap = _ISO2_AMBIGUOUS & _ISO2_POSTAL_COLLISIONS
-    assert not overlap, f"codes short-circuited before their intent gate: {sorted(overlap)}"
+def test_one_iso2_admission_policy() -> None:
+    """grok clearing round: every colliding valid country code goes through
+    the SAME intent gate - no blanket list can shadow it ('AS' was dead)."""
+    from sugra_api_mcp.catalog.aliases import _ISO2_INTENT_GATED, _ISO2_CODES_ALL
     from sugra_api_mcp.catalog.aliases import detect_query_countries as d
+
+    assert _ISO2_INTENT_GATED <= _ISO2_CODES_ALL, (
+        "gated entries must all be valid countries")
     assert d("AS CPI inflation") == {"AS"}
+    assert d("IT CPI inflation") == {"IT"}
+    assert d("IS THE MARKET OPEN") == set()
 
 
 def test_american_samoa_macro_does_not_route_to_fred(catalog) -> None:

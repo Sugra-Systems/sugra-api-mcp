@@ -214,27 +214,23 @@ _US_STATE_CUES: tuple[str, ...] = (
 # US postal abbreviations are excluded - with US itself kept (it IS the
 # country the US-macro path expects).
 _ISO2_QUERY_RE = re.compile(r"\b[A-Z]{2}\b")
-_ISO2_AMBIGUOUS: frozenset[str] = frozenset({
-    "IS", "IT", "BE", "AT", "ON", "OR", "SO", "NO", "MY", "WE",
-    "DO", "GO", "HE", "AN", "BY", "IF", "OF", "TO", "UP", "AM", "PM",
-    # Postal codes that are NOT valid ISO2 countries stay here outright.
-    "OK", "HI", "OH", "CT", "NV", "UT", "WA", "WI", "WY",
-})
 
 # US postal codes that are ALSO valid ISO2 countries (agy r3 + codex r3):
 # resolved by surrounding intent in detect_query_countries - macro vocabulary
 # keeps the country reading, a US-state cue (or no cue) keeps the postal one.
-_ISO2_POSTAL_COLLISIONS: frozenset[str] = frozenset({
-    # agy final: every US postal code that is ALSO a valid ISO2 country
-    # resolves by intent - the blanket drop suppressed valid country queries
-    # (DE CPI = Germany, AR central bank = Argentina).
+# grok clearing round: ONE admission policy. Every valid ISO2 country code
+# that collides with anything - a US postal code OR an uppercase English
+# word - resolves through the same macro-vs-state-cue intent gate. Codes
+# that are not countries never get here (the _ISO2_CODES_ALL membership
+# check drops them), so no separate blanket list exists to shadow the gate.
+_ISO2_INTENT_GATED: frozenset[str] = frozenset({
+    # postal collisions
     "CA", "IL", "AZ", "MN", "NC",
     "PA", "LA", "MA", "MD", "MO", "AL", "AR", "CO", "DE", "GA", "ID",
     "KY", "MS", "MT", "NE", "SC", "SD", "TN", "VA",
-    # agy confirm: IN/ME/AS are countries too (uppercase + macro cue gates
-    # the English-word risk); PR/GU/VI are US-territory ISO codes that must
-    # also pass the intent gate, not resolve unconditionally.
     "IN", "ME", "AS", "PR", "GU", "VI",
+    # uppercase-English-word collisions that ARE countries
+    "IS", "IT", "BE", "AT", "NO", "DO", "TO", "AM", "BY", "SO", "MY",
 })
 
 # Macro vocabulary that marks a bare colliding code as a COUNTRY.
@@ -291,12 +287,10 @@ def detect_query_countries(query: str) -> set[str]:
     for code in _ISO2_QUERY_RE.findall(query):
         if code not in _ISO2_CODES_ALL:
             continue
-        if code in _ISO2_AMBIGUOUS:
-            continue
-        if code in _ISO2_POSTAL_COLLISIONS:
-            # codex r3: a colliding code keeps its COUNTRY reading when the
-            # query carries macro vocabulary and no US-state cue ('IL CPI
-            # inflation' is Israel); otherwise it stays a postal code.
+        if code in _ISO2_INTENT_GATED:
+            # A colliding code keeps its COUNTRY reading only when the query
+            # carries macro vocabulary and no US-state cue ('IT CPI
+            # inflation' is Italy; 'IT support costs' is not).
             if macro_cue and not state_cue:
                 found.add(code)
             continue
