@@ -858,7 +858,7 @@ def test_all_territory_postal_codes_pass_the_intent_gate() -> None:
 def test_one_iso2_admission_policy() -> None:
     """grok clearing round: every colliding valid country code goes through
     the SAME intent gate - no blanket list can shadow it ('AS' was dead)."""
-    from sugra_api_mcp.catalog.aliases import _ISO2_INTENT_GATED, _ISO2_CODES_ALL
+    from sugra_api_mcp.catalog.aliases import _ISO2_CODES_ALL, _ISO2_INTENT_GATED
     from sugra_api_mcp.catalog.aliases import detect_query_countries as d
 
     assert _ISO2_INTENT_GATED <= _ISO2_CODES_ALL, (

@@ -329,4 +329,6 @@ COUNTRY_QUERY_TERMS: dict[str, str] = {
     "american samoan": "AS",
     "puerto rican": "PR",
     "samoan": "WS",
+    "us virgin islands": "VI",
+    "british virgin islands": "VG",
 }
