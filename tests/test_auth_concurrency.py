@@ -148,3 +148,60 @@ async def test_activity_validation_failure_is_never_cached() -> None:
         with pytest.raises(Exception):
             await auth._validate_mcp_access(claims)
     assert deny.post_calls == 2, "a DENIAL must never be served from cache"
+
+
+async def test_malformed_bearer_never_reaches_the_executor() -> None:
+    """codex r2: parse-level garbage must fail on the loop, not occupy a
+    JWKS executor slot."""
+    auth, _ = _authenticator()
+    submitted = []
+    original = auth._jwks_executor.submit
+    auth._jwks_executor.submit = lambda *a, **k: submitted.append(1) or original(*a, **k)
+    with pytest.raises(Exception):
+        await auth.resolve("not.a.jwt")
+    assert not submitted, "malformed token was submitted to the JWKS executor"
+
+
+async def test_jwks_failure_puts_the_jwt_path_on_cooldown() -> None:
+    """agy r2: a failing JWKS endpoint must not be hammered per request."""
+    import sugra_api_mcp.auth as auth_mod
+
+    auth, _ = _authenticator()
+    auth._jwks_failed_at = __import__("time").monotonic()
+    with pytest.raises(auth_mod.AuthError) as e:
+        await auth.resolve(_FAKE_JWT)
+    assert e.value.status == 503
+    assert "temporarily unavailable" in str(e.value)
+
+
+async def test_access_cache_is_hard_bounded() -> None:
+    """agy r2: pruning expired entries cannot shrink a cache of LIVE jtis -
+    the cap must hold regardless."""
+    import sugra_api_mcp.auth as auth_mod
+
+    auth, _ = _authenticator()
+    for i in range(auth_mod.ACCESS_CACHE_MAX_ENTRIES + 50):
+        claims = _JwtClaims(user_id=1, access_token_id=f"jti-{i}")
+        await auth._validate_mcp_access(claims)
+    assert len(auth._access_cache) <= auth_mod.ACCESS_CACHE_MAX_ENTRIES
+
+
+async def test_user_locks_table_is_pruned() -> None:
+    import sugra_api_mcp.auth as auth_mod
+
+    auth, _ = _authenticator()
+    for uid in range(auth_mod.USER_LOCKS_PRUNE_THRESHOLD + 10):
+        await auth._lookup_api_key(uid)
+    assert len(auth._user_locks) <= auth_mod.USER_LOCKS_PRUNE_THRESHOLD + 1
+
+
+# A structurally valid JWT shape (header.payload.signature) that parses at the
+# unverified-header level but carries no kid; never validates.
+import base64 as _b64
+import json as _json
+
+_FAKE_JWT = ".".join([
+    _b64.urlsafe_b64encode(_json.dumps({"alg": "RS256"}).encode()).rstrip(b"=").decode(),
+    _b64.urlsafe_b64encode(_json.dumps({"sub": "1"}).encode()).rstrip(b"=").decode(),
+    "sig",
+])

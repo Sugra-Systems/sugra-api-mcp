@@ -60,7 +60,7 @@ async def test_deadline_fires_with_a_typed_envelope(monkeypatch) -> None:
     assert payload["error"] == "deadline_exceeded"
     assert payload["deadline_s"] == 0.5
     assert payload["elapsed_ms"] >= 450
-    assert "retry_hint" in payload and payload["retry_hint"]
+    assert payload.get("retry_hint")
     assert elapsed < 2.0, (
         f"deadline envelope arrived after {elapsed:.1f}s - the call was not "
         "cancelled at the budget")

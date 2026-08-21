@@ -14,9 +14,10 @@ On success the resolved x-api-key is stored in a ContextVar that
 from __future__ import annotations
 
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
+from contextvars import ContextVar
 from dataclasses import dataclass
 
 import httpx
@@ -43,6 +44,23 @@ INTERNAL_HTTP_TIMEOUT_SECONDS = 10.0
 # Short on purpose - it coarsens the activity heartbeat, never the denial
 # path (failures are not cached).
 ACCESS_VALIDATION_TTL_SECONDS = 60.0
+# MCP-10 r2: hard bounds and flood protection for the auth layer.
+ACCESS_CACHE_MAX_ENTRIES = 4096
+USER_LOCKS_PRUNE_THRESHOLD = 2048
+JWKS_ADMISSION_SLOTS = 4
+JWKS_ADMISSION_WAIT_SECONDS = 2.0
+JWKS_FAILURE_COOLDOWN_SECONDS = 5.0
+# codex r2: the tool deadline started AFTER the auth path, so cold auth
+# (JWKS + two internal calls) ran on top of the 40s budget. Auth gets its own
+# bounded slice, and the request start is stamped so the tool budget consumes
+# only what REMAINS of the total.
+AUTH_BUDGET_SECONDS = 15.0
+
+# Stamped by AuthMiddleware at request entry; SugraFastMCP.call_tool reads it
+# to compute the remaining budget. ContextVar so concurrent requests never
+# see each other's clock.
+request_started_at: ContextVar[float | None] = ContextVar(
+    "sugra_request_started_at", default=None)
 
 MAX_PUBLIC_MCP_CONTENT_LENGTH = 64 * 1024
 
@@ -109,6 +127,12 @@ class Authenticator:
         # offload from competing with the default pool (fleet review rule).
         self._jwks_executor = ThreadPoolExecutor(
             max_workers=2, thread_name_prefix="jwks")
+        # r2 (codex+agy): flood protection. Admission to the executor is
+        # bounded (a queue of malformed/unique-kid bearers must not bury
+        # legitimate JWTs), and a failing JWKS endpoint puts the whole JWT
+        # path on a short cooldown instead of hammering the pool.
+        self._jwks_gate = asyncio.Semaphore(JWKS_ADMISSION_SLOTS)
+        self._jwks_failed_at = 0.0
         # Short-TTL cache of a PASSING activity validation per token jti:
         # the check ran an internal HTTP round-trip on EVERY tool call.
         # Failures are never cached; the TTL only coarsens the activity
@@ -138,26 +162,71 @@ class Authenticator:
         if token.startswith("sugra_"):
             return ResolvedAuth(api_key=token)
 
-        t0 = time.monotonic()
-        loop = asyncio.get_running_loop()
-        claims = await loop.run_in_executor(
-            self._jwks_executor, self._validate_jwt, token)
-        t1 = time.monotonic()
-        await self._validate_mcp_access(claims)
-        t2 = time.monotonic()
-        api_key = await self._lookup_api_key(claims.user_id)
-        t3 = time.monotonic()
-        # MCP-10 stage attribution: the audit observed 45-120s holds that no
-        # log could attribute to a stage. One structured line per JWT resolve
-        # (logs, not span attributes - the observability privacy contract
-        # allowlists span dimensions, and these are operational timings).
-        logger.info(
-            "auth_stages user_id=%d jwks_ms=%d activity_ms=%d key_ms=%d",
-            claims.user_id,
-            int((t1 - t0) * 1000),
-            int((t2 - t1) * 1000),
-            int((t3 - t2) * 1000),
-        )
+        # r2 (codex): a malformed bearer must fail HERE, on the loop, at
+        # parse cost - never occupy a JWKS executor slot.
+        try:
+            header = jwt.get_unverified_header(token)
+        except jwt.InvalidTokenError as e:
+            raise AuthError(f"Malformed token: {e}") from e
+        has_kid = bool(header.get("kid"))
+
+        # r2 (agy): a failing JWKS endpoint cooldowns the whole JWT path.
+        if time.monotonic() - self._jwks_failed_at < JWKS_FAILURE_COOLDOWN_SECONDS:
+            raise AuthError("Signing keys temporarily unavailable", status=503)
+
+        # MCP-10 stage attribution: the audit observed 45-120s holds no log
+        # could attribute to a stage. The line lands in a finally (codex r2:
+        # the degraded paths this exists for exited before the old log).
+        stages = {"jwks_ms": -1, "activity_ms": -1, "key_ms": -1}
+        outcome = "ok"
+        user_for_log = -1
+        try:
+            t0 = time.monotonic()
+            try:
+                await asyncio.wait_for(
+                    self._jwks_gate.acquire(),
+                    timeout=JWKS_ADMISSION_WAIT_SECONDS)
+            except TimeoutError:
+                outcome = "jwks_busy"
+                raise AuthError(
+                    "Authentication is briefly overloaded, retry",
+                    status=503) from None
+            try:
+                loop = asyncio.get_running_loop()
+                claims = await loop.run_in_executor(
+                    self._jwks_executor, self._validate_jwt, token, has_kid)
+            except AuthError as e:
+                if e.status == 503:
+                    self._jwks_failed_at = time.monotonic()
+                outcome = "jwt_invalid"
+                raise
+            finally:
+                self._jwks_gate.release()
+                stages["jwks_ms"] = int((time.monotonic() - t0) * 1000)
+            user_for_log = claims.user_id
+            t1 = time.monotonic()
+            try:
+                await self._validate_mcp_access(claims)
+            except AuthError:
+                outcome = "activity_denied"
+                raise
+            finally:
+                stages["activity_ms"] = int((time.monotonic() - t1) * 1000)
+            t2 = time.monotonic()
+            try:
+                api_key = await self._lookup_api_key(claims.user_id)
+            except AuthError:
+                outcome = "key_lookup_failed"
+                raise
+            finally:
+                stages["key_ms"] = int((time.monotonic() - t2) * 1000)
+        finally:
+            logger.info(
+                "auth_stages outcome=%s user_id=%d jwks_ms=%d "
+                "activity_ms=%d key_ms=%d",
+                outcome, user_for_log, stages["jwks_ms"],
+                stages["activity_ms"], stages["key_ms"],
+            )
         resolved = ResolvedAuth(
             api_key=api_key,
             user_id=claims.user_id,
@@ -165,17 +234,22 @@ class Authenticator:
         )
         return resolved
 
-    def _validate_jwt(self, token: str) -> _JwtClaims:
-        try:
-            signing_key = self._jwks.get_signing_key_from_jwt(token)
-        except Exception:
-            # Passport / league-oauth2-server issues JWTs without a `kid`
-            # header, so kid-based lookup fails. Fall back to the sole key
-            # published in our JWKS while we use a single signing key.
+    def _validate_jwt(self, token: str, has_kid: bool = False) -> _JwtClaims:
+        # r2 (codex): the fallback exists ONLY for the expected no-kid case
+        # (Passport / league-oauth2-server). A token WITH a kid that fails
+        # lookup is invalid - retrying the whole key list on it let malformed
+        # traffic double its JWKS I/O.
+        if has_kid:
+            try:
+                signing_key = self._jwks.get_signing_key_from_jwt(token)
+            except Exception as e:
+                raise AuthError(f"Unknown signing key: {e}") from e
+        else:
             try:
                 keys = list(self._jwks.get_signing_keys())
             except Exception as e:
-                raise AuthError(f"Unable to load signing keys: {e}") from e
+                raise AuthError(
+                    f"Unable to load signing keys: {e}", status=503) from e
             if len(keys) != 1:
                 raise AuthError("No unique signing key available in JWKS") from None
             signing_key = keys[0]
@@ -239,6 +313,14 @@ class Authenticator:
         # Per-user single-flight: concurrent requests for the SAME user share
         # one fetch; different users never wait on each other. setdefault is
         # atomic under the GIL, so the occasional extra Lock object is inert.
+        # agy r2: the lock table is pruned once it grows past the
+        # threshold - an idle lock nobody holds is safe to drop (a racing
+        # setdefault simply creates a fresh one).
+        if len(self._user_locks) > USER_LOCKS_PRUNE_THRESHOLD:
+            self._user_locks = {
+                uid: lock for uid, lock in self._user_locks.items()
+                if lock.locked()
+            }
         async with self._user_locks.setdefault(user_id, asyncio.Lock()):
             cached = self._api_key_cache.get(user_id)
             if cached and cached.expires_at > now:
@@ -295,13 +377,18 @@ class Authenticator:
         if 200 <= resp.status_code < 300:
             self._access_cache[claims.access_token_id] = (
                 now + ACCESS_VALIDATION_TTL_SECONDS)
-            # The cache only ever holds passes; prune opportunistically so a
-            # long-lived process does not accumulate dead jtis.
-            if len(self._access_cache) > 4096:
-                self._access_cache = {
-                    jti: exp for jti, exp in self._access_cache.items()
-                    if exp > now
-                }
+            # The cache only ever holds passes. HARD bound (agy r2): pruning
+            # expired entries alone cannot shrink a cache full of LIVE jtis,
+            # and re-running an O(N) comprehension per auth is itself the
+            # DoS. Keep the newest entries by expiry when over the cap.
+            if len(self._access_cache) > ACCESS_CACHE_MAX_ENTRIES:
+                live = {jti: exp for jti, exp in self._access_cache.items()
+                        if exp > now}
+                if len(live) > ACCESS_CACHE_MAX_ENTRIES:
+                    live = dict(sorted(
+                        live.items(), key=lambda kv: kv[1],
+                    )[-ACCESS_CACHE_MAX_ENTRIES:])
+                self._access_cache = live
             return
 
         logger.info(
@@ -395,8 +482,20 @@ class AuthMiddleware(BaseHTTPMiddleware):
             )
 
         token = header[7:].strip()
+        request_started_at.set(time.monotonic())
         try:
-            resolved = await self._auth.resolve(token)
+            async with asyncio.timeout(AUTH_BUDGET_SECONDS):
+                resolved = await self._auth.resolve(token)
+        except TimeoutError:
+            return JSONResponse(
+                {"error": "auth_timeout",
+                 "message": (
+                     f"Authentication exceeded its {AUTH_BUDGET_SECONDS:.0f}s "
+                     "budget and was cancelled."
+                 )},
+                status_code=503,
+                headers=self._auth_headers(),
+            )
         except AuthError as e:
             token_prefix = token[:12] + "..." if len(token) > 12 else token
             logger.warning(

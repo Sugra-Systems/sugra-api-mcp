@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import time
 import os
+import time
 from contextvars import ContextVar
 from copy import deepcopy
 from typing import Any
@@ -133,7 +133,19 @@ class SugraFastMCP(FastMCP):
         # read timeout and the typed envelope never reached the agent; the
         # asyncio scope also CANCELS the outbound request instead of letting
         # it complete server-side after the caller has given up.
-        deadline = load_config(require_api_key=False).tool_deadline
+        # codex r2: the budget is END-TO-END - auth already consumed part
+        # of it. The middleware stamps the request start; what remains (with
+        # a small floor so a slow-auth call still gets a real attempt) is the
+        # tool budget. Stdio transport has no middleware stamp - full budget.
+        from .auth import request_started_at
+
+        total = load_config(require_api_key=False).tool_deadline
+        stamped = request_started_at.get()
+        if stamped is None:
+            deadline = total  # stdio transport: no auth leg, full budget
+        else:
+            # Floor keeps a real attempt possible after slow-but-passing auth.
+            deadline = max(2.0, total - max(0.0, time.monotonic() - stamped))
         started = time.monotonic()
         try:
             async with asyncio.timeout(deadline):
