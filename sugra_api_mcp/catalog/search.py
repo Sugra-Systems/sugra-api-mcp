@@ -533,6 +533,9 @@ def search_catalog(
             "sources": endpoint.sources or [endpoint.source_family],
             "tags": endpoint.tags,
             "required_parameters": endpoint.required_parameters,
+            **({"required_groups": [list(g) for g in endpoint.required_groups],
+                "groups_mutually_exclusive": endpoint.groups_mutually_exclusive}
+               if endpoint.required_groups else {}),
             "score": score,
             "why": why,
         }

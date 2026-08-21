@@ -61,6 +61,7 @@ _VALID_OPERATION_IDS: frozenset[str] | None = None
 _KNOWN_ERROR_CODES: frozenset[str] = frozenset({
     "unknown_operation_id",
     "missing_required_parameters",
+    "missing_required_parameter_groups",
     "unsupported_method",
     "unresolved_path_parameters",
     "no_endpoint_found",

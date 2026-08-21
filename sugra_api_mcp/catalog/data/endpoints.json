@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-08-21T00:05:03Z",
+  "built_at": "2026-08-21T15:44:44Z",
   "endpoint_count": 1556,
   "endpoints": [
     {
@@ -451,6 +451,15 @@
       ],
       "path": "/api/v1/air-quality/current",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -567,6 +576,15 @@
       ],
       "path": "/api/v1/air-quality/forecast",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -8809,6 +8827,15 @@
       ],
       "path": "/api/v1/climate/historical",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -8943,6 +8970,15 @@
       ],
       "path": "/api/v1/climate/projection",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -28853,6 +28889,15 @@
       ],
       "path": "/api/v1/geocoding/details",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "place_id"
+        ],
+        [
+          "osm_type",
+          "osm_id"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "core",
       "sources": [
@@ -29255,6 +29300,17 @@
       ],
       "path": "/api/v1/geocoding/structured-search",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "street"
+        ],
+        [
+          "city"
+        ],
+        [
+          "postalcode"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "core",
       "sources": [
@@ -48701,6 +48757,14 @@
       ],
       "path": "/api/v1/maritime/ports/activity",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "port_id"
+        ],
+        [
+          "country"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "trade",
       "sources": [
@@ -48793,6 +48857,14 @@
       ],
       "path": "/api/v1/maritime/spillovers",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "port_id"
+        ],
+        [
+          "country"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "trade",
       "sources": [
@@ -49425,6 +49497,7 @@
     },
     {
       "description": "NBP gold fixings either across a date range (from/to, any length - auto-chunked at 93 days server-side) or the last N publications (last_n). Exactly one mode must be supplied. History is available from 2013-01-02.",
+      "groups_mutually_exclusive": true,
       "method": "GET",
       "operation_id": "nbp_gold_history",
       "parameters": [
@@ -49490,6 +49563,15 @@
       ],
       "path": "/api/v1/nbp/gold/history",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "from",
+          "to"
+        ],
+        [
+          "last_n"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "central_banks",
       "sources": [
@@ -51711,6 +51793,7 @@
     },
     {
       "description": "Filterable by ?country={cc} ?asn={n} or ?continent={code}. Replaces the legacy /internet/outages/country|asn|continent paths.",
+      "groups_mutually_exclusive": true,
       "method": "GET",
       "operation_id": "network_outage_recent",
       "parameters": [
@@ -51785,6 +51868,17 @@
       ],
       "path": "/api/v1/network/outage/recent",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "country"
+        ],
+        [
+          "asn"
+        ],
+        [
+          "continent"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "network",
       "sources": [
@@ -67829,7 +67923,7 @@
       "toolset": "statistics"
     },
     {
-      "description": "Monthly price index of old dwellings in housing companies (`ashi/statfin_ashi_pxt_13ms.px`, 2020=100). Default query returns the whole-country total building-types aggregate. Regional codes available: `ksu` whole country, `pks` Greater Helsinki, `091` Helsinki, `853` Turku, `837` Tampere, `564` Oulu, and more.",
+      "description": "Monthly price index of old dwellings in housing companies (`ashi/15iq.px`, base 2025=100 - the 2020=100 table 13ms was retired by the vendor in June 2026). Default query returns the whole-country total building-types aggregate. Regional codes available: `ksu` whole country, `pks` Greater Helsinki, `091` Helsinki, `853` Turku, `837` Tampere, `564` Oulu, and more.",
       "method": "GET",
       "operation_id": "stat_finland_house_prices",
       "parameters": [
@@ -67849,14 +67943,14 @@
           }
         },
         {
-          "description": "Alue (region) code. `ksu` whole country.",
-          "example": "ksu",
+          "description": "Region code. `SSS` whole country.",
+          "example": "SSS",
           "location": "query",
           "name": "region",
           "required": false,
           "schema": {
-            "default": "ksu",
-            "description": "Alue (region) code. `ksu` whole country.",
+            "default": "SSS",
+            "description": "Region code. `SSS` whole country.",
             "title": "Region",
             "type": "string"
           }
@@ -67875,14 +67969,14 @@
           }
         },
         {
-          "description": "Tiedot code. `ketj_P_QA_T` = index (2020=100); `vmuut_P_QA_T` = annual change %.",
-          "example": "ketj_P_QA_T",
+          "description": "contentscode value. `ashivm_indeksi_2025` = index (2025=100); `ashivm_indeksi_vmuutos_2025` = annual change %.",
+          "example": "ashivm_indeksi_2025",
           "location": "query",
           "name": "indicator",
           "required": false,
           "schema": {
-            "default": "ketj_P_QA_T",
-            "description": "Tiedot code. `ketj_P_QA_T` = index (2020=100); `vmuut_P_QA_T` = annual change %.",
+            "default": "ashivm_indeksi_2025",
+            "description": "contentscode value. `ashivm_indeksi_2025` = index (2025=100); `ashivm_indeksi_vmuutos_2025` = annual change %.",
             "title": "Indicator",
             "type": "string"
           }
@@ -67935,14 +68029,14 @@
           }
         },
         {
-          "description": "Tiedot code. `vaesto` = population; `kokmuutos` = annual change.",
-          "example": "vaesto",
+          "description": "contentscode value. `vaerak-vaesto` = population; `vaerak-kokmuutos` = annual change.",
+          "example": "vaerak-vaesto",
           "location": "query",
           "name": "indicator",
           "required": false,
           "schema": {
-            "default": "vaesto",
-            "description": "Tiedot code. `vaesto` = population; `kokmuutos` = annual change.",
+            "default": "vaerak-vaesto",
+            "description": "contentscode value. `vaerak-vaesto` = population; `vaerak-kokmuutos` = annual change.",
             "title": "Indicator",
             "type": "string"
           }
@@ -67995,14 +68089,14 @@
           }
         },
         {
-          "description": "Tiedot code. `pisteluku15` point figure; `v_muutos15` annual change %.",
-          "example": "pisteluku15",
+          "description": "contentscode value. `thi-pisteluku15` point figure; `thi-v_muutos15` annual change %.",
+          "example": "thi-pisteluku15",
           "location": "query",
           "name": "indicator",
           "required": false,
           "schema": {
-            "default": "pisteluku15",
-            "description": "Tiedot code. `pisteluku15` point figure; `v_muutos15` annual change %.",
+            "default": "thi-pisteluku15",
+            "description": "contentscode value. `thi-pisteluku15` point figure; `thi-v_muutos15` annual change %.",
             "title": "Indicator",
             "type": "string"
           }
@@ -68027,20 +68121,20 @@
       "operation_id": "stat_finland_table_path",
       "parameters": [
         {
-          "description": "Relative PxWeb path under StatFin (e.g. `khi/statfin_khi_pxt_15b5.px`).",
-          "example": "khi/statfin_khi_pxt_15b5.px",
+          "description": "Relative PxWeb path under StatFin (e.g. `khi/15b5.px`; pre-June-2026 long ids are rewritten automatically).",
+          "example": "khi/15b5.px",
           "location": "path",
           "name": "path",
           "required": true,
           "schema": {
-            "description": "Relative PxWeb path under StatFin (e.g. `khi/statfin_khi_pxt_15b5.px`).",
+            "description": "Relative PxWeb path under StatFin (e.g. `khi/15b5.px`; pre-June-2026 long ids are rewritten automatically).",
             "title": "Path",
             "type": "string"
           }
         },
         {
-          "description": "Finnish dimension code for the time axis (e.g. `Kuukausi`, `Vuosi`, `Vuosineljännes`). Required to fetch data.",
-          "example": "Kuukausi",
+          "description": "Time-axis variable code (e.g. `timeperiod_m`, `timeperiod_y`, `timeperiod_q` since the June 2026 restructure). Required to fetch data.",
+          "example": "timeperiod_m",
           "location": "query",
           "name": "time_code",
           "required": false,
@@ -68053,7 +68147,7 @@
                 "type": "null"
               }
             ],
-            "description": "Finnish dimension code for the time axis (e.g. `Kuukausi`, `Vuosi`, `Vuosineljännes`). Required to fetch data.",
+            "description": "Time-axis variable code (e.g. `timeperiod_m`, `timeperiod_y`, `timeperiod_q` since the June 2026 restructure). Required to fetch data.",
             "title": "Time Code"
           }
         },
@@ -68175,14 +68269,14 @@
           }
         },
         {
-          "description": "Tiedot code. `Tyottomyysaste` unemployment rate, `tyottaste_trendi` trend, `Tyottaste_15_24_kausi` youth 15-24 SA.",
-          "example": "Tyottomyysaste",
+          "description": "contentscode value. `tyti-Tyottomyysaste` unemployment rate, `tyottaste_trendi` trend, `Tyottaste_15_24_kausi` youth 15-24 SA.",
+          "example": "tyti-Tyottomyysaste",
           "location": "query",
           "name": "indicator",
           "required": false,
           "schema": {
-            "default": "Tyottomyysaste",
-            "description": "Tiedot code. `Tyottomyysaste` unemployment rate, `tyottaste_trendi` trend, `Tyottaste_15_24_kausi` youth 15-24 SA.",
+            "default": "tyti-Tyottomyysaste",
+            "description": "contentscode value. `tyti-Tyottomyysaste` unemployment rate, `tyottaste_trendi` trend, `Tyottaste_15_24_kausi` youth 15-24 SA.",
             "title": "Indicator",
             "type": "string"
           }
@@ -73206,6 +73300,15 @@
       "path": "/api/v1/weather/current",
       "replaced_by": "weather",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -73348,6 +73451,15 @@
       ],
       "path": "/api/v1/weather/flood",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "river"
+        ],
+        [
+          "latitude",
+          "longitude"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -73495,6 +73607,15 @@
       ],
       "path": "/api/v1/weather/flood/ensemble",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "river"
+        ],
+        [
+          "latitude",
+          "longitude"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -73626,6 +73747,15 @@
       "path": "/api/v1/weather/forecast",
       "replaced_by": "v2_weather_forecast",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -73817,6 +73947,15 @@
       "path": "/api/v1/weather/history",
       "replaced_by": "v2_weather_history",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [
         "start_date",
         "end_date"
@@ -73921,6 +74060,15 @@
       ],
       "path": "/api/v1/weather/marine/current",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -74071,6 +74219,15 @@
       ],
       "path": "/api/v1/weather/marine/forecast",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -74221,6 +74378,15 @@
       ],
       "path": "/api/v1/weather/marine/hourly",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -75258,6 +75424,15 @@
       ],
       "path": "/api/v1/weather/us/alerts",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "state"
+        ],
+        [
+          "latitude",
+          "longitude"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -75359,6 +75534,15 @@
       ],
       "path": "/api/v1/weather/us/forecast",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -75460,6 +75644,15 @@
       ],
       "path": "/api/v1/weather/us/forecast/hourly",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -78167,6 +78360,18 @@
       ],
       "path": "/api/v2/energy/tariffs",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "eiaid"
+        ],
+        [
+          "utility"
+        ],
+        [
+          "lat",
+          "lon"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "energy",
       "sources": [
@@ -85794,6 +85999,15 @@
       ],
       "path": "/api/v2/transport/disruption-risk",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "airport"
+        ],
+        [
+          "lat",
+          "lon"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "transport",
       "sources": [
@@ -85894,6 +86108,15 @@
       ],
       "path": "/api/v2/transport/disruption-risk/forecast",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "airport"
+        ],
+        [
+          "lat",
+          "lon"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "transport",
       "sources": [
@@ -85990,6 +86213,15 @@
       ],
       "path": "/api/v2/transport/disruption-risk/route",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "path"
+        ],
+        [
+          "origin",
+          "destination"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "transport",
       "sources": [
@@ -86599,6 +86831,15 @@
       ],
       "path": "/api/v2/transport/tides",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "station"
+        ],
+        [
+          "lat",
+          "lon"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "transport",
       "sources": [
@@ -86972,6 +87213,24 @@
       ],
       "path": "/api/v2/weather",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "lat",
+          "lon"
+        ],
+        [
+          "lat",
+          "longitude"
+        ],
+        [
+          "latitude",
+          "lon"
+        ],
+        [
+          "latitude",
+          "longitude"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -87251,6 +87510,27 @@
       ],
       "path": "/api/v2/weather/forecast",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "lat",
+          "lon"
+        ],
+        [
+          "lat",
+          "longitude"
+        ],
+        [
+          "latitude",
+          "lon"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -87524,6 +87804,27 @@
       ],
       "path": "/api/v2/weather/history",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "lat",
+          "lon"
+        ],
+        [
+          "lat",
+          "longitude"
+        ],
+        [
+          "latitude",
+          "lon"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [
         "start_date",
         "end_date"
@@ -87540,5 +87841,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "652554d2aae1dd624413439b010d951ec6d8dda846ac7b32380b3f218440a77e"
+  "spec_sha256": "a83e6a561bf2e16cdd17644f3d630d8cc3b81fcbd5a328ba18fa6f52dcb983c1"
 }

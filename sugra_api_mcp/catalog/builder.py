@@ -154,6 +154,14 @@ def build_catalog_from_openapi(
                     request_body_required=request_body_required,
                     request_body_schema=_request_body_schema(operation, schemas),
                     deprecated=bool(operation.get("deprecated", False)),
+                    required_groups=tuple(
+                        tuple(str(name) for name in group)
+                        for group in ((operation.get("x-sugra-required-groups") or {})
+                                      .get("groups") or [])
+                    ),
+                    groups_mutually_exclusive=bool(
+                        (operation.get("x-sugra-required-groups") or {})
+                        .get("mutually_exclusive", False)),
                 )
             )
 
