@@ -297,3 +297,32 @@ async def test_exclusive_mixed_mode_partial_member_rejected(monkeypatch):
         params={"city": "Helsinki", "latitude": 60.2})
     assert result["error"] == "missing_required_parameter_groups"
     assert http == []
+
+
+@pytest.mark.anyio
+async def test_one_diagnostic_carries_flat_and_group_requirements(monkeypatch):
+    """codex r3: an empty call against an endpoint with BOTH a plain
+    required parameter and required groups reports everything at once."""
+    import sugra_api_mcp.tools.gateway as gw
+
+    ep = _endpoint(
+        parameters=[
+            {"name": "start_date", "location": "query", "required": True},
+            {"name": "latitude", "location": "query", "required": False},
+            {"name": "longitude", "location": "query", "required": False},
+            {"name": "city", "location": "query", "required": False},
+        ],
+        required_parameters=["start_date"],
+        required_groups=[["latitude", "longitude"], ["city"]],
+    )
+
+    class _FakeCatalog:
+        def get(self, operation_id):
+            return ep
+
+    monkeypatch.setattr(gw, "load_catalog", lambda: _FakeCatalog())
+    result = await gw.call_endpoint(operation_id="weather_current", params={})
+    assert result["error"] == "missing_required_parameters"
+    assert result["missing"] == ["start_date"]
+    assert result["required_groups"] == [["latitude", "longitude"], ["city"]]
+    assert "at least one group" in result["groups_hint"]

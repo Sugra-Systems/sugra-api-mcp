@@ -185,11 +185,21 @@ async def call_endpoint(
         clean_params = {key: value for key, value in (params or {}).items() if value is not None}
         missing = _missing_required(endpoint, clean_params, body)
         if missing:
-            return {
+            payload: dict[str, Any] = {
                 "error": "missing_required_parameters",
                 "operation_id": operation_id,
                 "missing": missing,
             }
+            # One diagnostic carries EVERYTHING the next call needs: hiding
+            # the group constraint here would force a second failing round
+            # trip (codex r3).
+            if endpoint.required_groups:
+                payload["required_groups"] = [list(g) for g in endpoint.required_groups]
+                payload["groups_hint"] = (
+                    "also supply every parameter of "
+                    + ("EXACTLY one group" if endpoint.groups_mutually_exclusive
+                       else "at least one group"))
+            return payload
         violation = _group_violation(endpoint, clean_params)
         if violation:
             return {
@@ -386,6 +396,8 @@ async def fetch_data(
                 "path": endpoint.path,
                 "summary": endpoint.summary,
                 "agent_hints": hints_for(endpoint),
+                **({"required_groups": [list(g) for g in endpoint.required_groups]}
+                   if endpoint.required_groups else {}),
                 "required_parameters": endpoint.required_parameters,
                 "parameter_examples": [
                     {
