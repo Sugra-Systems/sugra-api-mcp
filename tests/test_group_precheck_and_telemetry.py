@@ -356,3 +356,19 @@ async def test_fetch_data_one_diagnostic_carries_both(monkeypatch):
     assert result["needs_params"] == ["start_date"]
     assert result["selected_endpoint"]["required_groups"] == [
         ["latitude", "longitude"], ["city"]]
+
+
+def test_search_results_advertise_required_groups():
+    """codex r5: discovery must not present group-constrained endpoints
+    as input-free."""
+    from sugra_api_mcp.catalog.models import Catalog
+    from sugra_api_mcp.catalog.search import search_catalog
+
+    ep = _endpoint(required_groups=[["latitude", "longitude"], ["city"]],
+                   groups_mutually_exclusive=True)
+    catalog = Catalog(source="test", endpoint_count=1, endpoints=[ep])
+    results = search_catalog(catalog, "current weather", limit=3)
+    assert results, "endpoint should match"
+    top = results[0]
+    assert top["required_groups"] == [["latitude", "longitude"], ["city"]]
+    assert top["groups_mutually_exclusive"] is True
