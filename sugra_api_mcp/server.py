@@ -2,20 +2,24 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import os
+import time
 from contextvars import ContextVar
 from copy import deepcopy
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
-from mcp.types import Icon, ToolAnnotations
+from mcp.types import CallToolResult, Icon, TextContent, ToolAnnotations
 from mcp.types import Tool as MCPTool
 
 from . import __version__
 from .client import SugraClient
 from .config import MISSING_API_KEY_HINT, Config, load_allowed_origins, load_config
+from .errors import is_error_payload
 
 api_key_ctx: ContextVar[str | None] = ContextVar("sugra_api_key", default=None)
 
@@ -105,6 +109,103 @@ class SugraFastMCP(FastMCP):
             _with_ui_template(_with_oauth_security(tool))
             for tool in await super().list_tools()
         ]
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+        """Report a failed tool call as a protocol-level error.
+
+        Tools return their failures as structured payloads instead of raising,
+        which the SDK cannot distinguish from data: anything returned becomes
+        `isError=false`, and only a raised exception sets the flag - at the cost
+        of discarding the payload and, for an exception with no message, saying
+        nothing at all. Agents were left to notice the failure by inspecting the
+        body, and clients that branch on the protocol flag never saw one.
+
+        Returning a CallToolResult keeps both halves: the SDK passes it through
+        untouched, so the flag is set AND the explanation survives.
+
+        The text block is rebuilt from the same payload so it cannot be empty,
+        which is the whole reason failures are returned instead of raised.
+        Nothing is lost: every tool declares a dict result, so the block being
+        replaced is the JSON rendering of that same dict.
+        """
+        # MCP-10 (audit P1-4): ONE end-to-end budget for the whole call.
+        # Without it, a wedged upstream held the session past every client's
+        # read timeout and the typed envelope never reached the agent; the
+        # asyncio scope also CANCELS the outbound request instead of letting
+        # it complete server-side after the caller has given up.
+        # codex r2: the budget is END-TO-END - auth already consumed part
+        # of it. The middleware stamps the request start; what remains (with
+        # a small floor so a slow-auth call still gets a real attempt) is the
+        # tool budget. Stdio transport has no middleware stamp - full budget.
+        from .auth import request_started_at
+
+        total = load_config(require_api_key=False).tool_deadline
+        stamped = request_started_at.get()
+        started = time.monotonic()
+        if stamped is None:
+            deadline = total  # stdio transport: no auth leg, full budget
+        else:
+            # codex final: the TOTAL is total - no floor (a floor let slow-
+            # but-passing auth push the request past the configured budget).
+            deadline = total - max(0.0, started - stamped)
+            if deadline <= 0:
+                payload = {
+                    "error": "deadline_exceeded",
+                    "message": (
+                        f"The {total:.0f}s request budget was consumed "
+                        "before tool dispatch."
+                    ),
+                    "tool": name,
+                    "deadline_s": total,
+                    "elapsed_ms": int((started - stamped) * 1000),
+                    "retry_hint": "Retry; if it repeats, the auth path is slow.",
+                }
+                return CallToolResult(
+                    isError=True,
+                    content=[TextContent(type="text", text=json.dumps(payload))],
+                    structuredContent=payload,
+                )
+        try:
+            async with asyncio.timeout(deadline):
+                result = await super().call_tool(name, arguments)
+        except TimeoutError:
+            payload = {
+                "error": "deadline_exceeded",
+                "message": (
+                    f"Tool call exceeded the {deadline:.0f}s end-to-end "
+                    "budget and was cancelled server-side."
+                ),
+                "tool": name,
+                "deadline_s": deadline,
+                "elapsed_ms": int((time.monotonic() - started) * 1000),
+                "retry_hint": (
+                    "Retry once; if it repeats, narrow the request "
+                    "(fewer points, tighter filters)."
+                ),
+            }
+            return CallToolResult(
+                isError=True,
+                content=[TextContent(type="text", text=json.dumps(payload))],
+                structuredContent=payload,
+            )
+
+        # Tools declaring a dict return arrive as (content, structured); the
+        # bare forms are accepted so this cannot depend on that detail.
+        if isinstance(result, tuple) and len(result) == 2:
+            _content, structured = result
+        elif isinstance(result, dict):
+            structured = result
+        else:
+            return result
+
+        if not is_error_payload(structured):
+            return result
+
+        return CallToolResult(
+            isError=True,
+            content=[TextContent(type="text", text=json.dumps(structured, indent=2, default=str))],
+            structuredContent=structured,
+        )
 
 
 def read_only(title: str) -> ToolAnnotations:

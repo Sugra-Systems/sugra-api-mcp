@@ -23,6 +23,9 @@ ALIASES: dict[str, list[str]] = {
     "treasury yield": ["treasury rates", "bond yield"],
     "ip geolocation": ["network atlas", "ip address", "asn"],
     "available data sources": ["list sources", "source catalog"],
+    # MCP-9: screening-metadata intent - the sources manifest, not a screen call.
+    "corpus coverage": ["sources manifest", "screening sources", "source lists"],
+    "screening coverage": ["sources manifest", "screening sources"],
     "data sources": ["list sources", "source families"],
     "news": ["latest news", "headlines"],
     # ENERGY-1.1.1.5: EU bidding-zone / day-ahead discovery after ENTSO-E A44
@@ -142,23 +145,188 @@ _NON_TICKER_WORDS: frozenset[str] = frozenset({
     "ENTSO", "AEMO", "NESO", "NEM",
 })
 
-# Real NYSE tickers that collide with common English acronyms - AI (C3.ai Inc.)
-# and IT (Gartner Inc.) are real listed companies. These are still
-# default-excluded above, but `detect_tickers()` re-admits them when the query
-# carries strong equity-context vocabulary, so "AI revolution" stays a generic
-# AI query while "AI stock price" routes to quotes_symbol_*.
-_AMBIGUOUS_TICKERS: frozenset[str] = frozenset({
-    "AI",   # C3.ai Inc. (NYSE: AI)
-    "IT",   # Gartner Inc. (NYSE: IT)
-    "IP",   # International Paper (NYSE: IP) - also the networking acronym
-    "NAT",  # Nordic American Tankers (NYSE: NAT) - also network address translation
+# MCP-9 (audit P1-3): the ticker gate is INVERTED. The old default-allow
+# blacklist was patched three times (IXP 2026-06-07, IMF/org acronyms MCP-4.9,
+# ENTSO/grid ENERGY-1.1.1.5) - a guard patched three times is the wrong guard.
+# Now a ticker-shaped token counts as a ticker ONLY when the query carries
+# equity-context vocabulary, OR the token is on this short high-liquidity
+# whitelist where a bare mention almost always means the instrument. The
+# _NON_TICKER_WORDS list above remains a hard NEVER list (currencies, org
+# acronyms) that wins even over equity context.
+_TICKER_WHITELIST: frozenset[str] = frozenset({
+    # Mega-cap equities
+    "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "NVDA", "TSLA", "META", "NFLX",
+    "AMD", "INTC", "ORCL", "IBM", "CRM", "AVGO", "QCOM", "ADBE", "CSCO",
+    "JPM", "BAC", "WFC", "BRK.A", "BRK.B",
+    # No entry here may be a valid ISO2 country code (BA is Bosnia,
+    # GS is South Georgia): an unconditional entry would defeat the
+    # geography guard. Equity context or sole-token admission still
+    # covers the bare quote lookups for such symbols.
+    "XOM", "CVX", "WMT", "KO", "PEP", "DIS", "CAT", "JNJ", "PFE",
+    "UNH", "HD", "MCD", "NKE",
+    # Index ETFs
+    "SPY", "QQQ", "IWM", "DIA", "VTI", "VOO",
 })
+
+# National-source geography (MCP-9): operation_id prefix -> ISO2 country of
+# the NATIONAL source. Used by search to demote a national source when the
+# query names a DIFFERENT country - the audit's 'Georgia CPI' returned the UK
+# ons_cpi top-1. Global/multi-country sources are deliberately absent (never
+# demoted). Curated, like the central-bank prefix map above.
+SOURCE_COUNTRY_PREFIXES: dict[str, str] = {
+    "ons_": "GB", "boe_": "GB",
+    "rba_": "AU", "abs_": "AU",
+    "boc_": "CA", "statcan_": "CA",
+    "boj_": "JP", "estat_": "JP",
+    "snb_": "CH",
+    "riksbank_": "SE",
+    "norges_bank_": "NO",
+    "stat_finland_": "FI",
+    "statistical_agencies_statbank_dk_": "DK",
+    "destatis_": "DE",
+    "statistical_agencies_ibge_": "BR", "bcb_": "BR",
+    "central_banks_bcra_": "AR",
+    "central_banks_bcrp_": "PE",
+    "central_banks_sarb_": "ZA",
+    "forex_cbr_": "RU",
+    "nbp_": "PL", "cnb_": "CZ", "bnm_": "MY",
+    "statistical_agencies_stat_estonia_": "EE",
+    "fred_": "US", "fed_": "US", "worldbank_bls_": "US", "bea_": "US",
+    "census_": "US",
+    "ine_": "ES",
+    # MCP-12: single-country prefixes swept from the FULL bundle (600
+    # untagged clusters judged + adversarially verified per proposal;
+    # 28 refutations kept global/parameterized sources untagged).
+    "insee_": "FR", "transport_road_": "FR",
+    "fca_shorts_": "GB",
+    "data_gov_": "HK",
+    "edinet_": "JP",
+    "post_statistical_": "NO", "statistical_agencies_ssb_": "NO",
+    "scb_": "SE",
+    "commodities_agriculture_grains": "US", "commodities_energy_natural_": "US",
+    "congress_amendments_": "US", "congress_committee_": "US", "congress_committees_": "US",
+    "congress_communications_": "US", "congress_hearings": "US", "congress_laws": "US",
+    "congress_members_": "US", "congress_nominations": "US", "congress_record": "US",
+    "congress_sessions": "US", "congress_summaries": "US",
+    "energy_retail_": "US", "energy_tariffs": "US", "energy_utilities_": "US",
+    "environment_usgs_": "US", "equities_sp500_": "US", "etf_flows_": "US",
+    "etf_sectors_": "US", "fixed_income_treasury_": "US", "macro_net_liquidity": "US",
+    "macro_regime": "US", "maritime_history_": "US", "markets_equity_": "US", "multpl_": "US",
+    "post_congress_": "US", "short_interest_": "US", "treasury_auctions": "US",
+    "treasury_daily_": "US", "treasury_debt_": "US", "treasury_deficit": "US",
+    "treasury_gold": "US", "treasury_interest_": "US", "treasury_rates": "US",
+    "usaspending_agencies": "US", "usaspending_agency_": "US", "usaspending_budget_": "US",
+    "usaspending_last_": "US", "usaspending_spending_": "US", "weather_nws_aviation_": "US",
+    "weather_nws_forecast_": "US", "weather_nws_office_": "US", "weather_nws_point": "US",
+    "weather_nws_zones": "US", "weather_us_alerts": "US", "weather_us_forecast_": "US",
+}
+# The dead-prefix test (tests/test_search_relevance.py) guards this map: every
+# entry must match at least one bundled operation, so a source rename or
+# removal fails loudly instead of silently disarming the geography penalty.
+
+# Query-side country vocabulary: comprehensive generated module (codex/agy
+# review: a closed 30-entry list recreated silent substitution for every
+# omitted country - Netherlands CPI still returned the UK ons_cpi).
+from ._countries import COUNTRY_QUERY_TERMS  # noqa: E402 - documented above
+
+# codex review: country/US-state homonyms. The sovereign reading of an
+# ambiguous name is DROPPED when the query carries explicit US-state cues -
+# 'Georgia census states' must not penalize the US census namespace.
+_AMBIGUOUS_US_STATE_COUNTRIES: dict[str, str] = {"georgia": "GE"}
+# NOTE: deliberately excludes "us"/"usa" - those tokens are the US COUNTRY
+# reading itself ('US CPI inflation'); a state needs a state-shaped cue.
+_US_STATE_CUES: tuple[str, ...] = (
+    "state", "states", "census", "county", "counties", "acs", "atlanta",
+)
+
+# codex review: compact queries use bare ISO2 codes ('NL CPI inflation').
+# Uppercase-only in the RAW query, and codes colliding with English words or
+# US postal abbreviations are excluded - with US itself kept (it IS the
+# country the US-macro path expects).
+_ISO2_QUERY_RE = re.compile(r"\b[A-Z]{2}\b")
+
+# US postal codes that are ALSO valid ISO2 countries (agy r3 + codex r3):
+# resolved by surrounding intent in detect_query_countries - macro vocabulary
+# keeps the country reading, a US-state cue (or no cue) keeps the postal one.
+
+# Macro vocabulary that marks a bare colliding code as a COUNTRY.
+_COUNTRY_MACRO_CUES: tuple[str, ...] = (
+    "cpi", "inflation", "gdp", "unemployment", "central bank",
+    "interest rate", "policy rate", "exchange rate", "trade balance",
+    "current account", "bond yield",
+)
+_ISO2_CODES_ALL: frozenset[str] = frozenset(COUNTRY_QUERY_TERMS.values())
+
+
+def detect_query_countries(query: str) -> set[str]:
+    """ISO2 countries the query explicitly names.
+
+    Token/phrase-bounded names and demonyms resolve directly. Bare
+    UPPERCASE ISO2 codes resolve only under the uniform intent gate: macro
+    vocabulary present and no US-state cue - one rule for every collision
+    class (English words, US postal codes, acronyms). Sovereign readings of
+    country/US-state homonym NAMES are likewise dropped under state cues.
+    """
+    # codex r3: overlapping matches resolve longest-phrase-first -
+    # 'American Samoa' must be AS alone, not AS+US ('american')+WS ('samoa'),
+    # or the US component defeats the wrong-country guard entirely.
+    matched = _match_vocabulary(query, tuple(COUNTRY_QUERY_TERMS))
+    # codex confirm: suppression is OCCURRENCE-aware - a component term dies
+    # only where every one of its spans lies inside a longer match ('American
+    # Samoa and American government' keeps the separate US reading).
+    tokens = _WORD_TOKEN_RE.findall(query.lower())
+    normalized = " " + " ".join(tokens) + " "
+    def _spans(term):
+        needle = f" {term} "
+        out, i = [], 0
+        while True:
+            j = normalized.find(needle, i)
+            if j < 0:
+                return out
+            out.append((j, j + len(needle)))
+            i = j + 1
+    kept = []
+    for term in matched:
+        longer = [o for o in matched if o != term and f" {term} " in f" {o} "]
+        if not longer:
+            kept.append(term)
+            continue
+        covered_spans = [sp for o in longer for sp in _spans(o)]
+        term_alive = any(
+            not any(cs[0] <= ts[0] and ts[1] <= cs[1] for cs in covered_spans)
+            for ts in _spans(term)
+        )
+        if term_alive:
+            kept.append(term)
+    found = {COUNTRY_QUERY_TERMS[term] for term in kept}
+    # grok confirmation (terminal simplification): NO enumerated collision
+    # sets - every bare uppercase ISO2 code resolves through the SAME rule:
+    # macro vocabulary present and no US-state cue. Hand-enumerated gated
+    # sets leaked a new collision every round (AS, MP, AI, TV, HR...);
+    # a uniform gate has nothing to leak. Full country names and demonyms
+    # (above) still resolve without a cue.
+    macro_cue = bool(_match_vocabulary(query, _COUNTRY_MACRO_CUES))
+    state_cue = bool(_match_vocabulary(query, _US_STATE_CUES))
+    if macro_cue and not state_cue:
+        for code in _ISO2_QUERY_RE.findall(query):
+            if code in _ISO2_CODES_ALL:
+                found.add(code)
+    if found & set(_AMBIGUOUS_US_STATE_COUNTRIES.values()):
+        cues = set(_match_vocabulary(query, _US_STATE_CUES))
+        if cues:
+            found -= set(_AMBIGUOUS_US_STATE_COUNTRIES.values())
+    return found
 
 # Strong-signal tokens that indicate an equity query when present near an
 # otherwise-ambiguous ticker. Kept narrow on purpose; expanding too far would
 # re-introduce the false positives that motivated the exclusion list.
 # Bare "exchange" was dropped (Codex S3 review): it collides with "internet
 # exchange" and "exchange rate" - the phrase form below keeps the equity case.
+# Temporal/filler words that do not change a bare-ticker quote lookup.
+_BARE_TICKER_FILLER: frozenset[str] = frozenset({
+    "today", "now", "currently", "please", "latest",
+})
+
 _EQUITY_CONTEXT_TERMS: tuple[str, ...] = (
     "price", "stock", "ticker", "shares", "share price",
     "market cap", "dividend", "earnings", "p/e",
@@ -239,27 +407,42 @@ def matching_aliases(query: str) -> dict[str, list[str]]:
 def detect_tickers(query: str) -> list[str]:
     """Return likely stock ticker tokens (e.g. AAPL, MSFT, BRK.A) found in the raw query.
 
-    Heuristic: 2-5 uppercase letters not in the known non-ticker word list (CPI,
-    USD, CEO, etc.). Ambiguous symbols that are both common acronyms AND real
-    NYSE tickers (AI, IT) are re-admitted when the query carries equity-context
-    vocabulary - so "AI revolution" stays a generic AI question while "AI stock
-    price" lands on quotes_symbol_*.
+    MCP-9 inverted gate: a 2-5 uppercase token is a ticker ONLY when the query
+    carries equity-context vocabulary (price, stock, dividend, ...) or the
+    token is on the short high-liquidity whitelist (AAPL, SPY, ...). The
+    _NON_TICKER_WORDS hard list (CPI, USD, IMF, ...) always wins. So "AI
+    revolution" and "search FRED series" stay non-equity while "AI stock
+    price" and bare "NVDA today" land on quotes_symbol_*.
     """
     matches = TICKER_TOKEN_RE.findall(query)
     if not matches:
         return []
 
+    # MCP-9 inverted gate: equity context (or the high-liquidity whitelist)
+    # ADMITS a ticker-shaped token; the hard NEVER list still wins over both.
+    # The old default-allow blacklist misread FRED, AIS, RF, MMSI, IMF and
+    # every future acronym as equities until someone patched the list again.
     has_equity_context = query_has_equity_context(query)
+    # Sole-substantive-token rule (codex review): a bare 'PLTR' (optionally
+    # with temporal filler) is a quote lookup - there is no other intent the
+    # query could carry. Acronym safety is preserved: multi-token queries
+    # ('search FRED series for gold') still require context or whitelist.
+    # codex r3: judge sole-ness on what REMAINS after removing the ticker
+    # match itself - the word tokenizer splits dotted class shares (HEI.A)
+    # into two tokens and wrongly disqualified them.
+    remainder = query
+    if len(matches) == 1:
+        remainder = remainder.replace(matches[0], " ", 1)
+    leftover = [
+        t for t in _WORD_TOKEN_RE.findall(remainder.lower())
+        if t not in _BARE_TICKER_FILLER
+    ]
+    sole = len(matches) == 1 and not leftover
     result: list[str] = []
     for token in matches:
-        # Ambiguous tickers (AI = C3.ai, IT = Gartner) are gated on equity
-        # context first to suppress "AI revolution" / "IT support" cases.
-        if token in _AMBIGUOUS_TICKERS:
-            if has_equity_context:
-                result.append(token)
+        if token in _NON_TICKER_WORDS:
             continue
-        # Everything else flows through the non-ticker blacklist.
-        if token not in _NON_TICKER_WORDS:
+        if token in _TICKER_WHITELIST or has_equity_context or sole:
             result.append(token)
     return result
 

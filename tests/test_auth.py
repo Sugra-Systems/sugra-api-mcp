@@ -89,6 +89,8 @@ async def test_jwt_with_valid_signature_and_cached_key(auth_config, rsa_keypair)
     mock_signing_key.key = public_pem
 
     auth._jwks.get_signing_key_from_jwt = MagicMock(return_value=mock_signing_key)
+    # MCP-10: no-kid tokens route through the keys-list fallback now.
+    auth._jwks.get_signing_keys = MagicMock(return_value=[mock_signing_key])
     auth._api_key_cache[42] = _CachedKey(
         api_key="sugra_cached_key",
         expires_at=time.time() + 60,
@@ -126,6 +128,8 @@ async def test_passport_jwt_without_issuer_with_mcp_audience_is_accepted(auth_co
     mock_signing_key.key = public_pem
 
     auth._jwks.get_signing_key_from_jwt = MagicMock(return_value=mock_signing_key)
+    # MCP-10: no-kid tokens route through the keys-list fallback now.
+    auth._jwks.get_signing_keys = MagicMock(return_value=[mock_signing_key])
     auth._api_key_cache[42] = _CachedKey(
         api_key="sugra_cached_key",
         expires_at=time.time() + 60,
@@ -173,6 +177,8 @@ async def test_jwt_activity_validation_failure_denies_auth(auth_config, rsa_keyp
     mock_signing_key.key = public_pem
 
     auth._jwks.get_signing_key_from_jwt = MagicMock(return_value=mock_signing_key)
+    # MCP-10: no-kid tokens route through the keys-list fallback now.
+    auth._jwks.get_signing_keys = MagicMock(return_value=[mock_signing_key])
     auth._api_key_cache[42] = _CachedKey(
         api_key="sugra_cached_key",
         expires_at=time.time() + 60,
@@ -214,6 +220,8 @@ async def test_jwt_activity_exception_denies_auth(auth_config, rsa_keypair):
     mock_signing_key.key = public_pem
 
     auth._jwks.get_signing_key_from_jwt = MagicMock(return_value=mock_signing_key)
+    # MCP-10: no-kid tokens route through the keys-list fallback now.
+    auth._jwks.get_signing_keys = MagicMock(return_value=[mock_signing_key])
     auth._api_key_cache[42] = _CachedKey(
         api_key="sugra_cached_key",
         expires_at=time.time() + 60,
@@ -254,6 +262,8 @@ async def test_jwt_missing_jti_raises(auth_config, rsa_keypair):
     mock_signing_key.key = public_pem
 
     auth._jwks.get_signing_key_from_jwt = MagicMock(return_value=mock_signing_key)
+    # MCP-10: no-kid tokens route through the keys-list fallback now.
+    auth._jwks.get_signing_keys = MagicMock(return_value=[mock_signing_key])
 
     with pytest.raises(AuthError, match="jti"):
         await auth.resolve(token)
@@ -290,6 +300,8 @@ async def test_jwt_wrong_audience_raises(auth_config, rsa_keypair):
     mock_signing_key = MagicMock()
     mock_signing_key.key = public_pem
     auth._jwks.get_signing_key_from_jwt = MagicMock(return_value=mock_signing_key)
+    # MCP-10: no-kid tokens route through the keys-list fallback now.
+    auth._jwks.get_signing_keys = MagicMock(return_value=[mock_signing_key])
 
     with pytest.raises(AuthError, match="Invalid token"):
         await auth.resolve(token)
@@ -312,6 +324,8 @@ async def test_jwt_expired_raises(auth_config, rsa_keypair):
     mock_signing_key = MagicMock()
     mock_signing_key.key = public_pem
     auth._jwks.get_signing_key_from_jwt = MagicMock(return_value=mock_signing_key)
+    # MCP-10: no-kid tokens route through the keys-list fallback now.
+    auth._jwks.get_signing_keys = MagicMock(return_value=[mock_signing_key])
 
     with pytest.raises(AuthError, match="expired"):
         await auth.resolve(token)
@@ -333,6 +347,8 @@ async def test_jwt_missing_sub_raises(auth_config, rsa_keypair):
     mock_signing_key = MagicMock()
     mock_signing_key.key = public_pem
     auth._jwks.get_signing_key_from_jwt = MagicMock(return_value=mock_signing_key)
+    # MCP-10: no-kid tokens route through the keys-list fallback now.
+    auth._jwks.get_signing_keys = MagicMock(return_value=[mock_signing_key])
 
     with pytest.raises(AuthError, match="sub claim"):
         await auth.resolve(token)
@@ -355,6 +371,8 @@ async def test_jwt_wrong_issuer_raises(auth_config, rsa_keypair):
     mock_signing_key = MagicMock()
     mock_signing_key.key = public_pem
     auth._jwks.get_signing_key_from_jwt = MagicMock(return_value=mock_signing_key)
+    # MCP-10: no-kid tokens route through the keys-list fallback now.
+    auth._jwks.get_signing_keys = MagicMock(return_value=[mock_signing_key])
 
     with pytest.raises(AuthError, match="Invalid token"):
         await auth.resolve(token)
@@ -378,6 +396,8 @@ async def test_jwt_missing_read_scope_raises(auth_config, rsa_keypair):
     mock_signing_key = MagicMock()
     mock_signing_key.key = public_pem
     auth._jwks.get_signing_key_from_jwt = MagicMock(return_value=mock_signing_key)
+    # MCP-10: no-kid tokens route through the keys-list fallback now.
+    auth._jwks.get_signing_keys = MagicMock(return_value=[mock_signing_key])
 
     with pytest.raises(AuthError, match="sugra:read"):
         await auth.resolve(token)
@@ -402,6 +422,8 @@ async def test_lookup_404_raises_with_user_message(auth_config, rsa_keypair):
     mock_signing_key = MagicMock()
     mock_signing_key.key = public_pem
     auth._jwks.get_signing_key_from_jwt = MagicMock(return_value=mock_signing_key)
+    # MCP-10: no-kid tokens route through the keys-list fallback now.
+    auth._jwks.get_signing_keys = MagicMock(return_value=[mock_signing_key])
 
     mock_response = MagicMock(spec=httpx.Response)
     mock_response.status_code = 404
@@ -440,6 +462,8 @@ async def test_lookup_success_caches_result(auth_config, rsa_keypair):
     mock_signing_key = MagicMock()
     mock_signing_key.key = public_pem
     auth._jwks.get_signing_key_from_jwt = MagicMock(return_value=mock_signing_key)
+    # MCP-10: no-kid tokens route through the keys-list fallback now.
+    auth._jwks.get_signing_keys = MagicMock(return_value=[mock_signing_key])
 
     mock_response = MagicMock(spec=httpx.Response)
     mock_response.status_code = 200
@@ -489,6 +513,8 @@ async def test_missing_internal_token_raises_500(auth_config, rsa_keypair):
     mock_signing_key = MagicMock()
     mock_signing_key.key = public_pem
     auth._jwks.get_signing_key_from_jwt = MagicMock(return_value=mock_signing_key)
+    # MCP-10: no-kid tokens route through the keys-list fallback now.
+    auth._jwks.get_signing_keys = MagicMock(return_value=[mock_signing_key])
 
     with pytest.raises(AuthError) as exc:
         await auth.resolve(token)

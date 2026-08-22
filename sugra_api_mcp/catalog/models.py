@@ -63,6 +63,16 @@ class Endpoint(BaseModel):
     # time); {} for endpoints without a JSON body. Lets describe_endpoint
     # show the exact body shape instead of clients guessing keys.
     request_body_schema: dict[str, Any] = Field(default_factory=dict)
+    # MCP-9 (audit P1-3): the spec's deprecated flag, carried into the bundle
+    # so search can penalize deprecated routes; replaced_by names the live
+    # replacement operation when one exists (v1 path re-published under v2).
+    deprecated: bool = False
+    replaced_by: str | None = None
+    # MCP-11 (audit P1-8 MCP half): conditionally-required parameter groups
+    # from the spec's x-sugra-required-groups extension - at least one group
+    # must be fully covered before the gateway dispatches.
+    required_groups: tuple[tuple[str, ...], ...] = ()
+    groups_mutually_exclusive: bool = False
 
     @property
     def required_parameters(self) -> list[str]:
@@ -90,6 +100,14 @@ class Endpoint(BaseModel):
             ],
             request_body_required=bool(data.get("request_body_required", False)),
             request_body_schema=dict(data.get("request_body_schema") or {}),
+            deprecated=bool(data.get("deprecated", False)),
+            replaced_by=(str(data["replaced_by"])
+                         if data.get("replaced_by") else None),
+            required_groups=tuple(
+                tuple(str(name) for name in group)
+                for group in (data.get("required_groups") or [])
+            ),
+            groups_mutually_exclusive=bool(data.get("groups_mutually_exclusive", False)),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -111,6 +129,15 @@ class Endpoint(BaseModel):
         # keys in the bundled catalog and in describe_endpoint output.
         if self.request_body_schema:
             result["request_body_schema"] = self.request_body_schema
+        # Omit-when-default keeps 1500+ live endpoints free of dead keys.
+        if self.deprecated:
+            result["deprecated"] = True
+        if self.replaced_by:
+            result["replaced_by"] = self.replaced_by
+        if self.required_groups:
+            result["required_groups"] = [list(group) for group in self.required_groups]
+            if self.groups_mutually_exclusive:
+                result["groups_mutually_exclusive"] = True
         return result
 
 

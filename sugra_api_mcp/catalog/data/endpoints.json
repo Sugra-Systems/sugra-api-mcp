@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-08-12T20:43:35Z",
+  "built_at": "2026-08-21T15:44:44Z",
   "endpoint_count": 1556,
   "endpoints": [
     {
@@ -451,6 +451,15 @@
       ],
       "path": "/api/v1/air-quality/current",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -567,6 +576,15 @@
       ],
       "path": "/api/v1/air-quality/forecast",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -8809,6 +8827,15 @@
       ],
       "path": "/api/v1/climate/historical",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -8927,7 +8954,7 @@
         },
         {
           "description": "Projection end year (2025-2050)",
-          "example": 2024,
+          "example": 2050,
           "location": "query",
           "name": "end_year",
           "required": false,
@@ -8943,6 +8970,15 @@
       ],
       "path": "/api/v1/climate/projection",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -28853,6 +28889,15 @@
       ],
       "path": "/api/v1/geocoding/details",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "place_id"
+        ],
+        [
+          "osm_type",
+          "osm_id"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "core",
       "sources": [
@@ -29255,6 +29300,17 @@
       ],
       "path": "/api/v1/geocoding/structured-search",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "street"
+        ],
+        [
+          "city"
+        ],
+        [
+          "postalcode"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "core",
       "sources": [
@@ -29657,7 +29713,7 @@
           "name": "page_size",
           "required": false,
           "schema": {
-            "default": 250,
+            "default": 200,
             "description": "Entries per page (1 to 200; upstream total is 250).",
             "maximum": 200,
             "minimum": 1,
@@ -48483,6 +48539,7 @@
       "toolset": "trade"
     },
     {
+      "deprecated": true,
       "description": "Coarse vessel-density grid folded from NOAA MarineCadastre daily AIS files. Historical analytics, months-lagged - NOT live and NOT a current snapshot. Coverage is United States historical analytics. Each grid cell carries a vessel observation count and an AIS ship-type breakdown. Optional bbox filters cells; optional date reads a specific day's shard (defaults to the latest folded day). Source: NOAA / BOEM MarineCadastre (public domain, CC0).",
       "method": "GET",
       "operation_id": "maritime_history_density",
@@ -48515,6 +48572,7 @@
         }
       ],
       "path": "/api/v1/maritime/history/density",
+      "replaced_by": "transport_vessels_history_density",
       "request_body_required": false,
       "required_parameters": [],
       "source_family": "trade",
@@ -48528,6 +48586,7 @@
       "toolset": "trade"
     },
     {
+      "deprecated": true,
       "description": "Per-port AIS activity proxy folded from NOAA MarineCadastre daily AIS files. Historical analytics, months-lagged - NOT live. Coverage is United States historical analytics. Each port carries an activity-observation count and an AIS ship-type breakdown. This serves the latest computed snapshot - port activity has no by-date dimension. Source: NOAA / BOEM MarineCadastre (public domain, CC0).",
       "method": "GET",
       "operation_id": "maritime_history_port_activity",
@@ -48546,6 +48605,7 @@
         }
       ],
       "path": "/api/v1/maritime/history/port-activity",
+      "replaced_by": "transport_vessels_history_port_activity",
       "request_body_required": false,
       "required_parameters": [],
       "source_family": "trade",
@@ -48697,6 +48757,14 @@
       ],
       "path": "/api/v1/maritime/ports/activity",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "port_id"
+        ],
+        [
+          "country"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "trade",
       "sources": [
@@ -48789,6 +48857,14 @@
       ],
       "path": "/api/v1/maritime/spillovers",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "port_id"
+        ],
+        [
+          "country"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "trade",
       "sources": [
@@ -48801,6 +48877,7 @@
       "toolset": "trade"
     },
     {
+      "deprecated": true,
       "description": "Aggregate vessel-density intensity (hours per km2 over the period) for European waters, downsampled to a coarse grid by ship type. This is an aggregate density product, not live positions. Sourced from EMODnet Human Activities (CC BY 4.0) and refreshed monthly by the ingest Function App. Optionally filter the grid by a bounding box.",
       "method": "GET",
       "operation_id": "maritime_vessels_density",
@@ -48848,6 +48925,7 @@
         }
       ],
       "path": "/api/v1/maritime/vessels/density",
+      "replaced_by": "transport_vessels_density",
       "request_body_required": false,
       "required_parameters": [],
       "source_family": "trade",
@@ -48861,6 +48939,7 @@
       "toolset": "trade"
     },
     {
+      "deprecated": true,
       "description": "Northern Europe regional near-live AIS vessel positions from sovereign open data feeds (Baltic + Norway), refreshed every 5 minutes by the ingest Function App. Regional coverage only - terrestrial AIS reaches roughly 200 km from shore, so coverage is bounded to these waters and updates on a 5-minute cadence. AIS is self-reported. Filter by bbox (minLon,minLat,maxLon,maxLat) and/or region. Attribution travels with every response in data.sources[].",
       "method": "GET",
       "operation_id": "maritime_vessels_live",
@@ -48924,6 +49003,7 @@
         }
       ],
       "path": "/api/v1/maritime/vessels/live",
+      "replaced_by": "transport_vessels_live",
       "request_body_required": false,
       "required_parameters": [],
       "source_family": "trade",
@@ -48937,6 +49017,7 @@
       "toolset": "trade"
     },
     {
+      "deprecated": true,
       "description": "Look up one vessel's latest known position by MMSI within the Northern Europe regional near-live snapshot (Baltic + Norway). Scans both regions when region is omitted. Regional coverage only, bounded to these waters on a 5-minute cadence. AIS is self-reported. Returns 404 when the MMSI is not present in the current snapshot.",
       "method": "GET",
       "operation_id": "maritime_vessels_mmsi",
@@ -48972,6 +49053,7 @@
         }
       ],
       "path": "/api/v1/maritime/vessels/{mmsi}",
+      "replaced_by": "transport_vessels_mmsi",
       "request_body_required": false,
       "required_parameters": [
         "mmsi"
@@ -49415,6 +49497,7 @@
     },
     {
       "description": "NBP gold fixings either across a date range (from/to, any length - auto-chunked at 93 days server-side) or the last N publications (last_n). Exactly one mode must be supplied. History is available from 2013-01-02.",
+      "groups_mutually_exclusive": true,
       "method": "GET",
       "operation_id": "nbp_gold_history",
       "parameters": [
@@ -49480,6 +49563,15 @@
       ],
       "path": "/api/v1/nbp/gold/history",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "from",
+          "to"
+        ],
+        [
+          "last_n"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "central_banks",
       "sources": [
@@ -51701,6 +51793,7 @@
     },
     {
       "description": "Filterable by ?country={cc} ?asn={n} or ?continent={code}. Replaces the legacy /internet/outages/country|asn|continent paths.",
+      "groups_mutually_exclusive": true,
       "method": "GET",
       "operation_id": "network_outage_recent",
       "parameters": [
@@ -51775,6 +51868,17 @@
       ],
       "path": "/api/v1/network/outage/recent",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "country"
+        ],
+        [
+          "asn"
+        ],
+        [
+          "continent"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "network",
       "sources": [
@@ -57307,7 +57411,7 @@
       "toolset": "markets"
     },
     {
-      "description": "Returns the single contract whose delta is CLOSEST to the requested target on the requested expiry - the 'which strike is the 25-delta call' answer as one small response instead of the ~256 KB full chain plus a client-side search. Delta is SIGNED: positive selects from calls, negative from puts; the optional ``right`` parameter must agree with the sign when given. Contracts whose implied volatility fails the shared plausibility gate (including the upstream's literal 0.0 no-data marker, API-1.8) or that carry no usable delta are EXCLUDED before selection and disclosed in the ``dropped_*`` counters, so a gated chain can never silently select an empty contract. Error codes match ``/snapshot``: ``unknown_symbol``, ``expiry_not_in_snapshot``, ``snapshot_not_available``.",
+      "description": "Returns the single contract whose delta is CLOSEST to the requested target on the requested expiry - the 'which strike is the 25-delta call' answer as one small response instead of the ~256 KB full chain plus a client-side search. Delta is SIGNED: positive selects from calls, negative from puts; the optional ``right`` parameter must agree with the sign when given. Contracts whose implied volatility fails the shared plausibility gate (including the upstream's literal 0.0 no-data marker, API-1.8) or that carry no usable delta are EXCLUDED before selection and disclosed in the ``dropped_*`` counters, so a gated chain can never silently select an empty contract. Error codes match ``/snapshot``: ``unknown_symbol``, ``expiry_not_in_snapshot``, ``snapshot_not_available``. ``unknown_symbol`` covers two different situations, told apart by the ``reason`` field of the error body: a symbol that does not resolve on this platform, and one that resolves but is not among the underliers options data is collected for. The body names the size of that roster and the endpoint listing it.",
       "method": "GET",
       "operation_id": "options_symbol_strike_by_delta",
       "parameters": [
@@ -64593,6 +64697,47 @@
             "title": "Offset",
             "type": "integer"
           }
+        },
+        {
+          "description": "Case-insensitive substring of the manager name.",
+          "example": "BlackRock",
+          "location": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 2,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Case-insensitive substring of the manager name.",
+            "title": "Q"
+          }
+        },
+        {
+          "description": "Exact CIK, with or without leading zeros.",
+          "example": "1364742",
+          "location": "query",
+          "name": "cik",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{1,10}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exact CIK, with or without leading zeros.",
+            "title": "Cik"
+          }
         }
       ],
       "path": "/api/v1/sec/13f/filers",
@@ -65989,14 +66134,14 @@
           }
         },
         {
-          "description": "Number of days",
+          "description": "How many of the MOST RECENT rows to return.",
           "example": 20,
           "location": "query",
           "name": "limit",
           "required": false,
           "schema": {
             "default": 20,
-            "description": "Number of days",
+            "description": "How many of the MOST RECENT rows to return.",
             "maximum": 100,
             "minimum": 1,
             "title": "Limit",
@@ -66132,14 +66277,14 @@
           }
         },
         {
-          "description": "Number of reports",
+          "description": "How many of the MOST RECENT reports to return.",
           "example": 20,
           "location": "query",
           "name": "limit",
           "required": false,
           "schema": {
             "default": 20,
-            "description": "Number of reports",
+            "description": "How many of the MOST RECENT reports to return.",
             "maximum": 100,
             "minimum": 1,
             "title": "Limit",
@@ -67778,7 +67923,7 @@
       "toolset": "statistics"
     },
     {
-      "description": "Monthly price index of old dwellings in housing companies (`ashi/statfin_ashi_pxt_13ms.px`, 2020=100). Default query returns the whole-country total building-types aggregate. Regional codes available: `ksu` whole country, `pks` Greater Helsinki, `091` Helsinki, `853` Turku, `837` Tampere, `564` Oulu, and more.",
+      "description": "Monthly price index of old dwellings in housing companies (`ashi/15iq.px`, base 2025=100 - the 2020=100 table 13ms was retired by the vendor in June 2026). Default query returns the whole-country total building-types aggregate. Regional codes available: `ksu` whole country, `pks` Greater Helsinki, `091` Helsinki, `853` Turku, `837` Tampere, `564` Oulu, and more.",
       "method": "GET",
       "operation_id": "stat_finland_house_prices",
       "parameters": [
@@ -67798,14 +67943,14 @@
           }
         },
         {
-          "description": "Alue (region) code. `ksu` whole country.",
-          "example": "ksu",
+          "description": "Region code. `SSS` whole country.",
+          "example": "SSS",
           "location": "query",
           "name": "region",
           "required": false,
           "schema": {
-            "default": "ksu",
-            "description": "Alue (region) code. `ksu` whole country.",
+            "default": "SSS",
+            "description": "Region code. `SSS` whole country.",
             "title": "Region",
             "type": "string"
           }
@@ -67824,14 +67969,14 @@
           }
         },
         {
-          "description": "Tiedot code. `ketj_P_QA_T` = index (2020=100); `vmuut_P_QA_T` = annual change %.",
-          "example": "ketj_P_QA_T",
+          "description": "contentscode value. `ashivm_indeksi_2025` = index (2025=100); `ashivm_indeksi_vmuutos_2025` = annual change %.",
+          "example": "ashivm_indeksi_2025",
           "location": "query",
           "name": "indicator",
           "required": false,
           "schema": {
-            "default": "ketj_P_QA_T",
-            "description": "Tiedot code. `ketj_P_QA_T` = index (2020=100); `vmuut_P_QA_T` = annual change %.",
+            "default": "ashivm_indeksi_2025",
+            "description": "contentscode value. `ashivm_indeksi_2025` = index (2025=100); `ashivm_indeksi_vmuutos_2025` = annual change %.",
             "title": "Indicator",
             "type": "string"
           }
@@ -67884,14 +68029,14 @@
           }
         },
         {
-          "description": "Tiedot code. `vaesto` = population; `kokmuutos` = annual change.",
-          "example": "vaesto",
+          "description": "contentscode value. `vaerak-vaesto` = population; `vaerak-kokmuutos` = annual change.",
+          "example": "vaerak-vaesto",
           "location": "query",
           "name": "indicator",
           "required": false,
           "schema": {
-            "default": "vaesto",
-            "description": "Tiedot code. `vaesto` = population; `kokmuutos` = annual change.",
+            "default": "vaerak-vaesto",
+            "description": "contentscode value. `vaerak-vaesto` = population; `vaerak-kokmuutos` = annual change.",
             "title": "Indicator",
             "type": "string"
           }
@@ -67944,14 +68089,14 @@
           }
         },
         {
-          "description": "Tiedot code. `pisteluku15` point figure; `v_muutos15` annual change %.",
-          "example": "pisteluku15",
+          "description": "contentscode value. `thi-pisteluku15` point figure; `thi-v_muutos15` annual change %.",
+          "example": "thi-pisteluku15",
           "location": "query",
           "name": "indicator",
           "required": false,
           "schema": {
-            "default": "pisteluku15",
-            "description": "Tiedot code. `pisteluku15` point figure; `v_muutos15` annual change %.",
+            "default": "thi-pisteluku15",
+            "description": "contentscode value. `thi-pisteluku15` point figure; `thi-v_muutos15` annual change %.",
             "title": "Indicator",
             "type": "string"
           }
@@ -67976,20 +68121,20 @@
       "operation_id": "stat_finland_table_path",
       "parameters": [
         {
-          "description": "Relative PxWeb path under StatFin (e.g. `khi/statfin_khi_pxt_15b5.px`).",
-          "example": "khi/statfin_khi_pxt_15b5.px",
+          "description": "Relative PxWeb path under StatFin (e.g. `khi/15b5.px`; pre-June-2026 long ids are rewritten automatically).",
+          "example": "khi/15b5.px",
           "location": "path",
           "name": "path",
           "required": true,
           "schema": {
-            "description": "Relative PxWeb path under StatFin (e.g. `khi/statfin_khi_pxt_15b5.px`).",
+            "description": "Relative PxWeb path under StatFin (e.g. `khi/15b5.px`; pre-June-2026 long ids are rewritten automatically).",
             "title": "Path",
             "type": "string"
           }
         },
         {
-          "description": "Finnish dimension code for the time axis (e.g. `Kuukausi`, `Vuosi`, `Vuosineljännes`). Required to fetch data.",
-          "example": "Kuukausi",
+          "description": "Time-axis variable code (e.g. `timeperiod_m`, `timeperiod_y`, `timeperiod_q` since the June 2026 restructure). Required to fetch data.",
+          "example": "timeperiod_m",
           "location": "query",
           "name": "time_code",
           "required": false,
@@ -68002,7 +68147,7 @@
                 "type": "null"
               }
             ],
-            "description": "Finnish dimension code for the time axis (e.g. `Kuukausi`, `Vuosi`, `Vuosineljännes`). Required to fetch data.",
+            "description": "Time-axis variable code (e.g. `timeperiod_m`, `timeperiod_y`, `timeperiod_q` since the June 2026 restructure). Required to fetch data.",
             "title": "Time Code"
           }
         },
@@ -68124,14 +68269,14 @@
           }
         },
         {
-          "description": "Tiedot code. `Tyottomyysaste` unemployment rate, `tyottaste_trendi` trend, `Tyottaste_15_24_kausi` youth 15-24 SA.",
-          "example": "Tyottomyysaste",
+          "description": "contentscode value. `tyti-Tyottomyysaste` unemployment rate, `tyottaste_trendi` trend, `Tyottaste_15_24_kausi` youth 15-24 SA.",
+          "example": "tyti-Tyottomyysaste",
           "location": "query",
           "name": "indicator",
           "required": false,
           "schema": {
-            "default": "Tyottomyysaste",
-            "description": "Tiedot code. `Tyottomyysaste` unemployment rate, `tyottaste_trendi` trend, `Tyottaste_15_24_kausi` youth 15-24 SA.",
+            "default": "tyti-Tyottomyysaste",
+            "description": "contentscode value. `tyti-Tyottomyysaste` unemployment rate, `tyottaste_trendi` trend, `Tyottaste_15_24_kausi` youth 15-24 SA.",
             "title": "Indicator",
             "type": "string"
           }
@@ -73051,6 +73196,7 @@
       "toolset": "environment"
     },
     {
+      "deprecated": true,
       "description": "Get current weather conditions: temperature, humidity, wind, precipitation, weather code.\n\nProvide either latitude+longitude OR city (optionally with country).\nWeather codes follow WMO standard (0=clear, 1-3=cloudy, 45-48=fog, 51-67=drizzle/rain, etc.).",
       "method": "GET",
       "operation_id": "weather_current",
@@ -73152,7 +73298,17 @@
         }
       ],
       "path": "/api/v1/weather/current",
+      "replaced_by": "weather",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -73295,6 +73451,15 @@
       ],
       "path": "/api/v1/weather/flood",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "river"
+        ],
+        [
+          "latitude",
+          "longitude"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -73442,6 +73607,15 @@
       ],
       "path": "/api/v1/weather/flood/ensemble",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "river"
+        ],
+        [
+          "latitude",
+          "longitude"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -73454,6 +73628,7 @@
       "toolset": "environment"
     },
     {
+      "deprecated": true,
       "description": "Get daily forecast: max/min temperature, precipitation, wind, sunrise/sunset.\n\nProvide either latitude+longitude OR city (optionally with country).",
       "method": "GET",
       "operation_id": "weather_forecast",
@@ -73570,7 +73745,17 @@
         }
       ],
       "path": "/api/v1/weather/forecast",
+      "replaced_by": "v2_weather_forecast",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -73583,6 +73768,7 @@
       "toolset": "environment"
     },
     {
+      "deprecated": true,
       "description": "Search for a location by name and get coordinates (latitude/longitude).",
       "method": "GET",
       "operation_id": "weather_geocode",
@@ -73633,6 +73819,7 @@
       "toolset": "environment"
     },
     {
+      "deprecated": true,
       "description": "Get historical daily weather data for a date range.\n\nProvide either latitude+longitude OR city (optionally with country).\nMaximum range: ~2 years per request. Data available from 1940 onwards.",
       "method": "GET",
       "operation_id": "weather_history",
@@ -73758,7 +73945,17 @@
         }
       ],
       "path": "/api/v1/weather/history",
+      "replaced_by": "v2_weather_history",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [
         "start_date",
         "end_date"
@@ -73863,6 +74060,15 @@
       ],
       "path": "/api/v1/weather/marine/current",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -74013,6 +74219,15 @@
       ],
       "path": "/api/v1/weather/marine/forecast",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -74163,6 +74378,15 @@
       ],
       "path": "/api/v1/weather/marine/hourly",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -75200,6 +75424,15 @@
       ],
       "path": "/api/v1/weather/us/alerts",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "state"
+        ],
+        [
+          "latitude",
+          "longitude"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -75301,6 +75534,15 @@
       ],
       "path": "/api/v1/weather/us/forecast",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -75402,6 +75644,15 @@
       ],
       "path": "/api/v1/weather/us/forecast/hourly",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -75658,7 +75909,7 @@
       "parameters": [
         {
           "description": "SPARQL query",
-          "example": "gold",
+          "example": "SELECT ?item ?itemLabel WHERE { ?item wdt:P31 wd:Q3624078 . SERVICE wikibase:label { bd:serviceParam wikibase:language \"en\" } } LIMIT 5",
           "location": "query",
           "name": "q",
           "required": true,
@@ -78109,6 +78360,18 @@
       ],
       "path": "/api/v2/energy/tariffs",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "eiaid"
+        ],
+        [
+          "utility"
+        ],
+        [
+          "lat",
+          "lon"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "energy",
       "sources": [
@@ -85736,6 +85999,15 @@
       ],
       "path": "/api/v2/transport/disruption-risk",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "airport"
+        ],
+        [
+          "lat",
+          "lon"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "transport",
       "sources": [
@@ -85836,6 +86108,15 @@
       ],
       "path": "/api/v2/transport/disruption-risk/forecast",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "airport"
+        ],
+        [
+          "lat",
+          "lon"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "transport",
       "sources": [
@@ -85932,6 +86213,15 @@
       ],
       "path": "/api/v2/transport/disruption-risk/route",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "path"
+        ],
+        [
+          "origin",
+          "destination"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "transport",
       "sources": [
@@ -86541,6 +86831,15 @@
       ],
       "path": "/api/v2/transport/tides",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "station"
+        ],
+        [
+          "lat",
+          "lon"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "transport",
       "sources": [
@@ -86914,6 +87213,24 @@
       ],
       "path": "/api/v2/weather",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "lat",
+          "lon"
+        ],
+        [
+          "lat",
+          "longitude"
+        ],
+        [
+          "latitude",
+          "lon"
+        ],
+        [
+          "latitude",
+          "longitude"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -87193,6 +87510,27 @@
       ],
       "path": "/api/v2/weather/forecast",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "lat",
+          "lon"
+        ],
+        [
+          "lat",
+          "longitude"
+        ],
+        [
+          "latitude",
+          "lon"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [],
       "source_family": "environment",
       "sources": [
@@ -87466,6 +87804,27 @@
       ],
       "path": "/api/v2/weather/history",
       "request_body_required": false,
+      "required_groups": [
+        [
+          "latitude",
+          "longitude"
+        ],
+        [
+          "lat",
+          "lon"
+        ],
+        [
+          "lat",
+          "longitude"
+        ],
+        [
+          "latitude",
+          "lon"
+        ],
+        [
+          "city"
+        ]
+      ],
       "required_parameters": [
         "start_date",
         "end_date"
@@ -87482,5 +87841,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "b9ea803689eb88c0f3b5d42b187c35681ea3de781ca02b75bc080519eee02711"
+  "spec_sha256": "a83e6a561bf2e16cdd17644f3d630d8cc3b81fcbd5a328ba18fa6f52dcb983c1"
 }

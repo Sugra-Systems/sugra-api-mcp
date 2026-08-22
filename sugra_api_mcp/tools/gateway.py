@@ -12,6 +12,7 @@ from ..catalog.loader import load_catalog
 from ..catalog.response import shape_response
 from ..catalog.search import known_sources, known_toolsets, search_catalog
 from ..catalog.toolsets import ordered_toolsets
+from ..errors import is_error_payload
 from ..observability import trace_mcp_tool
 from ..server import get_client, mcp, read_only
 
@@ -21,6 +22,31 @@ def _resolve_path(path: str, params: dict[str, Any]) -> str:
     for name, value in params.items():
         resolved = resolved.replace(f"{{{name}}}", str(value))
     return resolved
+
+
+def _group_violation(endpoint, params: dict[str, Any]) -> str | None:
+    """Group-contract verdict BEFORE any HTTP call (audit P1-8 MCP half).
+
+    Returns "uncovered" when NO declared group is fully covered, and
+    "multiple" when the endpoint declares its groups mutually exclusive
+    and the params complete MORE than one - both would be upstream 4xxs,
+    so the gateway refuses with the groups spelled out. None = dispatch.
+    """
+    groups = getattr(endpoint, "required_groups", ()) or ()
+    if not groups:
+        return None
+    covered = sum(1 for group in groups if all(name in params for name in group))
+    if covered == 0:
+        return "uncovered"
+    if getattr(endpoint, "groups_mutually_exclusive", False):
+        # Exclusivity judges ACTIVE groups (any member supplied), not just
+        # complete ones: a complete group mixed with a stray member of a
+        # competing group is still a mixed-mode request the upstream will
+        # reject (codex r2).
+        active = sum(1 for group in groups if any(name in params for name in group))
+        if active > 1:
+            return "multiple"
+    return None
 
 
 def _missing_required(
@@ -125,7 +151,10 @@ async def call_endpoint(
             ),
         ),
     ] = None,
-    limit: int | None = None,
+    limit: Annotated[
+        int | None,
+        Field(description="Bounds ONLY the top-level list: the envelope data list (or a bare top-level array). Nested lists inside records are never truncated; meta.shaped reports whether the limit applied."),
+    ] = None,
     fields: list[str] | None = None,
     include_raw: bool = False,
 ) -> dict[str, Any]:
@@ -156,10 +185,32 @@ async def call_endpoint(
         clean_params = {key: value for key, value in (params or {}).items() if value is not None}
         missing = _missing_required(endpoint, clean_params, body)
         if missing:
-            return {
+            payload: dict[str, Any] = {
                 "error": "missing_required_parameters",
                 "operation_id": operation_id,
                 "missing": missing,
+            }
+            # One diagnostic carries EVERYTHING the next call needs: hiding
+            # the group constraint here would force a second failing round
+            # trip (codex r3).
+            if endpoint.required_groups:
+                payload["required_groups"] = [list(g) for g in endpoint.required_groups]
+                payload["groups_hint"] = (
+                    "also supply every parameter of "
+                    + ("EXACTLY one group" if endpoint.groups_mutually_exclusive
+                       else "at least one group"))
+            return payload
+        violation = _group_violation(endpoint, clean_params)
+        if violation:
+            return {
+                "error": "missing_required_parameter_groups",
+                "operation_id": operation_id,
+                "groups": [list(group) for group in endpoint.required_groups],
+                "hint": ("supply every parameter of EXACTLY one group"
+                         if violation == "multiple"
+                         else "supply every parameter of at least one group"
+                         + (" (groups are mutually exclusive)"
+                            if endpoint.groups_mutually_exclusive else "")),
             }
 
         path_param_names = {
@@ -197,7 +248,7 @@ async def call_endpoint(
                 "method": endpoint.method,
             }
 
-        if isinstance(payload, dict) and "error" in payload and "data" not in payload:
+        if is_error_payload(payload):
             # Structured error contract from SugraClient (transport failure,
             # HTTP 4xx/5xx, or size-limit refusal). Return it untouched:
             # shaping an error dict would only decorate it with misleading
@@ -262,7 +313,10 @@ async def fetch_data(
             ),
         ),
     ] = None,
-    limit: int | None = None,
+    limit: Annotated[
+        int | None,
+        Field(description="Bounds ONLY the top-level list: the envelope data list (or a bare top-level array). Nested lists inside records are never truncated; meta.shaped reports whether the limit applied."),
+    ] = None,
     fields: list[str] | None = None,
     include_raw: bool = False,
 ) -> dict[str, Any]:
@@ -331,6 +385,9 @@ async def fetch_data(
                 "path": endpoint.path,
                 "summary": endpoint.summary,
                 "agent_hints": hints_for(endpoint),
+                **({"required_groups": [list(g) for g in endpoint.required_groups],
+                    "groups_mutually_exclusive": endpoint.groups_mutually_exclusive}
+                   if endpoint.required_groups else {}),
                 "required_parameters": endpoint.required_parameters,
                 "parameter_examples": [
                     {
@@ -356,6 +413,20 @@ async def fetch_data(
                     f"Retry as fetch_data(query, params={{...}}) with those keys filled in, "
                     f"or call describe_endpoint(operation_id) for full schema."
                 ),
+            }
+
+        violation = _group_violation(endpoint, clean_params)
+        if violation:
+            return {
+                "error": "missing_required_parameter_groups",
+                "operation_id": operation_id,
+                "groups": [list(group) for group in endpoint.required_groups],
+                "hint": ("supply every parameter of EXACTLY one group"
+                         if violation == "multiple"
+                         else "supply every parameter of at least one group"
+                         + (" (groups are mutually exclusive)"
+                            if endpoint.groups_mutually_exclusive else "")),
+                "candidate_endpoints": results,
             }
 
         # All required params satisfied — delegate to the same call path as

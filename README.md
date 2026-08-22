@@ -251,7 +251,7 @@ The local package exposes eight gateway tools. The hosted endpoint adds three co
 | `sugra_entity_screen` | Screen a name against sanctions and watchlists (Sugra Entity). |
 | `sugra_entity_lookup` | Composed entity lookup by identifier - `anchor` is `lei` or `vat`, plus the identifier `value`; returns registry identity + screening (Sugra Entity). |
 
-`call_endpoint` and `fetch_data` both support response shaping with `limit`, `fields`, and `include_raw`. Shaping works on enveloped (`{"data": ...}`) and envelope-less payloads alike; `fields` entries may use dotted paths into nested objects (`geo.city`), and `meta.shaped` reports what was actually applied (`fields_applied` / `fields_unmatched`, `limit_applied`) rather than echoing the request.
+`call_endpoint` and `fetch_data` both support response shaping with `limit`, `fields`, and `include_raw`. Shaping works on enveloped (`{"data": ...}`) and envelope-less payloads alike; `fields` entries may use dotted paths into nested objects (`geo.city`), and `meta.shaped` reports what was actually applied (`fields_applied` / `fields_unmatched`, `limit_applied`) rather than echoing the request. `limit` bounds ONLY the top-level list - the envelope `data` list or a bare top-level array; lists nested inside records are never truncated, and `meta.shaped.limit_applied` says whether the bound took effect.
 
 `describe_endpoint` returns computed `agent_hints` per endpoint so agents can budget time and parallelism before calling:
 
