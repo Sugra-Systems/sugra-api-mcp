@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-08-21T15:44:44Z",
+  "built_at": "2026-08-22T07:43:38Z",
   "endpoint_count": 1556,
   "endpoints": [
     {
@@ -87841,5 +87841,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "a83e6a561bf2e16cdd17644f3d630d8cc3b81fcbd5a328ba18fa6f52dcb983c1"
+  "spec_sha256": "09424e26ecc66e5e9b59b45ed5acf67e171e8eaa639f6b84efb92c29a29fe33a"
 }
