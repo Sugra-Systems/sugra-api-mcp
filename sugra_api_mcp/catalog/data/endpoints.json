@@ -1,6 +1,6 @@
 {
-  "built_at": "2026-08-23T10:26:25Z",
-  "endpoint_count": 1556,
+  "built_at": "2026-09-04T13:11:41Z",
+  "endpoint_count": 1574,
   "endpoints": [
     {
       "description": "Pre-configured key Australian datasets: CPI, GDP, Labour, Trade, Retail, Wages, Population.",
@@ -6409,6 +6409,406 @@
       "toolset": "markets"
     },
     {
+      "description": "Establishments, firms, employment, job creation and destruction (total, from openings and closings, from continuers), net job creation, establishment entry and exit, firm deaths, and the matching rates, from the Census Bureau's Business Dynamics Statistics (`timeseries/bds`), 1978 to the latest published year, nationally or for one state. `from` defaults to the ten years to the latest; a `to` past the latest year is clamped with a note; a range wholly past it is an empty answer with a reason. Counts are integers, rates are percent of the Davis-Haltiwanger-Schuh denominator (`denom`), decoded by the variable's own type.",
+      "method": "GET",
+      "operation_id": "census_business_dynamics",
+      "parameters": [
+        {
+          "description": "us (national) or state (with state=<postal code>).",
+          "example": "us",
+          "location": "query",
+          "name": "geo",
+          "required": false,
+          "schema": {
+            "default": "us",
+            "description": "us (national) or state (with state=<postal code>).",
+            "title": "Geo",
+            "type": "string"
+          }
+        },
+        {
+          "description": "State postal code (CA, TX, DC, ...) when geo=state.",
+          "example": "CA",
+          "location": "query",
+          "name": "state",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "State postal code (CA, TX, DC, ...) when geo=state.",
+            "title": "State"
+          }
+        },
+        {
+          "description": "First year (YYYY, 1978 or later).",
+          "example": "2015",
+          "location": "query",
+          "name": "from",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First year (YYYY, 1978 or later).",
+            "title": "From"
+          }
+        },
+        {
+          "description": "Last year (YYYY); default: the latest published year.",
+          "example": "2023",
+          "location": "query",
+          "name": "to",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last year (YYYY); default: the latest published year.",
+            "title": "To"
+          }
+        }
+      ],
+      "path": "/api/v1/census/business/dynamics",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Business dynamics: the annual series for one geography",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Every Business Dynamics Statistics measure for each of the 20 NAICS sectors (`00` = all sectors first, then 11 agriculture ... 81 other services; manufacturing is 31-33, retail 44-45, transportation 48-49) of one geography in one year (`year` required, YYYY, 1978 to the latest published year), nationally or for one state. Sector labels are the official NAICS 2017 sector titles. A year past the latest is an empty answer with a reason.",
+      "method": "GET",
+      "operation_id": "census_business_dynamics_sectors",
+      "parameters": [
+        {
+          "description": "Year (YYYY, 1978 to the latest published year; required).",
+          "example": "2023",
+          "location": "query",
+          "name": "year",
+          "required": true,
+          "schema": {
+            "description": "Year (YYYY, 1978 to the latest published year; required).",
+            "title": "Year",
+            "type": "string"
+          }
+        },
+        {
+          "description": "us (national) or state (with state=<postal code>).",
+          "example": "us",
+          "location": "query",
+          "name": "geo",
+          "required": false,
+          "schema": {
+            "default": "us",
+            "description": "us (national) or state (with state=<postal code>).",
+            "title": "Geo",
+            "type": "string"
+          }
+        },
+        {
+          "description": "State postal code (CA, TX, DC, ...) when geo=state.",
+          "example": "CA",
+          "location": "query",
+          "name": "state",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "State postal code (CA, TX, DC, ...) when geo=state.",
+            "title": "State"
+          }
+        }
+      ],
+      "path": "/api/v1/census/business/dynamics/sectors",
+      "request_body_required": false,
+      "required_parameters": [
+        "year"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Business dynamics: the 20 NAICS sectors of one year",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "The twenty Census economic indicator programmes this API serves from `timeseries/eits`: what each measures, its frequency and the geographies it publishes. The codes of a programme are measured live at /census/indicators/{program}/codes.",
+      "method": "GET",
+      "operation_id": "census_indicators",
+      "parameters": [],
+      "path": "/api/v1/census/indicators",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Census economic indicator programmes",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "The categories (industries, construction types, tax types, ...) and data types (sales, inventories, new orders, percent changes, error measures, ...) of one programme, MEASURED from the latest published year, with the adjustments and geographies each category was published with. Labels are curated where the programme documentation is unambiguous; NAICS codes carry the official NAICS title; other codes are served unlabelled.",
+      "method": "GET",
+      "operation_id": "census_indicators_program_codes",
+      "parameters": [
+        {
+          "description": "Programme code from /census/indicators (marts, resconst, bfs, qtax, ...).",
+          "example": "marts",
+          "location": "path",
+          "name": "program",
+          "required": true,
+          "schema": {
+            "description": "Programme code from /census/indicators (marts, resconst, bfs, qtax, ...).",
+            "title": "Program",
+            "type": "string"
+          }
+        },
+        {
+          "description": "US (every programme); NE, MW, SO, WE for resconst, ressales and hv; a state postal code for qtax.",
+          "example": "US",
+          "location": "query",
+          "name": "geo",
+          "required": false,
+          "schema": {
+            "default": "US",
+            "description": "US (every programme); NE, MW, SO, WE for resconst, ressales and hv; a state postal code for qtax.",
+            "title": "Geo",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/census/indicators/{program}/codes",
+      "request_body_required": false,
+      "required_parameters": [
+        "program"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Categories and data types a programme publishes",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "The time series of one category x data type of a programme at one geography, monthly or quarterly, from `from` (default: two years before the latest published period) to `to` (default: the latest). `seasonally_adjusted` is true, false or any - many series exist in only one form. An error measure is its own data type (`E_SM` beside `SM`). A period past the latest one is an empty answer with a reason.",
+      "method": "GET",
+      "operation_id": "census_indicators_program_series",
+      "parameters": [
+        {
+          "description": "Programme code from /census/indicators (marts, resconst, bfs, qtax, ...).",
+          "example": "marts",
+          "location": "path",
+          "name": "program",
+          "required": true,
+          "schema": {
+            "description": "Programme code from /census/indicators (marts, resconst, bfs, qtax, ...).",
+            "title": "Program",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Category code from /census/indicators/{program}/codes (required).",
+          "example": "44X72",
+          "location": "query",
+          "name": "category",
+          "required": true,
+          "schema": {
+            "description": "Category code from /census/indicators/{program}/codes (required).",
+            "title": "Category",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Data type code from /census/indicators/{program}/codes (required).",
+          "example": "SM",
+          "location": "query",
+          "name": "data_type",
+          "required": true,
+          "schema": {
+            "description": "Data type code from /census/indicators/{program}/codes (required).",
+            "title": "Data Type",
+            "type": "string"
+          }
+        },
+        {
+          "description": "true, false or any",
+          "example": "true",
+          "location": "query",
+          "name": "seasonally_adjusted",
+          "required": false,
+          "schema": {
+            "default": "any",
+            "description": "true, false or any",
+            "title": "Seasonally Adjusted",
+            "type": "string"
+          }
+        },
+        {
+          "description": "US (every programme); NE, MW, SO, WE for resconst, ressales and hv; a state postal code for qtax.",
+          "example": "US",
+          "location": "query",
+          "name": "geo",
+          "required": false,
+          "schema": {
+            "default": "US",
+            "description": "US (every programme); NE, MW, SO, WE for resconst, ressales and hv; a state postal code for qtax.",
+            "title": "Geo",
+            "type": "string"
+          }
+        },
+        {
+          "description": "First period (YYYY-MM or YYYY-QN).",
+          "example": "2024-01",
+          "location": "query",
+          "name": "from",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First period (YYYY-MM or YYYY-QN).",
+            "title": "From"
+          }
+        },
+        {
+          "description": "Last period (YYYY-MM or YYYY-QN); default: the latest published period.",
+          "example": "2026-06",
+          "location": "query",
+          "name": "to",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last period (YYYY-MM or YYYY-QN); default: the latest published period.",
+            "title": "To"
+          }
+        }
+      ],
+      "path": "/api/v1/census/indicators/{program}/series",
+      "request_body_required": false,
+      "required_parameters": [
+        "program",
+        "category",
+        "data_type"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "One indicator series over time",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Every category x data type of one programme at the latest published period, at one geography - the whole release in one answer.",
+      "method": "GET",
+      "operation_id": "census_indicators_program_snapshot",
+      "parameters": [
+        {
+          "description": "Programme code from /census/indicators (marts, resconst, bfs, qtax, ...).",
+          "example": "marts",
+          "location": "path",
+          "name": "program",
+          "required": true,
+          "schema": {
+            "description": "Programme code from /census/indicators (marts, resconst, bfs, qtax, ...).",
+            "title": "Program",
+            "type": "string"
+          }
+        },
+        {
+          "description": "US (every programme); NE, MW, SO, WE for resconst, ressales and hv; a state postal code for qtax.",
+          "example": "US",
+          "location": "query",
+          "name": "geo",
+          "required": false,
+          "schema": {
+            "default": "US",
+            "description": "US (every programme); NE, MW, SO, WE for resconst, ressales and hv; a state postal code for qtax.",
+            "title": "Geo",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Include the error-measure rows (data types prefixed E_).",
+          "example": false,
+          "location": "query",
+          "name": "include_errors",
+          "required": false,
+          "schema": {
+            "default": false,
+            "description": "Include the error-measure rows (data types prefixed E_).",
+            "title": "Include Errors",
+            "type": "boolean"
+          }
+        }
+      ],
+      "path": "/api/v1/census/indicators/{program}/snapshot",
+      "request_body_required": false,
+      "required_parameters": [
+        "program"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Every series of a programme at its latest period",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
       "description": "American Community Survey data for all US states. Includes population, income, housing, poverty, education, employment. Use /census/variables for available variable keys.",
       "method": "GET",
       "operation_id": "census_states",
@@ -6473,6 +6873,448 @@
         "Statistical Agencies"
       ],
       "toolset": "statistics"
+    },
+    {
+      "description": "Exports minus general imports per month for one partner (or the world) and one HS code (or all commodities). Both sides are the Census customs-basis series, and the answer states the basis of each - `/comtrade` reports CIF imports, so its balance runs a few percent lower.",
+      "method": "GET",
+      "operation_id": "census_trade_balance",
+      "parameters": [
+        {
+          "description": "Partner: 'world', or a Census partner code from /census/trade/partners (5700 = China, 0003 = European Union).",
+          "example": "5700",
+          "location": "query",
+          "name": "partner",
+          "required": false,
+          "schema": {
+            "default": "world",
+            "description": "Partner: 'world', or a Census partner code from /census/trade/partners (5700 = China, 0003 = European Union).",
+            "title": "Partner",
+            "type": "string"
+          }
+        },
+        {
+          "description": "'all', or an HS code of 2, 4 or 6 digits (27 = mineral fuels).",
+          "example": "27",
+          "location": "query",
+          "name": "commodity",
+          "required": false,
+          "schema": {
+            "default": "all",
+            "description": "'all', or an HS code of 2, 4 or 6 digits (27 = mineral fuels).",
+            "title": "Commodity",
+            "type": "string"
+          }
+        },
+        {
+          "description": "First month YYYY-MM (default: 24 months before the latest published month).",
+          "example": "2024-01",
+          "location": "query",
+          "name": "from",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First month YYYY-MM (default: 24 months before the latest published month).",
+            "title": "From"
+          }
+        },
+        {
+          "description": "Last month YYYY-MM (default: open, to the latest published month).",
+          "example": "2026-06",
+          "location": "query",
+          "name": "to",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last month YYYY-MM (default: open, to the latest published month).",
+            "title": "To"
+          }
+        }
+      ],
+      "path": "/api/v1/census/trade/balance",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "Monthly US trade balance with a partner",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
+    },
+    {
+      "description": "One month of US exports or imports with one partner (or the world) broken down by HS code at one level (HS2 chapters, HS4 headings, HS6 subheadings), largest first.",
+      "method": "GET",
+      "operation_id": "census_trade_by_commodity",
+      "parameters": [
+        {
+          "description": "exports or imports",
+          "example": "exports",
+          "location": "query",
+          "name": "flow",
+          "required": false,
+          "schema": {
+            "default": "exports",
+            "description": "exports or imports",
+            "title": "Flow",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Partner: 'world', or a Census partner code from /census/trade/partners (5700 = China, 0003 = European Union).",
+          "example": "5700",
+          "location": "query",
+          "name": "partner",
+          "required": false,
+          "schema": {
+            "default": "world",
+            "description": "Partner: 'world', or a Census partner code from /census/trade/partners (5700 = China, 0003 = European Union).",
+            "title": "Partner",
+            "type": "string"
+          }
+        },
+        {
+          "description": "HS2, HS4 or HS6",
+          "example": "HS2",
+          "location": "query",
+          "name": "level",
+          "required": false,
+          "schema": {
+            "default": "HS2",
+            "description": "HS2, HS4 or HS6",
+            "title": "Level",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Month YYYY-MM (default: the latest published month).",
+          "example": "2026-05",
+          "location": "query",
+          "name": "month",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Month YYYY-MM (default: the latest published month).",
+            "title": "Month"
+          }
+        }
+      ],
+      "path": "/api/v1/census/trade/by-commodity",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "US trade in one month across commodities",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
+    },
+    {
+      "description": "One month of US exports or imports of one HS code (or all commodities) broken down by partner, largest first. `kind` picks countries, Census groupings or both.",
+      "method": "GET",
+      "operation_id": "census_trade_by_partner",
+      "parameters": [
+        {
+          "description": "exports or imports",
+          "example": "exports",
+          "location": "query",
+          "name": "flow",
+          "required": false,
+          "schema": {
+            "default": "exports",
+            "description": "exports or imports",
+            "title": "Flow",
+            "type": "string"
+          }
+        },
+        {
+          "description": "'all', or an HS code of 2, 4 or 6 digits (27 = mineral fuels).",
+          "example": "27",
+          "location": "query",
+          "name": "commodity",
+          "required": false,
+          "schema": {
+            "default": "all",
+            "description": "'all', or an HS code of 2, 4 or 6 digits (27 = mineral fuels).",
+            "title": "Commodity",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Month YYYY-MM (default: the latest published month).",
+          "example": "2026-05",
+          "location": "query",
+          "name": "month",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Month YYYY-MM (default: the latest published month).",
+            "title": "Month"
+          }
+        },
+        {
+          "description": "country, group or all",
+          "example": "country",
+          "location": "query",
+          "name": "kind",
+          "required": false,
+          "schema": {
+            "default": "country",
+            "description": "country, group or all",
+            "title": "Kind",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/census/trade/by-partner",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "US trade in one month across partners",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
+    },
+    {
+      "description": "The Harmonized System codes the monthly US trade series publishes at one level (HS2 chapters, HS4 headings, HS6 subheadings) with the Census short description. `parent` narrows HS4 or HS6 to the codes under one shorter code.",
+      "method": "GET",
+      "operation_id": "census_trade_commodities",
+      "parameters": [
+        {
+          "description": "exports or imports",
+          "example": "exports",
+          "location": "query",
+          "name": "flow",
+          "required": false,
+          "schema": {
+            "default": "exports",
+            "description": "exports or imports",
+            "title": "Flow",
+            "type": "string"
+          }
+        },
+        {
+          "description": "HS2, HS4 or HS6",
+          "example": "HS4",
+          "location": "query",
+          "name": "level",
+          "required": false,
+          "schema": {
+            "default": "HS2",
+            "description": "HS2, HS4 or HS6",
+            "title": "Level",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Keep only codes under this shorter HS code (27 -> 2701..2716).",
+          "example": "27",
+          "location": "query",
+          "name": "parent",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Keep only codes under this shorter HS code (27 -> 2701..2716).",
+            "title": "Parent"
+          }
+        }
+      ],
+      "path": "/api/v1/census/trade/commodities",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "HS commodity codes in US trade",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
+    },
+    {
+      "description": "Monthly US exports or imports for one partner (or the world) and one HS code (or all commodities), from 2013-01. Exports are FAS value; imports carry the customs value of general imports plus consumption and CIF values. An unpublished month is an empty `data` with `count: 0` and a `reason`.",
+      "method": "GET",
+      "operation_id": "census_trade_flows",
+      "parameters": [
+        {
+          "description": "exports or imports",
+          "example": "exports",
+          "location": "query",
+          "name": "flow",
+          "required": false,
+          "schema": {
+            "default": "exports",
+            "description": "exports or imports",
+            "title": "Flow",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Partner: 'world', or a Census partner code from /census/trade/partners (5700 = China, 0003 = European Union).",
+          "example": "5700",
+          "location": "query",
+          "name": "partner",
+          "required": false,
+          "schema": {
+            "default": "world",
+            "description": "Partner: 'world', or a Census partner code from /census/trade/partners (5700 = China, 0003 = European Union).",
+            "title": "Partner",
+            "type": "string"
+          }
+        },
+        {
+          "description": "'all', or an HS code of 2, 4 or 6 digits (27 = mineral fuels).",
+          "example": "27",
+          "location": "query",
+          "name": "commodity",
+          "required": false,
+          "schema": {
+            "default": "all",
+            "description": "'all', or an HS code of 2, 4 or 6 digits (27 = mineral fuels).",
+            "title": "Commodity",
+            "type": "string"
+          }
+        },
+        {
+          "description": "First month YYYY-MM (default: 24 months before the latest published month).",
+          "example": "2024-01",
+          "location": "query",
+          "name": "from",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First month YYYY-MM (default: 24 months before the latest published month).",
+            "title": "From"
+          }
+        },
+        {
+          "description": "Last month YYYY-MM (default: open, to the latest published month).",
+          "example": "2026-06",
+          "location": "query",
+          "name": "to",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last month YYYY-MM (default: open, to the latest published month).",
+            "title": "To"
+          }
+        }
+      ],
+      "path": "/api/v1/census/trade/flows",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "Monthly US trade series for a partner and commodity",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
+    },
+    {
+      "description": "Every partner the monthly US trade series lists: countries (kind `country`), Census groupings such as the European Union or OPEC (kind `group`) and the world total. Codes are the Census 4-character partner codes, not ISO.",
+      "method": "GET",
+      "operation_id": "census_trade_partners",
+      "parameters": [
+        {
+          "description": "exports or imports",
+          "example": "exports",
+          "location": "query",
+          "name": "flow",
+          "required": false,
+          "schema": {
+            "default": "exports",
+            "description": "exports or imports",
+            "title": "Flow",
+            "type": "string"
+          }
+        },
+        {
+          "description": "country, group or all",
+          "example": "country",
+          "location": "query",
+          "name": "kind",
+          "required": false,
+          "schema": {
+            "default": "all",
+            "description": "country, group or all",
+            "title": "Kind",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/census/trade/partners",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "US trade partners and groupings",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
     },
     {
       "description": "List all available demographic and economic variables with codes.",
@@ -20382,7 +21224,8 @@
       "toolset": "environment"
     },
     {
-      "description": "Return OpenStreetMap pipeline elements (`man_made=pipeline` filtered by `substance`) inside an ISO 3166-1 alpha-2 country. Data is (C) OpenStreetMap contributors (ODbL 1.0) - attribution is required on any surface that renders this data.",
+      "deprecated": true,
+      "description": "Return OpenStreetMap pipeline elements (`man_made=pipeline` filtered by `substance`) inside an ISO 3166-1 alpha-2 country. Data is (C) OpenStreetMap contributors (ODbL 1.0) - attribution is required on any surface that renders this data.\n\n**Deprecated because the upstream cannot serve it reliably inside an interactive timeout, not because it is being removed.** A country-wide `man_made=pipeline` query takes 23-49 seconds at the public Overpass instance when it succeeds at all, and frequently returns a query-timeout or a 5xx under load: 0 of 3 end-to-end attempts on 2026-08-30 returned data. It is marked deprecated so interactive surfaces stop offering a call that cannot reliably finish inside an interactive timeout; the route still works and is still served. For a usable pipeline query, request a bounded region with `/environment/osm/bbox` (`tag_key=man_made`, `tag_value=pipeline`), which is capped at 1.0 square degree per call and answered a 1x1-degree box over the Houston and Permian pipeline corridors in 2.8s and 1.0s. Larger areas are covered by tiling that call, not by asking for a country in one request.",
       "method": "GET",
       "operation_id": "environment_osm_pipelines",
       "parameters": [
@@ -20436,7 +21279,7 @@
       "sources": [
         "environment"
       ],
-      "summary": "Pipelines in a country by commodity",
+      "summary": "Pipelines in a country by commodity (deprecated - upstream too slow)",
       "tags": [
         "Environment"
       ],
@@ -22463,7 +23306,7 @@
       "toolset": "funds"
     },
     {
-      "description": "Derived endpoint that computes per-ETF net flow estimates for one ETF over the requested lookback window by walking the ETF snapshot history and emitting ONE period per CHANGE of the SEC-derived (aum_usd, nav) pair. Formula per period: ``net_flow = Δ(shares_outstanding) × to_nav`` where ``shares_outstanding = aum_usd / nav``, ``from_date`` is the last snapshot carrying the old pair and ``to_date`` is the first snapshot carrying the new pair. This is the standard ETF creation/redemption proxy used by analysts; results are an ESTIMATE, not ICI-authoritative numbers. Snapshot aum_usd/nav derive from SEC filings (NPORT-P monthly, 485BPOS annual) and are constant between filings, so flows are reported on FILING CADENCE, not per calendar day (the previous per-day contract read 0.0 on every non-filing day). Consecutive snapshots with unchanged (aum_usd, nav) are a single plateau and produce NO entry. When fewer than 2 distinct plateaus exist in the window the response is 200 with ``period_flows=[]`` and ``total_net_flow_dollar_estimate=null`` (honest 'no change observed', not an error) - and since API-1.9 the BODY says why: ``reason`` (``single_filing_plateau`` / ``no_computable_shares``), ``plateaus_observed``, and the backing filing's ``rep_pd_date`` + ``accession``. Days where the snapshot blob is missing are silently skipped; plateaus span across missing dates. Use case: ``UC-3 Sector Rotation Detector`` per-ETF accumulation signal, complemented by ICI aggregate at /etf/flows/aggregate. BREAKING (DATA-N4.7.1): this endpoint replaced the per-calendar-day ``series`` contract with filing-cadence ``period_flows``, and renamed the ``days`` query param to ``lookback_days``. The old ``days`` param is SILENTLY IGNORED (FastAPI drops undeclared query params; it is not rejected) - a mid-migration client sending ``?days=30`` gets 200 with the default lookback window.",
+      "description": "Derived endpoint that computes per-ETF net flow estimates for one ETF over the requested lookback window by walking the ETF snapshot history and emitting ONE period per CHANGE of the SEC-derived (aum_usd, nav) pair. Formula per period: ``net_flow = Δ(shares_outstanding) × to_nav`` where ``shares_outstanding = aum_usd / nav``, ``from_date`` is the last snapshot carrying the old pair and ``to_date`` is the first snapshot carrying the new pair. This is the standard ETF creation/redemption proxy used by analysts; results are an ESTIMATE, not ICI-authoritative numbers. Snapshot aum_usd/nav derive from SEC filings (NPORT-P monthly, 485BPOS annual) and are constant between filings, so flows are reported on FILING CADENCE, not per calendar day (the previous per-day contract read 0.0 on every non-filing day). Consecutive snapshots with unchanged (aum_usd, nav) are a single plateau and produce NO entry. When fewer than 2 distinct plateaus exist in the window the response is 200 with ``period_flows=[]`` and ``total_net_flow_dollar_estimate=null`` (honest 'no change observed', not an error) - and since API-1.9 the BODY says why: ``reason`` (``single_filing_plateau`` / ``no_computable_shares``), ``plateaus_observed``, and the backing filing's ``rep_pd_date`` + ``accession``. Days where the snapshot blob is missing are silently skipped; plateaus span across missing dates. Use case: ``UC-3 Sector Rotation Detector`` per-ETF accumulation signal, complemented by ICI aggregate at /etf/flows/aggregate. BREAKING (DATA-N4.7.1): this endpoint replaced the per-calendar-day ``series`` contract with filing-cadence ``period_flows``, and renamed the ``days`` query param to ``lookback_days``. The old ``days`` param is SILENTLY IGNORED (FastAPI drops undeclared query params; it is not rejected) - a mid-migration client sending ``?days=30`` gets 200 with the default lookback window. Since API-1.14.5 the body also carries ``sec_monthly_flows`` - the fund's OFFICIAL monthly creations and redemptions from SEC Form NPORT-P Part B item B.6 (sales / reinvestment / redemption / net, USD, oldest month first, with ``rep_pd_date`` + ``accession``) - next to the estimated ``period_flows``; null with ``sec_monthly_flows_reason`` for 10-K filers, for symbols without an NPORT-P blob, and for blobs stored before B.6 parsing.",
       "method": "GET",
       "operation_id": "etf_symbol_flows",
       "parameters": [
@@ -22679,7 +23522,7 @@
       "toolset": "funds"
     },
     {
-      "description": "Single ETF snapshot at the latest cycle (default) or at a specific calendar date via ``?date=YYYY-MM-DD``. Returns the full payload: pricing (nav, price, premium/discount), fund characteristics (AUM, expense ratio, yields), top-10 holdings sample, sector weightings (both raw + canonical), asset-class and country exposure, and trailing returns. Returns 410 Gone when the symbol is flagged as delisted_candidate by the upstream cycle.\n\nSince DATA-N4.4 the canonical snapshot is rebuilt purely from Tier S sources (regulated-exchange price + SEC NPORT-P holdings), with no commercial aggregator in the chain. Fields awaiting their replacement source are returned as ``null`` and tagged in the internal ``_sources.deferred`` map: ``nav``/``aum_usd``/``premium_discount_pct`` (DATA-N4.3), ``returns_*`` and ``fifty_two_week_high``/``fifty_two_week_low`` (DATA-N4.1), and ``expense_ratio_pct``/``yield_dividend_pct``/``yield_distribution_pct``/``inception_date`` (DATA-N4.2).\n\nDATA-N4.8.1: when ``price`` is null but a NAV is available, an additive ``price_proxy`` block surfaces the NAV as an explicitly-stale proxy (``basis = nav`` with an ``as_of`` SEC-filing date that can be months old and a ``note`` disclaiming a current quote). ``price`` itself stays null - the proxy is never presented as a live quote. The block is absent when ``price`` is present or when ``nav`` is also null.",
+      "description": "Single ETF snapshot at the latest cycle (default) or at a specific calendar date via ``?date=YYYY-MM-DD``. Returns the full payload: pricing (nav, price, premium/discount), fund characteristics (AUM, expense ratio, yields), top-10 holdings sample, sector weightings (both raw + canonical), asset-class and country exposure, and trailing returns. Returns 410 Gone when the symbol is flagged as delisted_candidate by the upstream cycle.\n\nSince DATA-N4.4 the canonical snapshot is rebuilt purely from Tier S sources (regulated-exchange price + SEC NPORT-P holdings), with no commercial aggregator in the chain. A field with no source yet is returned as ``null`` and tagged in the internal ``_sources.deferred`` map. That set has SHRUNK: ``nav``/``aum_usd`` (DATA-N4.3) and ``expense_ratio_pct``/``yield_dividend_pct``/``yield_distribution_pct``/``inception_date`` (DATA-N4.2) are now POPULATED from SEC filings, and ``premium_discount_pct`` is derived from the SEC NAV against the regulated-exchange price above. All are re-deferred only PER SYMBOL when that symbol's own input is missing. Two exceptions are deliberate rather than gaps: ``premium_discount_pct`` is null for a daily-reset leveraged or inverse fund because its NAV is period-stale (tag ``API-1.14.3``), and ``inception_date`` is null wherever the filing states none for that fund (API-1.14.7). Still deferred for every symbol: ``returns_*`` and ``fifty_two_week_high``/``fifty_two_week_low`` (DATA-N4.1).\n\nDATA-N4.8.1: when ``price`` is null but a NAV is available, an additive ``price_proxy`` block surfaces the NAV as an explicitly-stale proxy (``basis = nav`` with an ``as_of`` SEC-filing date that can be months old and a ``note`` disclaiming a current quote). ``price`` itself stays null - the proxy is never presented as a live quote. The block is absent when ``price`` is present or when ``nav`` is also null.",
       "method": "GET",
       "operation_id": "etf_symbol_snapshot",
       "parameters": [
@@ -48419,6 +49262,132 @@
         "trade"
       ],
       "summary": "Chokepoint daily transit data",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
+    },
+    {
+      "description": "Monthly crude-oil exports, thousand barrels per day, for Persian Gulf reporters in the JODI Oil World Database. Compiled from what national statistical offices report about themselves: no AIS, no vessel tracking, no satellite. This is corroboration of the Hormuz disruption, NOT a bound on transits. Some Gulf exporters file a blank crude-export row; some can bypass the strait by pipeline. `not_a_transit_bound` states that on the wire. The newest month is `latest_period` on the payload; `meta.stale` follows ingest liveness on `retrieved_at`.",
+      "method": "GET",
+      "operation_id": "maritime_chokepoints_hormuz_gulf_exports",
+      "parameters": [],
+      "path": "/api/v1/maritime/chokepoints/hormuz/gulf-exports",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "Gulf crude exports from JODI (corroboration, not a floor)",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
+    },
+    {
+      "description": "A month-average lower bound on Strait of Hormuz vessel transits implied by recorded crude imports at destination. v1 uses Japan METI Preliminary Report on Petroleum Statistics and Eurostat nrg_ti_oilm extra-EU crude imports by partner. No AIS, no vessel tracking, no satellite. `floor_transits_per_day` is Kuwait, Qatar and Bahrain only. `gulf_origin_transits_per_day` includes origins that can bypass the strait and is not a proved Hormuz bound. Importer observation months may differ; `observation_months_mixed` says so. `coverage_share` is null until China, India and Korea are in. `meta.stale` follows ingest liveness on `retrieved_at`.",
+      "method": "GET",
+      "operation_id": "maritime_chokepoints_hormuz_import_floor",
+      "parameters": [],
+      "path": "/api/v1/maritime/chokepoints/hormuz/import-floor",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "Hormuz destination-side crude-import floor",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
+    },
+    {
+      "description": "Full transits of the Strait of Hormuz over the report's seven-day window, inbound and outbound, as published weekly by UK Maritime Trade Operations. UKMTO states these figures are AIS + DARK DERIVED, so they include vessels transiting without a usable AIS signal - traffic an AIS-derived count cannot see. These counts are NOT differenceable against the chokepoint activity series: the two use different transit definitions, geometry and observation windows, so subtracting one from the other does not measure dark traffic. `meta.data_time` carries the report's own observation date, and `meta.stale` is true when the newest stored report is already older than UKMTO's weekly publication cycle.",
+      "method": "GET",
+      "operation_id": "maritime_chokepoints_hormuz_transits",
+      "parameters": [],
+      "path": "/api/v1/maritime/chokepoints/hormuz/transits",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "Strait of Hormuz weekly full transits (UKMTO)",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
+    },
+    {
+      "description": "Transit counts for the Strait of Hormuz and Bab el-Mandeb from the Joint Maritime Information Center advisory note, published every two to three days and distributed through UKMTO. The window is the one the document prints (48 or 72 hours in the measured series), never assumed. The Hormuz figure is US-facilitated transits only: a lower bound, not a measurement of all traffic. These counts are not differenceable against the UKMTO weekly Hormuz series or the AIS-derived chokepoint activity series. `update_number` and `information_cutoff` identify the advisory; `retrieved_at` is only the fetch stamp. `meta.stale` is true when that fetch is already older than one publication cycle.",
+      "method": "GET",
+      "operation_id": "maritime_chokepoints_jmic_advisory",
+      "parameters": [],
+      "path": "/api/v1/maritime/chokepoints/jmic/advisory",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "JMIC advisory transit counts (Hormuz and Bab el-Mandeb)",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
+    },
+    {
+      "description": "Vessel movements at Singapore from the Maritime and Port Authority of Singapore, updated hourly. Arrivals and departures cover the N hours BEFORE now; expected arrivals cover the N hours AFTER it, so each side publishes its own window bounds rather than sharing one. Singapore sits at the eastern end of the Strait of Malacca. The strait itself has three littoral states and no transit-authorising authority, so no operator count of it can exist; this port authority is the nearest state record. Read it as port throughput, not as strait transits. A side is published only when it was measured: if upstream returned nothing readable inside that side's window it is absent rather than zero. Count exactness and flag exactness are independent: a side whose records were not all readable or not all inside its window carries `count_lower_bound` instead of `count` and is left out of `total_movements`; a side whose counted movements include any with no readable flag carries `top_flags_lower_bound` instead of `top_flags`.",
+      "method": "GET",
+      "operation_id": "maritime_chokepoints_malacca_throughput",
+      "parameters": [
+        {
+          "description": "Window length in hours. Realised sides look back from now, expected arrivals look forward from it (Singapore time).",
+          "location": "query",
+          "name": "hours",
+          "required": false,
+          "schema": {
+            "default": 24,
+            "description": "Window length in hours. Realised sides look back from now, expected arrivals look forward from it (Singapore time).",
+            "examples": [
+              24
+            ],
+            "maximum": 24,
+            "minimum": 1,
+            "title": "Hours",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/maritime/chokepoints/malacca/throughput",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "Strait of Malacca approaches - Singapore throughput (MPA)",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
+    },
+    {
+      "description": "Yesterday's actual arrivals and transits at the Panama Canal from the Autoridad del Canal de Panama Daily Customer Report, section D. This is the canal operator's own administrative record of transits it authorised, not a derived AIS count, so it is unaffected by jamming or dark transits. Observation date is the day before the report date because the heading reads YESTERDAY. `meta.data_time` is that observation date. `meta.stale` follows ingest liveness on `retrieved_at`.",
+      "method": "GET",
+      "operation_id": "maritime_chokepoints_panama_transits",
+      "parameters": [],
+      "path": "/api/v1/maritime/chokepoints/panama/transits",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "Panama Canal daily transits (operator record)",
       "tags": [
         "Global Economy & Trade"
       ],
@@ -75903,7 +76872,7 @@
       "toolset": "macro"
     },
     {
-      "description": "Execute a custom SPARQL query against Wikidata. For advanced users who need specific entity types or relationships not covered by pre-built endpoints. Wikidata contains 100M+ entities across all domains of knowledge. Query timeout: 60 seconds. Max 5 concurrent queries per IP.",
+      "description": "Execute a custom SPARQL query against Wikidata. For advanced users who need specific entity types or relationships not covered by pre-built endpoints. Wikidata contains 100M+ entities across all domains of knowledge. A SELECT answer returns one row per binding; an ASK answer returns a single row {boolean: true|false}. Query timeout: 60 seconds. Max 5 concurrent queries per IP.",
       "method": "GET",
       "operation_id": "wikidata_query",
       "parameters": [
@@ -87841,5 +88810,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "f48e4487f3090a7cf07aabb8daabb0abb78af29183be12afd0d156264c450ed8"
+  "spec_sha256": "dec6a824af83cdd78c80a1809f0d8ee2062bd3e22292dd2e8f3cc0fcf8bda450"
 }

@@ -18,9 +18,22 @@ _DEPRECATED_PATH_REWRITES: tuple[tuple[str, str], ...] = (
     ("/api/v1/", "/api/v2/"),
 )
 
-# weather_geocode's successor is a PARAMETER PATTERN (v2 city params), not an
-# endpoint - the only deprecated operation without a nameable replacement.
-DEPRECATED_WITHOUT_REPLACEMENT: frozenset[str] = frozenset({"weather_geocode"})
+# Deprecated operations whose successor is not another OPERATION, so the
+# path-rewrite table above can never name one.
+#
+#   weather_geocode          - its successor is a PARAMETER PATTERN (the v2
+#                              city params), not an endpoint.
+#   environment_osm_pipelines - deprecated for SPEED, not removal: the route
+#                              still works and is still served, but a
+#                              country-wide pipeline query takes 23-49 seconds
+#                              upstream when it succeeds at all. Its own
+#                              description points at /environment/osm/bbox
+#                              with tag_key=man_made, and that is an
+#                              alternative rather than a twin - it takes a
+#                              bounded region instead of a country, so a
+#                              caller cannot simply switch operation ids.
+DEPRECATED_WITHOUT_REPLACEMENT: frozenset[str] = frozenset({
+    "weather_geocode", "environment_osm_pipelines"})
 
 SUPPORTED_METHODS = {"get", "post"}
 
