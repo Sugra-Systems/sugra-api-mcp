@@ -251,3 +251,32 @@ def test_trace_decorator_result_attrs_callback_failure_is_safe():
         return {"ok": True}
 
     assert asyncio.run(probe()) == {"ok": True}
+
+
+def test_get_timeseries_accepts_the_monthly_flows_metric(monkeypatch, fake_client):
+    """The plane serves etf_monthly_flows, and a metric the tool's Literal does
+    not name is unreachable through this surface no matter what the API does.
+    """
+    monkeypatch.setenv("SUGRA_AGENT_INTERNAL_TOKEN", "tok-123")
+    client = fake_client({"data": {"points": []}})
+    entity = {"namespace": "etf", "ids": {"symbol": "TQQQ"}}
+    asyncio.run(get_timeseries("etf_monthly_flows", entity))
+    assert client.calls[0]["json"]["metric"] == "etf_monthly_flows"
+
+
+def test_get_timeseries_passes_a_partial_answer_through_untouched(monkeypatch, fake_client):
+    """A fund that files no NPORT-P at all is not an error: the plane answers
+    status partial with an empty series and a reason, and the tool must hand
+    that to the caller rather than turning it into a failure."""
+    monkeypatch.setenv("SUGRA_AGENT_INTERNAL_TOKEN", "tok-123")
+    fake_client({
+        "status": "partial",
+        "data": {"points": [], "reason": "not_an_nport_filer"},
+        "coverage": [{"name": "etf_monthly_flows", "required": True,
+                      "status": "unavailable"}],
+    })
+    entity = {"namespace": "etf", "ids": {"symbol": "GLD"}}
+    out = asyncio.run(get_timeseries("etf_monthly_flows", entity))
+    assert out["status"] == "partial"
+    assert out["data"]["reason"] == "not_an_nport_filer"
+    assert out["data"]["points"] == []

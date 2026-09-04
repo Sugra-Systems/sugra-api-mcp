@@ -183,20 +183,35 @@ async def get_snapshot(recipe: str, entity: AgentEntity) -> dict[str, Any]:
 
 @trace_mcp_tool("get_timeseries", result_attrs=_agent_result_attrs)
 async def get_timeseries(
-    metric: Literal["price", "macro_series", "etf_flows"],
+    metric: Literal["price", "macro_series", "etf_flows", "etf_monthly_flows"],
     entity: AgentEntity,
     granularity: str = "1d",
     max_points: int = 500,
 ) -> dict[str, Any]:
-    """Bounded timeseries for an entity: price, macro_series, or etf_flows.
+    """Bounded timeseries for an entity: price, macro_series, etf_flows or
+    etf_monthly_flows.
 
     Returns points oldest-first with an explicit downsampling flag when the
-    raw series exceeded max_points. etf_flows is filing-cadence (one point per
-    SEC filing refresh), NOT per calendar day, so even a wide window yields a
-    handful of points. Times are UTC. Costs 1 unit per call.
+    raw series exceeded max_points. Times are UTC. Costs 1 unit per call.
+
+    The two ETF flow metrics answer different questions and are not
+    interchangeable. ``etf_flows`` is an ESTIMATE at filing cadence: one point
+    per SEC filing refresh, so ``t`` is a filing date and even a wide window
+    yields a handful of points. ``etf_monthly_flows`` is the fund's own
+    creations and redemptions from its NPORT-P filing, so ``t`` is a calendar
+    month (``YYYY-MM``) and each point carries the three filed components -
+    sales, reinvestment, redemption - beside the net.
+
+    Two things to read before quoting etf_monthly_flows. NPORT-P is filed per
+    SERIES, so for a fund with more than one share class the figures cover
+    every class and the payload says so in ``multi_class_series``; where the
+    class count is unknown it says ``class_scope`` instead of staying silent.
+    And a fund that files no NPORT-P at all, such as a commodity trust, is not
+    an error: the call returns status ``partial`` with an empty point list and
+    a ``reason``.
 
     Args:
-        metric: One of price / macro_series / etf_flows.
+        metric: One of price / macro_series / etf_flows / etf_monthly_flows.
         entity: Entity dict from resolve_entity ({"namespace": ..., "ids": ...}).
         granularity: Requested point granularity (default "1d").
         max_points: Hard cap on returned points (default 500).
