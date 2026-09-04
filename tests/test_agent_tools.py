@@ -253,10 +253,22 @@ def test_trace_decorator_result_attrs_callback_failure_is_safe():
     assert asyncio.run(probe()) == {"ok": True}
 
 
-def test_get_timeseries_accepts_the_monthly_flows_metric(monkeypatch, fake_client):
-    """The plane serves etf_monthly_flows, and a metric the tool's Literal does
-    not name is unreachable through this surface no matter what the API does.
-    """
+def test_get_timeseries_declares_and_forwards_the_monthly_flows_metric(
+    monkeypatch, fake_client
+):
+    """A metric the tool's Literal does not name is unreachable through this
+    surface no matter what the plane serves - so the DECLARATION is what makes
+    it reachable, and calling the Python function proves nothing about that:
+    Literal is not enforced at runtime, and an earlier version of this test
+    would have passed before the metric was added at all.
+
+    So it asserts the annotation first, then that the call forwards the name
+    verbatim rather than mapping or defaulting it."""
+    import typing
+
+    metric_arg = typing.get_type_hints(get_timeseries)["metric"]
+    assert "etf_monthly_flows" in typing.get_args(metric_arg)
+
     monkeypatch.setenv("SUGRA_AGENT_INTERNAL_TOKEN", "tok-123")
     client = fake_client({"data": {"points": []}})
     entity = {"namespace": "etf", "ids": {"symbol": "TQQQ"}}
@@ -269,14 +281,16 @@ def test_get_timeseries_passes_a_partial_answer_through_untouched(monkeypatch, f
     status partial with an empty series and a reason, and the tool must hand
     that to the caller rather than turning it into a failure."""
     monkeypatch.setenv("SUGRA_AGENT_INTERNAL_TOKEN", "tok-123")
-    fake_client({
+    payload = {
         "status": "partial",
         "data": {"points": [], "reason": "not_an_nport_filer"},
         "coverage": [{"name": "etf_monthly_flows", "required": True,
                       "status": "unavailable"}],
-    })
+    }
+    fake_client(dict(payload))
     entity = {"namespace": "etf", "ids": {"symbol": "GLD"}}
     out = asyncio.run(get_timeseries("etf_monthly_flows", entity))
-    assert out["status"] == "partial"
-    assert out["data"]["reason"] == "not_an_nport_filer"
-    assert out["data"]["points"] == []
+    # WHOLE payload, not three fields: checking only status and reason would
+    # still pass if the tool dropped `coverage` or any other metadata, and
+    # "passes through untouched" is the claim being made.
+    assert out == payload
