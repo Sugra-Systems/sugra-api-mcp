@@ -58,7 +58,7 @@ def test_entity_lookup_anchor_is_enum(tool_schemas):
 
 def test_get_timeseries_metric_is_enum(tool_schemas):
     assert _enum_of(tool_schemas["get_timeseries"]["metric"]) == [
-        "price", "macro_series", "etf_flows",
+        "price", "macro_series", "etf_flows", "etf_monthly_flows",
     ]
 
 

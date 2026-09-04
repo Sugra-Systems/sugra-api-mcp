@@ -16,6 +16,7 @@ Covers the three layers Codex plan-review flagged as risky:
 from __future__ import annotations
 
 import asyncio
+import copy
 from typing import Any
 
 import pytest
@@ -251,3 +252,49 @@ def test_trace_decorator_result_attrs_callback_failure_is_safe():
         return {"ok": True}
 
     assert asyncio.run(probe()) == {"ok": True}
+
+
+def test_get_timeseries_declares_and_forwards_the_monthly_flows_metric(
+    monkeypatch, fake_client
+):
+    """A metric the tool's Literal does not name is unreachable through this
+    surface no matter what the plane serves - so the DECLARATION is what makes
+    it reachable, and calling the Python function proves nothing about that:
+    Literal is not enforced at runtime, and an earlier version of this test
+    would have passed before the metric was added at all.
+
+    So it asserts the annotation first, then that the call forwards the name
+    verbatim rather than mapping or defaulting it."""
+    import typing
+
+    metric_arg = typing.get_type_hints(get_timeseries)["metric"]
+    assert "etf_monthly_flows" in typing.get_args(metric_arg)
+
+    monkeypatch.setenv("SUGRA_AGENT_INTERNAL_TOKEN", "tok-123")
+    client = fake_client({"data": {"points": []}})
+    entity = {"namespace": "etf", "ids": {"symbol": "TQQQ"}}
+    asyncio.run(get_timeseries("etf_monthly_flows", entity))
+    assert client.calls[0]["json"]["metric"] == "etf_monthly_flows"
+
+
+def test_get_timeseries_passes_a_partial_answer_through_untouched(monkeypatch, fake_client):
+    """A fund that files no NPORT-P at all is not an error: the plane answers
+    status partial with an empty series and a reason, and the tool must hand
+    that to the caller rather than turning it into a failure."""
+    monkeypatch.setenv("SUGRA_AGENT_INTERNAL_TOKEN", "tok-123")
+    payload = {
+        "status": "partial",
+        "data": {"points": [], "reason": "not_an_nport_filer"},
+        "coverage": [{"name": "etf_monthly_flows", "required": True,
+                      "status": "unavailable"}],
+    }
+    # DEEP copy: a shallow one shares the nested data and coverage objects,
+    # so an in-place mutation by the tool would change both sides of the
+    # comparison and escape it entirely.
+    fake_client(copy.deepcopy(payload))
+    entity = {"namespace": "etf", "ids": {"symbol": "GLD"}}
+    out = asyncio.run(get_timeseries("etf_monthly_flows", entity))
+    # WHOLE payload, not three fields: checking only status and reason would
+    # still pass if the tool dropped `coverage` or any other metadata, and
+    # "passes through untouched" is the claim being made.
+    assert out == payload
