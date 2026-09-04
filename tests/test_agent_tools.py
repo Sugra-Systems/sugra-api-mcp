@@ -16,6 +16,7 @@ Covers the three layers Codex plan-review flagged as risky:
 from __future__ import annotations
 
 import asyncio
+import copy
 from typing import Any
 
 import pytest
@@ -287,7 +288,10 @@ def test_get_timeseries_passes_a_partial_answer_through_untouched(monkeypatch, f
         "coverage": [{"name": "etf_monthly_flows", "required": True,
                       "status": "unavailable"}],
     }
-    fake_client(dict(payload))
+    # DEEP copy: a shallow one shares the nested data and coverage objects,
+    # so an in-place mutation by the tool would change both sides of the
+    # comparison and escape it entirely.
+    fake_client(copy.deepcopy(payload))
     entity = {"namespace": "etf", "ids": {"symbol": "GLD"}}
     out = asyncio.run(get_timeseries("etf_monthly_flows", entity))
     # WHOLE payload, not three fields: checking only status and reason would
