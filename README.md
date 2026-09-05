@@ -10,7 +10,7 @@
   <a href="https://pypi.org/project/sugra-api-mcp/"><img src="https://img.shields.io/pypi/v/sugra-api-mcp?label=PyPI&color=F5A623" alt="PyPI"></a>
   <a href="https://pypi.org/project/sugra-api-mcp/"><img src="https://img.shields.io/pypi/pyversions/sugra-api-mcp?label=Python" alt="Python versions"></a>
   <a href="https://github.com/Sugra-Systems/sugra-api-mcp/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Sugra-Systems/sugra-api-mcp?label=License" alt="License"></a>
-  <a href="https://smithery.ai/servers/sugra-systems/sugra-api"><img src="https://smithery.ai/badge/sugra-systems/sugra-api" alt="Smithery"></a>
+  <a href="https://lightnow.ai/servers/io.github.Sugra-Systems/sugra-api-mcp"><img src="https://lightnow.ai/badge/io.github.Sugra-Systems/sugra-api-mcp" alt="8 T · 4 R · 6 P on LightNow"></a>
 </p>
 
 <p align="center">
