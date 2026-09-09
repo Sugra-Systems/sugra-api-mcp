@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-09-09T16:47:20Z",
+  "built_at": "2026-09-09T16:51:09Z",
   "endpoint_count": 1604,
   "endpoints": [
     {
@@ -15465,7 +15465,7 @@
       "toolset": "statistics"
     },
     {
-      "description": "Fetch any Destatis GENESIS table by its code (five digits, a hyphen, four more), the same code /destatis/search and /destatis/statistics/{code}/tables already hand out. Thirteen curated shortcuts stay on /destatis/{table}. This long-tail route is admission-controlled: one in-flight request per API key, a platform cap of 720 uncached fetches per UTC day (tunable DESTATIS_LONGTAIL_DAILY), and it never waits for the shared GENESIS slot - a busy lane is 429 with Retry-After. A table too large for a direct request is refused with both levers that work: a narrower year window, and a contents slice. The answer may be served from cache; a cache hit is free and is not counted against the budget.",
+      "description": "Fetch any Destatis GENESIS table by its code (five digits, a hyphen, four more), the same code /destatis/search and /destatis/statistics/{code}/tables already hand out. Thirteen curated shortcuts stay on /destatis/{table}. This long-tail route is admission-controlled: one in-flight request per API key, a platform cap of 720 uncached fetches per UTC day (tunable DESTATIS_LONGTAIL_DAILY), and it never waits for the shared GENESIS slot - a busy lane is 429 with Retry-After. A table too large for a direct request is refused with both levers that work: a narrower year window, and a contents slice. Optional `classifying` is VARIABLE:KEY, e.g. GP19A2:GP19-05, taken from /destatis/variables/{code}/values. Repeat the parameter for more than one variable (five classifying plus one regional). A key that is not in that value list is refused here with HTTP 400 and is never sent upstream: GENESIS answers Status 0 and the whole cube for an invalid classifying key. The answer may be served from cache; a cache hit is free and is not counted against the budget.",
       "method": "GET",
       "operation_id": "destatis_table_code",
       "parameters": [
@@ -15531,6 +15531,28 @@
             ],
             "description": "Optional comma-separated GENESIS content variable codes.",
             "title": "Contents"
+          }
+        },
+        {
+          "description": "Slice to one legal member of a classifying variable. Shape: VARIABLE:KEY, e.g. GP19A2:GP19-05. Repeat the parameter for more than one variable. A key that is not in /destatis/variables/{code}/values is refused here and never sent upstream.",
+          "example": "GP19A2:GP19-05",
+          "location": "query",
+          "name": "classifying",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Slice to one legal member of a classifying variable. Shape: VARIABLE:KEY, e.g. GP19A2:GP19-05. Repeat the parameter for more than one variable. A key that is not in /destatis/variables/{code}/values is refused here and never sent upstream.",
+            "title": "Classifying"
           }
         }
       ],
@@ -90820,5 +90842,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "a1d7639d6fbd313722a774a2eaff1f0f4c03448fc946b7535cf5904fa9fcf4b8"
+  "spec_sha256": "48bc161b6e050efd6e71f6e6bd0a129348979858f29287f0c39695f4900ea138"
 }
