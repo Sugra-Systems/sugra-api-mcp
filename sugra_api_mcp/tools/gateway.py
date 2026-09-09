@@ -65,12 +65,64 @@ def _missing_required(
 @mcp.tool(annotations=read_only("Search endpoints"))
 @trace_mcp_tool("search_endpoints")
 async def search_endpoints(
-    query: str,
-    toolset: str | None = None,
-    source: str | None = None,
-    limit: int = 10,
+    query: Annotated[
+        str,
+        Field(
+            description=(
+                "Natural-language search over the bundled catalog. Name the "
+                "instrument, series, place, or task (examples: 'US CPI', "
+                "'AAPL quote', 'North Sea AIS'). Returns ranked operation_id "
+                "hits with required_parameters. Then call describe_endpoint "
+                "on a hit before call_endpoint."
+            ),
+        ),
+    ],
+    toolset: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Optional catalog group filter (markets, macro, news, "
+                "network, ...). Call list_toolsets for the live names. An "
+                "unknown value returns error unknown_toolset with known_toolsets "
+                "rather than an empty hit list."
+            ),
+        ),
+    ] = None,
+    source: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Optional source-family filter as listed by list_sources "
+                "(sugra_finance, fred, ...). An unknown value returns error "
+                "unknown_source with known_sources."
+            ),
+        ),
+    ] = None,
+    limit: Annotated[
+        int,
+        Field(
+            description=(
+                "Maximum ranked hits to return. Default 10. Does not call "
+                "the Sugra API; this only bounds the catalog search list."
+            ),
+        ),
+    ] = 10,
 ) -> dict[str, Any]:
-    """Search the bundled Sugra endpoint catalog by natural-language query."""
+    """Search the bundled Sugra endpoint catalog by natural-language query.
+
+    Use this to pick an operation_id. It does not fetch data. Typical loop:
+    1. search_endpoints(query) -> ranked hits with required_parameters
+    2. describe_endpoint(operation_id) -> params, request_body_schema, agent_hints
+    3. call_endpoint(operation_id, params=..., body=...) or fetch_data(query, params=...)
+
+    Filter with toolset or source only after list_toolsets / list_sources;
+    a misspelled filter is an error, not a silent empty result.
+
+    Examples:
+    - search_endpoints("US CPI inflation")
+    - search_endpoints("AAPL price", toolset="markets")
+    - search_endpoints("container ship AIS", toolset="network")
+    """
     catalog = load_catalog()
     # An unknown filter value used to fall through the per-endpoint comparison and
     # return an empty result list - indistinguishable from "this catalog genuinely
@@ -107,14 +159,26 @@ async def search_endpoints(
 
 @mcp.tool(annotations=read_only("Describe endpoint"))
 @trace_mcp_tool("describe_endpoint")
-async def describe_endpoint(operation_id: str) -> dict[str, Any]:
+async def describe_endpoint(
+    operation_id: Annotated[
+        str,
+        Field(
+            description=(
+                "Catalog operation_id from search_endpoints (or from "
+                "list_toolsets drill-down). Unknown ids return error "
+                "unknown_operation_id."
+            ),
+        ),
+    ],
+) -> dict[str, Any]:
     """Describe one Sugra API endpoint by operation_id.
 
     Includes agent_hints (duration_class fast/slow/heavy, max_concurrency,
     bulk billing) so you can budget timeouts and parallelism before calling.
     POST endpoints with a JSON body also carry request_body_schema (the
     resolved JSON schema) - construct the `body` argument from it instead
-    of guessing key names.
+    of guessing key names. Call this after search_endpoints and before
+    call_endpoint when you need the exact parameter names and examples.
     """
     catalog = load_catalog()
     try:
@@ -155,8 +219,26 @@ async def call_endpoint(
         int | None,
         Field(description="Bounds ONLY the top-level list: the envelope data list (or a bare top-level array). Nested lists inside records are never truncated; meta.shaped reports whether the limit applied."),
     ] = None,
-    fields: list[str] | None = None,
-    include_raw: bool = False,
+    fields: Annotated[
+        list[str] | None,
+        Field(
+            description=(
+                "Optional projection of keys to keep on each record. Dotted "
+                "paths (geo.city) walk nested objects. meta.shaped reports "
+                "fields_applied and fields_unmatched. Omit to keep every key."
+            ),
+        ),
+    ] = None,
+    include_raw: Annotated[
+        bool,
+        Field(
+            description=(
+                "If true, attach the original unshaped payload under raw "
+                "when it fits the size cap; otherwise meta.raw_omitted "
+                "explains why. Default false."
+            ),
+        ),
+    ] = False,
 ) -> dict[str, Any]:
     """Call a Sugra API endpoint by operation_id from the bundled catalog.
 
@@ -285,14 +367,28 @@ def toolsets_payload() -> dict[str, Any]:
 @mcp.tool(annotations=read_only("List toolsets"))
 @trace_mcp_tool("list_toolsets")
 async def list_toolsets() -> dict[str, Any]:
-    """List endpoint groups available in the bundled catalog."""
+    """List catalog groups with endpoint counts and short descriptions.
+
+    Use the group names as the toolset filter on search_endpoints. This
+    does not call the Sugra API; it reads the bundled catalog.
+    """
     return toolsets_payload()
 
 
 @mcp.tool(annotations=read_only("Fetch data"))
 @trace_mcp_tool("fetch_data")
 async def fetch_data(
-    query: str,
+    query: Annotated[
+        str,
+        Field(
+            description=(
+                "Natural-language request for data (examples: 'US CPI', "
+                "'Bitcoin price', 'latest news'). The tool picks the top "
+                "catalog match and calls it. If required params are missing "
+                "it returns needs_params instead of guessing."
+            ),
+        ),
+    ],
     params: Annotated[
         dict[str, Any] | None,
         Field(
@@ -317,8 +413,26 @@ async def fetch_data(
         int | None,
         Field(description="Bounds ONLY the top-level list: the envelope data list (or a bare top-level array). Nested lists inside records are never truncated; meta.shaped reports whether the limit applied."),
     ] = None,
-    fields: list[str] | None = None,
-    include_raw: bool = False,
+    fields: Annotated[
+        list[str] | None,
+        Field(
+            description=(
+                "Optional projection of keys to keep on each record. Dotted "
+                "paths (geo.city) walk nested objects. meta.shaped reports "
+                "fields_applied and fields_unmatched. Omit to keep every key."
+            ),
+        ),
+    ] = None,
+    include_raw: Annotated[
+        bool,
+        Field(
+            description=(
+                "If true, attach the original unshaped payload under raw "
+                "when it fits the size cap; otherwise meta.raw_omitted "
+                "explains why. Default false."
+            ),
+        ),
+    ] = False,
 ) -> dict[str, Any]:
     """One-step fetch: find the best Sugra endpoint for the query and call it.
 
@@ -470,5 +584,9 @@ def sources_payload() -> dict[str, Any]:
 @mcp.tool(annotations=read_only("List sources"))
 @trace_mcp_tool("list_sources")
 async def list_sources() -> dict[str, Any]:
-    """List endpoint source families derived from catalog metadata."""
+    """List source families in the bundled catalog with endpoint counts.
+
+    Use the family names as the source filter on search_endpoints. This
+    does not call the Sugra API.
+    """
     return sources_payload()

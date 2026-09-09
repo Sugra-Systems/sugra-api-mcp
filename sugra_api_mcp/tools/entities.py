@@ -22,7 +22,9 @@ unchanged - the path call is the contract.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
+
+from pydantic import Field
 
 from ..errors import is_error_payload
 from ..observability import trace_mcp_tool
@@ -236,10 +238,22 @@ def _resolve_include(include: list[str] | None) -> tuple[set[str], list[str]]:
 @mcp.tool(annotations=read_only("Sugra Entity screen"))
 @trace_mcp_tool("sugra_entity_screen")
 async def sugra_entity_screen(
-    name: str,
-    country: str | None = None,
-    dob: str | None = None,
-    nationality: str | None = None,
+    name: Annotated[
+        str,
+        Field(description="Person or organization name to screen (required)."),
+    ],
+    country: Annotated[
+        str | None,
+        Field(description="Optional ISO 3166-1 alpha-2 country to narrow the match."),
+    ] = None,
+    dob: Annotated[
+        str | None,
+        Field(description="Optional date of birth for a person, YYYY-MM-DD."),
+    ] = None,
+    nationality: Annotated[
+        str | None,
+        Field(description="Optional nationality to narrow the match."),
+    ] = None,
 ) -> dict[str, Any]:
     """Screen a person or organization name against the Sugra sanctions corpus.
 
@@ -276,9 +290,23 @@ async def sugra_entity_screen(
 @mcp.tool(annotations=read_only("Sugra Entity lookup"))
 @trace_mcp_tool("sugra_entity_lookup")
 async def sugra_entity_lookup(
-    anchor: Literal["lei", "vat"],
-    value: str,
-    include: list[str] | None = None,
+    anchor: Annotated[
+        Literal["lei", "vat"],
+        Field(description="Identifier type: lei (GLEIF) or vat (EU VIES)."),
+    ],
+    value: Annotated[
+        str,
+        Field(description="The identifier value: 20-character LEI or the VAT number."),
+    ],
+    include: Annotated[
+        list[str] | None,
+        Field(
+            description=(
+                "Optional fuller slices to add, e.g. ownership, adverse_media, "
+                "profile, screening. Omit for the compact default."
+            ),
+        ),
+    ] = None,
 ) -> dict[str, Any]:
     """Resolve an entity by identifier and return its composed KYB envelope.
 
