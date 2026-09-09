@@ -1,6 +1,6 @@
 {
-  "built_at": "2026-09-09T15:30:32Z",
-  "endpoint_count": 1599,
+  "built_at": "2026-09-09T16:51:09Z",
+  "endpoint_count": 1604,
   "endpoints": [
     {
       "description": "Pre-configured key Australian datasets: CPI, GDP, Labour, Trade, Retail, Wages, Population.",
@@ -15398,7 +15398,74 @@
       "toolset": "statistics"
     },
     {
-      "description": "Fetch any Destatis GENESIS table by its code (five digits, a hyphen, four more), the same code /destatis/search and /destatis/statistics/{code}/tables already hand out. Thirteen curated shortcuts stay on /destatis/{table}. This long-tail route is admission-controlled: one in-flight request per API key, a platform cap of 720 uncached fetches per UTC day (tunable DESTATIS_LONGTAIL_DAILY), and it never waits for the shared GENESIS slot - a busy lane is 429 with Retry-After. A table too large for a direct request is refused with both levers that work: a narrower year window, and a contents slice. The answer may be served from cache; a cache hit is free and is not counted against the budget.",
+      "description": "Every variable a statistic can be split by: classifying axes, time, region and measures. `values_path` is the legal-keys listing for a slice. Statistic 42131 carries the GP2019 product classification at 2, 4 and 9 digits. Caller-selected code: striped longtail_lock with reserved wait, so the lock table cannot grow. A cache hit is free.",
+      "method": "GET",
+      "operation_id": "destatis_statistics_code_variables",
+      "parameters": [
+        {
+          "description": "Five-digit EVAS number of the statistic.",
+          "example": "42131",
+          "location": "path",
+          "name": "code",
+          "required": true,
+          "schema": {
+            "description": "Five-digit EVAS number of the statistic.",
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Keep only variables of this Type (Value, Subject, Regional, Time, ...).",
+          "example": "Subject",
+          "location": "query",
+          "name": "type",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Keep only variables of this Type (Value, Subject, Regional, Time, ...).",
+            "title": "Type"
+          }
+        },
+        {
+          "description": "Maximum number of records to return.",
+          "example": 200,
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 200,
+            "description": "Maximum number of records to return.",
+            "maximum": 2500,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/destatis/statistics/{code}/variables",
+      "request_body_required": false,
+      "required_parameters": [
+        "code"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "The variables of one German statistic",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Fetch any Destatis GENESIS table by its code (five digits, a hyphen, four more), the same code /destatis/search and /destatis/statistics/{code}/tables already hand out. Thirteen curated shortcuts stay on /destatis/{table}. This long-tail route is admission-controlled: one in-flight request per API key, a platform cap of 720 uncached fetches per UTC day (tunable DESTATIS_LONGTAIL_DAILY), and it never waits for the shared GENESIS slot - a busy lane is 429 with Retry-After. A table too large for a direct request is refused with both levers that work: a narrower year window, and a contents slice. Optional `classifying` is VARIABLE:KEY, e.g. GP19A2:GP19-05, taken from /destatis/variables/{code}/values. Repeat the parameter for more than one variable (five classifying plus one regional). A key that is not in that value list is refused here with HTTP 400 and is never sent upstream: GENESIS answers Status 0 and the whole cube for an invalid classifying key. The answer may be served from cache; a cache hit is free and is not counted against the budget.",
       "method": "GET",
       "operation_id": "destatis_table_code",
       "parameters": [
@@ -15465,6 +15532,28 @@
             "description": "Optional comma-separated GENESIS content variable codes.",
             "title": "Contents"
           }
+        },
+        {
+          "description": "Slice to one legal member of a classifying variable. Shape: VARIABLE:KEY, e.g. GP19A2:GP19-05. Repeat the parameter for more than one variable. A key that is not in /destatis/variables/{code}/values is refused here and never sent upstream.",
+          "example": "GP19A2:GP19-05",
+          "location": "query",
+          "name": "classifying",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Slice to one legal member of a classifying variable. Shape: VARIABLE:KEY, e.g. GP19A2:GP19-05. Repeat the parameter for more than one variable. A key that is not in /destatis/variables/{code}/values is refused here and never sent upstream.",
+            "title": "Classifying"
+          }
         }
       ],
       "path": "/api/v1/destatis/table/{code}",
@@ -15511,6 +15600,231 @@
         "statistics"
       ],
       "summary": "German statistics table preflight by GENESIS code",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Every variable Destatis publishes - 3,391 of them on 2026-09-08 - from the committed snapshot, so this listing spends no GENESIS slot. Filter by code prefix (GP19 is the 2019 product classification), Type, or free text. `tables_path` is the reverse walk: every table, cube, statistic and time series that carries the variable. Every answer says whether it is the whole match.",
+      "method": "GET",
+      "operation_id": "destatis_variables",
+      "parameters": [
+        {
+          "description": "Code prefix, e.g. GP19 for the 2019 product classification.",
+          "example": "GP19",
+          "location": "query",
+          "name": "prefix",
+          "required": false,
+          "schema": {
+            "description": "Code prefix, e.g. GP19 for the 2019 product classification.",
+            "title": "Prefix",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Free-text term matched against the variable title and code.",
+          "example": "product",
+          "location": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "description": "Free-text term matched against the variable title and code.",
+            "title": "Q",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Keep only variables of this Type (Value, Subject, Regional, Time, ...).",
+          "example": "Subject",
+          "location": "query",
+          "name": "type",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Keep only variables of this Type (Value, Subject, Regional, Time, ...).",
+            "title": "Type"
+          }
+        },
+        {
+          "description": "Maximum number of records to return.",
+          "example": 100,
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 100,
+            "description": "Maximum number of records to return.",
+            "maximum": 2500,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/destatis/variables",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Browse the German statistics variables catalogue",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Lookup of one variable from the committed snapshot: title, kind, Type, the path to its legal values, and the path to every table that carries it. Spends no GENESIS slot.",
+      "method": "GET",
+      "operation_id": "destatis_variables_code",
+      "parameters": [
+        {
+          "description": "Destatis variable code, e.g. GP19A9.",
+          "example": "GP19A9",
+          "location": "path",
+          "name": "code",
+          "required": true,
+          "schema": {
+            "description": "Destatis variable code, e.g. GP19A9.",
+            "title": "Code",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/destatis/variables/{code}",
+      "request_body_required": false,
+      "required_parameters": [
+        "code"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "One German statistics variable",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "The reverse walk: GENESIS answers which objects contain this variable. Fans out over catalogue/tables2variable, cubes2variable, statistics2variable and timeseries2variable, one call per kind, never concurrently, and labels each hit with what it is. A code absent from the committed snapshot is 404 without a GENESIS call. Caller-selected code: striped longtail_lock with reserved wait. A cache hit is free. Every answer says whether it is the whole match.",
+      "method": "GET",
+      "operation_id": "destatis_variables_code_tables",
+      "parameters": [
+        {
+          "description": "Destatis variable code, e.g. GP19A2.",
+          "example": "GP19A2",
+          "location": "path",
+          "name": "code",
+          "required": true,
+          "schema": {
+            "description": "Destatis variable code, e.g. GP19A2.",
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Keep only carriers of this kind: table, cube, statistic, time_series.",
+          "example": "table",
+          "location": "query",
+          "name": "kind",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Keep only carriers of this kind: table, cube, statistic, time_series.",
+            "title": "Kind"
+          }
+        },
+        {
+          "description": "Maximum number of records to return.",
+          "example": 500,
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 500,
+            "description": "Maximum number of records to return.",
+            "maximum": 25000,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/destatis/variables/{code}/tables",
+      "request_body_required": false,
+      "required_parameters": [
+        "code"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Every Destatis table, cube, statistic and time series that carries a variable",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "The member codes a classifying slice may name, from catalogue/values2variable. This is the list API-100 validates a slice against. A code absent from the committed snapshot is 404 without a GENESIS call. Caller-selected code: striped longtail_lock with reserved wait. A cache hit is free.",
+      "method": "GET",
+      "operation_id": "destatis_variables_code_values",
+      "parameters": [
+        {
+          "description": "Destatis variable code, e.g. GP19A9.",
+          "example": "GP19A9",
+          "location": "path",
+          "name": "code",
+          "required": true,
+          "schema": {
+            "description": "Destatis variable code, e.g. GP19A9.",
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Maximum number of records to return.",
+          "example": 500,
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 500,
+            "description": "Maximum number of records to return.",
+            "maximum": 25000,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/destatis/variables/{code}/values",
+      "request_body_required": false,
+      "required_parameters": [
+        "code"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Legal values of one German statistics variable",
       "tags": [
         "Statistical Agencies"
       ],
@@ -90528,5 +90842,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "e4bd8db9b5475fd796c0db955bd28b61ca69d2b5dde75c8eb9fbe56c6bd3f411"
+  "spec_sha256": "48bc161b6e050efd6e71f6e6bd0a129348979858f29287f0c39695f4900ea138"
 }

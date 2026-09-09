@@ -123,10 +123,11 @@ def shape_response(
     matched: set[str] = set()
 
     if isinstance(payload, list):
-        # Bare-array payload (no envelope at all). Untouched unless shaping
-        # was requested; shaping wraps it so meta.shaped has a place to live.
-        if not shaping_requested and not include_raw:
-            return payload
+        # Bare-array payload. Always wrap in {data: ...}: FastMCP validates
+        # call_endpoint/fetch_data against dict[str, Any], and MCP
+        # CallToolResult.structuredContent is dict-only. Returning the list
+        # unchanged made a successful call arrive as isError with a
+        # pydantic dict_type message and no rows (MCP-7.1).
         limited = _apply_limit(payload, limit)
         projected = _project_value(limited, fields, matched) if fields else limited
         shaped: dict[str, Any] = {"data": projected}
@@ -141,8 +142,20 @@ def shape_response(
         return _maybe_include_raw(shaped, original, include_raw, max_raw_chars)
 
     if not isinstance(payload, dict):
-        # Scalar JSON payload - nothing to shape.
-        return payload
+        # Scalar JSON. Same dict contract as a bare array: wrap so the MCP
+        # tool result is never a non-object. If the caller asked for
+        # shaping, report the no-op (limit never applies to a scalar;
+        # fields never match) instead of silently dropping meta.shaped.
+        shaped = {"data": payload}
+        if shaping_requested:
+            _attach_meta(
+                shaped,
+                _shaped_meta_block(
+                    limit=limit, limit_applied=False,
+                    fields=fields, matched=matched,
+                ),
+            )
+        return _maybe_include_raw(shaped, original, include_raw, max_raw_chars)
 
     shaped = deepcopy(payload)
     limit_applied = False
