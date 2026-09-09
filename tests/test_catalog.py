@@ -236,8 +236,13 @@ def test_response_shaping_wraps_bare_list_payload_when_shaping_requested() -> No
     assert shaped["meta"]["shaped"]["fields_applied"] == ["a"]
 
 
-def test_response_shaping_bare_list_without_shaping_params_is_untouched() -> None:
-    assert shape_response([1, 2, 3]) == [1, 2, 3]
+def test_response_shaping_bare_list_without_shaping_params_is_wrapped() -> None:
+    assert shape_response([1, 2, 3]) == {"data": [1, 2, 3]}
+
+
+def test_response_shaping_scalar_payload_is_wrapped() -> None:
+    assert shape_response(42) == {"data": 42}
+    assert shape_response("ok") == {"data": "ok"}
 
 
 def test_response_shaping_tolerates_non_dict_meta_key() -> None:

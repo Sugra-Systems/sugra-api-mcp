@@ -178,14 +178,40 @@ async def test_a_payload_carrying_both_data_and_an_error_note_is_a_success(monke
     assert result.isError is False, "a result carrying data is not a failure"
 
 
+async def test_a_bare_array_success_is_not_an_error(monkeypatch) -> None:
+    """A JSON-array API body is success data, not a validation failure.
+
+    Live OpenAPI 1.0.1 declares no GET/POST 200 as type=array (probe
+    2026-09-09: 1603 object schemas). Runtime can still return a list
+    (JSONResponse([...]), a router that returns []). Before the wrap,
+    FastMCP rejected that list against dict[str, Any] and the client
+    saw isError with a pydantic dict_type message and no rows.
+    """
+    monkeypatch.setattr(
+        gateway,
+        "get_client",
+        lambda: _Client([{"symbol": "AAPL"}, {"symbol": "MSFT"}]),
+    )
+
+    result = await _call(
+        "call_endpoint",
+        {"operation_id": "quotes_symbol_price", "params": {"symbol": "AAPL"}},
+    )
+
+    assert result.isError is False
+    payload = _structured(result)
+    assert payload["data"] == [{"symbol": "AAPL"}, {"symbol": "MSFT"}]
+    assert "error" not in payload
+
+
 async def test_a_non_dict_result_is_passed_through_untouched() -> None:
     """The failure check must never manufacture a verdict from a result it
     cannot inspect. A bare array or a scalar has no keys, and a membership test
     against a string would match the word "error" inside ordinary prose.
 
-    (A bare-array response is separately mishandled upstream of this check: the
-    tool declares a dict return, so output validation rejects it before the flag
-    is ever considered. That is a different contract from this one.)
+    (A bare-array *API* payload is wrapped to {data: [...]} by shape_response
+    before this check, so the protocol result is a dict. This test still pins
+    is_error_payload itself against non-dicts.)
     """
     from sugra_api_mcp.errors import is_error_payload
 
