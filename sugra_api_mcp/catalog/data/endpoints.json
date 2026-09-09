@@ -1,6 +1,6 @@
 {
-  "built_at": "2026-09-04T13:11:41Z",
-  "endpoint_count": 1574,
+  "built_at": "2026-09-09T15:30:32Z",
+  "endpoint_count": 1599,
   "endpoints": [
     {
       "description": "Pre-configured key Australian datasets: CPI, GDP, Labour, Trade, Retail, Wages, Population.",
@@ -6563,6 +6563,326 @@
       "toolset": "statistics"
     },
     {
+      "description": "Nonemployer establishments and their sales, value of shipments or revenue (USD thousands) from the Census Bureau's Nonemployer Statistics (`<vintage>/nonemp`), one vintage year (1997 to the latest published), for one NAICS code (00 = all industries) across the nation, every state (or one), the counties of one state, or every metro area. The industry variable is renamed per vintage (NAICS1997 ... NAICS2022) and resolved from the vintage's own variable list.",
+      "method": "GET",
+      "operation_id": "census_business_nonemployers",
+      "parameters": [
+        {
+          "description": "Vintage year (YYYY, 1997 to the latest published; required).",
+          "example": "2023",
+          "location": "query",
+          "name": "year",
+          "required": true,
+          "schema": {
+            "description": "Vintage year (YYYY, 1997 to the latest published; required).",
+            "title": "Year",
+            "type": "string"
+          }
+        },
+        {
+          "description": "us (one national row), state (every state and territory, or one with state=), county (the counties of one state; state= required) or msa (every metropolitan and micropolitan area).",
+          "example": "state",
+          "location": "query",
+          "name": "geo",
+          "required": false,
+          "schema": {
+            "default": "us",
+            "description": "us (one national row), state (every state and territory, or one with state=), county (the counties of one state; state= required) or msa (every metropolitan and micropolitan area).",
+            "title": "Geo",
+            "type": "string"
+          }
+        },
+        {
+          "description": "State postal code (CA, TX, DC, ...) when geo=state.",
+          "example": "CA",
+          "location": "query",
+          "name": "state",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "State postal code (CA, TX, DC, ...) when geo=state.",
+            "title": "State"
+          }
+        },
+        {
+          "description": "00 for all industries (default), a NAICS sector (54, or a range such as 31-33) or a 3-6 digit NAICS code.",
+          "example": "54",
+          "location": "query",
+          "name": "naics",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "00",
+            "description": "00 for all industries (default), a NAICS sector (54, or a range such as 31-33) or a 3-6 digit NAICS code.",
+            "title": "Naics"
+          }
+        }
+      ],
+      "path": "/api/v1/census/business/nonemployers",
+      "request_body_required": false,
+      "required_parameters": [
+        "year"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Nonemployer Statistics: establishments and receipts of businesses without employees",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Establishments, employment, annual and first-quarter payroll of employer businesses from the Census Bureau's County Business Patterns (`<vintage>/cbp`), one vintage year (1998 to the latest published; earlier vintages publish SIC codes), for one NAICS code (00 = all industries) across the nation, every state (or one), the counties of one state, or every metro area. The industry variable is renamed per vintage (NAICS1997 ... NAICS2017) and is resolved from the vintage's own variable list, which also labels the code (from the 2012 vintage on). A county list can be shorter than the state's counties: the Bureau publishes no row where it withholds one. A vintage past the latest is an empty answer with a reason.",
+      "method": "GET",
+      "operation_id": "census_business_patterns",
+      "parameters": [
+        {
+          "description": "Vintage year (YYYY, 1998 to the latest published; required).",
+          "example": "2023",
+          "location": "query",
+          "name": "year",
+          "required": true,
+          "schema": {
+            "description": "Vintage year (YYYY, 1998 to the latest published; required).",
+            "title": "Year",
+            "type": "string"
+          }
+        },
+        {
+          "description": "us (one national row), state (every state and territory, or one with state=), county (the counties of one state; state= required) or msa (every metropolitan and micropolitan area).",
+          "example": "state",
+          "location": "query",
+          "name": "geo",
+          "required": false,
+          "schema": {
+            "default": "us",
+            "description": "us (one national row), state (every state and territory, or one with state=), county (the counties of one state; state= required) or msa (every metropolitan and micropolitan area).",
+            "title": "Geo",
+            "type": "string"
+          }
+        },
+        {
+          "description": "State postal code (CA, TX, DC, ...) when geo=state.",
+          "example": "CA",
+          "location": "query",
+          "name": "state",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "State postal code (CA, TX, DC, ...) when geo=state.",
+            "title": "State"
+          }
+        },
+        {
+          "description": "00 for all industries (default), a NAICS sector (54, or a range such as 31-33) or a 3-6 digit NAICS code.",
+          "example": "54",
+          "location": "query",
+          "name": "naics",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "00",
+            "description": "00 for all industries (default), a NAICS sector (54, or a range such as 31-33) or a 3-6 digit NAICS code.",
+            "title": "Naics"
+          }
+        }
+      ],
+      "path": "/api/v1/census/business/patterns",
+      "request_body_required": false,
+      "required_parameters": [
+        "year"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "County Business Patterns: one NAICS code across a geography level",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "The NAICS sector breakdown (INDLEVEL=2: 00 = all industries first, then 11 agriculture ... 81 other services and 99 industries not classified) of employer establishments, employment and payroll for the nation, every state (or one), the counties of one state, or every metro area, one vintage year. Labels are the Bureau's own for the vintage's NAICS variable.",
+      "method": "GET",
+      "operation_id": "census_business_patterns_sectors",
+      "parameters": [
+        {
+          "description": "Vintage year (YYYY, 1998 to the latest published; required).",
+          "example": "2023",
+          "location": "query",
+          "name": "year",
+          "required": true,
+          "schema": {
+            "description": "Vintage year (YYYY, 1998 to the latest published; required).",
+            "title": "Year",
+            "type": "string"
+          }
+        },
+        {
+          "description": "us (one national row), state (every state and territory, or one with state=), county (the counties of one state; state= required) or msa (every metropolitan and micropolitan area).",
+          "example": "state",
+          "location": "query",
+          "name": "geo",
+          "required": false,
+          "schema": {
+            "default": "us",
+            "description": "us (one national row), state (every state and territory, or one with state=), county (the counties of one state; state= required) or msa (every metropolitan and micropolitan area).",
+            "title": "Geo",
+            "type": "string"
+          }
+        },
+        {
+          "description": "State postal code (CA, TX, DC, ...) when geo=state.",
+          "example": "CA",
+          "location": "query",
+          "name": "state",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "State postal code (CA, TX, DC, ...) when geo=state.",
+            "title": "State"
+          }
+        }
+      ],
+      "path": "/api/v1/census/business/patterns/sectors",
+      "request_body_required": false,
+      "required_parameters": [
+        "year"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "County Business Patterns: every NAICS sector of one geography",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Employer establishments, employment and payroll by employment size class (001 all, then 1-4, 5-9, 10-19, 20-49, 50-99, 100-249, 250-499, 500-999, 1,000 or more employees) for one NAICS code at the nation, every state (or one), the counties of one state, or every metro area, one vintage year.",
+      "method": "GET",
+      "operation_id": "census_business_patterns_sizes",
+      "parameters": [
+        {
+          "description": "Vintage year (YYYY, 1998 to the latest published; required).",
+          "example": "2023",
+          "location": "query",
+          "name": "year",
+          "required": true,
+          "schema": {
+            "description": "Vintage year (YYYY, 1998 to the latest published; required).",
+            "title": "Year",
+            "type": "string"
+          }
+        },
+        {
+          "description": "us (one national row), state (every state and territory, or one with state=), county (the counties of one state; state= required) or msa (every metropolitan and micropolitan area).",
+          "example": "state",
+          "location": "query",
+          "name": "geo",
+          "required": false,
+          "schema": {
+            "default": "us",
+            "description": "us (one national row), state (every state and territory, or one with state=), county (the counties of one state; state= required) or msa (every metropolitan and micropolitan area).",
+            "title": "Geo",
+            "type": "string"
+          }
+        },
+        {
+          "description": "State postal code (CA, TX, DC, ...) when geo=state.",
+          "example": "CA",
+          "location": "query",
+          "name": "state",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "State postal code (CA, TX, DC, ...) when geo=state.",
+            "title": "State"
+          }
+        },
+        {
+          "description": "00 for all industries (default), a NAICS sector (54, or a range such as 31-33) or a 3-6 digit NAICS code.",
+          "example": "54",
+          "location": "query",
+          "name": "naics",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "00",
+            "description": "00 for all industries (default), a NAICS sector (54, or a range such as 31-33) or a 3-6 digit NAICS code.",
+            "title": "Naics"
+          }
+        }
+      ],
+      "path": "/api/v1/census/business/patterns/sizes",
+      "request_body_required": false,
+      "required_parameters": [
+        "year"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "County Business Patterns: employment size classes of one NAICS code",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
       "description": "The twenty Census economic indicator programmes this API serves from `timeseries/eits`: what each measures, its frequency and the geographies it publishes. The codes of a programme are measured live at /census/indicators/{program}/codes.",
       "method": "GET",
       "operation_id": "census_indicators",
@@ -6809,6 +7129,362 @@
       "toolset": "statistics"
     },
     {
+      "description": "Resident population and median age from the Census Bureau's Population Estimates (`<vintage>/pep/charv`), one estimate year (2020 to the latest published vintage). The vintage folder is the dataset; YEAR is a predicate inside it. 2020 carries an April 1 census-base row and a July 1 estimate, labelled; later years are July 1. Totals are both sexes and all ages (`SEX=0`, `AGE=0000`) with median age from the PEP_AGESEX group. `geo` is the nation, every state (or one, including PR), the counties of one state, or every metro area. A year past the latest is an empty answer with a reason.",
+      "method": "GET",
+      "operation_id": "census_population_estimates",
+      "parameters": [
+        {
+          "description": "Estimate year (YYYY, 2020 to the latest published; required).",
+          "example": "2023",
+          "location": "query",
+          "name": "year",
+          "required": true,
+          "schema": {
+            "description": "Estimate year (YYYY, 2020 to the latest published; required).",
+            "title": "Year",
+            "type": "string"
+          }
+        },
+        {
+          "description": "us (one national row), state (every state, or one with state=), county (the counties of one state; state= required) or msa (every metropolitan and micropolitan area).",
+          "example": "county",
+          "location": "query",
+          "name": "geo",
+          "required": false,
+          "schema": {
+            "default": "us",
+            "description": "us (one national row), state (every state, or one with state=), county (the counties of one state; state= required) or msa (every metropolitan and micropolitan area).",
+            "title": "Geo",
+            "type": "string"
+          }
+        },
+        {
+          "description": "State postal code (CA, TX, DC, PR, ...) when geo=state or county.",
+          "example": "CA",
+          "location": "query",
+          "name": "state",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "State postal code (CA, TX, DC, PR, ...) when geo=state or county.",
+            "title": "State"
+          }
+        }
+      ],
+      "path": "/api/v1/census/population/estimates",
+      "request_body_required": false,
+      "required_parameters": [
+        "year"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Population estimates: totals and median age across a geography level",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Resident population by age from the Census Bureau's Population Estimates (`<vintage>/pep/charv`), one estimate year (2020 to the latest published vintage), nationally or for every state (or one). `groups=bands` (default) is the selected age groups (under 5, 5-9, ... 85 and over); `groups=single` is single years of age (under 1, age 1 ... age 85). `sex` is all (both sexes, default), male or female. The all-ages total and the median-age AGE code are dropped. A year past the latest is an empty answer with a reason.",
+      "method": "GET",
+      "operation_id": "census_population_estimates_age",
+      "parameters": [
+        {
+          "description": "Estimate year (YYYY, 2020 to the latest published; required).",
+          "example": "2023",
+          "location": "query",
+          "name": "year",
+          "required": true,
+          "schema": {
+            "description": "Estimate year (YYYY, 2020 to the latest published; required).",
+            "title": "Year",
+            "type": "string"
+          }
+        },
+        {
+          "description": "us (one national row) or state (every state, or one with state=).",
+          "example": "state",
+          "location": "query",
+          "name": "geo",
+          "required": false,
+          "schema": {
+            "default": "us",
+            "description": "us (one national row) or state (every state, or one with state=).",
+            "title": "Geo",
+            "type": "string"
+          }
+        },
+        {
+          "description": "State postal code (CA, TX, DC, PR, ...) when geo=state.",
+          "example": "CA",
+          "location": "query",
+          "name": "state",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "State postal code (CA, TX, DC, PR, ...) when geo=state.",
+            "title": "State"
+          }
+        },
+        {
+          "description": "all (both sexes, default), male or female.",
+          "example": "all",
+          "location": "query",
+          "name": "sex",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "all",
+            "description": "all (both sexes, default), male or female.",
+            "title": "Sex"
+          }
+        },
+        {
+          "description": "bands (selected age groups, default) or single (single years of age).",
+          "example": "bands",
+          "location": "query",
+          "name": "groups",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "bands",
+            "description": "bands (selected age groups, default) or single (single years of age).",
+            "title": "Groups"
+          }
+        }
+      ],
+      "path": "/api/v1/census/population/estimates/age",
+      "request_body_required": false,
+      "required_parameters": [
+        "year"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Population estimates: age distribution of one sex",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Midyear population and vital rates from the Census Bureau's International Data Base (`timeseries/idb/5year`) for one GENC country, 1950 to 2100 by default. `country` is required. A `to` past 2100 is clamped with a note; a `from` past it is an empty answer. Early-year rates that the Bureau has not published are null, never filled in. An unknown two-letter code is an empty answer, not a 400.",
+      "method": "GET",
+      "operation_id": "census_population_international",
+      "parameters": [
+        {
+          "description": "Two-letter GENC country code (CN, US, JP, ...; required).",
+          "example": "CN",
+          "location": "query",
+          "name": "country",
+          "required": true,
+          "schema": {
+            "description": "Two-letter GENC country code (CN, US, JP, ...; required).",
+            "title": "Country",
+            "type": "string"
+          }
+        },
+        {
+          "description": "First year (YYYY, default 1950).",
+          "example": "1950",
+          "location": "query",
+          "name": "from",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First year (YYYY, default 1950).",
+            "title": "From"
+          }
+        },
+        {
+          "description": "Last year (YYYY, default 2100).",
+          "example": "2100",
+          "location": "query",
+          "name": "to",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last year (YYYY, default 2100).",
+            "title": "To"
+          }
+        },
+        {
+          "description": "Comma-separated aliases (default pop,tfr,cbr,cdr,gr,medage,e0,imr).",
+          "example": "pop,tfr",
+          "location": "query",
+          "name": "indicators",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Comma-separated aliases (default pop,tfr,cbr,cdr,gr,medage,e0,imr).",
+            "title": "Indicators"
+          }
+        }
+      ],
+      "path": "/api/v1/census/population/international",
+      "request_body_required": false,
+      "required_parameters": [
+        "country"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "International demography: one country's series",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Midyear population and vital rates from the Census Bureau's International Data Base (`timeseries/idb/5year`) for every published GENC country in one year (1950 to 2100, including projections). Default `indicators` are pop, tfr, cbr, cdr, gr, medage, e0 and imr. Country codes are two-letter GENC (ISO2-compatible for the 227 published). A year after 2100 is an empty answer with a reason; a year before 1950 is a 400. Early-year rates that the Bureau has not published are null, never filled in.",
+      "method": "GET",
+      "operation_id": "census_population_international_countries",
+      "parameters": [
+        {
+          "description": "Year (YYYY, 1950 to 2100; required).",
+          "example": "2026",
+          "location": "query",
+          "name": "year",
+          "required": true,
+          "schema": {
+            "description": "Year (YYYY, 1950 to 2100; required).",
+            "title": "Year",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Comma-separated aliases (default pop,tfr,cbr,cdr,gr,medage,e0,imr). Also nmr, dens, depnd, rni, births, deaths, e0_m, e0_f, imr_m, imr_f, mpop, fpop.",
+          "example": "tfr",
+          "location": "query",
+          "name": "indicators",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Comma-separated aliases (default pop,tfr,cbr,cdr,gr,medage,e0,imr). Also nmr, dens, depnd, rni, births, deaths, e0_m, e0_f, imr_m, imr_f, mpop, fpop.",
+            "title": "Indicators"
+          }
+        }
+      ],
+      "path": "/api/v1/census/population/international/countries",
+      "request_body_required": false,
+      "required_parameters": [
+        "year"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "International demography: one year, every country",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Population by single year of age and sex from the Census Bureau's International Data Base (`timeseries/idb/1year`) for one GENC country in one year (1950 to 2100). Both-sexes totals (SEX=0) are dropped; male and female are kept. Age 100 is 100 years and over. An unknown two-letter code is an empty answer, not a 400.",
+      "method": "GET",
+      "operation_id": "census_population_international_country_pyramid",
+      "parameters": [
+        {
+          "description": "",
+          "location": "path",
+          "name": "country",
+          "required": true,
+          "schema": {
+            "title": "Country",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Year (YYYY, 1950 to 2100; required).",
+          "example": "2026",
+          "location": "query",
+          "name": "year",
+          "required": true,
+          "schema": {
+            "description": "Year (YYYY, 1950 to 2100; required).",
+            "title": "Year",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/census/population/international/{country}/pyramid",
+      "request_body_required": false,
+      "required_parameters": [
+        "country",
+        "year"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "International demography: single-year age x sex pyramid of one country",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
       "description": "American Community Survey data for all US states. Includes population, income, housing, poverty, education, employment. Use /census/variables for available variable keys.",
       "method": "GET",
       "operation_id": "census_states",
@@ -7035,6 +7711,147 @@
       "toolset": "trade"
     },
     {
+      "description": "One month of US exports or imports with one partner (or the world), broken down by BEA end-use category. `level=EU1` is the seven 1-digit totals; `EU5` is the 5-character detail. This slice has no HS commodity.",
+      "method": "GET",
+      "operation_id": "census_trade_by_end_use",
+      "parameters": [
+        {
+          "description": "exports or imports",
+          "example": "exports",
+          "location": "query",
+          "name": "flow",
+          "required": false,
+          "schema": {
+            "default": "exports",
+            "description": "exports or imports",
+            "title": "Flow",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Partner: 'world', or a Census partner code from /census/trade/partners (5700 = China, 0003 = European Union).",
+          "example": "5700",
+          "location": "query",
+          "name": "partner",
+          "required": false,
+          "schema": {
+            "default": "world",
+            "description": "Partner: 'world', or a Census partner code from /census/trade/partners (5700 = China, 0003 = European Union).",
+            "title": "Partner",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Month YYYY-MM (default: the latest published month).",
+          "example": "2026-05",
+          "location": "query",
+          "name": "month",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Month YYYY-MM (default: the latest published month).",
+            "title": "Month"
+          }
+        },
+        {
+          "description": "EU1 (1-digit totals) or EU5 (5-character detail)",
+          "example": "EU1",
+          "location": "query",
+          "name": "level",
+          "required": false,
+          "schema": {
+            "default": "EU1",
+            "description": "EU1 (1-digit totals) or EU5 (5-character detail)",
+            "title": "Level",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/census/trade/by-end-use",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "US trade in one month across end-use categories",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
+    },
+    {
+      "description": "One month of US exports or imports with one partner (or the world), broken down by Census advanced-technology product group (12 two-character HITECH codes).",
+      "method": "GET",
+      "operation_id": "census_trade_by_hitech",
+      "parameters": [
+        {
+          "description": "exports or imports",
+          "example": "exports",
+          "location": "query",
+          "name": "flow",
+          "required": false,
+          "schema": {
+            "default": "exports",
+            "description": "exports or imports",
+            "title": "Flow",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Partner: 'world', or a Census partner code from /census/trade/partners (5700 = China, 0003 = European Union).",
+          "example": "5700",
+          "location": "query",
+          "name": "partner",
+          "required": false,
+          "schema": {
+            "default": "world",
+            "description": "Partner: 'world', or a Census partner code from /census/trade/partners (5700 = China, 0003 = European Union).",
+            "title": "Partner",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Month YYYY-MM (default: the latest published month).",
+          "example": "2026-05",
+          "location": "query",
+          "name": "month",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Month YYYY-MM (default: the latest published month).",
+            "title": "Month"
+          }
+        }
+      ],
+      "path": "/api/v1/census/trade/by-hitech",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "US trade in one month across advanced-technology groups",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
+    },
+    {
       "description": "One month of US exports or imports of one HS code (or all commodities) broken down by partner, largest first. `kind` picks countries, Census groupings or both.",
       "method": "GET",
       "operation_id": "census_trade_by_partner",
@@ -7106,6 +7923,160 @@
         "trade"
       ],
       "summary": "US trade in one month across partners",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
+    },
+    {
+      "description": "One month of US exports or imports of one HS code (or all commodities) with one partner (or the world), broken down by customs port of lading (exports) or unlading (imports). PORT is the Census 4-character Schedule D/K code, not a UN/LOCODE and not an IMF PortWatch port.",
+      "method": "GET",
+      "operation_id": "census_trade_by_port",
+      "parameters": [
+        {
+          "description": "exports or imports",
+          "example": "exports",
+          "location": "query",
+          "name": "flow",
+          "required": false,
+          "schema": {
+            "default": "exports",
+            "description": "exports or imports",
+            "title": "Flow",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Partner: 'world', or a Census partner code from /census/trade/partners (5700 = China, 0003 = European Union).",
+          "example": "5700",
+          "location": "query",
+          "name": "partner",
+          "required": false,
+          "schema": {
+            "default": "world",
+            "description": "Partner: 'world', or a Census partner code from /census/trade/partners (5700 = China, 0003 = European Union).",
+            "title": "Partner",
+            "type": "string"
+          }
+        },
+        {
+          "description": "'all', or an HS code of 2, 4 or 6 digits (27 = mineral fuels).",
+          "example": "27",
+          "location": "query",
+          "name": "commodity",
+          "required": false,
+          "schema": {
+            "default": "all",
+            "description": "'all', or an HS code of 2, 4 or 6 digits (27 = mineral fuels).",
+            "title": "Commodity",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Month YYYY-MM (default: the latest published month).",
+          "example": "2026-05",
+          "location": "query",
+          "name": "month",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Month YYYY-MM (default: the latest published month).",
+            "title": "Month"
+          }
+        }
+      ],
+      "path": "/api/v1/census/trade/by-port",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "US trade in one month across customs ports",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
+    },
+    {
+      "description": "One month of US exports or imports of one HS code (or all commodities) with one partner (or the world), broken down by state of origin (exports) or destination (imports). STATE is the USPS 2-character code; XX is unidentified.",
+      "method": "GET",
+      "operation_id": "census_trade_by_state",
+      "parameters": [
+        {
+          "description": "exports or imports",
+          "example": "exports",
+          "location": "query",
+          "name": "flow",
+          "required": false,
+          "schema": {
+            "default": "exports",
+            "description": "exports or imports",
+            "title": "Flow",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Partner: 'world', or a Census partner code from /census/trade/partners (5700 = China, 0003 = European Union).",
+          "example": "5700",
+          "location": "query",
+          "name": "partner",
+          "required": false,
+          "schema": {
+            "default": "world",
+            "description": "Partner: 'world', or a Census partner code from /census/trade/partners (5700 = China, 0003 = European Union).",
+            "title": "Partner",
+            "type": "string"
+          }
+        },
+        {
+          "description": "'all', or an HS code of 2, 4 or 6 digits (27 = mineral fuels).",
+          "example": "27",
+          "location": "query",
+          "name": "commodity",
+          "required": false,
+          "schema": {
+            "default": "all",
+            "description": "'all', or an HS code of 2, 4 or 6 digits (27 = mineral fuels).",
+            "title": "Commodity",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Month YYYY-MM (default: the latest published month).",
+          "example": "2026-05",
+          "location": "query",
+          "name": "month",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Month YYYY-MM (default: the latest published month).",
+            "title": "Month"
+          }
+        }
+      ],
+      "path": "/api/v1/census/trade/by-state",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "US trade in one month across states",
       "tags": [
         "Global Economy & Trade"
       ],
@@ -7329,6 +8300,136 @@
         "statistics"
       ],
       "summary": "Available Census ACS variables",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Uninsured and insured counts and percents from the Census Bureau's SAHIE (`timeseries/healthins/sahie`), one year (2006 to the latest published), for the under-65 population (AGECAT=0) at all incomes, both sexes and all races. `geo` is the nation, every state (or one), or the counties of one state. A year past the latest is an empty answer with a reason.",
+      "method": "GET",
+      "operation_id": "census_welfare_health_insurance",
+      "parameters": [
+        {
+          "description": "Estimate year (YYYY, 2006 to the latest published; required).",
+          "example": "2024",
+          "location": "query",
+          "name": "year",
+          "required": true,
+          "schema": {
+            "description": "Estimate year (YYYY, 2006 to the latest published; required).",
+            "title": "Year",
+            "type": "string"
+          }
+        },
+        {
+          "description": "us, state (every state, or one with state=) or county (the counties of one state; state= required).",
+          "example": "county",
+          "location": "query",
+          "name": "geo",
+          "required": false,
+          "schema": {
+            "default": "state",
+            "description": "us, state (every state, or one with state=) or county (the counties of one state; state= required).",
+            "title": "Geo",
+            "type": "string"
+          }
+        },
+        {
+          "description": "State postal code (CA, TX, DC, PR, ...) when geo=state or county.",
+          "example": "CA",
+          "location": "query",
+          "name": "state",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "State postal code (CA, TX, DC, PR, ...) when geo=state or county.",
+            "title": "State"
+          }
+        }
+      ],
+      "path": "/api/v1/census/welfare/health-insurance",
+      "request_body_required": false,
+      "required_parameters": [
+        "year"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Small-area health-insurance coverage (under 65)",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "All-ages and child (0-17) poverty counts and rates plus median household income from the Census Bureau's SAIPE (`timeseries/poverty/saipe`), one year (1989 to the latest published). `geo` is the nation, every state (or one), or the counties of one state. 90 percent confidence bounds ride on each estimate. A year past the latest is an empty answer with a reason.",
+      "method": "GET",
+      "operation_id": "census_welfare_poverty",
+      "parameters": [
+        {
+          "description": "Estimate year (YYYY, 1989 to the latest published; required).",
+          "example": "2023",
+          "location": "query",
+          "name": "year",
+          "required": true,
+          "schema": {
+            "description": "Estimate year (YYYY, 1989 to the latest published; required).",
+            "title": "Year",
+            "type": "string"
+          }
+        },
+        {
+          "description": "us, state (every state, or one with state=) or county (the counties of one state; state= required).",
+          "example": "county",
+          "location": "query",
+          "name": "geo",
+          "required": false,
+          "schema": {
+            "default": "state",
+            "description": "us, state (every state, or one with state=) or county (the counties of one state; state= required).",
+            "title": "Geo",
+            "type": "string"
+          }
+        },
+        {
+          "description": "State postal code (CA, TX, DC, PR, ...) when geo=state or county.",
+          "example": "CA",
+          "location": "query",
+          "name": "state",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "State postal code (CA, TX, DC, PR, ...) when geo=state or county.",
+            "title": "State"
+          }
+        }
+      ],
+      "path": "/api/v1/census/welfare/poverty",
+      "request_body_required": false,
+      "required_parameters": [
+        "year"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Small-area poverty and median household income",
       "tags": [
         "Statistical Agencies"
       ],
@@ -13963,19 +15064,18 @@
       "toolset": "digital_infra"
     },
     {
-      "description": "List available tables by code pattern. Use * as wildcard (e.g. 61111* for CPI tables).",
+      "description": "List available tables by code pattern. Use * as wildcard (e.g. 61111* for CPI tables). The pattern is required: a bare * asks the upstream for its entire catalogue, which takes longer than this API's upstream budget and cannot be answered.",
       "method": "GET",
       "operation_id": "destatis_browse",
       "parameters": [
         {
-          "description": "Code pattern with * wildcard.",
+          "description": "Code pattern with * wildcard. Required. Narrow it to a prefix: a bare * requests the whole catalogue and exceeds the upstream budget.",
           "example": "61111*",
           "location": "query",
           "name": "selection",
-          "required": false,
+          "required": true,
           "schema": {
-            "default": "*",
-            "description": "Code pattern with * wildcard.",
+            "description": "Code pattern with * wildcard. Required. Narrow it to a prefix: a bare * requests the whole catalogue and exceeds the upstream budget.",
             "title": "Selection",
             "type": "string"
           }
@@ -13998,7 +15098,9 @@
       ],
       "path": "/api/v1/destatis/browse",
       "request_body_required": false,
-      "required_parameters": [],
+      "required_parameters": [
+        "selection"
+      ],
       "source_family": "statistics",
       "sources": [
         "statistics"
@@ -14010,7 +15112,7 @@
       "toolset": "statistics"
     },
     {
-      "description": "List pre-configured German statistics tables: CPI, GDP, population, trade, unemployment, industrial production, building permits, government finance.",
+      "description": "List pre-configured German statistics tables: CPI, GDP, population, trade, unemployment, industrial production, building permits, public debt.",
       "method": "GET",
       "operation_id": "destatis_catalog",
       "parameters": [],
@@ -14022,6 +15124,74 @@
         "statistics"
       ],
       "summary": "Available Destatis tables",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "What the German Federal Statistical Office published or revised since a date: the statistic or table that changed, what kind of change it was, when, and which reference period it added. Answered from Sugra's stored copy of the source's change feed, so the answer says when it was collected and how far back it reaches rather than implying completeness.",
+      "method": "GET",
+      "operation_id": "destatis_changes",
+      "parameters": [
+        {
+          "description": "Return changes published on or after this date (YYYY-MM-DD).",
+          "example": "2026-09-01",
+          "location": "query",
+          "name": "since",
+          "required": true,
+          "schema": {
+            "description": "Return changes published on or after this date (YYYY-MM-DD).",
+            "format": "date",
+            "title": "Since",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Keep only changes of this type, matched case-insensitively. The `types` block of any answer lists the values present in the window.",
+          "example": "Updates",
+          "location": "query",
+          "name": "type",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Keep only changes of this type, matched case-insensitively. The `types` block of any answer lists the values present in the window.",
+            "title": "Type"
+          }
+        },
+        {
+          "description": "Maximum number of records to return.",
+          "example": 500,
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 500,
+            "description": "Maximum number of records to return.",
+            "maximum": 25000,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/destatis/changes",
+      "request_body_required": false,
+      "required_parameters": [
+        "since"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "What changed in German official statistics",
       "tags": [
         "Statistical Agencies"
       ],
@@ -14083,6 +15253,264 @@
         "statistics"
       ],
       "summary": "Search GENESIS database",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Every statistic Destatis publishes - 331 of them on 2026-09-08 - each with the number of data cubes it holds. Filter by code prefix (61 is prices, 81 national accounts) or by free text. Every answer says whether it is the whole match: `truncated` with `count`, `matched` and `total` beside it.",
+      "method": "GET",
+      "operation_id": "destatis_statistics",
+      "parameters": [
+        {
+          "description": "Code prefix, e.g. 61 for prices or 611 for consumer prices.",
+          "example": "61",
+          "location": "query",
+          "name": "prefix",
+          "required": false,
+          "schema": {
+            "description": "Code prefix, e.g. 61 for prices or 611 for consumer prices.",
+            "title": "Prefix",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Free-text term matched against the statistic title and code.",
+          "example": "price",
+          "location": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "description": "Free-text term matched against the statistic title and code.",
+            "title": "Q",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Maximum number of records to return.",
+          "example": 100,
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 100,
+            "description": "Maximum number of records to return.",
+            "maximum": 500,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/destatis/statistics",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Browse the German statistics catalogue",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Metadata for one statistic by EVAS number: title, how many cubes and variables it holds, the periods it has been collected over and at what frequency, when it was last updated, and the upstream quality report.",
+      "method": "GET",
+      "operation_id": "destatis_statistics_code",
+      "parameters": [
+        {
+          "description": "Five-digit EVAS number of the statistic.",
+          "example": "61111",
+          "location": "path",
+          "name": "code",
+          "required": true,
+          "schema": {
+            "description": "Five-digit EVAS number of the statistic.",
+            "title": "Code",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/destatis/statistics/{code}",
+      "request_body_required": false,
+      "required_parameters": [
+        "code"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "One German statistic with its metadata",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Every table a statistic holds, with the window it actually covers, so a caller can see before fetching that a series stops years ago. `table_key` names the tables this API already serves through /destatis/{table}; the rest are the ones a curated list hides.",
+      "method": "GET",
+      "operation_id": "destatis_statistics_code_tables",
+      "parameters": [
+        {
+          "description": "Five-digit EVAS number of the statistic.",
+          "example": "61111",
+          "location": "path",
+          "name": "code",
+          "required": true,
+          "schema": {
+            "description": "Five-digit EVAS number of the statistic.",
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Maximum number of records to return.",
+          "example": 200,
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 200,
+            "description": "Maximum number of records to return.",
+            "maximum": 2500,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/destatis/statistics/{code}/tables",
+      "request_body_required": false,
+      "required_parameters": [
+        "code"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "The tables of one German statistic",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Fetch any Destatis GENESIS table by its code (five digits, a hyphen, four more), the same code /destatis/search and /destatis/statistics/{code}/tables already hand out. Thirteen curated shortcuts stay on /destatis/{table}. This long-tail route is admission-controlled: one in-flight request per API key, a platform cap of 720 uncached fetches per UTC day (tunable DESTATIS_LONGTAIL_DAILY), and it never waits for the shared GENESIS slot - a busy lane is 429 with Retry-After. A table too large for a direct request is refused with both levers that work: a narrower year window, and a contents slice. The answer may be served from cache; a cache hit is free and is not counted against the budget.",
+      "method": "GET",
+      "operation_id": "destatis_table_code",
+      "parameters": [
+        {
+          "description": "GENESIS table code, e.g. 42131-0003.",
+          "example": "42131-0003",
+          "location": "path",
+          "name": "code",
+          "required": true,
+          "schema": {
+            "description": "GENESIS table code, e.g. 42131-0003.",
+            "pattern": "^[0-9]{5}-[0-9]{4}$",
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Start year (YYYY).",
+          "example": 2020,
+          "location": "query",
+          "name": "start_year",
+          "required": false,
+          "schema": {
+            "default": 2023,
+            "description": "Start year (YYYY).",
+            "maximum": 2026,
+            "minimum": 1990,
+            "title": "Start Year",
+            "type": "integer"
+          }
+        },
+        {
+          "description": "End year (YYYY).",
+          "example": 2024,
+          "location": "query",
+          "name": "end_year",
+          "required": false,
+          "schema": {
+            "default": 2025,
+            "description": "End year (YYYY).",
+            "maximum": 2026,
+            "minimum": 1990,
+            "title": "End Year",
+            "type": "integer"
+          }
+        },
+        {
+          "description": "Optional comma-separated GENESIS content variable codes.",
+          "example": "PRODAW,UNT006",
+          "location": "query",
+          "name": "contents",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "pattern": "^([A-Za-z0-9]{1,16})(,([A-Za-z0-9]{1,16})){0,14}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional comma-separated GENESIS content variable codes.",
+            "title": "Contents"
+          }
+        }
+      ],
+      "path": "/api/v1/destatis/table/{code}",
+      "request_body_required": false,
+      "required_parameters": [
+        "code"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "German statistics table by GENESIS code",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Dimensions, measures and the published coverage window for one GENESIS table, from metadata/table. This is the cheap call before /destatis/table/{code}. It names every variable, its cardinality when GENESIS states one, and the years the table actually covers, so a caller can see that 71141-0001 ends in 2011 without an empty fetch. Measure unit is null: metadata/table does not publish one. The Status 98 size gate cannot be predicted from this Structure. Reserved class: it waits for the shared GENESIS slot. Busy is 429, not last-good: 3,026 codes would evict the curated copies from the shared 64-entry store. A cache hit is free.",
+      "method": "GET",
+      "operation_id": "destatis_table_code_metadata",
+      "parameters": [
+        {
+          "description": "GENESIS table code, e.g. 42131-0003.",
+          "example": "42131-0003",
+          "location": "path",
+          "name": "code",
+          "required": true,
+          "schema": {
+            "description": "GENESIS table code, e.g. 42131-0003.",
+            "pattern": "^[0-9]{5}-[0-9]{4}$",
+            "title": "Code",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/destatis/table/{code}/metadata",
+      "request_body_required": false,
+      "required_parameters": [
+        "code"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "German statistics table preflight by GENESIS code",
       "tags": [
         "Statistical Agencies"
       ],
@@ -23354,7 +24782,7 @@
       "toolset": "funds"
     },
     {
-      "description": "Full fund-holdings snapshot from the SEC's NPORT-P quarterly filing for one ETF underlier. Replaces the prior commercial fund-profile holdings field (Tier C, disabled in DATA-N1) with the SEC Tier S equivalent. NPORT-P carries the FULL holdings list (NOT top-10), CUSIP/ISIN/LEI, asset-cat + issuer-cat (for sector derivation), and ``invCountry`` (for country weightings). Public NPORT-P refreshes only ONCE per fiscal quarter (the SEC's month-3-of-quarter rule), so freshness is typically 3-5 months. Compare ``rep_pd_date`` against today to gauge staleness. Returns 404 ``holdings_unavailable`` when the ETF is a commodity-pool / grantor-trust structure (USO/UNG/GLD/SLV) that files 10-K/10-Q instead of NPORT-P.",
+      "description": "Full fund-holdings snapshot from the SEC's NPORT-P quarterly filing for one ETF underlier. Replaces the prior commercial fund-profile holdings field (Tier C, disabled in DATA-N1) with the SEC Tier S equivalent. NPORT-P carries the FULL holdings list (NOT top-10), CUSIP/ISIN/LEI, asset-cat + issuer-cat (for sector derivation), and ``invCountry`` (for country weightings). Public NPORT-P refreshes only ONCE per fiscal quarter (the SEC's month-3-of-quarter rule), so freshness is typically 3-5 months. Compare ``rep_pd_date`` against today to gauge staleness. Returns 404 ``holdings_unavailable`` when the ETF is a commodity-pool / grantor-trust structure (USO/UNG/GLD/SLV) that files 10-K/10-Q instead of NPORT-P.\n\nAPI-83: returns 410 Gone when this symbol's universe row records that it stopped trading - ``delisted`` with the filing date of the fund's own Form 25, or ``renamed`` naming the ticker the fund continues under. A symbol with NO universe row is unaffected: this route does not check membership, only whether we know the fund is gone.",
       "method": "GET",
       "operation_id": "etf_symbol_holdings_sec",
       "parameters": [
@@ -23390,7 +24818,7 @@
       "toolset": "funds"
     },
     {
-      "description": "Static fund profile for one ETF underlier from the SEC's annual prospectus on Form 485BPOS (the post-effective amendment carrying the audited Financial Highlights). Surfaces the latest fiscal-year-end NAV per share, fund net assets, expense ratio, and net-investment-income ratio (the Tier S yield proxy), plus the fiscal-year-end date and an inception date extracted from the N-1A body. These same fields feed the canonical /etf/{symbol}/snapshot payload (NAV / AUM / expense ratio / yields / inception); this endpoint exposes the raw extract with its SEC provenance (cik / accession / fye_date). Figures are ANNUAL + period-stale by construction - compare fye_date against today to gauge freshness. Returns 404 profile_unavailable when the fund's Financial Highlights table could not be confidently located (per-sub-family filing reality) or the ETF files 10-K instead of N-1A (commodity-pool / grantor-trust structures: USO, UNG, GLD, SLV).",
+      "description": "Static fund profile for one ETF underlier from the SEC's annual prospectus on Form 485BPOS (the post-effective amendment carrying the audited Financial Highlights). Surfaces the latest fiscal-year-end NAV per share, fund net assets, expense ratio, and net-investment-income ratio (the Tier S yield proxy), plus the fiscal-year-end date and an inception date extracted from the N-1A body. These same fields feed the canonical /etf/{symbol}/snapshot payload (NAV / AUM / expense ratio / yields / inception); this endpoint exposes the raw extract with its SEC provenance (cik / accession / fye_date). Figures are ANNUAL + period-stale by construction - compare fye_date against today to gauge freshness. Returns 404 profile_unavailable when the fund's Financial Highlights table could not be confidently located (per-sub-family filing reality) or the ETF files 10-K instead of N-1A (commodity-pool / grantor-trust structures: USO, UNG, GLD, SLV).\n\nAPI-83: returns 410 Gone when this symbol's universe row records that it stopped trading - ``delisted`` with the filing date of the fund's own Form 25, or ``renamed`` naming the ticker the fund continues under. A symbol with NO universe row is unaffected: this route does not check membership, only whether we know the fund is gone.",
       "method": "GET",
       "operation_id": "etf_symbol_profile_sec",
       "parameters": [
@@ -23426,7 +24854,7 @@
       "toolset": "funds"
     },
     {
-      "description": "Live (15-min delayed) spot quote for one ETF underlier from the exchange public delayed-quote service - bid/ask, OHLC, volume, 30-day implied volatility, last-trade timestamp. Replaces the prior commercial live-quote fields (Tier C, disabled in DATA-N1) with the exchange-sourced Tier S equivalent. Ingest fires Mon-Fri 21:30 UTC (post-US-close + 15-min delay buffer). Returns 404 ``quote_unavailable`` when the ETF is not on the exchange delayed-quote feed.",
+      "description": "Live (15-min delayed) spot quote for one ETF underlier from the exchange public delayed-quote service - bid/ask, OHLC, volume, 30-day implied volatility, last-trade timestamp. Replaces the prior commercial live-quote fields (Tier C, disabled in DATA-N1) with the exchange-sourced Tier S equivalent. Ingest fires Mon-Fri 21:30 UTC (post-US-close + 15-min delay buffer). Returns 404 ``quote_unavailable`` when the ETF is not on the exchange delayed-quote feed.\n\nAPI-83: returns 410 Gone when this symbol's universe row records that it stopped trading - ``delisted`` with the filing date of the fund's own Form 25, or ``renamed`` naming the ticker the fund continues under. This route serves the RAW quote blob, so without that check a fund whose feed froze years ago would keep answering from it - the same stale-price defect the snapshot path closed in API-82, reached through a different door.",
       "method": "GET",
       "operation_id": "etf_symbol_quote_cboe",
       "parameters": [
@@ -23522,7 +24950,7 @@
       "toolset": "funds"
     },
     {
-      "description": "Single ETF snapshot at the latest cycle (default) or at a specific calendar date via ``?date=YYYY-MM-DD``. Returns the full payload: pricing (nav, price, premium/discount), fund characteristics (AUM, expense ratio, yields), top-10 holdings sample, sector weightings (both raw + canonical), asset-class and country exposure, and trailing returns. Returns 410 Gone when the symbol is flagged as delisted_candidate by the upstream cycle.\n\nSince DATA-N4.4 the canonical snapshot is rebuilt purely from Tier S sources (regulated-exchange price + SEC NPORT-P holdings), with no commercial aggregator in the chain. A field with no source yet is returned as ``null`` and tagged in the internal ``_sources.deferred`` map. That set has SHRUNK: ``nav``/``aum_usd`` (DATA-N4.3) and ``expense_ratio_pct``/``yield_dividend_pct``/``yield_distribution_pct``/``inception_date`` (DATA-N4.2) are now POPULATED from SEC filings, and ``premium_discount_pct`` is derived from the SEC NAV against the regulated-exchange price above. All are re-deferred only PER SYMBOL when that symbol's own input is missing. Two exceptions are deliberate rather than gaps: ``premium_discount_pct`` is null for a daily-reset leveraged or inverse fund because its NAV is period-stale (tag ``API-1.14.3``), and ``inception_date`` is null wherever the filing states none for that fund (API-1.14.7). Still deferred for every symbol: ``returns_*`` and ``fifty_two_week_high``/``fifty_two_week_low`` (DATA-N4.1).\n\nDATA-N4.8.1: when ``price`` is null but a NAV is available, an additive ``price_proxy`` block surfaces the NAV as an explicitly-stale proxy (``basis = nav`` with an ``as_of`` SEC-filing date that can be months old and a ``note`` disclaiming a current quote). ``price`` itself stays null - the proxy is never presented as a live quote. The block is absent when ``price`` is present or when ``nav`` is also null.",
+      "description": "Single ETF snapshot at the latest cycle (default) or at a specific calendar date via ``?date=YYYY-MM-DD``. Returns the full payload: pricing (nav, price, premium/discount), fund characteristics (AUM, expense ratio, yields), top-10 holdings sample, sector weightings (both raw + canonical), asset-class and country exposure, and trailing returns. Returns 410 Gone when the symbol is flagged as delisted_candidate by the upstream cycle, and also (API-83) when its universe row carries ``removed_at`` - the fund was delisted and the date in the response body is its own Form 25, the exchange's notice of removal from listing. Those rows stay listed by ``/etf/snapshot/universe`` with status ``removed`` rather than vanishing, so a client that integrated against a covered symbol gets a dated explanation instead of ``unknown_symbol``.\n\nSince DATA-N4.4 the canonical snapshot is rebuilt purely from Tier S sources (regulated-exchange price + SEC NPORT-P holdings), with no commercial aggregator in the chain. A field with no source yet is returned as ``null`` and tagged in the internal ``_sources.deferred`` map. That set has SHRUNK: ``nav``/``aum_usd`` (DATA-N4.3) and ``expense_ratio_pct``/``yield_dividend_pct``/``yield_distribution_pct``/``inception_date`` (DATA-N4.2) are now POPULATED from SEC filings, and ``premium_discount_pct`` is derived from the SEC NAV against the regulated-exchange price above. All are re-deferred only PER SYMBOL when that symbol's own input is missing. The following exceptions are deliberate rather than gaps: ``premium_discount_pct`` is null for a daily-reset leveraged or inverse fund because its NAV is period-stale (tag ``API-1.14.3``); ``premium_discount_pct`` is also null where the fund's share basis moved by a split that the filing we read for it does not carry, so the NAV and the price are on different bases and a ratio between them would be the split factor rather than a premium (tag ``API-1.14.9``; that symbol's deferred reason names the filing and the split's effective date); and ``inception_date`` is null wherever the filing states none for that fund (tag ``API-1.14.7``). Still deferred for every symbol: ``returns_*`` and ``fifty_two_week_high``/``fifty_two_week_low`` (DATA-N4.1).\n\nDATA-N4.8.1: when ``price`` is null but a NAV is available, an additive ``price_proxy`` block surfaces the NAV as an explicitly-stale proxy (``basis = nav`` with an ``as_of`` SEC-filing date that can be months old and a ``note`` disclaiming a current quote). ``price`` itself stays null - the proxy is never presented as a live quote. The block is absent when ``price`` is present or when ``nav`` is also null.\n\nAPI-82: ``price`` is also null when a quote WAS read and refused because nothing in it establishes that it is current. Five reasons, named in ``_sources.deferred.price`` with the upstream instant appended when one can be stated: ``no_trade_time`` (the feed's own placeholder instead of a last-trade time), ``last_trade_stale`` and ``quote_stale`` (the feed's timestamps are past the ceiling), ``quote_not_refetched`` (our own ingest has not re-read the symbol), and ``freshness_unverifiable`` (timestamps present but unreadable). On a refusal the ``_sources.price`` entry is ABSENT - it exists only for a published value - so read ``deferred.price``, not a missing ``as_of``, to detect the case. When ``price`` IS published, ``_sources.price.as_of`` is the feed's own timestamp in UTC (when it last rebuilt that quote), never our download time, which rides beside it as ``fetched_at``; ``as_of`` can be null when no upstream instant is available, and it does not fall back.",
       "method": "GET",
       "operation_id": "etf_symbol_snapshot",
       "parameters": [
@@ -23740,6 +25168,198 @@
       "toolset": "statistics"
     },
     {
+      "description": "Every dataset and table Eurostat publishes - 7,578 of them on 2026-09-09 - each with the window it covers, when it was last updated, and how many observations it holds. Filter by code prefix, by free text, or by kind (`dataset` or `table`). `dataset_keys` names the curated shortcut(s) this API already serves for a code, and is empty for the rest, which are visible here but not fetchable through `/eurostat/{dataset}`. Every answer says whether it is the whole match: `truncated` with `count`, `matched` and `total` beside it.",
+      "method": "GET",
+      "operation_id": "eurostat_datasets",
+      "parameters": [
+        {
+          "description": "Code prefix, e.g. prc_hicp for consumer prices.",
+          "example": "prc_hicp",
+          "location": "query",
+          "name": "prefix",
+          "required": false,
+          "schema": {
+            "description": "Code prefix, e.g. prc_hicp for consumer prices.",
+            "title": "Prefix",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Free-text term matched against the dataset title and code.",
+          "example": "inflation",
+          "location": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "description": "Free-text term matched against the dataset title and code.",
+            "title": "Q",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Restrict to one entry type: dataset or table.",
+          "example": "dataset",
+          "location": "query",
+          "name": "kind",
+          "required": false,
+          "schema": {
+            "description": "Restrict to one entry type: dataset or table.",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Maximum number of records to return.",
+          "example": 100,
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 100,
+            "description": "Maximum number of records to return.",
+            "maximum": 500,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/eurostat/datasets",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Browse the Eurostat catalogue",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Annual sold production, exports and imports for one 8-digit PRODCOM product and one reporter. Queries both vintages and labels the 2024/2025 classification break from the EU linking table. geo is the comext reporter (the dissemination API's geo parameter is not defined on comext).",
+      "method": "GET",
+      "operation_id": "eurostat_prodcom",
+      "parameters": [
+        {
+          "description": "8-digit PRODCOM code.",
+          "example": "26112240",
+          "location": "query",
+          "name": "product",
+          "required": true,
+          "schema": {
+            "description": "8-digit PRODCOM code.",
+            "title": "Product",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Reporter country code: DE, FR, EU27_2020.",
+          "example": "DE",
+          "location": "query",
+          "name": "geo",
+          "required": true,
+          "schema": {
+            "description": "Reporter country code: DE, FR, EU27_2020.",
+            "title": "Geo",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Start year: 2017 or 2017-01.",
+          "example": "2017",
+          "location": "query",
+          "name": "since",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Start year: 2017 or 2017-01.",
+            "title": "Since"
+          }
+        },
+        {
+          "description": "End year: 2025 or 2025-12.",
+          "example": "2025",
+          "location": "query",
+          "name": "until",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "End year: 2025 or 2025-12.",
+            "title": "Until"
+          }
+        }
+      ],
+      "path": "/api/v1/eurostat/prodcom",
+      "request_body_required": false,
+      "required_parameters": [
+        "product",
+        "geo"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "PRODCOM sold production",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Browse 8-digit PRODCOM product codes with English labels, vintage membership (1995-2024 PRODCOM 2.0 and 2025 CPA 2.2), and the official 2024/2025 linking table. Optional q searches code and label.",
+      "method": "GET",
+      "operation_id": "eurostat_prodcom_codes",
+      "parameters": [
+        {
+          "description": "Search in code or English label.",
+          "example": "photovoltaic",
+          "location": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Search in code or English label.",
+            "title": "Q"
+          }
+        }
+      ],
+      "path": "/api/v1/eurostat/prodcom/codes",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "PRODCOM product codes",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
       "description": "Fetch EU statistics by dataset key. Filter by country (geo) and time period. Use /eurostat/catalog for available datasets. Geo codes: DE, FR, IT, ES, NL, BE, AT, PL, SE, EU27_2020, EA20, etc.",
       "method": "GET",
       "operation_id": "eurostat_dataset",
@@ -23811,6 +25431,25 @@
             ],
             "description": "End period: 2024-12 or 2024-Q4",
             "title": "Until"
+          }
+        },
+        {
+          "description": "PRODCOM product code, when dataset is DS-059358.",
+          "example": "26112240",
+          "location": "query",
+          "name": "product",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "PRODCOM product code, when dataset is DS-059358.",
+            "title": "Product"
           }
         }
       ],
@@ -26444,7 +28083,7 @@
       "toolset": "forex"
     },
     {
-      "description": "Convert between currencies using ECB reference rates.\n\nBoth `from` and `to` must be EUR or one of the ~30 currencies in the ECB rates.\nThe applied `rate` is an ECB daily reference rate, not a tradable market rate.",
+      "description": "Convert between two currencies on the `/rates` panel.\n\nBoth codes must appear on `GET /api/v1/forex/rates`. The applied rate is a\ncentral-bank reference, not a tradable market rate. `/currencies` remains\nthe ECB subset used by `/latest` and `/history`.",
       "method": "GET",
       "operation_id": "forex_convert",
       "parameters": [
@@ -26508,7 +28147,7 @@
       "toolset": "forex"
     },
     {
-      "description": "Get the list of all currencies available in the ECB reference rates.\n\nUse these codes as input for `/latest`, `/convert`, `/history`. Base is always EUR.",
+      "description": "Get the list of currencies in the ECB reference snapshot.\n\nUse these codes as input for `/latest` and `/history`. Base is always EUR.\nThe full panel is `GET /api/v1/forex/rates`.",
       "method": "GET",
       "operation_id": "forex_currencies",
       "parameters": [],
@@ -26596,6 +28235,85 @@
         "forex"
       ],
       "summary": "Latest EUR reference exchange rates",
+      "tags": [
+        "Forex"
+      ],
+      "toolset": "forex"
+    },
+    {
+      "description": "Full currency reference panel.\n\nDefault (`all` / `daily`): Banca d'Italia latestRates, unique ISO, daily.\nIf Italy is silent, the Uzbekistan central bank book. If both are silent,\nECB daily plus Narodowy Bank Polski Table A (daily) and Table B (weekly).\n`weekly` is always the NBP Table B Wednesday book. Each row carries its\nfixing date, cadence, and source (`bdi`, `cbu`, `ecb`, or `nbp`). Quote\nconvention matches `/latest`: units of `currency` per 1 `base`. Default\nbase is USD. `/latest` stays the EUR-only ECB snapshot.\n\nCentral-bank reference, not a tradable rate.",
+      "method": "GET",
+      "operation_id": "forex_rates",
+      "parameters": [
+        {
+          "description": "Base currency. Each rate is units of that currency per 1 base.",
+          "location": "query",
+          "name": "base",
+          "required": false,
+          "schema": {
+            "default": "USD",
+            "description": "Base currency. Each rate is units of that currency per 1 base.",
+            "enum": [
+              "USD",
+              "EUR"
+            ],
+            "examples": [
+              "USD"
+            ],
+            "title": "Base",
+            "type": "string"
+          }
+        },
+        {
+          "description": "daily = Banca d'Italia (CBU/ECB+NBP fallback); weekly = NBP Table B; all = daily book when BdI/CBU is up.",
+          "location": "query",
+          "name": "cadence",
+          "required": false,
+          "schema": {
+            "default": "all",
+            "description": "daily = Banca d'Italia (CBU/ECB+NBP fallback); weekly = NBP Table B; all = daily book when BdI/CBU is up.",
+            "enum": [
+              "all",
+              "daily",
+              "weekly"
+            ],
+            "examples": [
+              "all"
+            ],
+            "title": "Cadence",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Comma-separated ISO 4217 codes to keep. Omit for the full panel.",
+          "location": "query",
+          "name": "symbols",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Comma-separated ISO 4217 codes to keep. Omit for the full panel.",
+            "examples": [
+              "USD,EUR,UAH,AFN"
+            ],
+            "title": "Symbols"
+          }
+        }
+      ],
+      "path": "/api/v1/forex/rates",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "forex",
+      "sources": [
+        "forex"
+      ],
+      "summary": "Currency reference panel",
       "tags": [
         "Forex"
       ],
@@ -52290,7 +54008,7 @@
       "toolset": "network"
     },
     {
-      "description": "Unified IP lookup: country, city, ASN, prefix, reverse DNS, abuse contact, and composite privacy signal in a single response. Powered by the Sugra Net Atlas first-party MMDB plus live RIPEstat enrichment.",
+      "description": "Unified IP lookup: country, region (subdivision), city, ASN, prefix, reverse DNS, abuse contact, and composite privacy signal in a single response. Powered by the Sugra Net Atlas first-party store plus live RIPEstat enrichment.",
       "method": "GET",
       "operation_id": "network_ip_ip",
       "parameters": [
@@ -52424,7 +54142,7 @@
       "sources": [
         "network"
       ],
-      "summary": "Geo (country + city) for an IP",
+      "summary": "Geo (country + region + city) for an IP",
       "tags": [
         "Sugra NetAtlas"
       ],
@@ -57537,7 +59255,7 @@
       "toolset": "public_finance"
     },
     {
-      "description": "Tag inventory for the portal via CKAN `tag_list`. When `vocabulary_id` is set, returns the governed vocabulary slug list; otherwise the free-tag list. Trim locally with `rows` if upstream returns an unbounded list.",
+      "description": "Tag inventory for the portal via CKAN `tag_list`. When `vocabulary_id` is set, returns the governed vocabulary slug list; otherwise the free-tag list. Trim locally with `rows` if upstream returns an unbounded list. GovData (`govdata-de`) does not expose a bounded tag_list (about 98k slugs); that portal returns top Solr facet tags instead and never calls tag_list.",
       "method": "GET",
       "operation_id": "opendata_portal_tags",
       "parameters": [
@@ -88810,5 +90528,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "dec6a824af83cdd78c80a1809f0d8ee2062bd3e22292dd2e8f3cc0fcf8bda450"
+  "spec_sha256": "e4bd8db9b5475fd796c0db955bd28b61ca69d2b5dde75c8eb9fbe56c6bd3f411"
 }
