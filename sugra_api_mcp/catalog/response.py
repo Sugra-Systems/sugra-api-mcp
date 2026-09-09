@@ -143,8 +143,19 @@ def shape_response(
 
     if not isinstance(payload, dict):
         # Scalar JSON. Same dict contract as a bare array: wrap so the MCP
-        # tool result is never a non-object.
-        return _maybe_include_raw({"data": payload}, original, include_raw, max_raw_chars)
+        # tool result is never a non-object. If the caller asked for
+        # shaping, report the no-op (limit never applies to a scalar;
+        # fields never match) instead of silently dropping meta.shaped.
+        shaped = {"data": payload}
+        if shaping_requested:
+            _attach_meta(
+                shaped,
+                _shaped_meta_block(
+                    limit=limit, limit_applied=False,
+                    fields=fields, matched=matched,
+                ),
+            )
+        return _maybe_include_raw(shaped, original, include_raw, max_raw_chars)
 
     shaped = deepcopy(payload)
     limit_applied = False

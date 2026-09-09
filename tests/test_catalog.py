@@ -245,6 +245,13 @@ def test_response_shaping_scalar_payload_is_wrapped() -> None:
     assert shape_response("ok") == {"data": "ok"}
 
 
+def test_response_shaping_scalar_reports_noop_when_shaping_requested() -> None:
+    shaped = shape_response(42, limit=1, fields=["x"])
+    assert shaped["data"] == 42
+    assert shaped["meta"]["shaped"]["limit_applied"] is False
+    assert shaped["meta"]["shaped"]["fields_unmatched"] == ["x"]
+
+
 def test_response_shaping_tolerates_non_dict_meta_key() -> None:
     payload = {"ip": "8.8.8.8", "meta": "not-a-dict"}
 
