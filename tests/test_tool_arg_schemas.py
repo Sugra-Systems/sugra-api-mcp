@@ -67,6 +67,25 @@ def test_agent_entity_params_are_structured(tool_schemas):
         assert _has_ref(tool_schemas[tool]["entity"]), f"{tool}.entity lost its typed shape"
 
 
+def test_search_endpoints_params_have_descriptions(tool_schemas):
+    props = tool_schemas["search_endpoints"]
+    for arg in ("query", "toolset", "source", "limit"):
+        desc = props[arg].get("description", "")
+        assert desc, f"search_endpoints.{arg} missing description"
+
+
+def test_describe_endpoint_operation_id_has_description(tool_schemas):
+    desc = tool_schemas["describe_endpoint"]["operation_id"].get("description", "")
+    assert "operation_id" in desc
+
+
+def test_call_and_fetch_projection_args_have_descriptions(tool_schemas):
+    for tool in ("call_endpoint", "fetch_data"):
+        for arg in ("fields", "include_raw"):
+            desc = tool_schemas[tool][arg].get("description", "")
+            assert desc, f"{tool}.{arg} missing description"
+
+
 def test_gateway_dynamic_params_carry_schema_guidance(tool_schemas):
     # params/body stay open (dynamic gateway) but must point at how to get the
     # per-operation schema (describe_endpoint / required_parameters / request_body_schema).
