@@ -93,7 +93,7 @@ async def search_endpoints(
         Field(
             description=(
                 "Optional source-family filter as listed by list_sources "
-                "(sugra_finance, fred, ...). An unknown value returns error "
+                "(macro, markets, ...). An unknown value returns error "
                 "unknown_source with known_sources."
             ),
         ),

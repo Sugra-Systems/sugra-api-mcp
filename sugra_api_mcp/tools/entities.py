@@ -302,8 +302,9 @@ async def sugra_entity_lookup(
         list[str] | None,
         Field(
             description=(
-                "Optional fuller slices to add, e.g. ownership, adverse_media, "
-                "profile, screening. Omit for the compact default."
+                "Optional fuller slices to add, e.g. ownership, adverse_media. "
+                "Omit for the compact default. profile and screening are already "
+                "in the compact core and are not extra slices."
             ),
         ),
     ] = None,

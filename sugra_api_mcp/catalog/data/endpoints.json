@@ -1,6 +1,6 @@
 {
-  "built_at": "2026-09-09T16:51:09Z",
-  "endpoint_count": 1604,
+  "built_at": "2026-09-09T19:01:52Z",
+  "endpoint_count": 1611,
   "endpoints": [
     {
       "description": "Pre-configured key Australian datasets: CPI, GDP, Labour, Trade, Retail, Wages, Population.",
@@ -7479,6 +7479,335 @@
         "statistics"
       ],
       "summary": "International demography: single-year age x sex pyramid of one country",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Annual Survey of Public Employment and Payroll (`timeseries/govsemp`), 1992 to the latest published year. Full-time, part-time, FTE and payroll.",
+      "method": "GET",
+      "operation_id": "census_public_finance_employment",
+      "parameters": [
+        {
+          "description": "March payroll year (YYYY, 1992 to the latest published; required).",
+          "example": "2024",
+          "location": "query",
+          "name": "year",
+          "required": true,
+          "schema": {
+            "description": "March payroll year (YYYY, 1992 to the latest published; required).",
+            "title": "Year",
+            "type": "string"
+          }
+        },
+        {
+          "description": "us or state (every state, or one with state=).",
+          "example": "us",
+          "location": "query",
+          "name": "geo",
+          "required": false,
+          "schema": {
+            "default": "state",
+            "description": "us or state (every state, or one with state=).",
+            "title": "Geo",
+            "type": "string"
+          }
+        },
+        {
+          "description": "State postal code when geo=state.",
+          "example": "CA",
+          "location": "query",
+          "name": "state",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "State postal code when geo=state.",
+            "title": "State"
+          }
+        }
+      ],
+      "path": "/api/v1/census/public-finance/employment",
+      "request_body_required": false,
+      "required_parameters": [
+        "year"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "State and local government employment and payroll",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Annual Survey of Public Pensions (`timeseries/govspension`), 2012 to the latest published year. Aggregates by government type.",
+      "method": "GET",
+      "operation_id": "census_public_finance_pensions",
+      "parameters": [
+        {
+          "description": "Fiscal year (YYYY, 2012 to the latest published; required).",
+          "example": "2025",
+          "location": "query",
+          "name": "year",
+          "required": true,
+          "schema": {
+            "description": "Fiscal year (YYYY, 2012 to the latest published; required).",
+            "title": "Year",
+            "type": "string"
+          }
+        },
+        {
+          "description": "us or state (every state, or one with state=).",
+          "example": "us",
+          "location": "query",
+          "name": "geo",
+          "required": false,
+          "schema": {
+            "default": "state",
+            "description": "us or state (every state, or one with state=).",
+            "title": "Geo",
+            "type": "string"
+          }
+        },
+        {
+          "description": "State postal code when geo=state.",
+          "example": "CA",
+          "location": "query",
+          "name": "state",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "State postal code when geo=state.",
+            "title": "State"
+          }
+        }
+      ],
+      "path": "/api/v1/census/public-finance/pensions",
+      "request_body_required": false,
+      "required_parameters": [
+        "year"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "State and local public pensions",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Annual Survey of State Tax Collections (`timeseries/govsstatetax`), 2016 to the latest published year. Amounts are thousands of dollars. `geo=state` requires `item=` (ITEM_CODE); both ITEM_CODE and AGG_DESC are pinned as predicates, from pairs measured at us first.",
+      "method": "GET",
+      "operation_id": "census_public_finance_state_tax",
+      "parameters": [
+        {
+          "description": "Fiscal year (YYYY, 2016 to the latest published; required).",
+          "example": "2025",
+          "location": "query",
+          "name": "year",
+          "required": true,
+          "schema": {
+            "description": "Fiscal year (YYYY, 2016 to the latest published; required).",
+            "title": "Year",
+            "type": "string"
+          }
+        },
+        {
+          "description": "us or state (every state, or one with state=).",
+          "example": "state",
+          "location": "query",
+          "name": "geo",
+          "required": false,
+          "schema": {
+            "default": "state",
+            "description": "us or state (every state, or one with state=).",
+            "title": "Geo",
+            "type": "string"
+          }
+        },
+        {
+          "description": "State postal code when geo=state.",
+          "example": "CA",
+          "location": "query",
+          "name": "state",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "State postal code when geo=state.",
+            "title": "State"
+          }
+        },
+        {
+          "description": "ITEM_CODE (T01 property, T09 general sales, ...). Required when geo=state.",
+          "example": "T01",
+          "location": "query",
+          "name": "item",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ITEM_CODE (T01 property, T09 general sales, ...). Required when geo=state.",
+            "title": "Item"
+          }
+        },
+        {
+          "description": "AGG_DESC code. When omitted at geo=state, every aggregate paired with item at us is fetched.",
+          "location": "query",
+          "name": "agg",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "AGG_DESC code. When omitted at geo=state, every aggregate paired with item at us is fetched.",
+            "title": "Agg"
+          }
+        }
+      ],
+      "path": "/api/v1/census/public-finance/state-tax",
+      "request_body_required": false,
+      "required_parameters": [
+        "year"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Annual state tax collections",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Quarterly Summary of State and Local Government Tax Revenue (`timeseries/eits/qtax`). Default is QTAXCAT3 (state governments by state) and TOTAL taxes at the latest published quarter. `from` turns it into a series and requires `state=` for QTAXCAT3. Shares the EITS client of API-64.3.",
+      "method": "GET",
+      "operation_id": "census_public_finance_state_tax_quarterly",
+      "parameters": [
+        {
+          "description": "QTAXCAT1 national all governments, QTAXCAT2 national by level, QTAXCAT3 state governments by state.",
+          "example": "QTAXCAT3",
+          "location": "query",
+          "name": "category",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "QTAXCAT3",
+            "description": "QTAXCAT1 national all governments, QTAXCAT2 national by level, QTAXCAT3 state governments by state.",
+            "title": "Category"
+          }
+        },
+        {
+          "description": "Tax type: TOTAL, T01 property, T09 general sales, T40 individual income, ...",
+          "example": "TOTAL",
+          "location": "query",
+          "name": "data_type",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "TOTAL",
+            "description": "Tax type: TOTAL, T01 property, T09 general sales, T40 individual income, ...",
+            "title": "Data Type"
+          }
+        },
+        {
+          "description": "State postal code for QTAXCAT3. Omit for every state (cross-section) or for QTAXCAT1/2.",
+          "example": "CA",
+          "location": "query",
+          "name": "state",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "State postal code for QTAXCAT3. Omit for every state (cross-section) or for QTAXCAT1/2.",
+            "title": "State"
+          }
+        },
+        {
+          "description": "Start quarter YYYY-Qn. Omit for the latest quarter only. A QTAXCAT3 series requires state=.",
+          "example": "2024-Q1",
+          "location": "query",
+          "name": "from",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Start quarter YYYY-Qn. Omit for the latest quarter only. A QTAXCAT3 series requires state=.",
+            "title": "From"
+          }
+        }
+      ],
+      "path": "/api/v1/census/public-finance/state-tax/quarterly",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Quarterly state tax revenue",
       "tags": [
         "Statistical Agencies"
       ],
@@ -15198,6 +15527,216 @@
       "toolset": "statistics"
     },
     {
+      "description": "The 6,722 cubes GENESIS publishes, from a committed catalogue snapshot. Filter by code prefix (42131 is manufacturing production), free text, classification vintage (GP2009, GP2019, GP2026) or digit level. There is no table-to-cube endpoint in GENESIS, so this listing is the map. Never a live call. Every answer says whether it is the whole match: `truncated` with `count`, `matched` and `total` beside it.",
+      "method": "GET",
+      "operation_id": "destatis_cubes",
+      "parameters": [
+        {
+          "description": "Code prefix, e.g. 42131 for manufacturing production.",
+          "example": "42131",
+          "location": "query",
+          "name": "prefix",
+          "required": false,
+          "schema": {
+            "description": "Code prefix, e.g. 42131 for manufacturing production.",
+            "title": "Prefix",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Free-text term matched against the cube title and code.",
+          "example": "GP2019",
+          "location": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "description": "Free-text term matched against the cube title and code.",
+            "title": "Q",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Keep only cubes of this GP vintage: GP2002, GP2009, GP2019 or GP2026.",
+          "example": "GP2019",
+          "location": "query",
+          "name": "vintage",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Keep only cubes of this GP vintage: GP2002, GP2009, GP2019 or GP2026.",
+            "title": "Vintage"
+          }
+        },
+        {
+          "description": "Keep only cubes at this product-code width: 2, 4 or 9.",
+          "example": 9,
+          "location": "query",
+          "name": "digit_level",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Keep only cubes at this product-code width: 2, 4 or 9.",
+            "title": "Digit Level"
+          }
+        },
+        {
+          "description": "Maximum number of records to return.",
+          "example": 100,
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 100,
+            "description": "Maximum number of records to return.",
+            "maximum": 2500,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/destatis/cubes",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Browse the German GENESIS cube catalogue",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "The 9-digit PRODCOM equivalent for German manufacturing, served from the harvested 42131BJ203 snapshot (GP2019, annual, 2019 to 2025). Never a live GENESIS call: a valid filtered cubefile is 13.2 s and an invalid key is 36.8 s. The cube is not product-complete (4,818 codes against 5,018 on the table route). A code absent from the snapshot is reported as absent, with `table_fallback` naming /destatis/table/42131-0004, never as a 404 that implies it does not exist. Every answer names its classification vintage. GP2009 and GP2026 9-digit harvests are not committed; those vintages are harvest_blocked with the same table fallback, not a 404.",
+      "method": "GET",
+      "operation_id": "destatis_production",
+      "parameters": [
+        {
+          "description": "Product code: a 9-digit GP key (261122402), a GP19- member (GP19-261122402), or an 8-digit PRODCOM-style prefix (26112240).",
+          "example": "261122402",
+          "location": "query",
+          "name": "code",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Product code: a 9-digit GP key (261122402), a GP19- member (GP19-261122402), or an 8-digit PRODCOM-style prefix (26112240).",
+            "title": "Code"
+          }
+        },
+        {
+          "description": "Classification vintage. The committed snapshot is GP2019. Other vintages are harvest-blocked, not 404.",
+          "example": "GP2019",
+          "location": "query",
+          "name": "vintage",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Classification vintage. The committed snapshot is GP2019. Other vintages are harvest-blocked, not 404.",
+            "title": "Vintage"
+          }
+        },
+        {
+          "description": "Start year (YYYY).",
+          "example": 2023,
+          "location": "query",
+          "name": "start_year",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 2026,
+                "minimum": 1990,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Start year (YYYY).",
+            "title": "Start Year"
+          }
+        },
+        {
+          "description": "End year (YYYY).",
+          "example": 2025,
+          "location": "query",
+          "name": "end_year",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 2026,
+                "minimum": 1990,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "End year (YYYY).",
+            "title": "End Year"
+          }
+        },
+        {
+          "description": "Maximum number of product rows on a listing.",
+          "example": 100,
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 100,
+            "description": "Maximum number of product rows on a listing.",
+            "maximum": 2500,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/destatis/production",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Nine-digit German manufacturing production from the harvested snapshot",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
       "description": "Full-text search across the GENESIS database: tables, statistics, cubes, variables, time series. Returns matching objects with codes.",
       "method": "GET",
       "operation_id": "destatis_search",
@@ -15344,6 +15883,92 @@
         "statistics"
       ],
       "summary": "One German statistic with its metadata",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Every cube a statistic holds in the committed GENESIS cube catalogue, each named with its classification vintage (GP2009, GP2019, GP2026) when the cube is a GP product cube. Statistic 42131 maps to 21 cubes split by vintage and digit level. Served from the snapshot, never from a live GENESIS call. An empty list is not a 404: the statistic may exist and hold no cubes in this catalogue. `truncated` says whether the limit cut the match.",
+      "method": "GET",
+      "operation_id": "destatis_statistics_code_cubes",
+      "parameters": [
+        {
+          "description": "Five-digit EVAS number of the statistic.",
+          "example": "42131",
+          "location": "path",
+          "name": "code",
+          "required": true,
+          "schema": {
+            "description": "Five-digit EVAS number of the statistic.",
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Keep only cubes of this GP vintage.",
+          "example": "GP2019",
+          "location": "query",
+          "name": "vintage",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Keep only cubes of this GP vintage.",
+            "title": "Vintage"
+          }
+        },
+        {
+          "description": "Keep only cubes at this product-code width: 2, 4 or 9.",
+          "example": 9,
+          "location": "query",
+          "name": "digit_level",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Keep only cubes at this product-code width: 2, 4 or 9.",
+            "title": "Digit Level"
+          }
+        },
+        {
+          "description": "Maximum number of records to return.",
+          "example": 100,
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 100,
+            "description": "Maximum number of records to return.",
+            "maximum": 2500,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/destatis/statistics/{code}/cubes",
+      "request_body_required": false,
+      "required_parameters": [
+        "code"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "The cubes of one German statistic",
       "tags": [
         "Statistical Agencies"
       ],
@@ -18880,28 +19505,28 @@
       "toolset": "entity_screening"
     },
     {
-      "description": "Resolve an entity by `(anchor, value)` and compose the requested slices into the canonical KYB envelope. `anchor` is `lei` (via GLEIF) or `vat` (via the EU VIES service). Use `?include=` (comma list of `profile,screening,ownership`) to select slices; the default is all three. The `vat` anchor has no ownership graph (a VAT has no LEI) and a VAT whose identity is withheld is never screened `clear`. Fail-CLOSED: a screening failure returns 503, never a `clear`. `?as_of=YYYY-MM-DD` scopes ONLY the screening slice to the dated snapshot for that date (point-in-time); the identity / ownership / VIES slices are live external lookups with no historical snapshot and remain current. A malformed as_of returns 422; a date whose snapshot is absent returns 503 (fail-closed, never a live fallback).",
+      "description": "Resolve an entity by `(anchor, value)` and compose the requested slices into the canonical KYB envelope. `anchor` is `lei` (via GLEIF), `vat` (via the EU VIES service), or `siren` / `siret` (via INSEE Sirene). Use `?include=` (comma list of `profile,screening,ownership`) to select slices; the default is all three. The `vat`, `siren` and `siret` anchors have no ownership graph (no LEI) and a withheld identity is never screened `clear`. Fail-CLOSED: a screening failure returns 503, never a `clear`. `?as_of=YYYY-MM-DD` scopes ONLY the screening slice to the dated snapshot for that date (point-in-time); the identity / ownership / VIES / Sirene slices are live external lookups with no historical snapshot and remain current. A malformed as_of returns 422; a date whose snapshot is absent returns 503 (fail-closed, never a live fallback).",
       "method": "GET",
       "operation_id": "entity_anchor_value",
       "parameters": [
         {
-          "description": "Entity anchor type (`lei` or `vat`).",
+          "description": "Entity anchor type (`lei`, `vat`, `siren`, or `siret`).",
           "location": "path",
           "name": "anchor",
           "required": true,
           "schema": {
-            "description": "Entity anchor type (`lei` or `vat`).",
+            "description": "Entity anchor type (`lei`, `vat`, `siren`, or `siret`).",
             "title": "Anchor",
             "type": "string"
           }
         },
         {
-          "description": "Anchor value (e.g. the LEI code or the VAT number).",
+          "description": "Anchor value (LEI, VAT, SIREN, or SIRET).",
           "location": "path",
           "name": "value",
           "required": true,
           "schema": {
-            "description": "Anchor value (e.g. the LEI code or the VAT number).",
+            "description": "Anchor value (LEI, VAT, SIREN, or SIRET).",
             "title": "Value",
             "type": "string"
           }
@@ -18965,23 +19590,23 @@
       "operation_id": "entity_anchor_value_adverse_media",
       "parameters": [
         {
-          "description": "Entity anchor type (`lei` or `vat`).",
+          "description": "Entity anchor type (`lei`, `vat`, `siren`, or `siret`).",
           "location": "path",
           "name": "anchor",
           "required": true,
           "schema": {
-            "description": "Entity anchor type (`lei` or `vat`).",
+            "description": "Entity anchor type (`lei`, `vat`, `siren`, or `siret`).",
             "title": "Anchor",
             "type": "string"
           }
         },
         {
-          "description": "Anchor value (e.g. the LEI code or the VAT number).",
+          "description": "Anchor value (LEI, VAT, SIREN, or SIRET).",
           "location": "path",
           "name": "value",
           "required": true,
           "schema": {
-            "description": "Anchor value (e.g. the LEI code or the VAT number).",
+            "description": "Anchor value (LEI, VAT, SIREN, or SIRET).",
             "title": "Value",
             "type": "string"
           }
@@ -19009,23 +19634,23 @@
       "operation_id": "entity_anchor_value_slice_name",
       "parameters": [
         {
-          "description": "Entity anchor type (`lei` or `vat`).",
+          "description": "Entity anchor type (`lei`, `vat`, `siren`, or `siret`).",
           "location": "path",
           "name": "anchor",
           "required": true,
           "schema": {
-            "description": "Entity anchor type (`lei` or `vat`).",
+            "description": "Entity anchor type (`lei`, `vat`, `siren`, or `siret`).",
             "title": "Anchor",
             "type": "string"
           }
         },
         {
-          "description": "Anchor value (e.g. the LEI code or the VAT number).",
+          "description": "Anchor value (LEI, VAT, SIREN, or SIRET).",
           "location": "path",
           "name": "value",
           "required": true,
           "schema": {
-            "description": "Anchor value (e.g. the LEI code or the VAT number).",
+            "description": "Anchor value (LEI, VAT, SIREN, or SIRET).",
             "title": "Value",
             "type": "string"
           }
@@ -90842,5 +91467,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "48bc161b6e050efd6e71f6e6bd0a129348979858f29287f0c39695f4900ea138"
+  "spec_sha256": "d2b0fee7436976f78715b4f1ec983fdb53eaa97913f32c015fdd8fe79bc7e283"
 }
