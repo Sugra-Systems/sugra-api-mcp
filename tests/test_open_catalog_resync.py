@@ -7,6 +7,7 @@ identity), and the token refusal. GitHub and git are not exercised here.
 
 from __future__ import annotations
 
+import base64
 import importlib.util
 from pathlib import Path
 
@@ -147,3 +148,17 @@ def test_require_catalog_token_refuses_github_token_alone() -> None:
     with pytest.raises(SystemExit, match="MCP_CATALOG_TOKEN"):
         mod.require_catalog_token({"GITHUB_TOKEN": "ghs_not_enough"})
     assert mod.require_catalog_token({"MCP_CATALOG_TOKEN": " pat "}) == "pat"
+
+
+def test_git_https_extraheader_is_basic_x_access_token_not_bearer() -> None:
+    mod = _mod()
+    header = mod.git_https_extraheader("pat_secret")
+    assert header.lower().startswith("authorization: basic ")
+    assert "bearer" not in header.lower()
+    assert "pat_secret" not in header
+    blob = header.split(" ", 2)[2]
+    assert base64.b64decode(blob) == b"x-access-token:pat_secret"
+    redacted = mod._redact(f"header {header} token pat_secret", "pat_secret")
+    assert "pat_secret" not in redacted
+    assert blob not in redacted
+    assert "***" in redacted

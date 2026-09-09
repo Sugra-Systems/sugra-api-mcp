@@ -23,6 +23,7 @@ Companion PR in prod-sugra-ai-API dispatches api-spec-changed after a healthy pr
 
 ## risk-notes
 - GITHUB_TOKEN must not author the resync PR: bot pushes do not trigger workflows, so Test would never run. MCP_CATALOG_TOKEN is required; without it the scheduled job stays red on DRIFT and no PR opens.
+- Git-over-HTTPS must use Basic `x-access-token:<PAT>`, not REST Bearer. Codex S2 on the first push: Bearer extraheader would never land the resync branch.
 - The resync PR body must never carry `Closes board item`. A catalog bump is not MCP-15.3.
 - force-with-lease from origin/main: the branch is always main plus the latest rebuild. A human commit on ci/catalog-resync can be overwritten if they push between fetch and push; the lease refuses only a push that landed after our fetch.
 - test.yml on pull_request still fails on drift. Unrelated PRs stay blocked until the resync PR merges. That is the existing gate, not a regression.

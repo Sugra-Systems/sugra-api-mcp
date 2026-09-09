@@ -24,6 +24,7 @@ on sugra-api-mcp). GITHUB_TOKEN is refused.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import re
@@ -166,8 +167,23 @@ def _git(
     return result
 
 
+def git_https_extraheader(token: str) -> str:
+    """GitHub Git-over-HTTPS wants Basic x-access-token, not REST Bearer.
+
+    actions/checkout and git itself speak Basic. A Bearer extraheader authenticates
+    the REST API and is ignored (or refused) by the Git HTTPS endpoint, so the
+    resync push would never land.
+    """
+    blob = base64.b64encode(f"x-access-token:{token}".encode("ascii")).decode("ascii")
+    return f"AUTHORIZATION: basic {blob}"
+
+
 def _redact(text: str, token: str) -> str:
-    return text.replace(token, "***") if token else text
+    if not token:
+        return text
+    out = text.replace(token, "***")
+    blob = base64.b64encode(f"x-access-token:{token}".encode("ascii")).decode("ascii")
+    return out.replace(blob, "***")
 
 
 def _author_env(base: Mapping[str, str]) -> dict[str, str]:
@@ -277,7 +293,7 @@ def land_resync_pr(
     )
     push = [
         "-c",
-        f"http.extraheader=AUTHORIZATION: bearer {token}",
+        f"http.extraheader={git_https_extraheader(token)}",
         "push",
     ]
     if remote_has_branch:
