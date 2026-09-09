@@ -26,7 +26,7 @@ pre-gateway curated surface and never shipped in this package after v0.4.0.
 Two different counters. Do not equate them.
 
 - Live `GET https://sugra.ai/stats` (2026-09-09): 1,641 endpoints, 190 sources, 36 categories. Public copy: "1,500+" / "160+" / 36 domains.
-- Bundled MCP catalog (built_at 2026-09-09T16:51:09Z): 1,604 GET/POST operations from live OpenAPI. PyPI 0.10.0 (uploaded 2026-08-20) still carries the pre-2026-09-04 bundle.
+- Bundled MCP catalog (built_at 2026-09-09T19:01:52Z): 1,611 GET/POST operations from live OpenAPI. PyPI 0.10.0 (uploaded 2026-08-20) still carries the pre-2026-09-04 bundle.
 
 ## Fixed facts
 
