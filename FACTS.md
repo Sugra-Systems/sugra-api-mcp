@@ -19,7 +19,7 @@ pre-gateway curated surface and never shipped in this package after v0.4.0.
 ## Prompts and resources (every transport)
 
 - Prompts (6): market_snapshot, macro_briefing, sanctions_screening, sector_compare, earth_conditions, source_overview. Prompt text names only the 8 gateway tools, never hosted-only agent tools.
-- Resources (4): sugra://catalog/domains, sugra://catalog/sources, sugra://attribution, ui://sugra/price-chart.html (SEP-1865 widget on call_endpoint).
+- Resources (9): sugra://catalog/domains, sugra://catalog/sources, sugra://attribution, ui://sugra/price-chart.html (SEP-1865 widget on call_endpoint), and five official skills under sugra://skills/ (explore-catalog, envelope-attribution, auth-limits, hosted-vs-gateway, cross-domain-briefing). Each skill is also a SKILL.md drop-in under sugra_api_mcp/skills/.
 
 ## Catalog scale
 
