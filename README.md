@@ -420,6 +420,8 @@ export SUGRA_API_KEY=sugra_...
 python -m sugra_api_mcp  # stdio mode
 python -m sugra_api_mcp --transport streamable-http --port 8001  # HTTP mode
 python scripts/build_endpoint_catalog.py  # rebuild bundled catalog from sibling API openapi.json
+python scripts/build_endpoint_catalog.py --source https://sugra.ai/openapi.json  # from the live spec
+# On DRIFT, catalog-parity.yml opens or updates PR branch ci/catalog-resync (MCP-15.3).
 ```
 
 Run tests:

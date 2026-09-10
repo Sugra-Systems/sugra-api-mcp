@@ -5,13 +5,20 @@ name: Catalog parity
 # in this repo therefore cannot be the only trigger - without a schedule the
 # stale-catalog condition this gate exists to catch can persist indefinitely
 # while every check stays green.
+#
+# On DRIFT this job opens or updates a single resync PR (branch ci/catalog-resync,
+# author Arman Obosyan via MCP_CATALOG_TOKEN) and then still fails. The red run
+# is the alarm; the PR is the landing path. test.yml on pull_request stays a
+# fail-on-drift gate and does not open PRs.
 on:
   # Preferred trigger: the API repository announces that its OpenAPI document
   # changed. This is the only signal that arrives exactly when drift is created,
   # and unlike `schedule` it does not stop firing when this repository is quiet
   # (GitHub disables scheduled workflows after 60 days without repository
   # activity - precisely the inactive stretch in which drift would accumulate
-  # unseen).
+  # unseen). The live spec is deploy-built (static/openapi.json is gitignored),
+  # so the dispatch fires after a successful post-swap production probe, not on
+  # PR merge.
   repository_dispatch:
     types: [api-spec-changed]
   schedule:
@@ -20,11 +27,22 @@ on:
     - cron: '17 6 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   parity:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # History for branching ci/catalog-resync from origin/main. Credentials
+          # stay off: this repo is public, and the resync push must use
+          # MCP_CATALOG_TOKEN (GITHUB_TOKEN would commit as github-actions[bot]
+          # and that PR would not trigger Test).
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
@@ -33,4 +51,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev,http]"
       - name: Compare the bundled catalog with the live spec
+        id: parity
+        continue-on-error: true
         run: python scripts/check_catalog_parity.py
+      - name: Open or update a catalog resync PR
+        if: steps.parity.outcome == 'failure'
+        env:
+          MCP_CATALOG_TOKEN: ${{ secrets.MCP_CATALOG_TOKEN }}
+          GH_TOKEN: ${{ secrets.MCP_CATALOG_TOKEN }}
+        run: python scripts/open_catalog_resync.py
+      - name: Fail the job on drift
+        if: steps.parity.outcome == 'failure'
+        run: |
+          echo "Catalog drifted from the live spec. A resync PR is opened or updated on ci/catalog-resync when MCP_CATALOG_TOKEN is set."
+          exit 1
