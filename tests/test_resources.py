@@ -6,6 +6,8 @@ import json
 
 import pytest
 
+from sugra_api_mcp.tools.skills import SKILL_URIS
+
 DOMAINS_URI = "sugra://catalog/domains"
 SOURCES_URI = "sugra://catalog/sources"
 ATTRIBUTION_URI = "sugra://attribution"
@@ -14,13 +16,14 @@ ATTRIBUTION_URI = "sugra://attribution"
 # in depth by tests/test_widgets.py.
 WIDGET_URI = "ui://sugra/price-chart.html"
 
-EXPECTED_URIS = {DOMAINS_URI, SOURCES_URI, ATTRIBUTION_URI, WIDGET_URI}
+EXPECTED_URIS = {DOMAINS_URI, SOURCES_URI, ATTRIBUTION_URI, WIDGET_URI, *SKILL_URIS}
 
 EXPECTED_MIME_TYPES = {
     DOMAINS_URI: "application/json",
     SOURCES_URI: "application/json",
     ATTRIBUTION_URI: "text/markdown",
     WIDGET_URI: "text/html;profile=mcp-app",
+    **dict.fromkeys(SKILL_URIS, "text/markdown"),
 }
 
 # Commercial upstream names that must never appear in public copy. Lowercase
@@ -52,10 +55,10 @@ async def _read(mcp, uri: str):
     return contents[0]
 
 
-async def test_exactly_four_resources_registered(registered_mcp) -> None:
+async def test_exactly_the_expected_resources_registered(registered_mcp) -> None:
     resource_list = await registered_mcp.list_resources()
-    assert len(resource_list) == 4
     assert {str(resource.uri) for resource in resource_list} == EXPECTED_URIS
+    assert len(resource_list) == len(EXPECTED_URIS)
 
 
 async def test_listed_resources_carry_expected_mime_types(registered_mcp) -> None:

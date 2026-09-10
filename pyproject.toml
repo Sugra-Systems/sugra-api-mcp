@@ -78,6 +78,11 @@ packages = ["sugra_api_mcp"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "sugra_api_mcp/catalog/data/endpoints.json" = "sugra_api_mcp/catalog/data/endpoints.json"
+"sugra_api_mcp/skills/explore-catalog/SKILL.md" = "sugra_api_mcp/skills/explore-catalog/SKILL.md"
+"sugra_api_mcp/skills/envelope-attribution/SKILL.md" = "sugra_api_mcp/skills/envelope-attribution/SKILL.md"
+"sugra_api_mcp/skills/auth-limits/SKILL.md" = "sugra_api_mcp/skills/auth-limits/SKILL.md"
+"sugra_api_mcp/skills/hosted-vs-gateway/SKILL.md" = "sugra_api_mcp/skills/hosted-vs-gateway/SKILL.md"
+"sugra_api_mcp/skills/cross-domain-briefing/SKILL.md" = "sugra_api_mcp/skills/cross-domain-briefing/SKILL.md"
 
 [tool.ruff]
 line-length = 100

@@ -29,7 +29,7 @@ FIXTURE = Path(__file__).parent / "fixtures" / "openapi_minimal.json"
 
 EXPECTED_TOOL_COUNT = 8
 EXPECTED_PROMPT_COUNT = 6
-EXPECTED_RESOURCE_COUNT = 4
+EXPECTED_RESOURCE_COUNT = 9
 
 
 def _keyless_env() -> dict[str, str]:

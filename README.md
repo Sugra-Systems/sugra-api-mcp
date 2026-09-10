@@ -78,6 +78,8 @@ Behind the gateway sits the Sugra API: 160+ primary sources - sovereign statisti
 
 ## What agents build with it
 
+Five official skills ship as MCP resources (`sugra://skills/...`) and as `SKILL.md` drop-ins for Claude, Codex, and Cursor: explore the catalog, envelope and attribution, auth and rate limits, hosted vs gateway, and a cross-domain briefing pattern. Copy a skill directory from `sugra_api_mcp/skills/` into the client's skills folder, or `resources/read` the matching URI after connect.
+
 Six workflow prompts ship with the server and turn these into one-click flows in clients that surface MCP prompts:
 
 - **Market and macro research** - "Compare inflation and central bank policy rates across the G7." (`macro_briefing`)
