@@ -7,10 +7,11 @@ description: Choose hosted Sugra MCP versus the local gateway package, and which
 
 Two transports, one catalog.
 
-| Transport | Tools | How |
+| Transport | Tools | How the client authenticates |
 |---|---|---|
-| Local package (`pip install sugra-api-mcp`) stdio or self-hosted HTTP | 8 | `SUGRA_API_KEY` |
-| Hosted `https://app.sugra.ai/mcp` (canonical `https://mcp.sugra.ai/mcp`) | 11 | Bearer API key or OAuth |
+| Local package stdio | 8 | `SUGRA_API_KEY` in the server process |
+| Self-hosted Streamable HTTP | 8 | Client `Authorization: Bearer`; server `SUGRA_API_KEY` is only a downstream fallback |
+| Hosted `https://app.sugra.ai/mcp` (canonical `https://mcp.sugra.ai/mcp`) | 11 | Client Bearer API key or OAuth |
 
 The eight gateway tools on every transport: `fetch_data`, `search_endpoints`, `describe_endpoint`, `call_endpoint`, `list_toolsets`, `list_sources`, `sugra_entity_screen`, `sugra_entity_lookup`.
 

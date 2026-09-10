@@ -108,6 +108,16 @@ def test_hosted_skill_names_hosted_only_and_the_eight() -> None:
         assert tool in text
 
 
+def test_auth_skill_distinguishes_stdio_env_from_http_bearer() -> None:
+    text = read_skill("auth-limits")
+    assert "missing_bearer_token" in text
+    assert "retry_after" in text
+    assert "SUGRA_API_KEY" in text
+    hosted = read_skill("hosted-vs-gateway")
+    assert "Bearer" in hosted
+    assert "fallback" in hosted.lower()
+
+
 def test_explore_catalog_teaches_the_search_describe_call_loop() -> None:
     text = read_skill("explore-catalog")
     for tool in GATEWAY_LOOP_TOOLS:
