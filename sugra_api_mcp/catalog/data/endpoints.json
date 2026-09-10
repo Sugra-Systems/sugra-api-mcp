@@ -1,6 +1,6 @@
 {
-  "built_at": "2026-09-09T20:16:44Z",
-  "endpoint_count": 1611,
+  "built_at": "2026-09-10T18:59:26Z",
+  "endpoint_count": 1625,
   "endpoints": [
     {
       "description": "Pre-configured key Australian datasets: CPI, GDP, Labour, Trade, Retail, Wages, Population.",
@@ -1872,6 +1872,92 @@
         "statistics"
       ],
       "summary": "BEA NIPA table data",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "List curated Swiss Federal Statistical Office STAT-TAB series.",
+      "method": "GET",
+      "operation_id": "bfs_catalog",
+      "parameters": [],
+      "path": "/api/v1/bfs/catalog",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Available BFS series",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Fetch Swiss official statistics by series key. Use /bfs/catalog for available series. Population, employment and wages. CPI and GDP are not on STAT-TAB.",
+      "method": "GET",
+      "operation_id": "bfs_series",
+      "parameters": [
+        {
+          "description": "BFS series key (see /bfs/catalog).",
+          "location": "path",
+          "name": "series",
+          "required": true,
+          "schema": {
+            "description": "BFS series key (see /bfs/catalog).",
+            "title": "Series",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Start: 2020 or 2020-Q1.",
+          "location": "query",
+          "name": "start_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Start: 2020 or 2020-Q1.",
+            "title": "Start Period"
+          }
+        },
+        {
+          "description": "End: 2024 or 2024-Q4.",
+          "location": "query",
+          "name": "end_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "End: 2024 or 2024-Q4.",
+            "title": "End Period"
+          }
+        }
+      ],
+      "path": "/api/v1/bfs/{series}",
+      "request_body_required": false,
+      "required_parameters": [
+        "series"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "BFS series data",
       "tags": [
         "Statistical Agencies"
       ],
@@ -6409,6 +6495,95 @@
       "toolset": "markets"
     },
     {
+      "description": "List curated Statistics Netherlands StatLine series for the Netherlands.",
+      "method": "GET",
+      "operation_id": "cbs_catalog",
+      "parameters": [],
+      "path": "/api/v1/cbs/catalog",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Available CBS series",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Fetch Dutch official statistics by series key. Use /cbs/catalog for available series. Data includes CPI, GDP growth, unemployment, industrial production, trade balance.",
+      "method": "GET",
+      "operation_id": "cbs_series",
+      "parameters": [
+        {
+          "description": "CBS series key (see /cbs/catalog).",
+          "example": "cpi",
+          "location": "path",
+          "name": "series",
+          "required": true,
+          "schema": {
+            "description": "CBS series key (see /cbs/catalog).",
+            "title": "Series",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Start: 2024-01 or 2024-Q1.",
+          "example": "2020-Q1",
+          "location": "query",
+          "name": "start_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Start: 2024-01 or 2024-Q1.",
+            "title": "Start Period"
+          }
+        },
+        {
+          "description": "End: 2024-12 or 2024-Q4.",
+          "example": "2024-Q4",
+          "location": "query",
+          "name": "end_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "End: 2024-12 or 2024-Q4.",
+            "title": "End Period"
+          }
+        }
+      ],
+      "path": "/api/v1/cbs/{series}",
+      "request_body_required": false,
+      "required_parameters": [
+        "series"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "CBS series data",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
       "description": "Establishments, firms, employment, job creation and destruction (total, from openings and closings, from continuers), net job creation, establishment entry and exit, firm deaths, and the matching rates, from the Census Bureau's Business Dynamics Statistics (`timeseries/bds`), 1978 to the latest published year, nationally or for one state. `from` defaults to the ten years to the latest; a `to` past the latest year is clamped with a note; a range wholly past it is an empty answer with a reason. Counts are integers, rates are percent of the Davis-Haltiwanger-Schuh denominator (`denom`), decoded by the variable's own type.",
       "method": "GET",
       "operation_id": "census_business_dynamics",
@@ -6648,6 +6823,167 @@
       "toolset": "statistics"
     },
     {
+      "description": "Employer firms, employment, annual payroll and receipts by owner sex, ethnicity, race and veteran status from the Census Bureau's Annual Business Survey Company Summary (`<vintage>/abscs`), one vintage year (2017 to the latest published). `geo` is the nation or one state (`state=` required). County, metro and congressional district stay out. The industry variable is renamed per vintage (NAICS2017, NAICS2022) and is resolved from the vintage's own variable list. Size, receipts, years-in-business and urban/rural tables stay out: those classifiers are pinned to all firms. A vintage past the latest is an empty answer with a reason. Do not GET `*_LABEL` columns.",
+      "method": "GET",
+      "operation_id": "census_business_owners",
+      "parameters": [
+        {
+          "description": "Vintage year (YYYY, 2017 to the latest published; required).",
+          "example": "2023",
+          "location": "query",
+          "name": "year",
+          "required": true,
+          "schema": {
+            "description": "Vintage year (YYYY, 2017 to the latest published; required).",
+            "title": "Year",
+            "type": "string"
+          }
+        },
+        {
+          "description": "us (national) or state (one state; state= required).",
+          "example": "state",
+          "location": "query",
+          "name": "geo",
+          "required": false,
+          "schema": {
+            "default": "us",
+            "description": "us (national) or state (one state; state= required).",
+            "title": "Geo",
+            "type": "string"
+          }
+        },
+        {
+          "description": "State postal code (CA, TX, DC, ...) when geo=state.",
+          "example": "CA",
+          "location": "query",
+          "name": "state",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "State postal code (CA, TX, DC, ...) when geo=state.",
+            "title": "State"
+          }
+        },
+        {
+          "description": "00 for all industries (default), a NAICS sector (54, or a range such as 31-33) or a 3-6 digit NAICS code.",
+          "example": "00",
+          "location": "query",
+          "name": "naics",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "00",
+            "description": "00 for all industries (default), a NAICS sector (54, or a range such as 31-33) or a 3-6 digit NAICS code.",
+            "title": "Naics"
+          }
+        },
+        {
+          "description": "Optional SEX code (001 total, 002 female, 003 male, ...). Omit for every published sex group.",
+          "example": "002",
+          "location": "query",
+          "name": "sex",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional SEX code (001 total, 002 female, 003 male, ...). Omit for every published sex group.",
+            "title": "Sex"
+          }
+        },
+        {
+          "description": "Optional ETH_GROUP code (001 total, 020 Hispanic, ...). Omit for every published ethnicity group.",
+          "example": "020",
+          "location": "query",
+          "name": "ethnicity",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional ETH_GROUP code (001 total, 020 Hispanic, ...). Omit for every published ethnicity group.",
+            "title": "Ethnicity"
+          }
+        },
+        {
+          "description": "Optional RACE_GROUP code (00 total, 30 White, 40 Black, ...). Omit for every published race group.",
+          "example": "40",
+          "location": "query",
+          "name": "race",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional RACE_GROUP code (00 total, 30 White, 40 Black, ...). Omit for every published race group.",
+            "title": "Race"
+          }
+        },
+        {
+          "description": "Optional VET_GROUP code (001 total, 002 veteran, ...). Omit for every published veteran group.",
+          "example": "002",
+          "location": "query",
+          "name": "veteran",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional VET_GROUP code (001 total, 002 veteran, ...). Omit for every published veteran group.",
+            "title": "Veteran"
+          }
+        }
+      ],
+      "path": "/api/v1/census/business/owners",
+      "request_body_required": false,
+      "required_parameters": [
+        "year"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Annual Business Survey: employer firms by owner demographics",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
       "description": "Establishments, employment, annual and first-quarter payroll of employer businesses from the Census Bureau's County Business Patterns (`<vintage>/cbp`), one vintage year (1998 to the latest published; earlier vintages publish SIC codes), for one NAICS code (00 = all industries) across the nation, every state (or one), the counties of one state, or every metro area. The industry variable is renamed per vintage (NAICS1997 ... NAICS2017) and is resolved from the vintage's own variable list, which also labels the code (from the 2012 vintage on). A county list can be shorter than the state's counties: the Bureau publishes no row where it withholds one. A vintage past the latest is an empty answer with a reason.",
       "method": "GET",
       "operation_id": "census_business_patterns",
@@ -6877,6 +7213,72 @@
         "statistics"
       ],
       "summary": "County Business Patterns: employment size classes of one NAICS code",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Establishments, employment, annual and first-quarter payroll of employer businesses in one 5-digit ZIP from the Census Bureau's ZIP Code Business Patterns (`<vintage>/zbp`), 1998 to the latest published vintage (the series stops at 2018). `zip` is required. Earlier vintages publish SIC codes and are 400. The industry variable is renamed per vintage and is resolved from the vintage's own variable list. The geography clause is the vintage's own name (`zipcode` then `zip code`). Size classes stay pinned to all establishments. A vintage past the latest is an empty answer with a reason. Do not GET `*_LABEL` columns. Do not pull every ZIP.",
+      "method": "GET",
+      "operation_id": "census_business_zip",
+      "parameters": [
+        {
+          "description": "Vintage year (YYYY, 1998 to the latest published; required).",
+          "example": "2018",
+          "location": "query",
+          "name": "year",
+          "required": true,
+          "schema": {
+            "description": "Vintage year (YYYY, 1998 to the latest published; required).",
+            "title": "Year",
+            "type": "string"
+          }
+        },
+        {
+          "description": "5-digit ZIP code (required).",
+          "example": "90210",
+          "location": "query",
+          "name": "zip",
+          "required": true,
+          "schema": {
+            "description": "5-digit ZIP code (required).",
+            "title": "Zip",
+            "type": "string"
+          }
+        },
+        {
+          "description": "00 for all industries (default), a NAICS sector (54, or a range such as 31-33) or a 3-6 digit NAICS code.",
+          "example": "00",
+          "location": "query",
+          "name": "naics",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "00",
+            "description": "00 for all industries (default), a NAICS sector (54, or a range such as 31-33) or a 3-6 digit NAICS code.",
+            "title": "Naics"
+          }
+        }
+      ],
+      "path": "/api/v1/census/business/zip",
+      "request_body_required": false,
+      "required_parameters": [
+        "year",
+        "zip"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "ZIP Code Business Patterns: establishments of one ZIP",
       "tags": [
         "Statistical Agencies"
       ],
@@ -7544,6 +7946,76 @@
         "statistics"
       ],
       "summary": "State and local government employment and payroll",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Annual Survey of State and Local Government Finances (`timeseries/govslocalfin`), 2017 to the latest published year. Amounts by aggregate and government type. GET is the official example columns (NAME, YEAR, AGG_DESC, GOVTYPE, AMOUNT); `*_LABEL` attributes are not GET variables.",
+      "method": "GET",
+      "operation_id": "census_public_finance_local",
+      "parameters": [
+        {
+          "description": "Fiscal year (YYYY, 2017 to the latest published; required).",
+          "example": "2024",
+          "location": "query",
+          "name": "year",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fiscal year (YYYY, 2017 to the latest published; required).",
+            "title": "Year"
+          }
+        },
+        {
+          "description": "us or state (every state, or one with state=).",
+          "example": "us",
+          "location": "query",
+          "name": "geo",
+          "required": false,
+          "schema": {
+            "default": "state",
+            "description": "us or state (every state, or one with state=).",
+            "title": "Geo",
+            "type": "string"
+          }
+        },
+        {
+          "description": "State postal code when geo=state.",
+          "example": "CA",
+          "location": "query",
+          "name": "state",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "State postal code when geo=state.",
+            "title": "State"
+          }
+        }
+      ],
+      "path": "/api/v1/census/public-finance/local",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "State and local government finances by level of government",
       "tags": [
         "Statistical Agencies"
       ],
@@ -8759,6 +9231,71 @@
         "statistics"
       ],
       "summary": "Small-area poverty and median household income",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Population by number of social-vulnerability components from the Census Bureau's Community Resilience Estimates (`{year}/cre`), one vintage (2016 to the latest published). `geo` is the nation, every state (or one), or the counties of one state. Tract and metro geographies stay out. A year past the latest is an empty answer with a reason.",
+      "method": "GET",
+      "operation_id": "census_welfare_resilience",
+      "parameters": [
+        {
+          "description": "CRE vintage (YYYY, 2016 to the latest published; required).",
+          "example": "2024",
+          "location": "query",
+          "name": "year",
+          "required": true,
+          "schema": {
+            "description": "CRE vintage (YYYY, 2016 to the latest published; required).",
+            "title": "Year",
+            "type": "string"
+          }
+        },
+        {
+          "description": "us, state (every state, or one with state=) or county (the counties of one state; state= required).",
+          "example": "county",
+          "location": "query",
+          "name": "geo",
+          "required": false,
+          "schema": {
+            "default": "state",
+            "description": "us, state (every state, or one with state=) or county (the counties of one state; state= required).",
+            "title": "Geo",
+            "type": "string"
+          }
+        },
+        {
+          "description": "State postal code (CA, TX, DC, ...) when geo=state or county.",
+          "example": "CA",
+          "location": "query",
+          "name": "state",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "State postal code (CA, TX, DC, ...) when geo=state or county.",
+            "title": "State"
+          }
+        }
+      ],
+      "path": "/api/v1/census/welfare/resilience",
+      "request_body_required": false,
+      "required_parameters": [
+        "year"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Community resilience estimates (social vulnerability bands)",
       "tags": [
         "Statistical Agencies"
       ],
@@ -15623,6 +16160,119 @@
       "toolset": "statistics"
     },
     {
+      "description": "Receipt for a GENESIS table extraction. A slice GENESIS refuses with Status 98 is submitted as job=true and collected later at GET /destatis/extractions/{id}. job=true is sent only after that size gate (or when this instance already cached it for the exact code, window and contents); a slice that would have succeeded synchronously is not queued as a vendor job. Vendor job ids are not published. Long-tail admission: wait 0 s, 429 when the lane is busy. Requires DESTATIS_USERNAME and DESTATIS_PASSWORD: the API token cannot call job=true (vendor Status 12).",
+      "method": "POST",
+      "operation_id": "post_destatis_extractions",
+      "parameters": [],
+      "path": "/api/v1/destatis/extractions",
+      "request_body_required": true,
+      "request_body_schema": {
+        "additionalProperties": false,
+        "description": "Body for POST /destatis/extractions. Request model, not a generated response.",
+        "properties": {
+          "code": {
+            "description": "GENESIS table code, five digits, a hyphen, four more.",
+            "examples": [
+              "42131-0004"
+            ],
+            "pattern": "^[0-9]{5}-[0-9]{4}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "contents": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "pattern": "^([A-Za-z0-9]{1,16})(,([A-Za-z0-9]{1,16})){0,14}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional comma-separated GENESIS content variable codes.",
+            "examples": [
+              "PRODAW,UNT006"
+            ],
+            "title": "Contents"
+          },
+          "end_year": {
+            "default": 2025,
+            "description": "End year (YYYY).",
+            "examples": [
+              2025
+            ],
+            "maximum": 2026.0,
+            "minimum": 1990.0,
+            "title": "End Year",
+            "type": "integer"
+          },
+          "start_year": {
+            "default": 2023,
+            "description": "Start year (YYYY).",
+            "examples": [
+              2023
+            ],
+            "maximum": 2026.0,
+            "minimum": 1990.0,
+            "title": "Start Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "DestatisExtractionCreate",
+        "type": "object"
+      },
+      "required_parameters": [
+        "body"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Queue a Destatis extraction that is too large for a direct request",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "State of one extraction started at POST /destatis/extractions. queued or running carries no table. ready carries the tidy observations. A failed vendor job is a typed error, never 200 with empty data. Each GET makes at most one catalogue/jobs call and releases the GENESIS slot when that call returns. A finished result is fetched as ffcsv and deleted from the shared account store via profile/removeResult.",
+      "method": "GET",
+      "operation_id": "destatis_extractions_extraction_id",
+      "parameters": [
+        {
+          "description": "Sugra extraction id from POST /destatis/extractions.",
+          "example": "dex_0123456789abcdef",
+          "location": "path",
+          "name": "extraction_id",
+          "required": true,
+          "schema": {
+            "description": "Sugra extraction id from POST /destatis/extractions.",
+            "pattern": "^dex_[0-9a-f]{16}$",
+            "title": "Extraction Id",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/destatis/extractions/{extraction_id}",
+      "request_body_required": false,
+      "required_parameters": [
+        "extraction_id"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Collect a Destatis extraction",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
       "description": "The 9-digit PRODCOM equivalent for German manufacturing, served from the harvested 42131BJ203 snapshot (GP2019, annual, 2019 to 2025). Never a live GENESIS call: a valid filtered cubefile is 13.2 s and an invalid key is 36.8 s. The cube is not product-complete (4,818 codes against 5,018 on the table route). A code absent from the snapshot is reported as absent, with `table_fallback` naming /destatis/table/42131-0004, never as a 404 that implies it does not exist. Every answer names its classification vintage. GP2009 and GP2026 9-digit harvests are not committed; those vintages are harvest_blocked with the same table fallback, not a 404.",
       "method": "GET",
       "operation_id": "destatis_production",
@@ -16090,7 +16740,7 @@
       "toolset": "statistics"
     },
     {
-      "description": "Fetch any Destatis GENESIS table by its code (five digits, a hyphen, four more), the same code /destatis/search and /destatis/statistics/{code}/tables already hand out. Thirteen curated shortcuts stay on /destatis/{table}. This long-tail route is admission-controlled: one in-flight request per API key, a platform cap of 720 uncached fetches per UTC day (tunable DESTATIS_LONGTAIL_DAILY), and it never waits for the shared GENESIS slot - a busy lane is 429 with Retry-After. A table too large for a direct request is refused with both levers that work: a narrower year window, and a contents slice. Optional `classifying` is VARIABLE:KEY, e.g. GP19A2:GP19-05, taken from /destatis/variables/{code}/values. Repeat the parameter for more than one variable (five classifying plus one regional). A key that is not in that value list is refused here with HTTP 400 and is never sent upstream: GENESIS answers Status 0 and the whole cube for an invalid classifying key. The answer may be served from cache; a cache hit is free and is not counted against the budget.",
+      "description": "Fetch any Destatis GENESIS table by its code (five digits, a hyphen, four more), the same code /destatis/search and /destatis/statistics/{code}/tables already hand out. Thirteen curated shortcuts stay on /destatis/{table}. This long-tail route is admission-controlled: one in-flight request per API key, a platform cap of 720 uncached fetches per UTC day (tunable DESTATIS_LONGTAIL_DAILY), and it never waits for the shared GENESIS slot - a busy lane is 429 with Retry-After. A table too large for a direct request is refused with both levers that work: a narrower year window, and a contents slice. Optional `classifying` is VARIABLE:KEY, e.g. GP19A2:GP19-05, taken from /destatis/variables/{code}/values. Repeat the parameter for more than one variable (five classifying plus one regional). A key that is not in that value list is refused here with HTTP 400 and is never sent upstream: GENESIS answers Status 0 and the whole cube for an invalid classifying key. The same slice can be served through POST /destatis/extractions (GENESIS job=true) instead of this 413. The answer may be served from cache; a cache hit is free and is not counted against the budget.",
       "method": "GET",
       "operation_id": "destatis_table_code",
       "parameters": [
@@ -34298,6 +34948,92 @@
       "toolset": "trade"
     },
     {
+      "description": "List curated Statistics Poland BDL series for Poland totals.",
+      "method": "GET",
+      "operation_id": "gus_catalog",
+      "parameters": [],
+      "path": "/api/v1/gus/catalog",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Available GUS series",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Fetch Polish official statistics by series key. Use /gus/catalog for available series. Poland totals only (unit-id 000000000000).",
+      "method": "GET",
+      "operation_id": "gus_series",
+      "parameters": [
+        {
+          "description": "GUS series key (see /gus/catalog).",
+          "location": "path",
+          "name": "series",
+          "required": true,
+          "schema": {
+            "description": "GUS series key (see /gus/catalog).",
+            "title": "Series",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Start year: 2020 or 2020-01.",
+          "location": "query",
+          "name": "start_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Start year: 2020 or 2020-01.",
+            "title": "Start Period"
+          }
+        },
+        {
+          "description": "End year: 2024 or 2024-12.",
+          "location": "query",
+          "name": "end_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "End year: 2024 or 2024-12.",
+            "title": "End Period"
+          }
+        }
+      ],
+      "path": "/api/v1/gus/{series}",
+      "request_body_required": false,
+      "required_parameters": [
+        "series"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "GUS series data",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
       "description": "Datasets tagged to a country group. HDX uses lowercase ISO-3 alpha codes (e.g. `sdn` = Sudan, `ukr` = Ukraine, `afg` = Afghanistan) as CKAN group slugs. Results are sorted by newest `metadata_modified` first. Page with `rows` and `start`; upstream caps `rows` at 1000.",
       "method": "GET",
       "operation_id": "hdx_country_iso3",
@@ -49765,7 +50501,7 @@
       "toolset": "statistics"
     },
     {
-      "description": "List all available INSEE BDM series for France.",
+      "description": "List INSEE BDM series and Melodi national cubes for France.",
       "method": "GET",
       "operation_id": "insee_catalog",
       "parameters": [],
@@ -49783,7 +50519,7 @@
       "toolset": "statistics"
     },
     {
-      "description": "Fetch French economic data by series key. Use /insee/catalog for available series. Data includes CPI, GDP, unemployment, industrial production, trade, consumer confidence.",
+      "description": "Fetch French economic data by series key. Use /insee/catalog for available series. BDM covers CPI, GDP, unemployment, industry, trade and confidence. Melodi adds population, wages, housing-stock and poverty-rate.",
       "method": "GET",
       "operation_id": "insee_series",
       "parameters": [
@@ -50008,6 +50744,92 @@
         "Insiders"
       ],
       "toolset": "markets"
+    },
+    {
+      "description": "List curated ISTAT SDMX series for Italy totals.",
+      "method": "GET",
+      "operation_id": "istat_catalog",
+      "parameters": [],
+      "path": "/api/v1/istat/catalog",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Available ISTAT series",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Fetch Italian official statistics by series key. Use /istat/catalog for available series. Italy totals only. Host esploradati.istat.it/SDMXWS.",
+      "method": "GET",
+      "operation_id": "istat_series",
+      "parameters": [
+        {
+          "description": "ISTAT series key (see /istat/catalog).",
+          "location": "path",
+          "name": "series",
+          "required": true,
+          "schema": {
+            "description": "ISTAT series key (see /istat/catalog).",
+            "title": "Series",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Start period: 2020, 2020-01 or 2020-Q1.",
+          "location": "query",
+          "name": "start_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Start period: 2020, 2020-01 or 2020-Q1.",
+            "title": "Start Period"
+          }
+        },
+        {
+          "description": "End period: 2024, 2024-12 or 2024-Q4.",
+          "location": "query",
+          "name": "end_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "End period: 2024, 2024-12 or 2024-Q4.",
+            "title": "End Period"
+          }
+        }
+      ],
+      "path": "/api/v1/istat/{series}",
+      "request_body_required": false,
+      "required_parameters": [
+        "series"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "ISTAT series data",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
     },
     {
       "description": "OHLC price data with volume, open interest, and bid/ask. Like financial exchange candlesticks but for prediction markets. Periods: 1 (minute), 60 (hour), 1440 (day).",
@@ -91467,5 +92289,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "d2b0fee7436976f78715b4f1ec983fdb53eaa97913f32c015fdd8fe79bc7e283"
+  "spec_sha256": "f5de6b0b99687457ba4e13a8c1d09ab0e1525bf9cd7fe309e19b502ec7443233"
 }
