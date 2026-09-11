@@ -286,3 +286,29 @@ async def test_the_request_id_key_is_absent_when_the_header_is_not_sent() -> Non
         await client.aclose()
 
     assert "request_id" not in result
+
+
+# ---- MCP-19: a redirect is an HTTP failure with a status, not an empty string ----
+
+
+async def test_http_3xx_is_a_structured_http_error() -> None:
+    """The client does not follow redirects, and a 307 carries no JSON body.
+    The old `>= 400` gate let it through the success path, where the failed
+    JSON decode produced {"error": ""} - a failure with an EMPTY reason, no
+    status and no url. A non-2xx answer is an HTTP failure whatever its class."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            307, headers={"Location": "https://api.test/api/v1/kalshi/events/"}, request=request
+        )
+
+    client = _client(handler)
+    try:
+        result = await client.get("/api/v1/kalshi/events")
+    finally:
+        await client.aclose()
+
+    assert result["error"] == "HTTP 307"
+    assert result["status_code"] == 307
+    assert result["url"] == "https://api.test/api/v1/kalshi/events"
+    assert isinstance(result["elapsed_ms"], int)

@@ -35,7 +35,8 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Literal
+import re
+from typing import Any, Literal, get_args
 
 from typing_extensions import TypedDict
 
@@ -62,6 +63,51 @@ _registered_global = False
 # Envelope statuses allowed onto telemetry spans. Anything outside this set is
 # dropped so free-text upstream values can never reach App Insights.
 _KNOWN_STATUSES = frozenset({"full", "partial", "resolved", "ambiguous", "none", "low_confidence"})
+
+# The metrics get_timeseries accepts, as ONE type so the tool signature and
+# the recipe_version allowlist below cannot drift apart.
+MetricName = Literal["price", "macro_series", "etf_flows", "etf_monthly_flows"]
+_TIMESERIES_METRICS: tuple[str, ...] = get_args(MetricName)
+
+# The recipe_version values the plane composes: "<recipe>@<n>" for a snapshot
+# recipe (the get_snapshot docstring lists the same seven; a test keeps the
+# two in step) and "timeseries.<metric>@<n>" for a series. The value is
+# attached to a span only for a name in this set: the extractor IS the
+# privacy allowlist for its dimensions, and since MCP-19 a partial envelope
+# (an error note beside data) is a success that reaches it, so the value must
+# be bounded to a known SET, not just a shape - a shape check alone still
+# passed "user_ssn_123456789@1" (codex r2). The first cut of this set named
+# only the snapshot recipes and would have dropped timeseries.price@1, the
+# majority of the dimension's live volume (verification pass): a dimension
+# is bounded to its LIVE distinct values, never to one producer's format. A
+# recipe the plane adds later is DROPPED from spans until it is added here,
+# never exported unseen; that mirrors _KNOWN_STATUSES above.
+_SNAPSHOT_RECIPES = frozenset({
+    "company_snapshot",
+    "etf_snapshot",
+    "quote_snapshot",
+    "macro_indicator_snapshot",
+    "macro_calendar",
+    "earnings_snapshot",
+    "debt_snapshot",
+})
+_KNOWN_RECIPES = _SNAPSHOT_RECIPES | frozenset(f"timeseries.{metric}" for metric in _TIMESERIES_METRICS)
+# The version is the small positive integer the plane bumps when a recipe's
+# composition changes: 1 to 999, no leading zero. A bounded NUMBER keeps the
+# dimension useful across a bump, where a fixed list of versions would go
+# quiet on the first one (the "silently blinds KQL" failure the release rule
+# warns about), and three digits leave no room for text or an identifier.
+_RECIPE_VERSION_RE = re.compile(r"([a-z][a-z0-9_.]{0,63})@([1-9][0-9]{0,2})")
+
+
+def _known_recipe_version(value: Any) -> str | None:
+    """The value itself when it is "<known recipe>@<1..999>", else None."""
+    if not isinstance(value, str):
+        return None
+    match = _RECIPE_VERSION_RE.fullmatch(value)
+    if match is None or match.group(1) not in _KNOWN_RECIPES:
+        return None
+    return value
 
 logger = logging.getLogger("sugra_mcp.agent")
 
@@ -108,8 +154,8 @@ def _agent_result_attrs(result: Any) -> dict[str, Any]:
     attrs: dict[str, Any] = {}
     if not isinstance(result, dict):
         return attrs
-    recipe_version = result.get("recipe_version")
-    if isinstance(recipe_version, str):
+    recipe_version = _known_recipe_version(result.get("recipe_version"))
+    if recipe_version is not None:
         attrs["mcp.agent.recipe_version"] = recipe_version
     status = result.get("status")
     if isinstance(status, str) and status in _KNOWN_STATUSES:
@@ -183,7 +229,7 @@ async def get_snapshot(recipe: str, entity: AgentEntity) -> dict[str, Any]:
 
 @trace_mcp_tool("get_timeseries", result_attrs=_agent_result_attrs)
 async def get_timeseries(
-    metric: Literal["price", "macro_series", "etf_flows", "etf_monthly_flows"],
+    metric: MetricName,
     entity: AgentEntity,
     granularity: str = "1d",
     max_points: int = 500,

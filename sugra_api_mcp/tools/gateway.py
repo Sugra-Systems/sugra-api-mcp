@@ -543,11 +543,15 @@ async def fetch_data(
                 "candidate_endpoints": results,
             }
 
-        # All required params satisfied — delegate to the same call path as
+        # All required params satisfied - delegate to the same call path as
         # call_endpoint so behavior is identical (path resolution, query/body
-        # routing, response shaping).
+        # routing, response shaping). operation_id goes by KEYWORD: the
+        # delegate is the decorated tool, and its span reads the operation
+        # from kwargs only (a positional first argument is a raw query on
+        # other tools). Passed positionally, every delegated failure was a
+        # call_endpoint span with no operation at all.
         return await call_endpoint(
-            operation_id,
+            operation_id=operation_id,
             params=clean_params,
             body=body,
             limit=limit,

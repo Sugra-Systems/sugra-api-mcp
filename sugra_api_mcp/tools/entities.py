@@ -63,7 +63,7 @@ _FALLBACK_DISCLAIMER = (
 
 
 def _is_error(payload: Any) -> bool:
-    """The client returns a flat {error, status_code, url} dict on >=400."""
+    """The client returns a flat {error, status_code, url} dict on any non-2xx."""
     return is_error_payload(payload)
 
 
