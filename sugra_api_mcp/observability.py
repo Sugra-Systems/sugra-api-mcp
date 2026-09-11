@@ -92,11 +92,14 @@ _HTTP_CLASS_ERROR_CODES: dict[int, str] = {
 def _http_status_error_code(status: Any) -> str | None:
     """The span code for an HTTP status, or None when the value cannot be one.
 
-    Entered by exact type: bool is a subclass of int, and "503" is a string a
-    client could echo - neither may reach the table. 1xx/2xx carry no failure
-    semantics, so a dict pairing one with an error key keeps the residual code.
+    Entered by exact type: "503" is a string a client could echo, and a float
+    is not a status - neither may reach the table. bool is a subclass of int,
+    but True and False are 1 and 0, so the range test below already excludes
+    them (an explicit bool guard was dead code: no test could observe it).
+    1xx/2xx carry no failure semantics, so a dict pairing one with an error
+    key keeps the residual code.
     """
-    if isinstance(status, bool) or not isinstance(status, int):
+    if not isinstance(status, int):
         return None
     if status in _HTTP_STATUS_ERROR_CODES:
         return _HTTP_STATUS_ERROR_CODES[status]

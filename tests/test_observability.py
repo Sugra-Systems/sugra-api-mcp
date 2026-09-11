@@ -655,18 +655,55 @@ def test_setup_preserves_operator_otel_service_name_override(monkeypatch) -> Non
 # ---- MCP-19: an HTTP failure is named by its STATUS, never by the API's text ----
 
 
+# Attribute names a span may carry on each path. A privacy assertion that only
+# scans STRING values for ONE sentinel let a mutation attach the whole error
+# text under a new key as a list, and another attach the url under a key no
+# sentinel was seeded in - both survived every test (codex r1). Pinning the
+# name set kills both; the sentinels below then guard the values.
+_BASE_ATTRS = frozenset({"mcp.tool.name", "mcp.success", "mcp.duration_ms"})
+_FAILURE_ATTRS = _BASE_ATTRS | {"mcp.error.code"}
+
 _API_TEXT = "Unknown ticker NOPE for user@example.com (token=abc123)"
+_API_URL = "https://sugra.ai/api/v1/quotes/SECRETSYM-IN-URL/price?apikey=urlsecret"
+_API_REQUEST_ID = "req-SECRETREQID"
+_API_SENTINELS = ("user@example.com", "abc123", "SECRETSYM-IN-URL", "urlsecret", "SECRETREQID")
 
 
 def _http_failure(status: object) -> dict:
     """The dict SugraClient._handle builds for a non-2xx answer: the API's own
-    text sits at "error" for the caller, the status sits beside it."""
+    text sits at "error" for the caller, the status sits beside it, and every
+    other field carries its own sentinel so a leak of ANY of them is caught."""
     return {
         "error": _API_TEXT,
         "status_code": status,
-        "url": "https://sugra.ai/api/v1/quotes/NOPE/price",
+        "url": _API_URL,
         "elapsed_ms": 12,
+        "request_id": _API_REQUEST_ID,
     }
+
+
+def _leaves(value: object):
+    """Every scalar inside a possibly nested attribute value."""
+    if isinstance(value, dict):
+        for item in value.values():
+            yield from _leaves(item)
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        for item in value:
+            yield from _leaves(item)
+    else:
+        yield value
+
+
+def _assert_span_is_clean(span: _FakeSpan, allowed: frozenset[str], *sentinels: str) -> None:
+    """The span carries ONLY allowed attribute names, and no sentinel appears
+    in any value however it is nested or typed."""
+    extra = set(span.attributes) - allowed
+    assert not extra, f"unexpected span attributes: {sorted(extra)}"
+    for key, value in span.attributes.items():
+        for leaf in _leaves(value):
+            text = leaf if isinstance(leaf, str) else repr(leaf)
+            for sentinel in sentinels:
+                assert sentinel not in text, f"{sentinel!r} leaked into {key}={value!r}"
 
 
 @pytest.mark.parametrize(
@@ -707,18 +744,16 @@ def test_http_failure_is_named_by_status_not_by_text(monkeypatch, status: int, e
     span = tracer.spans[0]
     assert span.attributes["mcp.success"] is False
     assert span.attributes["mcp.error.code"] == expected
-    for key, value in span.attributes.items():
-        if isinstance(value, str):
-            assert "user@example.com" not in value, f"API text leaked into {key}"
-            assert "abc123" not in value, f"API text leaked into {key}"
+    _assert_span_is_clean(span, _FAILURE_ATTRS, *_API_SENTINELS)
 
 
 @pytest.mark.parametrize("status", ["503", True, None, 3.0, 200, 99, 600, -1])
 def test_status_that_is_not_an_http_failure_int_stays_unknown_error(monkeypatch, status: object) -> None:
     """Only an int in 300..599 can name a status. A string (a client that
-    echoes text), a bool (a subclass of int in Python), a float, a 2xx or an
-    out-of-range number all keep the residual code - the table is the ONLY
-    path from a value to a span attribute, and it is entered by exact type."""
+    echoes text), a bool (a subclass of int, but True is 1 and outside the
+    range), a float, a 2xx or an out-of-range number all keep the residual
+    code - the table is the ONLY path from a value to a span attribute, and
+    it is entered by exact type and exact range."""
     tracer = _install_fake_tracer(monkeypatch)
 
     @observability.trace_mcp_tool("call_endpoint")
@@ -730,9 +765,7 @@ def test_status_that_is_not_an_http_failure_int_stays_unknown_error(monkeypatch,
     span = tracer.spans[0]
     assert span.attributes["mcp.success"] is False
     assert span.attributes["mcp.error.code"] == "unknown_error"
-    for value in span.attributes.values():
-        if isinstance(value, str):
-            assert "user@example.com" not in value
+    _assert_span_is_clean(span, _FAILURE_ATTRS, *_API_SENTINELS)
 
 
 def test_allowlisted_code_wins_over_the_status_beside_it(monkeypatch) -> None:
@@ -747,7 +780,9 @@ def test_allowlisted_code_wins_over_the_status_beside_it(monkeypatch) -> None:
 
     asyncio.run(fake_snapshot())
 
-    assert tracer.spans[0].attributes["mcp.error.code"] == "agent_plane_unavailable"
+    span = tracer.spans[0]
+    assert span.attributes["mcp.error.code"] == "agent_plane_unavailable"
+    _assert_span_is_clean(span, _FAILURE_ATTRS, "plane text")
 
 
 def test_every_status_derived_code_is_allowlisted() -> None:
@@ -778,17 +813,15 @@ def test_partial_success_envelope_with_data_is_a_success(monkeypatch) -> None:
 
     span = tracer.spans[0]
     assert span.attributes["mcp.success"] is True
-    assert "mcp.error.code" not in span.attributes
-    for value in span.attributes.values():
-        if isinstance(value, str):
-            assert "one component stale" not in value
+    _assert_span_is_clean(span, _BASE_ATTRS, "one component stale")
 
 
 @pytest.mark.parametrize("error_value", ["", None, {"code": "nested"}, 42])
 def test_error_key_without_data_is_a_failure_whatever_its_type(monkeypatch, error_value: object) -> None:
     """The same definition from the other side: an "error" key with no "data"
-    is a failure even when the value is empty or not a string (a 3xx used to
-    yield {"error": ""} which the old string test read as SUCCESS)."""
+    is a failure whatever the type of its value. An empty string is still a
+    string, so that one already counted; None, a dict and a number read as
+    SUCCESS under the old string test and are failures now."""
     tracer = _install_fake_tracer(monkeypatch)
 
     @observability.trace_mcp_tool("call_endpoint")
@@ -817,6 +850,78 @@ def test_entity_and_keyless_codes_pass_the_allowlist(monkeypatch, code: str) -> 
 
     span = tracer.spans[0]
     assert span.attributes["mcp.error.code"] == code
-    for value in span.attributes.values():
-        if isinstance(value, str):
-            assert "free text stays out of spans" not in value
+    _assert_span_is_clean(span, _FAILURE_ATTRS, "free text stays out of spans")
+
+
+# ---- MCP-19 (codex r1 S2): a partial envelope now reaches the agent extractor ----
+
+
+_AGENT_SUCCESS_ATTRS = _BASE_ATTRS | {
+    "mcp.agent.recipe_version",
+    "mcp.agent.status",
+    "mcp.agent.units",
+    "mcp.agent.downstream_calls",
+    "mcp.agent.stale",
+}
+
+
+def test_agent_extractor_drops_a_recipe_version_that_is_not_one(monkeypatch) -> None:
+    """A partial envelope (an error note beside data) is a success now, so
+    the real agent extractor runs on it. recipe_version is attached only in
+    the plane's `<recipe>@<n>` shape; text carrying a token stays off the
+    span, and so does the error note, while the bounded dimensions land."""
+    from sugra_api_mcp.tools.agent import _agent_result_attrs
+
+    tracer = _install_fake_tracer(monkeypatch)
+
+    @observability.trace_mcp_tool("get_snapshot", result_attrs=_agent_result_attrs)
+    async def fake_snapshot() -> dict:
+        return {
+            "data": {"price": {"price": 1.0}},
+            "error": "partial: quote component stale for SECRETTICKER",
+            "recipe_version": "user@example.com token=abc123",
+            "status": "partial",
+            "freshness": {"class": "computed_mixed", "stale": True},
+            "billing": {"rate_limit_cost": 2, "downstream_calls": 3, "remaining": 40},
+        }
+
+    asyncio.run(fake_snapshot())
+
+    span = tracer.spans[0]
+    assert span.attributes["mcp.success"] is True
+    assert "mcp.agent.recipe_version" not in span.attributes
+    assert span.attributes["mcp.agent.status"] == "partial"
+    assert span.attributes["mcp.agent.units"] == 2
+    assert span.attributes["mcp.agent.stale"] is True
+    _assert_span_is_clean(
+        span, _AGENT_SUCCESS_ATTRS, "user@example.com", "abc123", "SECRETTICKER", "quote component"
+    )
+
+
+@pytest.mark.parametrize("value", ["company_snapshot@1", "etf_snapshot@12", "macro_indicator_snapshot@3"])
+def test_agent_extractor_keeps_a_well_formed_recipe_version(value: str) -> None:
+    from sugra_api_mcp.tools.agent import _agent_result_attrs
+
+    assert _agent_result_attrs({"recipe_version": value})["mcp.agent.recipe_version"] == value
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "",
+        "company_snapshot",
+        "@1",
+        "Company_Snapshot@1",
+        "company snapshot@1",
+        "company_snapshot@1 extra",
+        "company_snapshot@1\n",
+        "x" * 70 + "@1",
+        "company_snapshot@1234567",
+        None,
+        3,
+    ],
+)
+def test_agent_extractor_rejects_a_malformed_recipe_version(value: object) -> None:
+    from sugra_api_mcp.tools.agent import _agent_result_attrs
+
+    assert "mcp.agent.recipe_version" not in _agent_result_attrs({"recipe_version": value})

@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Any, Literal
 
 from typing_extensions import TypedDict
@@ -62,6 +63,16 @@ _registered_global = False
 # Envelope statuses allowed onto telemetry spans. Anything outside this set is
 # dropped so free-text upstream values can never reach App Insights.
 _KNOWN_STATUSES = frozenset({"full", "partial", "resolved", "ambiguous", "none", "low_confidence"})
+
+# recipe_version is response metadata the plane composes as "<recipe>@<n>"
+# (company_snapshot@1). It is attached only in exactly that shape: the
+# extractor IS the privacy allowlist for its dimensions, and since MCP-19 a
+# partial envelope (an error note beside data) is a success that reaches it,
+# so a value that is not a recipe version - text from such an envelope, a
+# future free-form field - must stay off the span. A shape check does that
+# without the MCP carrying a copy of the plane's recipe manifest that would
+# drift out of step with it.
+_RECIPE_VERSION_RE = re.compile(r"[a-z][a-z0-9_]{0,63}@[0-9]{1,6}")
 
 logger = logging.getLogger("sugra_mcp.agent")
 
@@ -109,7 +120,7 @@ def _agent_result_attrs(result: Any) -> dict[str, Any]:
     if not isinstance(result, dict):
         return attrs
     recipe_version = result.get("recipe_version")
-    if isinstance(recipe_version, str):
+    if isinstance(recipe_version, str) and _RECIPE_VERSION_RE.fullmatch(recipe_version):
         attrs["mcp.agent.recipe_version"] = recipe_version
     status = result.get("status")
     if isinstance(status, str) and status in _KNOWN_STATUSES:
