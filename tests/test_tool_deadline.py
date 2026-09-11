@@ -141,21 +141,25 @@ async def test_the_configured_budget_is_what_wraps_dispatch(monkeypatch) -> None
         captured.append(delay)
         return real_timeout(delay)
 
-    monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "7")
+    # codex round 2: the budget must sit BELOW any floor a regression could
+    # introduce, or the capture cannot see it. A 7s capture passed happily
+    # while asyncio.timeout(max(0.75, deadline)) was in place; 0.25s does not.
+    monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "0.25")
     monkeypatch.setattr(server_mod.asyncio, "timeout", _capture)
     # An inherited stamp far older than the budget: the shape that refused
-    # every call in production.
+    # every call in production. Under the old code no timeout was entered at
+    # all, so 0.25 would be missing from the capture for that reason instead.
     token = request_started_at.set(time.monotonic() - 30.0)
     try:
         async with create_connected_server_and_client_session(mcp) as session:
-            result = await session.call_tool("list_toolsets", {})
+            await session.call_tool("list_toolsets", {})
     finally:
         request_started_at.reset(token)
 
-    assert result.isError is not True, _structured(result)
-    assert 7.0 in captured, (
-        f"dispatch was wrapped in {captured}, not the configured 7s - a stamp "
-        "30s old still shortened the budget")
+    assert 0.25 in captured, (
+        f"dispatch was wrapped in {captured}, not the configured 0.25s - "
+        "either a stamp 30s old still shortened the budget, or a floor was "
+        "applied underneath it")
 
 
 async def test_a_long_lived_session_still_dispatches_tools(monkeypatch) -> None:
@@ -208,3 +212,51 @@ def test_a_budget_that_cannot_bound_anything_is_refused(monkeypatch) -> None:
 
     monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "40")
     assert load_config(require_api_key=False).tool_deadline == 40.0
+
+
+def test_startup_refuses_a_budget_that_cannot_bound_anything(monkeypatch) -> None:
+    """MCP-17 (codex F5): the refusal must happen where an operator sees it.
+
+    The guard lived in load_config, but no startup path called load_config, so
+    SUGRA_TOOL_DEADLINE=0 started cleanly, answered /health with 200, and first
+    surfaced as an unstructured HTTP 500 raised out of AuthMiddleware on the
+    first authenticated request. This drives the real entry point and proves
+    the transport is never reached.
+    """
+    import argparse
+
+    from sugra_api_mcp.__main__ import _run_server
+    from sugra_api_mcp.server import mcp as server_mcp
+
+    def _must_not_run(*args, **kwargs):
+        raise AssertionError("the transport started on an invalid budget")
+
+    monkeypatch.setattr(server_mcp, "run", _must_not_run)
+    monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "0")
+    with pytest.raises(ValueError, match="SUGRA_TOOL_DEADLINE"):
+        _run_server(argparse.Namespace(transport="stdio"))
+
+
+def test_startup_refuses_a_budget_the_client_would_outlive(monkeypatch) -> None:
+    """MCP-17 (codex F4): the tool budget and the auth budget are sequential.
+
+    Dispatch is bounded by SUGRA_TOOL_DEADLINE and auth by its own slice, so
+    the server-side worst case is their SUM, reached on a cold auth. If that
+    sum passes the floor of documented client timeouts, the client cuts the
+    connection before the typed envelope arrives - which is the failure the
+    budget exists to prevent. The relationship is now checked rather than
+    assumed.
+    """
+    from sugra_api_mcp.auth import AUTH_BUDGET_SECONDS
+    from sugra_api_mcp.config import (
+        CLIENT_TIMEOUT_FLOOR_SECONDS,
+        validate_startup_budgets,
+    )
+
+    monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "40")
+    validate_startup_budgets()  # the shipped default must pass
+
+    too_big = CLIENT_TIMEOUT_FLOOR_SECONDS - AUTH_BUDGET_SECONDS + 1
+    monkeypatch.setenv("SUGRA_TOOL_DEADLINE", str(too_big))
+    with pytest.raises(ValueError, match="client timeouts"):
+        validate_startup_budgets()

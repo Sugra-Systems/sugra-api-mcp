@@ -70,14 +70,49 @@ def load_config(*, require_api_key: bool = True) -> Config:
     )
 
 
+# The lowest tool timeout an MCP client is documented to use: the canonical
+# timeout chain records clients cutting at 60-180s. The server must be able to
+# answer with its typed envelope before the earliest of those, so the whole
+# server-side path - auth plus dispatch - has to fit underneath this.
+CLIENT_TIMEOUT_FLOOR_SECONDS = 60.0
+
+
+def validate_startup_budgets() -> None:
+    """Refuse a configuration whose server-side path can outlive the client.
+
+    MCP-17 (codex F4/F5). The tool budget bounds DISPATCH, and auth is bounded
+    separately by AuthMiddleware, so the server-side worst case is the SUM of
+    the two, reached only on a cold auth. That sum is what has to stay under
+    the client's own cut, or the typed timeout envelope never arrives and the
+    caller sees a dead connection instead - the exact failure the budget was
+    introduced to prevent.
+
+    Called from both transports at startup. Previously nothing called
+    load_config on the startup path at all, so a nonpositive budget started
+    happily and surfaced as an unstructured HTTP 500 from inside the auth
+    middleware on the first authenticated request.
+    """
+    from .auth import AUTH_BUDGET_SECONDS
+
+    total = load_config(require_api_key=False).tool_deadline
+    worst_case = total + AUTH_BUDGET_SECONDS
+    if worst_case > CLIENT_TIMEOUT_FLOOR_SECONDS:
+        raise ValueError(
+            f"SUGRA_TOOL_DEADLINE={total:g}s plus the {AUTH_BUDGET_SECONDS:g}s "
+            f"auth budget is {worst_case:g}s, past the "
+            f"{CLIENT_TIMEOUT_FLOOR_SECONDS:g}s floor of documented client "
+            "timeouts. A client would cut the connection before the timeout "
+            "envelope arrives."
+        )
+
+
 def _positive_seconds(var: str, default: str) -> float:
     """Parse a seconds budget, refusing values that cannot bound anything.
 
     MCP-17 (codex F2): the budget went straight to asyncio.timeout. Zero
     cancelled every call the instant it started and a negative value did the
     same, both silently - the operator saw tools that "always time out" with
-    no hint that the configuration was the cause. A budget must be a finite
-    positive number of seconds or the process refuses to start.
+    no hint that the configuration was the cause.
     """
     raw = os.environ.get(var, default).strip() or default
     try:

@@ -167,8 +167,8 @@ class SugraFastMCP(FastMCP):
             payload = {
                 "error": "deadline_exceeded",
                 "message": (
-                    f"Tool call exceeded the {deadline:.0f}s end-to-end "
-                    "budget and was cancelled server-side."
+                    f"Tool call exceeded its {deadline:.0f}s dispatch budget "
+                    "and was cancelled server-side."
                 ),
                 "tool": name,
                 "deadline_s": deadline,
