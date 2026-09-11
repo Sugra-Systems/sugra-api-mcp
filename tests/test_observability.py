@@ -663,6 +663,24 @@ def test_setup_preserves_operator_otel_service_name_override(monkeypatch) -> Non
 _BASE_ATTRS = frozenset({"mcp.tool.name", "mcp.success", "mcp.duration_ms"})
 _FAILURE_ATTRS = _BASE_ATTRS | {"mcp.error.code"}
 
+# The one scalar type each attribute may carry. Checked with `type(value) is`
+# so a bool never passes as an int and a list never passes as a string: a
+# mutation wrapping the tool name in a list on one status survived the name
+# set and the sentinel scan alone (codex r2).
+_ATTR_TYPES: dict[str, type] = {
+    "mcp.tool.name": str,
+    "mcp.success": bool,
+    "mcp.duration_ms": int,
+    "mcp.error.code": str,
+    "mcp.operation_id": str,
+    "mcp.exception.type": str,
+    "mcp.agent.recipe_version": str,
+    "mcp.agent.status": str,
+    "mcp.agent.units": int,
+    "mcp.agent.downstream_calls": int,
+    "mcp.agent.stale": bool,
+}
+
 _API_TEXT = "Unknown ticker NOPE for user@example.com (token=abc123)"
 _API_URL = "https://sugra.ai/api/v1/quotes/SECRETSYM-IN-URL/price?apikey=urlsecret"
 _API_REQUEST_ID = "req-SECRETREQID"
@@ -695,11 +713,13 @@ def _leaves(value: object):
 
 
 def _assert_span_is_clean(span: _FakeSpan, allowed: frozenset[str], *sentinels: str) -> None:
-    """The span carries ONLY allowed attribute names, and no sentinel appears
-    in any value however it is nested or typed."""
+    """The span carries ONLY allowed attribute names, each value is exactly
+    the scalar type that name may carry, and no sentinel appears in any value
+    however it is nested or typed."""
     extra = set(span.attributes) - allowed
     assert not extra, f"unexpected span attributes: {sorted(extra)}"
     for key, value in span.attributes.items():
+        assert type(value) is _ATTR_TYPES[key], f"{key} carries {type(value).__name__}: {value!r}"
         for leaf in _leaves(value):
             text = leaf if isinstance(leaf, str) else repr(leaf)
             for sentinel in sentinels:
@@ -865,11 +885,22 @@ _AGENT_SUCCESS_ATTRS = _BASE_ATTRS | {
 }
 
 
-def test_agent_extractor_drops_a_recipe_version_that_is_not_one(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    "recipe_version",
+    [
+        "user@example.com token=abc123",  # not the shape at all
+        "user_ssn_123456789@1",  # the shape, but not a known recipe (codex r2)
+        "token_abc123@1",
+    ],
+)
+def test_agent_extractor_drops_a_recipe_version_that_is_not_a_known_recipe(
+    monkeypatch, recipe_version: str
+) -> None:
     """A partial envelope (an error note beside data) is a success now, so
-    the real agent extractor runs on it. recipe_version is attached only in
-    the plane's `<recipe>@<n>` shape; text carrying a token stays off the
-    span, and so does the error note, while the bounded dimensions land."""
+    the real agent extractor runs on it. recipe_version is attached only as
+    `<recipe>@<n>` for a recipe in the known set; a value that is merely
+    SHAPED like one stays off the span, and so does the error note, while the
+    bounded dimensions land."""
     from sugra_api_mcp.tools.agent import _agent_result_attrs
 
     tracer = _install_fake_tracer(monkeypatch)
@@ -879,7 +910,7 @@ def test_agent_extractor_drops_a_recipe_version_that_is_not_one(monkeypatch) -> 
         return {
             "data": {"price": {"price": 1.0}},
             "error": "partial: quote component stale for SECRETTICKER",
-            "recipe_version": "user@example.com token=abc123",
+            "recipe_version": recipe_version,
             "status": "partial",
             "freshness": {"class": "computed_mixed", "stale": True},
             "billing": {"rate_limit_cost": 2, "downstream_calls": 3, "remaining": 40},
@@ -894,12 +925,21 @@ def test_agent_extractor_drops_a_recipe_version_that_is_not_one(monkeypatch) -> 
     assert span.attributes["mcp.agent.units"] == 2
     assert span.attributes["mcp.agent.stale"] is True
     _assert_span_is_clean(
-        span, _AGENT_SUCCESS_ATTRS, "user@example.com", "abc123", "SECRETTICKER", "quote component"
+        span,
+        _AGENT_SUCCESS_ATTRS,
+        "user@example.com",
+        "abc123",
+        "123456789",
+        "SECRETTICKER",
+        "quote component",
     )
 
 
-@pytest.mark.parametrize("value", ["company_snapshot@1", "etf_snapshot@12", "macro_indicator_snapshot@3"])
-def test_agent_extractor_keeps_a_well_formed_recipe_version(value: str) -> None:
+@pytest.mark.parametrize(
+    "value",
+    ["company_snapshot@1", "etf_snapshot@12", "macro_indicator_snapshot@3", "debt_snapshot@2"],
+)
+def test_agent_extractor_keeps_a_known_recipe_at_a_numeric_version(value: str) -> None:
     from sugra_api_mcp.tools.agent import _agent_result_attrs
 
     assert _agent_result_attrs({"recipe_version": value})["mcp.agent.recipe_version"] == value
@@ -911,17 +951,34 @@ def test_agent_extractor_keeps_a_well_formed_recipe_version(value: str) -> None:
         "",
         "company_snapshot",
         "@1",
+        "company_snapshot@",
         "Company_Snapshot@1",
         "company snapshot@1",
         "company_snapshot@1 extra",
         "company_snapshot@1\n",
-        "x" * 70 + "@1",
         "company_snapshot@1234567",
+        "unknown_recipe@1",
+        "user_ssn_123456789@1",
+        "x" * 70 + "@1",
         None,
         3,
     ],
 )
-def test_agent_extractor_rejects_a_malformed_recipe_version(value: object) -> None:
+def test_agent_extractor_rejects_a_recipe_version_outside_the_known_set(value: object) -> None:
     from sugra_api_mcp.tools.agent import _agent_result_attrs
 
     assert "mcp.agent.recipe_version" not in _agent_result_attrs({"recipe_version": value})
+
+
+def test_known_recipes_match_the_get_snapshot_docstring() -> None:
+    """The set the extractor allowlists and the set the tool DOCUMENTS to
+    agents are the same manifest; a recipe added to one without the other is
+    either invisible in telemetry or promised but never attributed."""
+    import re
+
+    from sugra_api_mcp.tools.agent import _KNOWN_RECIPES, get_snapshot
+
+    documented = re.search(r"recipe \(([^)]*)\)", get_snapshot.__doc__ or "", flags=re.S)
+    assert documented is not None, "get_snapshot docstring no longer lists the recipes"
+    names = {name.strip() for name in documented.group(1).replace("\n", " ").split(",")}
+    assert names == set(_KNOWN_RECIPES)
