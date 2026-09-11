@@ -44,7 +44,14 @@ def _run_server(args: argparse.Namespace) -> None:
 
     # Import tools to register them with the FastMCP instance.
     from . import tools  # noqa: F401
+    from .config import validate_startup_budgets
     from .server import mcp
+
+    # MCP-17 (codex F5): fail on the startup path, where an operator sees it.
+    # Nothing here called load_config before, so a budget that cannot bound
+    # anything started cleanly and first appeared as an unstructured 500 from
+    # inside the auth middleware. Both transports validate.
+    validate_startup_budgets()
 
     transport: Literal["stdio", "streamable-http"] = args.transport
     if transport == "stdio":

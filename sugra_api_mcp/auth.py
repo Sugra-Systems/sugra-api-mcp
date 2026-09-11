@@ -59,9 +59,17 @@ JWKS_FETCH_TIMEOUT_SECONDS = 5.0
 # only what REMAINS of the total.
 AUTH_BUDGET_SECONDS = 15.0
 
-# Stamped by AuthMiddleware at request entry; SugraFastMCP.call_tool reads it
-# to compute the remaining budget. ContextVar so concurrent requests never
-# see each other's clock.
+# Stamped by AuthMiddleware at request entry, for diagnostics only.
+#
+# MCP-17: do NOT wire this back into the tool budget. call_tool used to
+# subtract it, and on the streamable-HTTP transport that took the hosted
+# gateway down for three weeks: the SDK starts the per-session server loop
+# from inside the request that creates the session, so the loop inherits that
+# request's contextvars and every later dispatch read the age of the session
+# instead of its own auth leg. A ContextVar cannot carry a value from the POST
+# that carries a tools/call to the dispatch that serves it - what is visible
+# at dispatch is always the session-creating request's stamp. Auth is bounded
+# on its own side instead, by the asyncio.timeout below.
 request_started_at: ContextVar[float | None] = ContextVar(
     "sugra_request_started_at", default=None)
 

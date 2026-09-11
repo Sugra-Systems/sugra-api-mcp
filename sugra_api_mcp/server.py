@@ -137,34 +137,29 @@ class SugraFastMCP(FastMCP):
         # of it. The middleware stamps the request start; what remains (with
         # a small floor so a slow-auth call still gets a real attempt) is the
         # tool budget. Stdio transport has no middleware stamp - full budget.
-        from .auth import request_started_at
-
+        # MCP-17: the budget is the tool's own, and auth is bounded separately.
+        #
+        # This used to subtract the auth leg, read from a ContextVar stamped by
+        # AuthMiddleware. That subtraction was unsound on the streamable-HTTP
+        # transport and took the hosted gateway down for three weeks. The SDK
+        # starts the per-session server loop with task_group.start() from
+        # INSIDE the request that creates the session, so the loop inherits
+        # that request's contextvars; every later dispatch on the session read
+        # the stamp of the request that OPENED it. Past one budget of session
+        # age, every tool call was refused before dispatch, for good.
+        #
+        # The transport offers no way to route a value from the POST that
+        # carries a tools/call to the dispatch that serves it: what is visible
+        # here is always the session-creating request's stamp and never this
+        # call's. An unattributable clock cannot shorten a budget, so it no
+        # longer does. Auth keeps its own bound - AuthMiddleware runs
+        # resolve() under min(AUTH_BUDGET_SECONDS, total) - which makes the
+        # end-to-end worst case total + AUTH_BUDGET_SECONDS, and only on a
+        # cold auth: a warm session resolves against the 60s access cache and
+        # the 300s key cache. That bound is stated rather than guessed at.
         total = load_config(require_api_key=False).tool_deadline
-        stamped = request_started_at.get()
         started = time.monotonic()
-        if stamped is None:
-            deadline = total  # stdio transport: no auth leg, full budget
-        else:
-            # codex final: the TOTAL is total - no floor (a floor let slow-
-            # but-passing auth push the request past the configured budget).
-            deadline = total - max(0.0, started - stamped)
-            if deadline <= 0:
-                payload = {
-                    "error": "deadline_exceeded",
-                    "message": (
-                        f"The {total:.0f}s request budget was consumed "
-                        "before tool dispatch."
-                    ),
-                    "tool": name,
-                    "deadline_s": total,
-                    "elapsed_ms": int((started - stamped) * 1000),
-                    "retry_hint": "Retry; if it repeats, the auth path is slow.",
-                }
-                return CallToolResult(
-                    isError=True,
-                    content=[TextContent(type="text", text=json.dumps(payload))],
-                    structuredContent=payload,
-                )
+        deadline = total
         try:
             async with asyncio.timeout(deadline):
                 result = await super().call_tool(name, arguments)
@@ -172,8 +167,8 @@ class SugraFastMCP(FastMCP):
             payload = {
                 "error": "deadline_exceeded",
                 "message": (
-                    f"Tool call exceeded the {deadline:.0f}s end-to-end "
-                    "budget and was cancelled server-side."
+                    f"Tool call exceeded its {deadline:.0f}s dispatch budget "
+                    "and was cancelled server-side."
                 ),
                 "tool": name,
                 "deadline_s": deadline,
