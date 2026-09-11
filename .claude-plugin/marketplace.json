@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "sugra-api-mcp",
+  "description": "Official Sugra API skills for agents that use the Sugra MCP gateway.",
+  "owner": {
+    "name": "Sugra Systems, Inc.",
+    "email": "support@sugra.systems",
+    "url": "https://sugra.systems"
+  },
+  "plugins": [
+    {
+      "name": "sugra-api",
+      "source": "./sugra_api_mcp/skills",
+      "description": "Official Sugra API skills: explore the catalog, envelope and attribution, auth and rate limits, hosted vs gateway, and a cross-domain briefing.",
+      "author": {
+        "name": "Sugra Systems, Inc.",
+        "email": "support@sugra.systems"
+      },
+      "homepage": "https://sugra.ai",
+      "repository": "https://github.com/Sugra-Systems/sugra-api-mcp",
+      "license": "MIT",
+      "keywords": ["sugra", "mcp", "catalog", "skills"],
+      "category": "development",
+      "skills": "./"
+    }
+  ]
+}
