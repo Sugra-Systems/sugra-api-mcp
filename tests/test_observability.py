@@ -937,7 +937,25 @@ def test_agent_extractor_drops_a_recipe_version_that_is_not_a_known_recipe(
 
 @pytest.mark.parametrize(
     "value",
-    ["company_snapshot@1", "etf_snapshot@12", "macro_indicator_snapshot@3", "debt_snapshot@2"],
+    [
+        # The six distinct values production spans carried over the 90 days to
+        # 2026-09-11 - the first cut of the allowlist rejected the sixth, the
+        # majority of the dimension's volume, and every fixture was a snapshot.
+        "quote_snapshot@1",
+        "company_snapshot@1",
+        "earnings_snapshot@1",
+        "macro_calendar@1",
+        "debt_snapshot@1",
+        "timeseries.price@1",
+        # The rest of the plane's manifest, and a bumped version.
+        "etf_snapshot@1",
+        "macro_indicator_snapshot@1",
+        "timeseries.macro_series@1",
+        "timeseries.etf_flows@1",
+        "timeseries.etf_monthly_flows@1",
+        "company_snapshot@12",
+        "timeseries.price@999",
+    ],
 )
 def test_agent_extractor_keeps_a_known_recipe_at_a_numeric_version(value: str) -> None:
     from sugra_api_mcp.tools.agent import _agent_result_attrs
@@ -956,9 +974,16 @@ def test_agent_extractor_keeps_a_known_recipe_at_a_numeric_version(value: str) -
         "company snapshot@1",
         "company_snapshot@1 extra",
         "company_snapshot@1\n",
+        "company_snapshot@0",
+        "company_snapshot@01",
+        "company_snapshot@1000",
         "company_snapshot@1234567",
         "unknown_recipe@1",
         "user_ssn_123456789@1",
+        "timeseries.price",
+        "timeseries.unknown@1",
+        "timeseries@1",
+        "price@1",
         "x" * 70 + "@1",
         None,
         3,
@@ -970,15 +995,49 @@ def test_agent_extractor_rejects_a_recipe_version_outside_the_known_set(value: o
     assert "mcp.agent.recipe_version" not in _agent_result_attrs({"recipe_version": value})
 
 
-def test_known_recipes_match_the_get_snapshot_docstring() -> None:
-    """The set the extractor allowlists and the set the tool DOCUMENTS to
-    agents are the same manifest; a recipe added to one without the other is
+def test_known_recipes_match_what_the_tools_document() -> None:
+    """The set the extractor allowlists and the sets the tools DOCUMENT and
+    ACCEPT are the same manifest: the snapshot recipes are the ones the
+    get_snapshot docstring lists, and the timeseries family is exactly the
+    metrics get_timeseries takes. A recipe added to one without the other is
     either invisible in telemetry or promised but never attributed."""
     import re
+    from typing import get_args
 
-    from sugra_api_mcp.tools.agent import _KNOWN_RECIPES, get_snapshot
+    from sugra_api_mcp.tools.agent import _KNOWN_RECIPES, MetricName, get_snapshot
 
     documented = re.search(r"recipe \(([^)]*)\)", get_snapshot.__doc__ or "", flags=re.S)
     assert documented is not None, "get_snapshot docstring no longer lists the recipes"
-    names = {name.strip() for name in documented.group(1).replace("\n", " ").split(",")}
-    assert names == set(_KNOWN_RECIPES)
+    snapshot_names = {name.strip() for name in documented.group(1).replace("\n", " ").split(",")}
+    series_names = {f"timeseries.{metric}" for metric in get_args(MetricName)}
+    assert len(series_names) == 4
+    assert snapshot_names | series_names == set(_KNOWN_RECIPES)
+
+
+def test_get_timeseries_envelope_keeps_its_recipe_version_on_the_span(monkeypatch) -> None:
+    """The plane's real series envelope shape through the real extractor: the
+    dimension must land, or every get_timeseries success span silently loses
+    it after the deploy - the regression a verification pass caught in the
+    first cut of the allowlist."""
+    from sugra_api_mcp.tools.agent import _agent_result_attrs
+
+    tracer = _install_fake_tracer(monkeypatch)
+
+    @observability.trace_mcp_tool("get_timeseries", result_attrs=_agent_result_attrs)
+    async def fake_timeseries() -> dict:
+        return {
+            "schema_version": "1",
+            "recipe_version": "timeseries.price@1",
+            "status": "full",
+            "data": {"points": [{"t": "2026-09-10", "v": 1.0}], "downsampled": False},
+            "freshness": {"class": "computed", "stale": False},
+            "billing": {"rate_limit_cost": 1, "downstream_calls": 1, "remaining": 40},
+        }
+
+    asyncio.run(fake_timeseries())
+
+    span = tracer.spans[0]
+    assert span.attributes["mcp.success"] is True
+    assert span.attributes["mcp.agent.recipe_version"] == "timeseries.price@1"
+    assert span.attributes["mcp.agent.status"] == "full"
+    _assert_span_is_clean(span, _AGENT_SUCCESS_ATTRS)
