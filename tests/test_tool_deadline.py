@@ -117,13 +117,22 @@ async def test_next_call_after_a_deadline_is_not_delayed(monkeypatch) -> None:
 
 async def test_total_budget_is_never_exceeded_by_the_floor(monkeypatch) -> None:
     """codex final: slow-but-passing auth must not add a floor on top of the
-    configured total - a stamped request whose budget is consumed answers
-    immediately with the typed envelope."""
+    configured total - what auth spent comes OUT of the tool's budget.
+
+    MCP-17 rewrote this. It used to stamp the request 5s into the past against
+    a 1.0s budget and assert the pre-dispatch refusal, which pinned the very
+    defect that broke production: a stamp that old cannot be this call's auth
+    leg (auth runs under min(AUTH_BUDGET_SECONDS, total)), it is an inherited
+    one. The invariant the test exists for is asserted here with a BELIEVABLE
+    stamp: 1.5s of auth against a 2.0s total leaves 0.5s for the tool, and the
+    two together must still fit inside the configured total.
+    """
     from sugra_api_mcp.auth import request_started_at
 
-    monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "1.0")
+    monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "2.0")
     monkeypatch.setattr(gateway, "get_client", lambda: _StallingClient())
-    token = request_started_at.set(time.monotonic() - 5.0)  # budget long gone
+    auth_cost = 1.5
+    token = request_started_at.set(time.monotonic() - auth_cost)
     try:
         started = time.monotonic()
         async with create_connected_server_and_client_session(mcp) as session:
@@ -136,5 +145,40 @@ async def test_total_budget_is_never_exceeded_by_the_floor(monkeypatch) -> None:
     assert result.isError is True
     payload = _structured(result)
     assert payload["error"] == "deadline_exceeded"
-    assert "before tool dispatch" in payload["message"]
-    assert elapsed < 1.0, f"consumed-budget call still ran {elapsed:.1f}s"
+    assert "end-to-end" in payload["message"]
+    assert auth_cost + elapsed < 2.0 + 0.5, (
+        f"auth spent {auth_cost:.1f}s and the tool then ran {elapsed:.1f}s - "
+        "a floor was added on top of the 2.0s total")
+
+
+async def test_a_long_lived_session_still_dispatches_tools(monkeypatch) -> None:
+    """MCP-17: a session older than the budget must still call tools.
+
+    The streamable-HTTP session loop is started with task_group.start() from
+    inside the request that creates the session, so it INHERITS that request's
+    contextvars - including the stamp AuthMiddleware just set. Every later tool
+    call on that session therefore read the SESSION's age instead of its own
+    auth leg, and past one budget every call was refused before dispatch,
+    permanently. Measured live 2026-09-11: elapsed_ms grew 45s -> 167s on one
+    connector session while the server answered unauthenticated probes in
+    240ms.
+    """
+    from sugra_api_mcp.auth import request_started_at
+
+    monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "40")
+    # A five-minute-old session. No auth leg can be this old: the auth slice is
+    # bounded by AUTH_BUDGET_SECONDS, so this stamp cannot belong to this call.
+    token = request_started_at.set(time.monotonic() - 300.0)
+    try:
+        async with create_connected_server_and_client_session(mcp) as session:
+            first = await session.call_tool("list_toolsets", {})
+            second = await session.call_tool("list_sources", {})
+    finally:
+        request_started_at.reset(token)
+
+    assert first.isError is not True, (
+        f"a 300s-old session was refused before dispatch: {_structured(first)}"
+    )
+    assert second.isError is not True, (
+        f"the second call on one session was refused: {_structured(second)}"
+    )
