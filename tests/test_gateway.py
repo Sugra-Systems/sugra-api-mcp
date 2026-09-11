@@ -610,3 +610,52 @@ async def test_gateway_body_tool_schemas_accept_arrays(monkeypatch) -> None:
         types = {sub.get("type") for sub in body_schema.get("anyOf", [])}
         assert {"object", "array"} <= types, f"{name} body schema rejects arrays: {body_schema}"
 
+
+# ---- MCP-19: the call_endpoint span behind fetch_data names its operation ----
+
+
+class _CaptureSpan:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.attributes: dict[str, object] = {}
+
+    def set_attribute(self, key: str, value: object) -> None:
+        self.attributes[key] = value
+
+    def set_status(self, status: object) -> None:
+        self.status = status
+
+    def end(self) -> None:
+        self.ended = True
+
+
+class _CaptureTracer:
+    def __init__(self) -> None:
+        self.spans: list[_CaptureSpan] = []
+
+    def start_span(self, name: str) -> _CaptureSpan:
+        span = _CaptureSpan(name)
+        self.spans.append(span)
+        return span
+
+
+async def test_fetch_data_delegation_names_the_operation_on_the_inner_span(monkeypatch) -> None:
+    """fetch_data delegates to the DECORATED call_endpoint, so every delegated
+    call emits a second span. The decorator reads operation_id from kwargs
+    only (a positional first argument may be a raw query on other tools), and
+    fetch_data passed it positionally - 155 call_endpoint failures over 90
+    days carried no operation at all, one for one with fetch_data's own."""
+    from sugra_api_mcp import observability
+
+    tracer = _CaptureTracer()
+    monkeypatch.setattr(observability, "_TRACER", tracer)
+    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
+    monkeypatch.setattr(gateway, "get_client", lambda: FakeClient())
+
+    result = await gateway.fetch_data(query="AAPL stock price", params={"symbol": "AAPL"})
+
+    assert "data" in result
+    inner = [span for span in tracer.spans if span.name == "mcp.tool.call_endpoint"]
+    assert len(inner) == 1
+    assert inner[0].attributes.get("mcp.operation_id") == "quotes_symbol_price"
+

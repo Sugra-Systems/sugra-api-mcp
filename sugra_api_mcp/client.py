@@ -226,7 +226,12 @@ class SugraClient:
             payload = response.json()
         except ValueError:
             payload = {"error": response.text[:500]}
-        if response.status_code >= 400:
+        # Any non-2xx answer is an HTTP failure. The client never follows
+        # redirects and a 3xx carries no JSON body, so under the old `>= 400`
+        # gate it fell through to the success path, where the failed decode
+        # above had produced {"error": ""} - a failure with no reason, no
+        # status and no url, which telemetry could only file as unknown.
+        if response.status_code >= 300:
             error = payload.get("error") if isinstance(payload, dict) else str(payload)
             result: dict[str, Any] = {
                 "error": error or f"HTTP {response.status_code}",

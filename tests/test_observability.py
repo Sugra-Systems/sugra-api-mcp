@@ -650,3 +650,173 @@ def test_setup_preserves_operator_otel_service_name_override(monkeypatch) -> Non
 
     assert observability.setup_observability() is True
     assert captured["OTEL_SERVICE_NAME"] == "sugra-mcp-staging"
+
+
+# ---- MCP-19: an HTTP failure is named by its STATUS, never by the API's text ----
+
+
+_API_TEXT = "Unknown ticker NOPE for user@example.com (token=abc123)"
+
+
+def _http_failure(status: object) -> dict:
+    """The dict SugraClient._handle builds for a non-2xx answer: the API's own
+    text sits at "error" for the caller, the status sits beside it."""
+    return {
+        "error": _API_TEXT,
+        "status_code": status,
+        "url": "https://sugra.ai/api/v1/quotes/NOPE/price",
+        "elapsed_ms": 12,
+    }
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (400, "upstream_http_400"),
+        (401, "upstream_http_401"),
+        (403, "upstream_http_403"),
+        (404, "upstream_http_404"),
+        (422, "upstream_http_422"),
+        (429, "upstream_http_429"),
+        (500, "upstream_http_500"),
+        (502, "upstream_http_502"),
+        (503, "upstream_http_503"),
+        (504, "upstream_http_504"),
+        # Statuses the API does not return deliberately fall into their class.
+        (307, "upstream_http_3xx"),
+        (405, "upstream_http_4xx"),
+        (410, "upstream_http_4xx"),
+        (599, "upstream_http_5xx"),
+    ],
+)
+def test_http_failure_is_named_by_status_not_by_text(monkeypatch, status: int, expected: str) -> None:
+    """66% of failures were `unknown_error` because the client keeps the API's
+    free-text `error` for the caller and the allowlist rightly refuses it. The
+    status beside it is an int the client set from the response, so the span
+    names the failure from a fixed table keyed on that status - a quota 429,
+    a bad symbol 404 and an upstream outage 503 become three different codes
+    while the text still never reaches the span."""
+    tracer = _install_fake_tracer(monkeypatch)
+
+    @observability.trace_mcp_tool("call_endpoint")
+    async def fake_call() -> dict:
+        return _http_failure(status)
+
+    asyncio.run(fake_call())
+
+    span = tracer.spans[0]
+    assert span.attributes["mcp.success"] is False
+    assert span.attributes["mcp.error.code"] == expected
+    for key, value in span.attributes.items():
+        if isinstance(value, str):
+            assert "user@example.com" not in value, f"API text leaked into {key}"
+            assert "abc123" not in value, f"API text leaked into {key}"
+
+
+@pytest.mark.parametrize("status", ["503", True, None, 3.0, 200, 99, 600, -1])
+def test_status_that_is_not_an_http_failure_int_stays_unknown_error(monkeypatch, status: object) -> None:
+    """Only an int in 300..599 can name a status. A string (a client that
+    echoes text), a bool (a subclass of int in Python), a float, a 2xx or an
+    out-of-range number all keep the residual code - the table is the ONLY
+    path from a value to a span attribute, and it is entered by exact type."""
+    tracer = _install_fake_tracer(monkeypatch)
+
+    @observability.trace_mcp_tool("call_endpoint")
+    async def fake_call() -> dict:
+        return _http_failure(status)
+
+    asyncio.run(fake_call())
+
+    span = tracer.spans[0]
+    assert span.attributes["mcp.success"] is False
+    assert span.attributes["mcp.error.code"] == "unknown_error"
+    for value in span.attributes.values():
+        if isinstance(value, str):
+            assert "user@example.com" not in value
+
+
+def test_allowlisted_code_wins_over_the_status_beside_it(monkeypatch) -> None:
+    """tools/agent.py remaps the plane's 403 to `agent_plane_unavailable` and
+    keeps status_code=403 in the dict. The named code is the more specific
+    signal and must not be overridden by the generic status mapping."""
+    tracer = _install_fake_tracer(monkeypatch)
+
+    @observability.trace_mcp_tool("get_snapshot")
+    async def fake_snapshot() -> dict:
+        return {"error": "agent_plane_unavailable", "status_code": 403, "reason": "plane text"}
+
+    asyncio.run(fake_snapshot())
+
+    assert tracer.spans[0].attributes["mcp.error.code"] == "agent_plane_unavailable"
+
+
+def test_every_status_derived_code_is_allowlisted() -> None:
+    """The status table and the allowlist must not drift: a code the mapping
+    can produce that the allowlist does not know would be a value no test
+    pinned and no dashboard was told about."""
+    for status in range(300, 600):
+        code = observability._http_status_error_code(status)
+        assert code is not None, status
+        assert code in observability._KNOWN_ERROR_CODES, code
+    for status in (0, 99, 100, 200, 299, 600, 999):
+        assert observability._http_status_error_code(status) is None, status
+
+
+def test_partial_success_envelope_with_data_is_a_success(monkeypatch) -> None:
+    """One definition of failure (errors.is_error_payload): an "error" note
+    BESIDE "data" is a partial-degradation success - the tool protocol reports
+    it as a success and shapes it, so the span must not count it as a failure
+    (it counted as `unknown_error` before, inflating the very bucket MCP-19
+    measures)."""
+    tracer = _install_fake_tracer(monkeypatch)
+
+    @observability.trace_mcp_tool("call_endpoint")
+    async def fake_call() -> dict:
+        return {"data": [{"v": 1}], "error": "partial: one component stale", "meta": {}}
+
+    asyncio.run(fake_call())
+
+    span = tracer.spans[0]
+    assert span.attributes["mcp.success"] is True
+    assert "mcp.error.code" not in span.attributes
+    for value in span.attributes.values():
+        if isinstance(value, str):
+            assert "one component stale" not in value
+
+
+@pytest.mark.parametrize("error_value", ["", None, {"code": "nested"}, 42])
+def test_error_key_without_data_is_a_failure_whatever_its_type(monkeypatch, error_value: object) -> None:
+    """The same definition from the other side: an "error" key with no "data"
+    is a failure even when the value is empty or not a string (a 3xx used to
+    yield {"error": ""} which the old string test read as SUCCESS)."""
+    tracer = _install_fake_tracer(monkeypatch)
+
+    @observability.trace_mcp_tool("call_endpoint")
+    async def fake_call() -> dict:
+        return {"error": error_value}
+
+    asyncio.run(fake_call())
+
+    span = tracer.spans[0]
+    assert span.attributes["mcp.success"] is False
+    assert span.attributes["mcp.error.code"] == "unknown_error"
+
+
+@pytest.mark.parametrize("code", ["invalid_anchor", "request_failed", "missing_api_key"])
+def test_entity_and_keyless_codes_pass_the_allowlist(monkeypatch, code: str) -> None:
+    """Codes the entity tools (invalid_anchor, the _clean_error fallback
+    request_failed) and the keyless stdio client (missing_api_key) already
+    return, but which the allowlist did not know."""
+    tracer = _install_fake_tracer(monkeypatch)
+
+    @observability.trace_mcp_tool("sugra_entity_lookup")
+    async def fake_lookup() -> dict:
+        return {"error": code, "detail": "free text stays out of spans"}
+
+    asyncio.run(fake_lookup())
+
+    span = tracer.spans[0]
+    assert span.attributes["mcp.error.code"] == code
+    for value in span.attributes.values():
+        if isinstance(value, str):
+            assert "free text stays out of spans" not in value

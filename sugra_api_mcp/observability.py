@@ -13,12 +13,14 @@ Custom dimensions captured per MCP tool invocation:
                            catalog-known operation_id (allowlist). Arbitrary
                            client-supplied strings (PII, secrets, free text)
                            are dropped.
-    mcp.success          - bool, derived from whether the tool returned
-                           an "error" key or raised
-    mcp.error.code       - the "error" key value if present AND if it
-                           matches the known error-code allowlist. Free-text
-                           upstream error messages are mapped to
-                           "unknown_error" so they cannot reach the span.
+    mcp.success          - bool: False when the result is an error payload
+                           (errors.is_error_payload - an "error" key with no
+                           "data" beside it) or the tool raised
+    mcp.error.code       - the "error" value when it is in the allowlist;
+                           otherwise the HTTP status the client recorded,
+                           named through a fixed table (upstream_http_429,
+                           upstream_http_5xx, ...); otherwise "unknown_error".
+                           Free-text upstream messages never reach the span.
     mcp.duration_ms      - integer ms wall-clock from before-call to
                            after-return
     mcp.exception.type   - exception class name only (NEVER the message)
@@ -46,6 +48,8 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any, ParamSpec, TypeVar
 
+from .errors import is_error_payload
+
 logger = logging.getLogger("sugra_mcp.observability")
 
 P = ParamSpec("P")
@@ -55,9 +59,56 @@ _INITIALISED = False
 _TRACER: Any | None = None
 _VALID_OPERATION_IDS: frozenset[str] | None = None
 
+# HTTP failures from the Sugra API. SugraClient keeps the API's own text at
+# result["error"] for the CALLER (a bad symbol says which, a quota refusal
+# names the plan) and sets result["status_code"] from the response. That text
+# can never pass the allowlist, so before MCP-19 every such failure was
+# `unknown_error` - 66% of all failures over 90 days, with a caller's 429
+# quota, a bad-symbol 404 and a 503 upstream outage indistinguishable. The
+# span now names the failure from this fixed table keyed on the STATUS, an
+# int the client set and never a caller value. Named entries are the statuses
+# the API returns deliberately; anything else lands in its class bucket. The
+# table is the only path from a status to a span, and every value in it is a
+# constant.
+_HTTP_STATUS_ERROR_CODES: dict[int, str] = {
+    400: "upstream_http_400",  # a parameter value the router rejected
+    401: "upstream_http_401",  # the caller's API key was refused
+    403: "upstream_http_403",
+    404: "upstream_http_404",  # unknown symbol / id / series
+    422: "upstream_http_422",  # request shape rejected by validation
+    429: "upstream_http_429",  # the caller's daily quota is exhausted
+    500: "upstream_http_500",  # an API defect
+    502: "upstream_http_502",  # the API's own upstream provider failed
+    503: "upstream_http_503",  # the API's own upstream provider is unavailable
+    504: "upstream_http_504",  # the API's own upstream provider timed out
+}
+_HTTP_CLASS_ERROR_CODES: dict[int, str] = {
+    3: "upstream_http_3xx",
+    4: "upstream_http_4xx",
+    5: "upstream_http_5xx",
+}
+
+
+def _http_status_error_code(status: Any) -> str | None:
+    """The span code for an HTTP status, or None when the value cannot be one.
+
+    Entered by exact type: bool is a subclass of int, and "503" is a string a
+    client could echo - neither may reach the table. 1xx/2xx carry no failure
+    semantics, so a dict pairing one with an error key keeps the residual code.
+    """
+    if isinstance(status, bool) or not isinstance(status, int):
+        return None
+    if status in _HTTP_STATUS_ERROR_CODES:
+        return _HTTP_STATUS_ERROR_CODES[status]
+    if 300 <= status < 600:
+        return _HTTP_CLASS_ERROR_CODES[status // 100]
+    return None
+
+
 # Known MCP-tool error codes. Any string returned at result["error"] that is
-# NOT in this set is mapped to "unknown_error" so free-text upstream messages
-# (which can contain PII or query content) cannot reach App Insights.
+# NOT in this set never reaches App Insights: the failure is named by its HTTP
+# status when the client recorded one, else as "unknown_error", so free-text
+# upstream messages (which can contain PII or query content) stay out.
 _KNOWN_ERROR_CODES: frozenset[str] = frozenset({
     "unknown_operation_id",
     "missing_required_parameters",
@@ -88,7 +139,30 @@ _KNOWN_ERROR_CODES: frozenset[str] = frozenset({
     # Agent Context Layer plane: infra-level credential rejected (hosted-only
     # tools, tools/agent.py remaps the plane 403 to this distinct code).
     "agent_plane_unavailable",
-})
+    # Sugra Entity tools (tools/entities.py): an unsupported anchor, and the
+    # _clean_error fallback for a client dict that carries no error value.
+    "invalid_anchor",
+    "request_failed",
+    # stdio without SUGRA_API_KEY (server.py _KeylessClient): every network
+    # tool returns this instead of dialling out.
+    "missing_api_key",
+}) | frozenset(_HTTP_STATUS_ERROR_CODES.values()) | frozenset(_HTTP_CLASS_ERROR_CODES.values())
+
+
+def _error_code_of(result: dict[str, Any]) -> str:
+    """The allowlisted span code for a FAILED tool result.
+
+    A code the tool named itself wins - it is the more specific signal (the
+    plane's `agent_plane_unavailable` sits beside a status_code of 403).
+    Otherwise the HTTP status the client recorded names the failure through
+    the fixed table. Anything else is the residual `unknown_error`: free text
+    with no status, or a shape no contract produces. Nothing taken from the
+    dict itself is ever attached.
+    """
+    error_value = result.get("error")
+    if isinstance(error_value, str) and error_value in _KNOWN_ERROR_CODES:
+        return error_value
+    return _http_status_error_code(result.get("status_code")) or "unknown_error"
 
 # azure-monitor-opentelemetry enables all bundled instrumentations by default
 # (fastapi, requests, urllib, urllib3, azure_sdk, django, flask, psycopg2).
@@ -302,18 +376,13 @@ def trace_mcp_tool(
                     _safe_status_error(span)
                     raise
 
-                # Success path: catalog-bounded error code allowlist.
-                success = True
-                error_code: str | None = None
-                if isinstance(result, dict):
-                    error_value = result.get("error")
-                    if isinstance(error_value, str):
-                        success = False
-                        # Map unknown error strings to a constant so free-text
-                        # upstream messages cannot reach the span attribute.
-                        error_code = (
-                            error_value if error_value in _KNOWN_ERROR_CODES else "unknown_error"
-                        )
+                # Returned path. Failure is errors.is_error_payload - the ONE
+                # definition the tool protocol (server.py) applies - so a
+                # partial envelope pairing an error note with data counts as
+                # the success the client received, and a bare error key counts
+                # as a failure whatever the type of its value.
+                success = not is_error_payload(result)
+                error_code: str | None = None if success else _error_code_of(result)
                 _safe_attr(span, "mcp.success", success)
                 if error_code is not None:
                     _safe_attr(span, "mcp.error.code", error_code)

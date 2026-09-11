@@ -30,7 +30,7 @@ Two different counters. Do not equate them.
 
 ## Fixed facts
 
-- Package: sugra-api-mcp on PyPI (MIT), Python 3.11+, current version 0.11.1
+- Package: sugra-api-mcp on PyPI (MIT), Python 3.11+, current version 0.12.0
 - Repository: https://github.com/Sugra-Systems/sugra-api-mcp
 - Canonical HTTP URL: `https://mcp.sugra.ai/mcp` (API-key Bearer)
 - Permanent alias: `https://app.sugra.ai/mcp` (API-key Bearer or OAuth)
