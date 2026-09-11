@@ -31,17 +31,17 @@ Official [Model Context Protocol](https://modelcontextprotocol.io) server for th
 
 An agent answering a real question end to end - resolving entities, pulling live snapshots and history, and citing the source and freshness on every number:
 
-![Compare NVIDIA, AMD and Intel over the past 12 months, answered live through the Sugra MCP](docs/media/sugra-mcp-demo-markets.gif)
+![Compare NVIDIA, AMD and Intel over the past 12 months, answered live through the Sugra MCP](https://raw.githubusercontent.com/Sugra-Systems/sugra-api-mcp/main/docs/media/sugra-mcp-demo-markets.gif)
 
 More examples:
 
 **Macro research** - one prompt builds a full G7 inflation and policy-rate table, each cell dated and sourced, with the unavailable ones flagged rather than faked:
 
-![A G7 inflation and central bank policy rate table assembled live from the Sugra API](docs/media/sugra-mcp-demo-macro.gif)
+![A G7 inflation and central bank policy rate table assembled live from the Sugra API](https://raw.githubusercontent.com/Sugra-Systems/sugra-api-mcp/main/docs/media/sugra-mcp-demo-macro.gif)
 
 **Cross-domain snapshot** - Brent crude, marine weather and regional risk pulled together for a shipping desk, each with its source and timestamp:
 
-![A Red Sea shipping snapshot combining Brent crude, marine weather and hazard sourcing](docs/media/sugra-mcp-demo-shipping.gif)
+![A Red Sea shipping snapshot combining Brent crude, marine weather and hazard sourcing](https://raw.githubusercontent.com/Sugra-Systems/sugra-api-mcp/main/docs/media/sugra-mcp-demo-shipping.gif)
 
 
 ## What a session looks like
