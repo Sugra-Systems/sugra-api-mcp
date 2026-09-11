@@ -1,0 +1,26 @@
+{
+  "name": "sugra-api-mcp",
+  "description": "Official Sugra API skills for agents that use the Sugra MCP gateway.",
+  "owner": {
+    "name": "Sugra Systems, Inc.",
+    "email": "support@sugra.systems"
+  },
+  "plugins": [
+    {
+      "name": "sugra-api",
+      "description": "Official Sugra API skills: explore the catalog, envelope and attribution, auth and rate limits, hosted vs gateway, and a cross-domain briefing.",
+      "category": "development",
+      "source": {
+        "type": "local",
+        "path": "./sugra_api_mcp/skills"
+      },
+      "homepage": "https://sugra.ai",
+      "keywords": ["sugra", "mcp", "catalog", "skills"],
+      "domains": ["sugra.ai", "app.sugra.ai", "mcp.sugra.ai", "sugra.systems"],
+      "author": {
+        "name": "Sugra Systems, Inc.",
+        "email": "support@sugra.systems"
+      }
+    }
+  ]
+}
