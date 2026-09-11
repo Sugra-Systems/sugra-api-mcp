@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass
 
@@ -65,8 +66,28 @@ def load_config(*, require_api_key: bool = True) -> Config:
         # client read timeouts (the audit harness cut at ~45s while the
         # gateway kept working to its 60s outbound budget, so the typed
         # timeout envelope never reached the agent).
-        tool_deadline=float(os.environ.get("SUGRA_TOOL_DEADLINE", "40")),
+        tool_deadline=_positive_seconds("SUGRA_TOOL_DEADLINE", "40"),
     )
+
+
+def _positive_seconds(var: str, default: str) -> float:
+    """Parse a seconds budget, refusing values that cannot bound anything.
+
+    MCP-17 (codex F2): the budget went straight to asyncio.timeout. Zero
+    cancelled every call the instant it started and a negative value did the
+    same, both silently - the operator saw tools that "always time out" with
+    no hint that the configuration was the cause. A budget must be a finite
+    positive number of seconds or the process refuses to start.
+    """
+    raw = os.environ.get(var, default).strip() or default
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{var} must be a number of seconds, got {raw!r}") from exc
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError(
+            f"{var} must be a finite positive number of seconds, got {raw!r}")
+    return value
 
 
 def load_auth_config() -> AuthConfig:

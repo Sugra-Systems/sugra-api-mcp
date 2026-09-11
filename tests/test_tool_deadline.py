@@ -115,40 +115,47 @@ async def test_next_call_after_a_deadline_is_not_delayed(monkeypatch) -> None:
         f"the call AFTER a deadline took {elapsed:.1f}s - the wedge survived")
 
 
-async def test_total_budget_is_never_exceeded_by_the_floor(monkeypatch) -> None:
-    """codex final: slow-but-passing auth must not add a floor on top of the
-    configured total - what auth spent comes OUT of the tool's budget.
+async def test_the_configured_budget_is_what_wraps_dispatch(monkeypatch) -> None:
+    """MCP-17: an ambient stamp never shortens the tool's budget.
 
-    MCP-17 rewrote this. It used to stamp the request 5s into the past against
-    a 1.0s budget and assert the pre-dispatch refusal, which pinned the very
-    defect that broke production: a stamp that old cannot be this call's auth
-    leg (auth runs under min(AUTH_BUDGET_SECONDS, total)), it is an inherited
-    one. The invariant the test exists for is asserted here with a BELIEVABLE
-    stamp: 1.5s of auth against a 2.0s total leaves 0.5s for the tool, and the
-    two together must still fit inside the configured total.
+    This replaces test_total_budget_is_never_exceeded_by_the_floor, which
+    stamped 5s into the past against a 1.0s budget and asserted the
+    pre-dispatch refusal - pinning as correct the very defect that took the
+    hosted gateway down. Auth is bounded on its own side; it no longer eats
+    the tool's budget, because on the streamable-HTTP transport the stamp
+    visible here belongs to the request that OPENED the session and never to
+    this call.
+
+    codex F3: assert the ARGUMENT handed to asyncio.timeout, not the wall
+    clock. The measured-elapsed assertion it replaces was satisfied by a
+    reintroduced floor - max(0.75, total - elapsed) passed it - because its
+    bound was wider than the value it meant to pin.
     """
+    import sugra_api_mcp.server as server_mod
     from sugra_api_mcp.auth import request_started_at
 
-    monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "2.0")
-    monkeypatch.setattr(gateway, "get_client", lambda: _StallingClient())
-    auth_cost = 1.5
-    token = request_started_at.set(time.monotonic() - auth_cost)
+    captured: list[float] = []
+    real_timeout = asyncio.timeout
+
+    def _capture(delay):
+        captured.append(delay)
+        return real_timeout(delay)
+
+    monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "7")
+    monkeypatch.setattr(server_mod.asyncio, "timeout", _capture)
+    # An inherited stamp far older than the budget: the shape that refused
+    # every call in production.
+    token = request_started_at.set(time.monotonic() - 30.0)
     try:
-        started = time.monotonic()
         async with create_connected_server_and_client_session(mcp) as session:
-            result = await session.call_tool(
-                "call_endpoint", {"operation_id": "quotes_symbol_price",
-                                  "params": {"symbol": "AAPL"}})
-        elapsed = time.monotonic() - started
+            result = await session.call_tool("list_toolsets", {})
     finally:
         request_started_at.reset(token)
-    assert result.isError is True
-    payload = _structured(result)
-    assert payload["error"] == "deadline_exceeded"
-    assert "end-to-end" in payload["message"]
-    assert auth_cost + elapsed < 2.0 + 0.5, (
-        f"auth spent {auth_cost:.1f}s and the tool then ran {elapsed:.1f}s - "
-        "a floor was added on top of the 2.0s total")
+
+    assert result.isError is not True, _structured(result)
+    assert 7.0 in captured, (
+        f"dispatch was wrapped in {captured}, not the configured 7s - a stamp "
+        "30s old still shortened the budget")
 
 
 async def test_a_long_lived_session_still_dispatches_tools(monkeypatch) -> None:
@@ -182,3 +189,22 @@ async def test_a_long_lived_session_still_dispatches_tools(monkeypatch) -> None:
     assert second.isError is not True, (
         f"the second call on one session was refused: {_structured(second)}"
     )
+
+
+def test_a_budget_that_cannot_bound_anything_is_refused(monkeypatch) -> None:
+    """MCP-17 (codex F2): a nonpositive budget must not reach asyncio.timeout.
+
+    Zero and negative values parsed fine and went straight through, cancelling
+    every call the instant it started. The operator saw tools that "always
+    time out" and nothing pointed at the configuration. Rejecting them at load
+    keeps the failure where the mistake is.
+    """
+    from sugra_api_mcp.config import load_config
+
+    for bad in ("0", "-1", "nan", "inf", "abc"):
+        monkeypatch.setenv("SUGRA_TOOL_DEADLINE", bad)
+        with pytest.raises(ValueError, match="SUGRA_TOOL_DEADLINE"):
+            load_config(require_api_key=False)
+
+    monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "40")
+    assert load_config(require_api_key=False).tool_deadline == 40.0
