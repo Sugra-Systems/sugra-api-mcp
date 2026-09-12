@@ -66,4 +66,6 @@ Mutation evidence. One mutant per process; `gateway.py` restored from an in-memo
 
 ## Review
 
-Independent review round 1: pending.
+Independent review round 1 (head c0af288): APPROVE with no findings, every dimension PASS. The reviewer re-derived the catalog counts (1626 operations, 15 POST, 13 body schemas, 12 required, 11 object, 1 array of objects, 1 optional object or null union, 2 POST without a body schema) and found no declared body shape excluded. It confirmed from the SDK source that argument validation precedes the tool function, ran the three touched test files (71 passed), and probed further shapes: a JSON string holding an array and an array with a boolean item are refused, an empty array passes, and a null body on the optional-body path is delivered. It found no other file pinning the old schema, `client.py` keeping its broader transport type on purpose, and only the three permitted gateway lines changed. No S1 to S4 finding is open.
+
+Records: `ops/reviews/MCP-24.2/REVIEW-*.md`.
