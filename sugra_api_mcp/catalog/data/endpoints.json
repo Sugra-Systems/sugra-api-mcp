@@ -1,6 +1,6 @@
 {
-  "built_at": "2026-09-12T07:24:25Z",
-  "endpoint_count": 1625,
+  "built_at": "2026-09-12T07:44:56Z",
+  "endpoint_count": 1626,
   "endpoints": [
     {
       "description": "Pre-configured key Australian datasets: CPI, GDP, Labour, Trade, Retail, Wages, Population.",
@@ -6507,6 +6507,76 @@
         "statistics"
       ],
       "summary": "Available CBS series",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Fetch an English StatLine cube by table id after totals filters. Never an unfiltered TypedDataSet. Tables without a totals member on every category dimension are 502. Use /cbs/catalog for curated series.",
+      "method": "GET",
+      "operation_id": "cbs_table_table_id",
+      "parameters": [
+        {
+          "description": "English StatLine table id, five digits plus ENG.",
+          "example": "86141ENG",
+          "location": "path",
+          "name": "table_id",
+          "required": true,
+          "schema": {
+            "description": "English StatLine table id, five digits plus ENG.",
+            "pattern": "^[0-9]{5}ENG$",
+            "title": "Table Id",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Start: 2024-01 or 2024-Q1.",
+          "location": "query",
+          "name": "start_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Start: 2024-01 or 2024-Q1.",
+            "title": "Start Period"
+          }
+        },
+        {
+          "description": "End: 2024-12 or 2024-Q4.",
+          "location": "query",
+          "name": "end_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "End: 2024-12 or 2024-Q4.",
+            "title": "End Period"
+          }
+        }
+      ],
+      "path": "/api/v1/cbs/table/{table_id}",
+      "request_body_required": false,
+      "required_parameters": [
+        "table_id"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "CBS StatLine table at totals",
       "tags": [
         "Statistical Agencies"
       ],
@@ -92289,5 +92359,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "166d3d8684a97b4dd70e58e3fae7dd2d096be17de560192929fd3a65f4fe4c11"
+  "spec_sha256": "a955e49e51623198fb0339377a5fca36aa06fc6013136db00730f47a0854e2da"
 }
