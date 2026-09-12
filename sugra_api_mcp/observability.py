@@ -15,7 +15,9 @@ Custom dimensions captured per MCP tool invocation:
                            are dropped.
     mcp.success          - bool: False when the result is an error payload
                            (errors.is_error_payload - an "error" key with no
-                           "data" beside it) or the tool raised
+                           "data" beside it), the tool raised, or the call was
+                           cancelled (deadline_exceeded for the dispatch
+                           budget, cancelled for anything else)
     mcp.error.code       - the "error" value when it is in the allowlist;
                            otherwise the HTTP status the client recorded,
                            named through a fixed table (upstream_http_429,
@@ -40,12 +42,15 @@ Privacy contract (enforced by tests):
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import functools
 import logging
 import os
 import time
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Any, ParamSpec, TypeVar
 
 from .errors import is_error_payload
@@ -58,6 +63,52 @@ R = TypeVar("R")
 _INITIALISED = False
 _TRACER: Any | None = None
 _VALID_OPERATION_IDS: frozenset[str] | None = None
+
+@dataclass(frozen=True)
+class DispatchBudget:
+    """What server.py call_tool publishes for the duration of ONE dispatch: the
+    asyncio.Timeout that bounds it and the task's cancellation count at entry.
+
+    On a CancelledError the wrapper asks this whether the budget OWNS the
+    cancellation. Attribution comes from the timeout's own state, never from
+    a clock: a clock comparison misfiles in both directions (codex r1) - an
+    external cancel that lands after the deadline but before the timer ran
+    reads as the budget, and a coarse loop clock (the loop runs a timer up to
+    one clock resolution EARLY, 15.6 ms on Windows) fires the budget before
+    loop.time() reaches the deadline, which reads as the caller. Set and read
+    inside one dispatch on one task, so it cannot inherit across calls the
+    way the MCP-17 stamp did.
+    """
+
+    timeout: asyncio.Timeout
+    cancelling_at_entry: int
+
+    def owns_the_cancellation(self) -> bool:
+        """True when the budget fired AND no competing cancellation arrived.
+
+        asyncio.Timeout decides the same way at exit: after one uncancel()
+        the task's count must be back at its entry value for the timeout to
+        raise TimeoutError. One more outstanding request means an external
+        cancel landed in the same loop turn; the CancelledError then reaches
+        the caller instead of the envelope, so the span says cancelled too
+        (codex r2). expired() alone proves the timer fired, not that it owns
+        what is propagating.
+        """
+        if not self.timeout.expired():
+            return False
+        task = asyncio.current_task()
+        return task is not None and task.cancelling() <= self.cancelling_at_entry + 1
+
+
+dispatch_budget: ContextVar[DispatchBudget | None] = ContextVar("sugra_dispatch_budget", default=None)
+
+
+def _cancellation_code() -> str:
+    """deadline_exceeded when the published budget owns the cancellation, else cancelled."""
+    budget = dispatch_budget.get()
+    if budget is not None and budget.owns_the_cancellation():
+        return "deadline_exceeded"
+    return "cancelled"
 
 # HTTP failures from the Sugra API. SugraClient keeps the API's own text at
 # result["error"] for the CALLER (a bad symbol says which, a quota refusal
@@ -138,8 +189,13 @@ _KNOWN_ERROR_CODES: frozenset[str] = frozenset({
     # Gateway safety net for unexpected exceptions inside call_endpoint.
     "tool_execution_failed",
     # MCP-10: the end-to-end per-call budget fired and the call was
-    # cancelled server-side (audit P1-4).
+    # cancelled server-side (audit P1-4). MCP-19.1: this is what the SPAN
+    # says too - the budget cancels the task with a CancelledError, which
+    # `except Exception` never saw, so the span used to end with no verdict.
     "deadline_exceeded",
+    # MCP-19.1: a cancellation that is not the budget - the client went away
+    # or the session shut down mid-call.
+    "cancelled",
     # Agent Context Layer plane: infra-level credential rejected (hosted-only
     # tools, tools/agent.py remaps the plane 403 to this distinct code).
     "agent_plane_unavailable",
@@ -372,6 +428,18 @@ def trace_mcp_tool(
 
                 try:
                     result = await func(*args, **kwargs)
+                except asyncio.CancelledError:
+                    # A BaseException: the dispatch budget (server.py) cancels
+                    # the task, and the clause below never saw it, so the span
+                    # ended through `finally` with only the tool name - the one
+                    # failure that fires when the API is slowest was invisible
+                    # to every failure query (MCP-19.1). Stamp the verdict and
+                    # re-raise unchanged so the cancellation still propagates.
+                    _safe_attr(span, "mcp.success", False)
+                    _safe_attr(span, "mcp.error.code", _cancellation_code())
+                    _safe_attr(span, "mcp.duration_ms", int((time.perf_counter() - start) * 1000))
+                    _safe_status_error(span)
+                    raise
                 except Exception as e:
                     _safe_attr(span, "mcp.success", False)
                     _safe_attr(span, "mcp.error.code", "exception")

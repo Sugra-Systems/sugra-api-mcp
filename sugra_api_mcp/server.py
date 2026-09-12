@@ -16,7 +16,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, Icon, TextContent, ToolAnnotations
 from mcp.types import Tool as MCPTool
 
-from . import __version__
+from . import __version__, observability
 from .client import SugraClient
 from .config import MISSING_API_KEY_HINT, Config, load_allowed_origins, load_config
 from .errors import is_error_payload
@@ -160,8 +160,24 @@ class SugraFastMCP(FastMCP):
         total = load_config(require_api_key=False).tool_deadline
         started = time.monotonic()
         deadline = total
+        # MCP-19.1: publish the timeout that bounds this dispatch, with the
+        # task's cancellation count at entry, so the tool's span can ask
+        # whether the budget owns a cancellation and name it deadline_exceeded
+        # instead of a bare cancelled (the timeout's own state, never a clock
+        # comparison - see observability.DispatchBudget for the ways a clock
+        # or expired() alone misfile). Set and reset around ONE dispatch on
+        # this task: it never inherits across calls the way the MCP-17 stamp
+        # did. Reached through the module attribute, not a from-import: the
+        # wrapper reads the SAME attribute by name at call time, so the two
+        # cannot bind to different objects (a module reload in the test suite
+        # did exactly that).
+        dispatch = asyncio.timeout(deadline)
+        task = asyncio.current_task()
+        budget_token = observability.dispatch_budget.set(
+            observability.DispatchBudget(dispatch, task.cancelling() if task is not None else 0)
+        )
         try:
-            async with asyncio.timeout(deadline):
+            async with dispatch:
                 result = await super().call_tool(name, arguments)
         except TimeoutError:
             payload = {
@@ -183,6 +199,8 @@ class SugraFastMCP(FastMCP):
                 content=[TextContent(type="text", text=json.dumps(payload))],
                 structuredContent=payload,
             )
+        finally:
+            observability.dispatch_budget.reset(budget_token)
 
         # Tools declaring a dict return arrive as (content, structured); the
         # bare forms are accepted so this cannot depend on that detail.

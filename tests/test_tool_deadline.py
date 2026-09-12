@@ -66,6 +66,128 @@ async def test_deadline_fires_with_a_typed_envelope(monkeypatch) -> None:
         "cancelled at the budget")
 
 
+class _CaptureSpan:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.attributes: dict[str, object] = {}
+
+    def set_attribute(self, key: str, value: object) -> None:
+        self.attributes[key] = value
+
+    def set_status(self, status: object) -> None:
+        self.status = status
+
+    def end(self) -> None:
+        self.ended = True
+
+
+class _CaptureTracer:
+    def __init__(self) -> None:
+        self.spans: list[_CaptureSpan] = []
+
+    def start_span(self, name: str) -> _CaptureSpan:
+        span = _CaptureSpan(name)
+        self.spans.append(span)
+        return span
+
+
+async def test_the_deadline_leaves_a_verdict_on_the_span(monkeypatch) -> None:
+    """MCP-19.1, over a real in-memory session: the budget's cancellation used
+    to end the tool's span with no mcp.success and no code (CancelledError is
+    a BaseException the wrapper never caught), so the one failure that fires
+    when the API is slowest was invisible to every failure query. The client
+    still receives the deadline_exceeded envelope, and now the span says the
+    same thing."""
+    from sugra_api_mcp import observability
+
+    tracer = _CaptureTracer()
+    monkeypatch.setattr(observability, "_TRACER", tracer)
+    monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "0.5")
+    monkeypatch.setattr(gateway, "get_client", lambda: _StallingClient())
+    async with create_connected_server_and_client_session(mcp) as session:
+        result = await session.call_tool(
+            "call_endpoint", {"operation_id": "quotes_symbol_price",
+                              "params": {"symbol": "AAPL"}})
+    assert result.isError is True
+    assert _structured(result)["error"] == "deadline_exceeded"
+
+    spans = [span for span in tracer.spans if span.name == "mcp.tool.call_endpoint"]
+    assert len(spans) == 1
+    assert spans[0].attributes["mcp.success"] is False
+    assert spans[0].attributes["mcp.error.code"] == "deadline_exceeded"
+    assert spans[0].attributes["mcp.operation_id"] == "quotes_symbol_price"
+    assert spans[0].ended is True
+
+
+class _ErrorClient:
+    async def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+        return {"error": "HTTP 404", "status_code": 404, "url": path, "elapsed_ms": 1}
+
+    async def request(self, method: str, path: str, **kwargs: Any) -> Any:
+        return {"error": "HTTP 404", "status_code": 404, "url": path, "elapsed_ms": 1}
+
+
+class _FastClient:
+    async def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+        return {"data": [{"symbol": "AAPL"}], "meta": {}}
+
+    async def request(self, method: str, path: str, **kwargs: Any) -> Any:
+        return {"data": [], "meta": {}}
+
+
+def _raising_catalog():
+    raise RuntimeError("catalog exploded")
+
+
+@pytest.mark.parametrize(
+    ("tool", "client", "cancel_after", "raises"),
+    [
+        ("call_endpoint", _FastClient(), None, False),
+        ("call_endpoint", _ErrorClient(), None, False),
+        ("list_toolsets", None, None, True),
+        ("call_endpoint", _StallingClient(), None, False),
+        ("call_endpoint", _StallingClient(), 0.05, False),
+    ],
+    ids=["success", "returned-error", "raised-exception", "budget-timeout", "external-cancel"],
+)
+async def test_the_dispatch_budget_is_restored_after_every_outcome(
+    monkeypatch, tool, client, cancel_after, raises
+) -> None:
+    """The published budget must not outlive its dispatch on the task: after a
+    success, a returned error, a RAISED exception, a budget timeout and an
+    external cancel, the ContextVar holds exactly the value it held before -
+    a seeded prior value, by identity, so a reset replaced by set(None) or a
+    reset skipped on the exception path fails here (codex r1, r2)."""
+    import contextvars
+
+    from sugra_api_mcp import observability
+
+    monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "0.3")
+    if client is not None:
+        monkeypatch.setattr(gateway, "get_client", lambda: client)
+    if raises:
+        monkeypatch.setattr(gateway, "load_catalog", _raising_catalog)
+    prior = observability.DispatchBudget(asyncio.timeout(999), 0)
+    ctx = contextvars.copy_context()
+    ctx.run(observability.dispatch_budget.set, prior)
+    arguments = {"operation_id": "quotes_symbol_price", "params": {"symbol": "AAPL"}}
+    task = asyncio.get_running_loop().create_task(
+        mcp.call_tool(tool, arguments if tool == "call_endpoint" else {}), context=ctx
+    )
+    if cancel_after is not None:
+        await asyncio.sleep(cancel_after)
+        task.cancel()
+    outcome = "returned"
+    try:
+        await task
+    except asyncio.CancelledError:
+        outcome = "cancelled"
+    except Exception:
+        outcome = "raised"
+    assert outcome == ("cancelled" if cancel_after is not None else "raised" if raises else "returned")
+    assert ctx.get(observability.dispatch_budget) is prior
+
+
 async def test_fast_call_is_untouched_by_the_deadline(monkeypatch) -> None:
     monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "5")
 
