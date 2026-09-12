@@ -1047,19 +1047,25 @@ def test_get_timeseries_envelope_keeps_its_recipe_version_on_the_span(monkeypatc
 # ---- MCP-19.1: a cancelled call leaves a verdict on its span ----
 
 
-async def _dispatch(coro_factory, timeout_s: float | None):
+async def _dispatch(coro_factory, timeout_s: float | None, sink: list | None = None):
     """Mirror SugraFastMCP.call_tool: the dispatch timeout and the tool run in
-    ONE task, and the timeout is published for the span while it runs (or
-    nothing is published when timeout_s is None)."""
+    ONE task, and the budget (timeout plus the cancellation count at entry)
+    is published for the span while it runs, or nothing is published when
+    timeout_s is None. `sink` receives the budget so a test can reach the
+    timeout's own deadline."""
     if timeout_s is None:
         return await coro_factory()
     timeout = asyncio.timeout(timeout_s)
-    token = observability.dispatch_timeout.set(timeout)
+    task = asyncio.current_task()
+    budget = observability.DispatchBudget(timeout, task.cancelling() if task is not None else 0)
+    if sink is not None:
+        sink.append(budget)
+    token = observability.dispatch_budget.set(budget)
     try:
         async with timeout:
             return await coro_factory()
     finally:
-        observability.dispatch_timeout.reset(token)
+        observability.dispatch_budget.reset(token)
 
 
 def _assert_cancelled_verdict(span: _FakeSpan, code: str, *extra_attrs: str) -> None:
@@ -1159,6 +1165,35 @@ def test_an_external_cancel_after_the_deadline_passed_is_still_cancelled(monkeyp
         await asyncio.sleep(0.01)
         time.sleep(0.06)  # blocks the loop: the deadline passes, the timer cannot run
         dispatch.cancel()
+        await dispatch
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(run())
+
+    _assert_cancelled_verdict(tracer.spans[0], "cancelled")
+
+
+def test_a_competing_external_cancel_in_the_same_loop_turn_is_cancelled(monkeypatch) -> None:
+    """Both the budget's timer and an external cancel run before the tool
+    resumes: the timeout reports expired, but the task carries TWO
+    cancellation requests, and asyncio.Timeout then hands the CancelledError
+    to the caller instead of raising TimeoutError. The span follows the same
+    ownership rule the timeout applies and says cancelled - expired() alone
+    proves the timer fired, not that it owns what propagates (codex r2)."""
+    tracer = _install_fake_tracer(monkeypatch)
+
+    @observability.trace_mcp_tool("get_snapshot")
+    async def slow_snapshot() -> dict:
+        await asyncio.sleep(5)
+        return {"status": "full"}
+
+    async def run() -> None:
+        sink: list = []
+        dispatch = asyncio.create_task(_dispatch(slow_snapshot, 0.03, sink))
+        await asyncio.sleep(0.01)
+        loop = asyncio.get_running_loop()
+        loop.call_at(sink[0].timeout.when() - 0.005, dispatch.cancel)
+        time.sleep(0.06)  # both callbacks are due and run before the tool resumes
         await dispatch
 
     with pytest.raises(asyncio.CancelledError):

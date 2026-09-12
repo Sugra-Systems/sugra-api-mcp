@@ -50,6 +50,7 @@ import os
 import time
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Any, ParamSpec, TypeVar
 
 from .errors import is_error_payload
@@ -63,25 +64,49 @@ _INITIALISED = False
 _TRACER: Any | None = None
 _VALID_OPERATION_IDS: frozenset[str] | None = None
 
-# The asyncio.Timeout that bounds the running dispatch, published by server.py
-# call_tool for the duration of ONE dispatch and reset after it. On a
-# CancelledError the wrapper asks it whether it FIRED: attribution comes from
-# the timeout's own state, never from a clock. A clock comparison misfiles in
-# both directions (codex r1): an external cancel that lands after the deadline
-# but before the timer ran reads as the budget, and a coarse loop clock (the
-# loop runs a timer up to one clock resolution EARLY, 15.6 ms on Windows)
-# fires the budget before loop.time() reaches the deadline, which reads as
-# the caller. Set and read inside one dispatch on one task, so it cannot
-# inherit across calls the way the MCP-17 stamp did.
-dispatch_timeout: ContextVar[asyncio.Timeout | None] = ContextVar(
-    "sugra_dispatch_timeout", default=None
-)
+@dataclass(frozen=True)
+class DispatchBudget:
+    """What server.py call_tool publishes for the duration of ONE dispatch: the
+    asyncio.Timeout that bounds it and the task's cancellation count at entry.
+
+    On a CancelledError the wrapper asks this whether the budget OWNS the
+    cancellation. Attribution comes from the timeout's own state, never from
+    a clock: a clock comparison misfiles in both directions (codex r1) - an
+    external cancel that lands after the deadline but before the timer ran
+    reads as the budget, and a coarse loop clock (the loop runs a timer up to
+    one clock resolution EARLY, 15.6 ms on Windows) fires the budget before
+    loop.time() reaches the deadline, which reads as the caller. Set and read
+    inside one dispatch on one task, so it cannot inherit across calls the
+    way the MCP-17 stamp did.
+    """
+
+    timeout: asyncio.Timeout
+    cancelling_at_entry: int
+
+    def owns_the_cancellation(self) -> bool:
+        """True when the budget fired AND no competing cancellation arrived.
+
+        asyncio.Timeout decides the same way at exit: after one uncancel()
+        the task's count must be back at its entry value for the timeout to
+        raise TimeoutError. One more outstanding request means an external
+        cancel landed in the same loop turn; the CancelledError then reaches
+        the caller instead of the envelope, so the span says cancelled too
+        (codex r2). expired() alone proves the timer fired, not that it owns
+        what is propagating.
+        """
+        if not self.timeout.expired():
+            return False
+        task = asyncio.current_task()
+        return task is not None and task.cancelling() <= self.cancelling_at_entry + 1
+
+
+dispatch_budget: ContextVar[DispatchBudget | None] = ContextVar("sugra_dispatch_budget", default=None)
 
 
 def _cancellation_code() -> str:
-    """deadline_exceeded when the published dispatch timeout fired, else cancelled."""
-    timeout = dispatch_timeout.get()
-    if timeout is not None and timeout.expired():
+    """deadline_exceeded when the published budget owns the cancellation, else cancelled."""
+    budget = dispatch_budget.get()
+    if budget is not None and budget.owns_the_cancellation():
         return "deadline_exceeded"
     return "cancelled"
 

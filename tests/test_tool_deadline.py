@@ -135,36 +135,57 @@ class _FastClient:
         return {"data": [], "meta": {}}
 
 
+def _raising_catalog():
+    raise RuntimeError("catalog exploded")
+
+
 @pytest.mark.parametrize(
-    ("client", "cancel_after"),
-    [(_FastClient(), None), (_ErrorClient(), None), (_StallingClient(), None), (_StallingClient(), 0.05)],
-    ids=["success", "tool-error", "budget-timeout", "external-cancel"],
+    ("tool", "client", "cancel_after", "raises"),
+    [
+        ("call_endpoint", _FastClient(), None, False),
+        ("call_endpoint", _ErrorClient(), None, False),
+        ("list_toolsets", None, None, True),
+        ("call_endpoint", _StallingClient(), None, False),
+        ("call_endpoint", _StallingClient(), 0.05, False),
+    ],
+    ids=["success", "returned-error", "raised-exception", "budget-timeout", "external-cancel"],
 )
-async def test_the_dispatch_timeout_is_reset_after_every_outcome(monkeypatch, client, cancel_after) -> None:
-    """The published timeout must not outlive its dispatch on the task: after
-    a success, a tool error, a budget timeout and an external cancel, the
-    ContextVar is back to unset in the dispatch's own context (a mutation
-    dropping the reset survived every other test, codex r1)."""
+async def test_the_dispatch_budget_is_restored_after_every_outcome(
+    monkeypatch, tool, client, cancel_after, raises
+) -> None:
+    """The published budget must not outlive its dispatch on the task: after a
+    success, a returned error, a RAISED exception, a budget timeout and an
+    external cancel, the ContextVar holds exactly the value it held before -
+    a seeded prior value, by identity, so a reset replaced by set(None) or a
+    reset skipped on the exception path fails here (codex r1, r2)."""
     import contextvars
 
     from sugra_api_mcp import observability
 
     monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "0.3")
-    monkeypatch.setattr(gateway, "get_client", lambda: client)
+    if client is not None:
+        monkeypatch.setattr(gateway, "get_client", lambda: client)
+    if raises:
+        monkeypatch.setattr(gateway, "load_catalog", _raising_catalog)
+    prior = observability.DispatchBudget(asyncio.timeout(999), 0)
     ctx = contextvars.copy_context()
+    ctx.run(observability.dispatch_budget.set, prior)
+    arguments = {"operation_id": "quotes_symbol_price", "params": {"symbol": "AAPL"}}
     task = asyncio.get_running_loop().create_task(
-        mcp.call_tool("call_endpoint", {"operation_id": "quotes_symbol_price",
-                                        "params": {"symbol": "AAPL"}}),
-        context=ctx,
+        mcp.call_tool(tool, arguments if tool == "call_endpoint" else {}), context=ctx
     )
     if cancel_after is not None:
         await asyncio.sleep(cancel_after)
         task.cancel()
+    outcome = "returned"
     try:
         await task
     except asyncio.CancelledError:
-        assert cancel_after is not None
-    assert ctx.get(observability.dispatch_timeout) is None
+        outcome = "cancelled"
+    except Exception:
+        outcome = "raised"
+    assert outcome == ("cancelled" if cancel_after is not None else "raised" if raises else "returned")
+    assert ctx.get(observability.dispatch_budget) is prior
 
 
 async def test_fast_call_is_untouched_by_the_deadline(monkeypatch) -> None:
