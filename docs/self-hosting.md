@@ -24,7 +24,13 @@ fallback when no Bearer is present.
 
 Compose passes through (when set in the shell): `SUGRA_API_KEY`,
 `SUGRA_API_BASE`, `SUGRA_TIMEOUT`, `SUGRA_MCP_ALLOWED_ORIGINS`,
-`SUGRA_MCP_ALLOWED_HOSTS`. None are baked into the image.
+`SUGRA_MCP_ALLOWED_HOSTS`, `SUGRA_MCP_UI_WIDGETS`. None are baked into the image.
+
+`SUGRA_MCP_UI_WIDGETS` turns on the MCP Apps price-chart widget. Set it to
+`1`, `true`, `yes` or `on` to register `ui://sugra/price-chart.html` and
+declare it on `call_endpoint`; any other value, or leaving it unset, keeps the
+widget off. The value is read once at startup, so restart the container after
+changing it.
 
 ## Reverse proxy and browser clients
 
