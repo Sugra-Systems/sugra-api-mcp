@@ -31,21 +31,22 @@ When the flag is read, and why the two halves agree. The flag is read once, by `
 
 `tests/test_widgets.py`:
 
-- Default on the global server of the test process: no `ui://` entry in `resources/list`, reading the widget URI fails as an unknown resource, and no tool carries `ui` or `ui/resourceUri` in `_meta` while every tool keeps its `securitySchemes`.
-- Fresh subprocess with the flag removed: the same default surface through the real import path, and a second `register_ui_widgets()` returns False without latching.
-- Fresh subprocess with `SUGRA_MCP_UI_WIDGETS=1`: the resource lists with the MCP Apps MIME and reads back the template, `call_endpoint` carries `{"resourceUri": "ui://sugra/price-chart.html"}` and no other tool carries `ui`, OAuth metadata intact, a second call is a latched no-op. Compared with the default process, the only difference is the widget resource and the `ui` key on `call_endpoint`.
-- Explicit `SugraFastMCP` instances: flag on registers, links and reads back; flag unset, empty, `0` or `off` registers and links nothing; two explicit registrations never latch and leave the global without the widget; a plain `FastMCP` instance gets the resource only; `link_ui_template` refuses an unregistered URI.
+- Default on the global server of the test process: no `ui://` entry in `resources/list`, reading the widget URI fails as an unknown resource, and no tool carries `ui` or `ui/resourceUri` in `_meta` while every tool keeps its `securitySchemes` at the top level and in `_meta`.
+- Fresh subprocess with the flag removed: the same default surface through the real import path, captured as each tool's full JSON serialization; `securitySchemes` at the top level and in `_meta` on every tool; a second `register_ui_widgets()` returns False without latching.
+- Fresh subprocess with `SUGRA_MCP_UI_WIDGETS=1`: the resource lists with the MCP Apps MIME and reads back the template, `call_endpoint` carries `{"resourceUri": "ui://sugra/price-chart.html"}` and no other tool carries `ui`, `securitySchemes` at the top level and in `_meta` on every tool, a second call is a latched no-op. Compared with the default process, every serialized tool is identical apart from the `ui` key on `call_endpoint`, and the only extra resource is the widget.
+- Explicit `SugraFastMCP` instances: flag on registers, links and reads back, with `securitySchemes` in both places on both tools; flag unset, empty, `0` or `off` registers and links nothing; two explicit registrations never latch and leave the global without the widget; a plain `FastMCP` instance gets the resource only; `link_ui_template` refuses an unregistered URI.
 - Parsing table: unset is off; `1`, `true`, `yes`, `on` in mixed case and with surrounding whitespace are on; empty, blank, `0`, `false`, `no`, `off`, `2`, `-1`, `1.0`, `y`, `t`, `enabled`, `yes please`, `on,` and similar are off.
 
 `tests/test_resources.py` expects the 8 default resources; `tests/test_keyless.py` expects 8 resources and removes the flag from its subprocess environment so a runner's environment cannot change the default surface.
 
-Mutation evidence: one mutant per run, applied by a scratch script that restores the file from an in-memory byte copy and compares it byte for byte, running `tests/test_widgets.py`, `tests/test_resources.py` and `tests/test_keyless.py`. All 14 were killed:
+Mutation evidence: one mutant per run, applied by a scratch script that restores the file from an in-memory byte copy and compares it byte for byte, running `tests/test_widgets.py`, `tests/test_resources.py` and `tests/test_keyless.py`. All 15 were killed on the final tests:
 
 - default flipped to on;
 - `list_tools` attaching the template regardless of the flag;
 - the resource registered regardless of the flag, with the link still gated;
 - truthy parsing accepting any non-empty string;
 - the template attached to every tool;
+- the attach dropping the top-level `securitySchemes` (added after review round 1);
 - the link guard removed;
 - an explicit instance latching the global;
 - the global never latched;
@@ -60,4 +61,6 @@ Full suite 698 passed; `ruff check sugra_api_mcp tests scripts` and `git diff --
 
 ## Review
 
-Independent review round 1 pending. Records: `ops/reviews/MCP-24.1/REVIEW-*.md`.
+Independent review round 1 (head 639b2d5): APPROVE_WITH_CHANGES, no S1 or S2, one S3 (maintainability). The flag-on probe kept only each tool's `_meta`, so an attach that dropped the top-level `securitySchemes` would have passed. Accepted and closed in this PR, because OAuth metadata unchanged in both flag states is this card's own requirement: the fresh-process probe now captures every tool's full JSON serialization, both flag states assert `securitySchemes` at the top level and in `_meta` on every tool, the on-versus-off comparison covers whole serialized tools, and the matching mutant is killed.
+
+Independent review round 2 pending. Records: `ops/reviews/MCP-24.1/REVIEW-*.md`.

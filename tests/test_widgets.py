@@ -202,8 +202,10 @@ _SURFACE_PROBE = textwrap.dedent(
 
 
     async def main():
-        metas = {
-            tool.name: tool.model_dump(by_alias=True).get("_meta") or {}
+        # The whole serialized tool, as tools/list sends it, so a test can see
+        # the top-level securitySchemes as well as _meta.
+        tools = {
+            tool.name: tool.model_dump(by_alias=True, mode="json", exclude_none=True)
             for tool in await mcp.list_tools()
         }
         resources = {str(r.uri): r.mimeType for r in await mcp.list_resources()}
@@ -216,7 +218,7 @@ _SURFACE_PROBE = textwrap.dedent(
             }
         again = widgets.register_ui_widgets()
         print(json.dumps({
-            "metas": metas,
+            "tools": tools,
             "resources": resources,
             "read": read,
             "again": again,
@@ -259,11 +261,14 @@ def test_default_fresh_process_serves_no_widget(fresh_surfaces) -> None:
     assert off["resources"], "the default process listed no resources at all"
     assert [uri for uri in off["resources"] if uri.startswith("ui://")] == []
     assert off["read"] is None
-    assert "call_endpoint" in off["metas"]
-    for name, meta in off["metas"].items():
+    assert "call_endpoint" in off["tools"]
+    for name, tool in off["tools"].items():
+        meta = tool.get("_meta") or {}
         for key in UI_TEMPLATE_META_KEYS:
             assert key not in meta, f"{key} declared on {name} in a default process"
-        assert meta["securitySchemes"] == OAUTH_SECURITY_SCHEMES
+        # OAuth metadata at both places a client reads it.
+        assert tool.get("securitySchemes") == OAUTH_SECURITY_SCHEMES, name
+        assert meta.get("securitySchemes") == OAUTH_SECURITY_SCHEMES, name
     # Registration refused, so the global was never latched.
     assert off["again"] is False
     assert off["latched"] is False
@@ -275,10 +280,13 @@ def test_flag_on_fresh_process_serves_the_widget_on_call_endpoint_only(fresh_sur
     on = fresh_surfaces["on"]
     assert on["resources"].get(WIDGET_URI) == WIDGET_MIME_TYPE
     assert on["read"] == {"mime": WIDGET_MIME_TYPE, "is_template": True}
-    assert "call_endpoint" in on["metas"]
-    for name, meta in on["metas"].items():
-        # The UI declaration must not displace the OAuth metadata.
-        assert meta["securitySchemes"] == OAUTH_SECURITY_SCHEMES
+    assert "call_endpoint" in on["tools"]
+    for name, tool in on["tools"].items():
+        meta = tool.get("_meta") or {}
+        # The UI declaration must not displace the OAuth metadata, at the top
+        # level or in _meta.
+        assert tool.get("securitySchemes") == OAUTH_SECURITY_SCHEMES, name
+        assert meta.get("securitySchemes") == OAUTH_SECURITY_SCHEMES, name
         if name == "call_endpoint":
             # SEP-1865 "Resource Discovery": the nested ui object, not the
             # deprecated flat "ui/resourceUri" key.
@@ -298,10 +306,12 @@ def test_flag_on_adds_the_widget_and_changes_nothing_else(fresh_surfaces) -> Non
     assert {uri: mime for uri, mime in on["resources"].items() if uri != WIDGET_URI} == off[
         "resources"
     ]
-    assert on["metas"].keys() == off["metas"].keys()
-    for name, meta in on["metas"].items():
-        without_ui = {key: value for key, value in meta.items() if key != "ui"}
-        assert without_ui == off["metas"][name], name
+    # Every serialized tool (name, schemas, annotations, top-level and _meta
+    # securitySchemes) is identical in both processes apart from the ui key.
+    assert on["tools"].keys() == off["tools"].keys()
+    for name, tool in on["tools"].items():
+        meta = {key: value for key, value in (tool.get("_meta") or {}).items() if key != "ui"}
+        assert {**tool, "_meta": meta} == off["tools"][name], name
 
 
 # ---------------------------------------------------------------------------
@@ -317,11 +327,13 @@ async def test_flag_on_explicit_instance_serves_and_links_the_widget(monkeypatch
     instance = _probe_server()
     assert register_ui_widgets(instance) is True
 
-    metas = {tool.name: _meta(tool) for tool in await instance.list_tools()}
+    dumped = {tool.name: tool.model_dump(by_alias=True) for tool in await instance.list_tools()}
+    metas = {name: tool.get("_meta") or {} for name, tool in dumped.items()}
     assert metas["call_endpoint"]["ui"] == {"resourceUri": WIDGET_URI}
-    assert metas["call_endpoint"]["securitySchemes"] == OAUTH_SECURITY_SCHEMES
     assert "ui" not in metas["list_sources"]
-    assert metas["list_sources"]["securitySchemes"] == OAUTH_SECURITY_SCHEMES
+    for name in ("call_endpoint", "list_sources"):
+        assert dumped[name]["securitySchemes"] == OAUTH_SECURITY_SCHEMES, name
+        assert metas[name]["securitySchemes"] == OAUTH_SECURITY_SCHEMES, name
 
     listed = {str(resource.uri): resource.mimeType for resource in await instance.list_resources()}
     assert listed == {WIDGET_URI: WIDGET_MIME_TYPE}
