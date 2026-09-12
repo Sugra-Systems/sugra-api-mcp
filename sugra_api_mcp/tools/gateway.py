@@ -50,7 +50,7 @@ def _group_violation(endpoint, params: dict[str, Any]) -> str | None:
 
 
 def _missing_required(
-    endpoint, params: dict[str, Any], body: dict[str, Any] | list[Any] | None
+    endpoint, params: dict[str, Any], body: dict[str, Any] | list[dict[str, Any]] | None
 ) -> list[str]:
     missing = [
         parameter.name
@@ -205,7 +205,7 @@ async def call_endpoint(
         ),
     ] = None,
     body: Annotated[
-        dict[str, Any] | list[Any] | None,
+        dict[str, Any] | list[dict[str, Any]] | None,
         Field(
             description=(
                 "JSON request body for a POST operation, matching the request_body_schema "
@@ -400,7 +400,7 @@ async def fetch_data(
         ),
     ] = None,
     body: Annotated[
-        dict[str, Any] | list[Any] | None,
+        dict[str, Any] | list[dict[str, Any]] | None,
         Field(
             description=(
                 "JSON body for an auto-selected POST operation; the tool returns the "
