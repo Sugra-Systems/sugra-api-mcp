@@ -11,7 +11,7 @@ Most Sugra API responses are `{data, meta}`. Shape `limit` and `fields` on `call
 
 The records list is the `data` list, a bare array, or the one list inside an object `data` when exactly one of these keys holds a list: `data`, `entries`, `events`, `history`, `items`, `observations`, `points`, `records`, `results`, `rows`, `series`, `timeseries`. `limit` bounds that list and never lists nested inside records. Keys beside it, such as `total` and `count`, stay. A `fields` entry that names a key of `data` itself projects that object instead. If no field matches, nothing is removed.
 
-`meta.shaped` reports what shaping actually did (`fields_applied`, `fields_unmatched`, `limit_applied`, `records_path`). It is not an echo of the request. `records_path` names the list that `limit` bounded or `fields` projected, such as `data.items`, and is null when shaping used no records list.
+`meta.shaped` reports what shaping actually did (`fields_applied`, `fields_unmatched`, `limit_applied`, `records_path`). It is not an echo of the request. `records_path` names the records list that `limit` bounded or that `fields` were matched against, such as `data.items`, even when no field matched. It is null when shaping used no records list.
 
 ## Time
 
