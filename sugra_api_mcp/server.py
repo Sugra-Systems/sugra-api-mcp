@@ -160,20 +160,20 @@ class SugraFastMCP(FastMCP):
         total = load_config(require_api_key=False).tool_deadline
         started = time.monotonic()
         deadline = total
-        # MCP-19.1: publish the instant this budget will cancel the call, so
-        # the tool's span can name the cancellation deadline_exceeded instead
-        # of a bare cancelled. Computed a hair BEFORE asyncio.timeout computes
-        # its own, so at the moment of cancellation loop.time() is past both.
-        # Set and reset around ONE dispatch on this task: it never inherits
-        # across calls the way the MCP-17 stamp did. Reached through the
-        # module attribute, not a from-import: the wrapper reads the SAME
-        # attribute by name at call time, so the two cannot bind to different
-        # objects (a module reload in the test suite did exactly that).
-        budget_token = observability.budget_deadline_at.set(
-            asyncio.get_running_loop().time() + deadline
-        )
+        # MCP-19.1: publish the timeout that bounds this dispatch, so the
+        # tool's span can ask it whether it fired and name the cancellation
+        # deadline_exceeded instead of a bare cancelled (the timeout's own
+        # state, never a clock comparison - see observability.dispatch_timeout
+        # for the two ways a clock misfiles). Set and reset around ONE
+        # dispatch on this task: it never inherits across calls the way the
+        # MCP-17 stamp did. Reached through the module attribute, not a
+        # from-import: the wrapper reads the SAME attribute by name at call
+        # time, so the two cannot bind to different objects (a module reload
+        # in the test suite did exactly that).
+        dispatch = asyncio.timeout(deadline)
+        budget_token = observability.dispatch_timeout.set(dispatch)
         try:
-            async with asyncio.timeout(deadline):
+            async with dispatch:
                 result = await super().call_tool(name, arguments)
         except TimeoutError:
             payload = {
@@ -196,7 +196,7 @@ class SugraFastMCP(FastMCP):
                 structuredContent=payload,
             )
         finally:
-            observability.budget_deadline_at.reset(budget_token)
+            observability.dispatch_timeout.reset(budget_token)
 
         # Tools declaring a dict return arrive as (content, structured); the
         # bare forms are accepted so this cannot depend on that detail.

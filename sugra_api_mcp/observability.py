@@ -63,25 +63,27 @@ _INITIALISED = False
 _TRACER: Any | None = None
 _VALID_OPERATION_IDS: frozenset[str] | None = None
 
-# The absolute loop time at which the dispatch budget will cancel the running
-# call, published by server.py call_tool for the duration of ONE dispatch and
-# reset after it. A CancelledError that reaches the wrapper at or past this
-# instant is the budget (deadline_exceeded); any other is the caller or the
-# session going away (cancelled). Set and read inside one dispatch on one
-# task, so it cannot inherit across calls the way the MCP-17 stamp did.
-budget_deadline_at: ContextVar[float | None] = ContextVar("sugra_budget_deadline_at", default=None)
+# The asyncio.Timeout that bounds the running dispatch, published by server.py
+# call_tool for the duration of ONE dispatch and reset after it. On a
+# CancelledError the wrapper asks it whether it FIRED: attribution comes from
+# the timeout's own state, never from a clock. A clock comparison misfiles in
+# both directions (codex r1): an external cancel that lands after the deadline
+# but before the timer ran reads as the budget, and a coarse loop clock (the
+# loop runs a timer up to one clock resolution EARLY, 15.6 ms on Windows)
+# fires the budget before loop.time() reaches the deadline, which reads as
+# the caller. Set and read inside one dispatch on one task, so it cannot
+# inherit across calls the way the MCP-17 stamp did.
+dispatch_timeout: ContextVar[asyncio.Timeout | None] = ContextVar(
+    "sugra_dispatch_timeout", default=None
+)
 
 
 def _cancellation_code() -> str:
-    """deadline_exceeded when the published budget has elapsed, else cancelled."""
-    when = budget_deadline_at.get()
-    if when is None:
-        return "cancelled"
-    try:
-        now = asyncio.get_running_loop().time()
-    except RuntimeError:
-        return "cancelled"
-    return "deadline_exceeded" if now >= when else "cancelled"
+    """deadline_exceeded when the published dispatch timeout fired, else cancelled."""
+    timeout = dispatch_timeout.get()
+    if timeout is not None and timeout.expired():
+        return "deadline_exceeded"
+    return "cancelled"
 
 # HTTP failures from the Sugra API. SugraClient keeps the API's own text at
 # result["error"] for the CALLER (a bad symbol says which, a quota refusal

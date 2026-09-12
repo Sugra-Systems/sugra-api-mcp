@@ -119,6 +119,54 @@ async def test_the_deadline_leaves_a_verdict_on_the_span(monkeypatch) -> None:
     assert spans[0].ended is True
 
 
+class _ErrorClient:
+    async def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+        return {"error": "HTTP 404", "status_code": 404, "url": path, "elapsed_ms": 1}
+
+    async def request(self, method: str, path: str, **kwargs: Any) -> Any:
+        return {"error": "HTTP 404", "status_code": 404, "url": path, "elapsed_ms": 1}
+
+
+class _FastClient:
+    async def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+        return {"data": [{"symbol": "AAPL"}], "meta": {}}
+
+    async def request(self, method: str, path: str, **kwargs: Any) -> Any:
+        return {"data": [], "meta": {}}
+
+
+@pytest.mark.parametrize(
+    ("client", "cancel_after"),
+    [(_FastClient(), None), (_ErrorClient(), None), (_StallingClient(), None), (_StallingClient(), 0.05)],
+    ids=["success", "tool-error", "budget-timeout", "external-cancel"],
+)
+async def test_the_dispatch_timeout_is_reset_after_every_outcome(monkeypatch, client, cancel_after) -> None:
+    """The published timeout must not outlive its dispatch on the task: after
+    a success, a tool error, a budget timeout and an external cancel, the
+    ContextVar is back to unset in the dispatch's own context (a mutation
+    dropping the reset survived every other test, codex r1)."""
+    import contextvars
+
+    from sugra_api_mcp import observability
+
+    monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "0.3")
+    monkeypatch.setattr(gateway, "get_client", lambda: client)
+    ctx = contextvars.copy_context()
+    task = asyncio.get_running_loop().create_task(
+        mcp.call_tool("call_endpoint", {"operation_id": "quotes_symbol_price",
+                                        "params": {"symbol": "AAPL"}}),
+        context=ctx,
+    )
+    if cancel_after is not None:
+        await asyncio.sleep(cancel_after)
+        task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        assert cancel_after is not None
+    assert ctx.get(observability.dispatch_timeout) is None
+
+
 async def test_fast_call_is_untouched_by_the_deadline(monkeypatch) -> None:
     monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "5")
 
