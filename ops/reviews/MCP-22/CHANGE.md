@@ -59,6 +59,6 @@ Independent review round 1 (head e34f209): APPROVE_WITH_CHANGES, one S2, no S1.
 
 - S2 (business-logic-vs-spec): the limit and fields descriptions said "the one record list inside data" without naming which keys qualify, so a client could expect a lone list under an unlisted key such as `values` to be bounded, while shaping leaves that data whole. Accepted and fixed: both descriptions on both tools now name the twelve keys, say that exactly one of them must hold a list, and say that none or several leave the limit unapplied. The description test pins the key list against `_RECORD_LIST_KEYS` in sorted order, so the published text cannot drift from the code.
 
-Independent review round 2: pending.
+Independent review round 2 (head f348cb7): APPROVE, no findings, every dimension PASS. The round 1 S2 is confirmed closed: both tools name the twelve qualifying keys and the exactly-one rule, and the reviewer independently killed the five required mutants plus the description drift mutant and reproduced the census coverage (422 operations, 72 samples, none ambiguous). No S1 or S2 is open, and no S3 or S4 was raised.
 
 Records: the REVIEW files in `ops/reviews/MCP-22/`.
