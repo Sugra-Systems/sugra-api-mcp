@@ -25,6 +25,7 @@ services:
       - SUGRA_TIMEOUT
       - SUGRA_MCP_ALLOWED_ORIGINS
       - SUGRA_MCP_ALLOWED_HOSTS
+      - SUGRA_MCP_UI_WIDGETS
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8001/health"]
       interval: 30s

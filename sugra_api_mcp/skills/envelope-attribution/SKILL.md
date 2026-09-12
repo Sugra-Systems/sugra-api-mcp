@@ -7,9 +7,11 @@ description: Parse Sugra API payloads, keep source attribution, and tell observa
 
 ## Payload shapes
 
-Most Sugra API responses are `{data, meta}`. Shape `limit` and `fields` on `call_endpoint` / `fetch_data` apply to `data`. Some payloads are envelope-less (a flat dict with `_meta` or `meta` on the same object). Provenance keys survive field projection.
+Most Sugra API responses are `{data, meta}`. Shape `limit` and `fields` on `call_endpoint` / `fetch_data` apply to the records list in `data`. Some payloads are envelope-less (a flat dict with `_meta` or `meta` on the same object). Provenance keys survive field projection.
 
-`meta.shaped` reports what shaping actually did (`fields_applied`, `fields_unmatched`, `limit_applied`). It is not an echo of the request. `limit` bounds only the top-level list (`data` or a bare array), never lists nested inside records.
+The records list is the `data` list, a bare array, or the one list inside an object `data` when exactly one of these keys holds a list: `data`, `entries`, `events`, `history`, `items`, `observations`, `points`, `records`, `results`, `rows`, `series`, `timeseries`. `limit` bounds that list and never lists nested inside records. Keys beside it, such as `total` and `count`, stay. A `fields` entry that names a key of `data` itself projects that object instead. If no field matches, nothing is removed.
+
+`meta.shaped` reports what shaping actually did (`fields_applied`, `fields_unmatched`, `limit_applied`, `records_path`). It is not an echo of the request. `records_path` names the records list that `limit` bounded or that `fields` were matched against, such as `data.items`, even when no field matched. It is null when shaping used no records list.
 
 ## Time
 
