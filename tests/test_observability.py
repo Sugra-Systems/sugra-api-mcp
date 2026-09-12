@@ -1173,6 +1173,27 @@ def test_an_external_cancel_after_the_deadline_passed_is_still_cancelled(monkeyp
     _assert_cancelled_verdict(tracer.spans[0], "cancelled")
 
 
+async def _compete(dispatch_factory) -> tuple:
+    """Arrange the competing case deterministically, with no sleeps to race:
+    the dispatch task is inside the tool's sleep after one loop turn; the
+    external cancel is queued with call_soon and the budget's timer is
+    rescheduled to now, so in the NEXT turn the cancel runs first, then the
+    timer, and only then the task resumes - carrying two cancellation
+    requests and an expired budget (codex r1 on MCP-19.1.1: the earlier
+    time.sleep arrangement failed under a 50 ms wakeup delay)."""
+    sink: list = []
+    dispatch = asyncio.create_task(dispatch_factory(sink))
+    await asyncio.sleep(0)
+    loop = asyncio.get_running_loop()
+    loop.call_soon(dispatch.cancel, "external-owner")
+    sink[0].timeout.reschedule(loop.time())
+    try:
+        await dispatch
+    finally:
+        assert sink[0].timeout.expired() is True
+    return ()
+
+
 def test_a_competing_external_cancel_in_the_same_loop_turn_is_cancelled(monkeypatch) -> None:
     """Both the budget's timer and an external cancel run before the tool
     resumes: the timeout reports expired, but the task carries TWO
@@ -1181,24 +1202,19 @@ def test_a_competing_external_cancel_in_the_same_loop_turn_is_cancelled(monkeypa
     ownership rule the timeout applies and says cancelled - expired() alone
     proves the timer fired, not that it owns what propagates (codex r2)."""
     tracer = _install_fake_tracer(monkeypatch)
+    seen: list = []
 
-    @observability.trace_mcp_tool("get_snapshot")
     async def slow_snapshot() -> dict:
         await asyncio.sleep(5)
         return {"status": "full"}
 
-    async def run() -> None:
-        sink: list = []
-        dispatch = asyncio.create_task(_dispatch(slow_snapshot, 0.03, sink))
-        await asyncio.sleep(0.01)
-        loop = asyncio.get_running_loop()
-        loop.call_at(sink[0].timeout.when() - 0.005, dispatch.cancel)
-        time.sleep(0.06)  # both callbacks are due and run before the tool resumes
-        await dispatch
+    wrapped = observability.trace_mcp_tool("get_snapshot")(_capturing(seen, slow_snapshot))
 
     with pytest.raises(asyncio.CancelledError):
-        asyncio.run(run())
+        asyncio.run(_compete(lambda sink: _dispatch(wrapped, 10.0, sink)))
 
+    assert len(seen) == 1
+    assert seen[0].cancelling == 2, "both cancellation requests must reach the task before it resumes"
     _assert_cancelled_verdict(tracer.spans[0], "cancelled")
 
 
@@ -1210,6 +1226,19 @@ def test_cancellation_codes_are_allowlisted(code: str) -> None:
 # ---- MCP-19.1.1: the cancellation that leaves the wrapper is the one that entered it ----
 
 
+class _Seen:
+    """The CancelledError as delivered INSIDE the tool: the object, a SNAPSHOT
+    of its args taken at that instant (so a later in-place change of the
+    object's args cannot satisfy a comparison against itself, codex r1 on
+    MCP-19.1.1), and the task's cancellation count at that instant."""
+
+    def __init__(self, exc: BaseException) -> None:
+        self.exc = exc
+        self.args = tuple(exc.args)
+        task = asyncio.current_task()
+        self.cancelling = task.cancelling() if task is not None else -1
+
+
 def _capturing(seen: list, tool):
     """Wrap a coroutine function so the CancelledError delivered INSIDE the
     tool is recorded before it propagates."""
@@ -1218,10 +1247,16 @@ def _capturing(seen: list, tool):
         try:
             return await tool(*args, **kwargs)
         except asyncio.CancelledError as exc:
-            seen.append(exc)
+            seen.append(_Seen(exc))
             raise
 
     return inner
+
+
+def _assert_same_cancellation(outgoing: BaseException, seen: list) -> None:
+    assert len(seen) == 1
+    assert outgoing is seen[0].exc
+    assert outgoing.args == seen[0].args
 
 
 def test_the_re_raised_cancellation_is_the_same_object_with_its_reason(monkeypatch) -> None:
@@ -1231,25 +1266,24 @@ def test_the_re_raised_cancellation_is_the_same_object_with_its_reason(monkeypat
     every earlier test while replacing it with an empty one (codex r3 on
     MCP-19.1)."""
     tracer = _install_fake_tracer(monkeypatch)
-    seen_inside: list[BaseException] = []
+    seen: list = []
 
     async def slow_snapshot() -> dict:
         await asyncio.sleep(5)
         return {"status": "full"}
 
-    wrapped = observability.trace_mcp_tool("get_snapshot")(_capturing(seen_inside, slow_snapshot))
+    wrapped = observability.trace_mcp_tool("get_snapshot")(_capturing(seen, slow_snapshot))
 
     async def run() -> None:
         task = asyncio.create_task(_dispatch(wrapped, 10.0))
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(0)
         task.cancel("external-owner")
         await task
 
     with pytest.raises(asyncio.CancelledError) as info:
         asyncio.run(run())
 
-    assert len(seen_inside) == 1
-    assert info.value is seen_inside[0]
+    _assert_same_cancellation(info.value, seen)
     assert info.value.args == ("external-owner",)
     _assert_cancelled_verdict(tracer.spans[0], "cancelled")
 
@@ -1257,62 +1291,61 @@ def test_the_re_raised_cancellation_is_the_same_object_with_its_reason(monkeypat
 def test_a_competing_cancellation_leaves_the_wrapper_as_the_object_that_entered(monkeypatch) -> None:
     """The competing case (the budget's timer and an external cancel in the
     same loop turn): whatever CancelledError the task delivers, the one that
-    leaves the wrapper is that same object with the same args."""
+    leaves the wrapper is that same object with the args it carried when it
+    entered."""
     tracer = _install_fake_tracer(monkeypatch)
-    seen_inside: list[BaseException] = []
+    seen: list = []
 
     async def slow_snapshot() -> dict:
         await asyncio.sleep(5)
         return {"status": "full"}
 
-    wrapped = observability.trace_mcp_tool("get_snapshot")(_capturing(seen_inside, slow_snapshot))
-
-    async def run() -> None:
-        sink: list = []
-        dispatch = asyncio.create_task(_dispatch(wrapped, 0.03, sink))
-        await asyncio.sleep(0.01)
-        loop = asyncio.get_running_loop()
-        loop.call_at(sink[0].timeout.when() - 0.005, dispatch.cancel, "external-owner")
-        time.sleep(0.06)
-        await dispatch
+    wrapped = observability.trace_mcp_tool("get_snapshot")(_capturing(seen, slow_snapshot))
 
     with pytest.raises(asyncio.CancelledError) as info:
-        asyncio.run(run())
+        asyncio.run(_compete(lambda sink: _dispatch(wrapped, 10.0, sink)))
 
-    assert len(seen_inside) == 1
-    assert info.value is seen_inside[0]
-    assert info.value.args == seen_inside[0].args
+    _assert_same_cancellation(info.value, seen)
+    assert seen[0].cancelling == 2
     _assert_cancelled_verdict(tracer.spans[0], "cancelled")
 
 
 @pytest.mark.parametrize("wrapped", [True, False], ids=["wrapped", "bare"])
 def test_an_anyio_cancel_scope_behaves_the_same_through_the_wrapper(monkeypatch, wrapped: bool) -> None:
     """The MCP SDK runs every request inside an anyio CancelScope. Cancelling
-    the scope cancels the host task; at exit the scope must catch its own
-    cancellation and uncancel the task. With the wrapper in the middle the
-    scope reports cancelled_caught and the task's cancelling() count is back
-    at zero, exactly as with the bare tool."""
+    the scope cancels the host task; the CancelledError that leaves the
+    wrapper is the object that entered it, with its args; and at exit the
+    scope catches its own cancellation and uncancels the task. With the
+    wrapper in the middle the scope reports cancelled_caught and the task's
+    cancelling() count is back at zero, exactly as with the bare tool."""
     import anyio
 
     tracer = _install_fake_tracer(monkeypatch)
+    seen: list = []
+    outgoing: list = []
 
     async def slow() -> dict:
         await asyncio.sleep(5)
         return {"status": "full"}
 
-    tool = observability.trace_mcp_tool("get_snapshot")(slow) if wrapped else slow
+    captured = _capturing(seen, slow)
+    tool = observability.trace_mcp_tool("get_snapshot")(captured) if wrapped else captured
     scopes: list = []
 
     async def body() -> tuple[bool, int]:
         with anyio.CancelScope() as scope:
             scopes.append(scope)
-            await tool()
+            try:
+                await tool()
+            except asyncio.CancelledError as exc:
+                outgoing.append(exc)
+                raise
         task = asyncio.current_task()
         return scope.cancelled_caught, task.cancelling() if task is not None else -1
 
     async def run() -> tuple[bool, int]:
         task = asyncio.create_task(body())
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(0)
         scopes[0].cancel()
         return await task
 
@@ -1320,6 +1353,8 @@ def test_an_anyio_cancel_scope_behaves_the_same_through_the_wrapper(monkeypatch,
 
     assert caught is True
     assert cancelling == 0
+    assert len(outgoing) == 1
+    _assert_same_cancellation(outgoing[0], seen)
     if wrapped:
         _assert_cancelled_verdict(tracer.spans[0], "cancelled")
     else:

@@ -12,12 +12,23 @@ MCP-19.1 makes the span wrapper in `observability.py` catch `asyncio.CancelledEr
 Tests only, no runtime change.
 
 - `Task.cancel("external-owner")` on a dispatched, wrapped tool: the `CancelledError` delivered inside the tool and the one the awaiter receives are the same object, with `args == ("external-owner",)`.
-- The competing case (the budget's timer and an external cancel in the same loop turn): the object that leaves the wrapper is the one that entered it, with the same args.
-- An anyio `CancelScope` around the wrapped tool, cancelled from outside: the scope reports `cancelled_caught` and the host task's `cancelling()` count is back at zero at exit, exactly as with the bare tool (parametrized over wrapped and bare).
+- The competing case (the budget's timer and an external cancel in the same loop turn): the object that leaves the wrapper is the one that entered it, with the args it carried when it entered (a snapshot taken inside the tool, so an in-place change of the object's args cannot pass), and the capture records that both cancellation requests had reached the task.
+- An anyio `CancelScope` around the wrapped tool, cancelled from outside: the object that leaves the wrapper is the one that entered it with its args, the scope reports `cancelled_caught`, and the host task's `cancelling()` count is back at zero at exit, exactly as with the bare tool (parametrized over wrapped and bare).
+- The competing arrangement is deterministic, with no sleeps to race: one loop turn puts the dispatch inside the tool, the external cancel is queued with `call_soon`, the budget's timer is rescheduled to now, and in the next turn the cancel runs, then the timer, then the task resumes. The pre-existing competing test from MCP-19.1 uses the same arrangement now.
 
 ## Test evidence
 
-Four new cases in `tests/test_observability.py`. Mutation evidence, one per run with byte-copy restore: a fresh empty `CancelledError`, a fresh one with a made-up reason, and a fresh one copying the original args each fail at least one test. Full suite, `ruff check` and `git diff --check` clean.
+Four new cases in `tests/test_observability.py`, and the MCP-19.1 competing test rebuilt on the deterministic arrangement. Mutation evidence, one per run with byte-copy restore, each failing at least one test: a fresh empty `CancelledError`; a fresh one with a made-up reason; a fresh one copying the original args; a fresh copy only when no budget is published (the anyio shape); the args altered in place only in the competing case. Full suite, `ruff check` and `git diff --check` clean.
+
+## Review
+
+Round 1 (codex, head 9a19256): APPROVE_WITH_CHANGES, three S3, all accepted and closed in the same PR because they are the card's own deliverable.
+
+- The anyio case verified scope cleanup but not identity or args. Closed: the exception is captured inside the tool and again just outside the wrapper inside the scope, and compared by identity and against the args snapshot.
+- The competing args comparison read the same object's attribute on both sides. Closed by the snapshot taken at capture.
+- The competing arrangement depended on waking within a 20 ms window. Closed by the sleep-free arrangement above; the capture asserts two cancellation requests and an expired budget.
+
+Records: `ops/reviews/MCP-19.1.1/REVIEW-codex-*.md`.
 
 ## Acceptance
 
