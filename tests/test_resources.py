@@ -1,4 +1,4 @@
-"""Tests for the read-only registered resources (sugra:// catalog + ui:// widget)."""
+"""Tests for the read-only registered resources (sugra:// catalog and skills)."""
 
 from __future__ import annotations
 
@@ -12,17 +12,15 @@ DOMAINS_URI = "sugra://catalog/domains"
 SOURCES_URI = "sugra://catalog/sources"
 ATTRIBUTION_URI = "sugra://attribution"
 
-# MCP Apps template (SEP-1865), registered by tools/widgets.py and covered
-# in depth by tests/test_widgets.py.
-WIDGET_URI = "ui://sugra/price-chart.html"
-
-EXPECTED_URIS = {DOMAINS_URI, SOURCES_URI, ATTRIBUTION_URI, WIDGET_URI, *SKILL_URIS}
+# The default surface. The MCP Apps ui:// widget is opt-in (MCP-24.1,
+# SUGRA_MCP_UI_WIDGETS) and off by default, so it is not part of this set;
+# tests/test_widgets.py pins both states.
+EXPECTED_URIS = {DOMAINS_URI, SOURCES_URI, ATTRIBUTION_URI, *SKILL_URIS}
 
 EXPECTED_MIME_TYPES = {
     DOMAINS_URI: "application/json",
     SOURCES_URI: "application/json",
     ATTRIBUTION_URI: "text/markdown",
-    WIDGET_URI: "text/html;profile=mcp-app",
     **dict.fromkeys(SKILL_URIS, "text/markdown"),
 }
 

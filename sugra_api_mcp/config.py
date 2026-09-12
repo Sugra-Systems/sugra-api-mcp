@@ -22,6 +22,11 @@ DEFAULT_ALLOWED_ORIGINS: tuple[str, ...] = (
     "https://app.cursor.sh",
 )
 
+# MCP-24.1: the opt-in switch for the MCP Apps price-chart widget, and the
+# only values that turn it on (compared after strip + lower).
+UI_WIDGETS_ENV = "SUGRA_MCP_UI_WIDGETS"
+_TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
+
 
 @dataclass(frozen=True)
 class Config:
@@ -153,3 +158,19 @@ def load_allowed_origins() -> list[str]:
     if raw == "*":
         return ["*"]
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+def ui_widgets_enabled() -> bool:
+    """Whether the MCP Apps price-chart widget is served at all.
+
+    MCP-24.1. On only when SUGRA_MCP_UI_WIDGETS is 1, true, yes or on, in any
+    case and with surrounding whitespace ignored. Unset, empty and every other
+    value mean off. Off is the default because the widget is not ready for an
+    app-directory review, and a directory scan of the server must find no UI:
+    with the flag off the ui:// template is not registered and no tool
+    declares it.
+
+    Read once per process, when tools/widgets.py registers (see
+    register_ui_widgets there), so a change takes a restart.
+    """
+    return os.environ.get(UI_WIDGETS_ENV, "").strip().lower() in _TRUTHY_ENV_VALUES

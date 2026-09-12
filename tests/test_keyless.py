@@ -29,12 +29,15 @@ FIXTURE = Path(__file__).parent / "fixtures" / "openapi_minimal.json"
 
 EXPECTED_TOOL_COUNT = 8
 EXPECTED_PROMPT_COUNT = 6
-EXPECTED_RESOURCE_COUNT = 9
+# The default surface: the opt-in ui:// widget (MCP-24.1) is off, and
+# _keyless_env removes SUGRA_MCP_UI_WIDGETS so the runner's env cannot add it.
+EXPECTED_RESOURCE_COUNT = 8
 
 
 def _keyless_env() -> dict[str, str]:
     env = dict(os.environ)
     env.pop("SUGRA_API_KEY", None)
+    env.pop("SUGRA_MCP_UI_WIDGETS", None)
     return env
 
 
