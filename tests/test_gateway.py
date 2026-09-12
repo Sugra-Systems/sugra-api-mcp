@@ -6,6 +6,9 @@ import json
 from pathlib import Path
 from typing import Any, ClassVar
 
+import pytest
+from mcp.shared.memory import create_connected_server_and_client_session
+
 from sugra_api_mcp.catalog.builder import build_catalog_from_openapi
 from sugra_api_mcp.catalog.models import Catalog, Endpoint
 from sugra_api_mcp.catalog.search import known_sources, known_toolsets
@@ -597,10 +600,22 @@ async def test_fetch_data_passes_dict_body_through(monkeypatch) -> None:
     assert result["data"] == {"ok": True}
 
 
+# The body schema both gateway tools advertise (MCP-24.2). The object and null
+# branches are what the published listing already describes; the array branch
+# types its items as objects, because the one catalog operation that takes a
+# top-level array body (post_openfigi_mapping) takes an array of objects.
+_BODY_SCHEMA_BRANCHES = [
+    {"type": "object", "additionalProperties": True},
+    {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+    {"type": "null"},
+]
+
+
 async def test_gateway_body_tool_schemas_accept_arrays(monkeypatch) -> None:
     """The regression lived in FastMCP validation, before tool code ran:
     the generated input schema for `body` must allow object AND array on
-    both gateway tools."""
+    both gateway tools. The array branch types its items as objects: an
+    untyped `items: {}` advertised any JSON value as a body item (MCP-24.2)."""
     monkeypatch.setenv("SUGRA_API_KEY", "dummy")
     from sugra_api_mcp.server import mcp
 
@@ -609,6 +624,136 @@ async def test_gateway_body_tool_schemas_accept_arrays(monkeypatch) -> None:
         body_schema = tools[name].inputSchema["properties"]["body"]
         types = {sub.get("type") for sub in body_schema.get("anyOf", [])}
         assert {"object", "array"} <= types, f"{name} body schema rejects arrays: {body_schema}"
+        array = next(sub for sub in body_schema["anyOf"] if sub.get("type") == "array")
+        assert array.get("items") == {"type": "object", "additionalProperties": True}, (
+            f"{name} body array items are not typed as objects: {array}"
+        )
+        branches = body_schema["anyOf"]
+        assert len(branches) == len(_BODY_SCHEMA_BRANCHES) and all(
+            branch in branches for branch in _BODY_SCHEMA_BRANCHES
+        ), f"{name} body is no longer object | array of objects | null: {body_schema}"
+
+
+# ---- MCP-24.2: the typed array branch holds at the protocol, not only in the schema ----
+
+_GATEWAY_BODY_TOOLS = ("call_endpoint", "fetch_data")
+
+
+def _route_both_tools_to(monkeypatch, operation_id: str, fake: FakeClient) -> list[str]:
+    """Pin both gateway tools to one fixture operation and record every
+    catalog load. A load means the tool body ran, so a refusal that shows no
+    load came from argument validation, before any tool code."""
+    loads: list[str] = []
+
+    def catalog():
+        loads.append(operation_id)
+        return _fixture_catalog()
+
+    monkeypatch.setattr(gateway, "load_catalog", catalog)
+    monkeypatch.setattr(gateway, "get_client", lambda: fake)
+    monkeypatch.setattr(
+        gateway,
+        "search_catalog",
+        lambda *args, **kwargs: [{"operation_id": operation_id}],
+    )
+    return loads
+
+
+def _body_arguments(tool: str, operation_id: str, body: Any) -> dict[str, Any]:
+    """call_endpoint names the operation; fetch_data reaches it through the pinned search."""
+    if tool == "call_endpoint":
+        return {"operation_id": operation_id, "body": body}
+    return {"query": "map identifiers", "body": body}
+
+
+async def _call_over_protocol(tool: str, arguments: dict[str, Any]):
+    from sugra_api_mcp.server import mcp
+
+    async with create_connected_server_and_client_session(mcp) as session:
+        return await session.call_tool(tool, arguments)
+
+
+def _payload(result) -> dict[str, Any]:
+    if result.structuredContent is not None:
+        return result.structuredContent
+    return json.loads(result.content[0].text)
+
+
+@pytest.mark.parametrize("tool", _GATEWAY_BODY_TOOLS)
+@pytest.mark.parametrize(
+    "body",
+    [["x"], [7], [None], [["idType", "TICKER"]], [{"idType": "TICKER", "idValue": "AAPL"}, "x"]],
+    ids=["string", "number", "null", "array", "object-then-string"],
+)
+async def test_array_body_with_a_non_object_item_is_refused_before_the_tool_runs(
+    monkeypatch, tool: str, body: list[Any]
+) -> None:
+    """The schema says a top-level array body holds objects, and the server
+    holds the same line: a client that ignores the schema gets a protocol
+    error naming the body, and neither the catalog nor the upstream client is
+    touched. The last case puts the bad item second, so every item is judged,
+    not only the first."""
+    fake = FakeClient()
+    loads = _route_both_tools_to(monkeypatch, "openfigi_mapping", fake)
+
+    result = await _call_over_protocol(tool, _body_arguments(tool, "openfigi_mapping", body))
+
+    assert result.isError is True, f"{tool} accepted a non-object body item: {body!r}"
+    assert result.content and "body" in result.content[0].text, result.content
+    assert loads == [], "the tool body ran: the refusal must come from argument validation"
+    assert fake.calls == []
+
+
+@pytest.mark.parametrize("tool", _GATEWAY_BODY_TOOLS)
+async def test_array_body_of_objects_reaches_the_client_over_the_protocol(
+    monkeypatch, tool: str
+) -> None:
+    """Typing the items must not cost the operation they exist for: an array of
+    objects, with any JSON values inside each object, is delivered to the
+    client exactly as sent."""
+    fake = FakeClient()
+    loads = _route_both_tools_to(monkeypatch, "openfigi_mapping", fake)
+    jobs = [
+        {"idType": "TICKER", "idValue": "AAPL"},
+        {"idType": "TICKER", "idValue": "MSFT", "exchCode": None, "tags": ["x", 1], "rank": 2},
+    ]
+
+    result = await _call_over_protocol(tool, _body_arguments(tool, "openfigi_mapping", jobs))
+
+    assert result.isError is False, result.content
+    assert loads, "the tool body never ran"
+    assert fake.calls == [("POST", "/api/v1/openfigi/mapping", {}, jobs)]
+
+
+@pytest.mark.parametrize("tool", _GATEWAY_BODY_TOOLS)
+async def test_object_and_null_bodies_keep_the_published_contract_over_the_protocol(
+    monkeypatch, tool: str
+) -> None:
+    """The published listing describes body as object or null, and typing the
+    array branch narrows neither. An object body carrying nested arrays of
+    scalars (as several catalog bodies do) reaches the client unchanged, and a
+    null body still passes argument validation, so the tool itself answers
+    that this operation needs a body."""
+    fake = FakeClient()
+    loads = _route_both_tools_to(monkeypatch, "openfigi_map", fake)
+    body = {
+        "jobs": [{"idType": "TICKER", "idValue": "AAPL"}],
+        "symbols": ["AAPL", "MSFT"],
+        "asns": [15169],
+    }
+
+    sent = await _call_over_protocol(tool, _body_arguments(tool, "openfigi_map", body))
+
+    assert sent.isError is False, sent.content
+    assert fake.calls == [("POST", "/api/v1/openfigi/map", {}, body)]
+
+    loads.clear()
+    absent = await _call_over_protocol(tool, _body_arguments(tool, "openfigi_map", None))
+
+    assert loads, "a null body was refused before the tool ran"
+    assert len(fake.calls) == 1, "a null body reached the client"
+    missing = {"call_endpoint": "missing", "fetch_data": "needs_params"}[tool]
+    assert _payload(absent)[missing] == ["body"]
 
 
 # ---- MCP-19: the call_endpoint span behind fetch_data names its operation ----

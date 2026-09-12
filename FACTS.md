@@ -19,7 +19,8 @@ pre-gateway curated surface and never shipped in this package after v0.4.0.
 ## Prompts and resources (every transport)
 
 - Prompts (6): market_snapshot, macro_briefing, sanctions_screening, sector_compare, earth_conditions, source_overview. Prompt text names only the 8 gateway tools, never hosted-only agent tools.
-- Resources (9): sugra://catalog/domains, sugra://catalog/sources, sugra://attribution, ui://sugra/price-chart.html (SEP-1865 widget on call_endpoint), and five official skills under sugra://skills/ (explore-catalog, envelope-attribution, auth-limits, hosted-vs-gateway, cross-domain-briefing). Each skill is also a SKILL.md file under sugra_api_mcp/skills/. This git repo is the Claude Code and Grok plugin marketplace for those files (plugin name `sugra-api`). Codex and Cursor copy the same folders. ChatGPT stays MCP connector only.
+- Resources (8 by default): sugra://catalog/domains, sugra://catalog/sources, sugra://attribution, and five official skills under sugra://skills/ (explore-catalog, envelope-attribution, auth-limits, hosted-vs-gateway, cross-domain-briefing). Each skill is also a SKILL.md file under sugra_api_mcp/skills/. This git repo is the Claude Code and Grok plugin marketplace for those files (plugin name `sugra-api`). Codex and Cursor copy the same folders. ChatGPT stays MCP connector only.
+- Price-chart widget (opt-in, off by default): ui://sugra/price-chart.html, the SEP-1865 template declared on call_endpoint through `_meta.ui`, is served only when the process starts with `SUGRA_MCP_UI_WIDGETS` set to 1, true, yes or on. Off, the template is neither listed in resources/list nor declared on any tool. On, it is a ninth resource and call_endpoint declares it.
 
 ## Catalog scale
 
