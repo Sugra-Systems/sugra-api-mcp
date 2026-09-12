@@ -171,6 +171,12 @@ def test_limit_field_descriptions_document_scope():
         meta = hints["limit"].__metadata__[0]
         desc = getattr(meta, "description", "") or ""
         assert "top-level" in desc, tool
+        # MCP-22: both descriptions name the record list inside data and
+        # the meta.shaped key that reports where shaping applied.
+        fields_desc = getattr(hints["fields"].__metadata__[0], "description", "") or ""
+        for text in (desc, fields_desc):
+            assert "data.items" in text, tool
+            assert "records_path" in text, tool
 
 
 def test_low_confidence_status_reaches_telemetry():
