@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-09-10T18:59:26Z",
+  "built_at": "2026-09-12T07:24:25Z",
   "endpoint_count": 1625,
   "endpoints": [
     {
@@ -16160,7 +16160,7 @@
       "toolset": "statistics"
     },
     {
-      "description": "Receipt for a GENESIS table extraction. A slice GENESIS refuses with Status 98 is submitted as job=true and collected later at GET /destatis/extractions/{id}. job=true is sent only after that size gate (or when this instance already cached it for the exact code, window and contents); a slice that would have succeeded synchronously is not queued as a vendor job. Vendor job ids are not published. Long-tail admission: wait 0 s, 429 when the lane is busy. Requires DESTATIS_USERNAME and DESTATIS_PASSWORD: the API token cannot call job=true (vendor Status 12).",
+      "description": "Receipt for a GENESIS table extraction. A slice GENESIS refuses with Status 98 is submitted as job=true and collected later at GET /destatis/extractions/{id}. job=true is sent only after that size gate (or when this instance already cached it for the exact code, window and contents); a slice that would have succeeded synchronously is not queued as a vendor job. Vendor job ids are not published. Long-tail admission: wait 0 s, 429 when the lane is busy. Requires DESTATIS_USERNAME and DESTATIS_PASSWORD: the API token cannot call job=true (vendor Status 12). If GENESIS refuses to queue the slice (Status 99), the answer is 400 with a contents/classifying hint, not 502.",
       "method": "POST",
       "operation_id": "post_destatis_extractions",
       "parameters": [],
@@ -92289,5 +92289,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "f5de6b0b99687457ba4e13a8c1d09ab0e1525bf9cd7fe309e19b502ec7443233"
+  "spec_sha256": "166d3d8684a97b4dd70e58e3fae7dd2d096be17de560192929fd3a65f4fe4c11"
 }
