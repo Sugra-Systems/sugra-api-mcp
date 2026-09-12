@@ -165,16 +165,22 @@ def test_limit_field_descriptions_document_scope():
     import typing
 
     import sugra_api_mcp.tools.gateway as gw
+    from sugra_api_mcp.catalog.response import _RECORD_LIST_KEYS
+
+    # MCP-22: the descriptions name every key that qualifies as the record
+    # list inside data, in the allowlist's sorted order, so the published
+    # text cannot drift from the code.
+    allowlist = ", ".join(sorted(_RECORD_LIST_KEYS))
 
     for tool in (gw.call_endpoint, gw.fetch_data):
         hints = typing.get_type_hints(tool, include_extras=True)
         meta = hints["limit"].__metadata__[0]
         desc = getattr(meta, "description", "") or ""
         assert "top-level" in desc, tool
-        # MCP-22: both descriptions name the record list inside data and
-        # the meta.shaped key that reports where shaping applied.
         fields_desc = getattr(hints["fields"].__metadata__[0], "description", "") or ""
         for text in (desc, fields_desc):
+            assert allowlist in text, tool
+            assert "exactly one" in text, tool
             assert "data.items" in text, tool
             assert "records_path" in text, tool
 

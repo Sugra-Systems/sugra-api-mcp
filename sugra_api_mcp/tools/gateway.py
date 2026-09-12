@@ -220,10 +220,14 @@ async def call_endpoint(
         Field(
             description=(
                 "Bounds ONLY the records list: the data list, a bare top-level "
-                "array, or the one record list inside data (such as data.items "
-                "or data.observations). Keys beside it such as total and count "
-                "are not rewritten, and lists nested inside records are never "
-                "truncated. meta.shaped reports limit_applied and records_path."
+                "array, or the list inside an object data when exactly one of "
+                "these keys holds a list: data, entries, events, history, items, "
+                "observations, points, records, results, rows, series, timeseries "
+                "(for example data.items). No such list, or several, means the "
+                "limit does not apply. Keys beside the list such as total and "
+                "count are not rewritten, and lists nested inside records are "
+                "never truncated. meta.shaped reports limit_applied and "
+                "records_path."
             ),
         ),
     ] = None,
@@ -232,11 +236,15 @@ async def call_endpoint(
         Field(
             description=(
                 "Optional projection of keys to keep on each record of the "
-                "records list (the data list, a bare top-level array, or the "
-                "one record list inside data such as data.items); keys beside "
-                "that list such as total and count stay. If a field names a "
-                "key of data itself, or of a payload without data, that object "
-                "is projected instead. Dotted paths (geo.city) walk nested "
+                "records list: the data list, a bare top-level array, or the "
+                "list inside an object data when exactly one of these keys "
+                "holds a list: data, entries, events, history, items, "
+                "observations, points, records, results, rows, series, "
+                "timeseries (for example data.items). Keys beside that list "
+                "such as total and count stay. If a field names a key of data "
+                "itself, or of a payload without data, that object is "
+                "projected instead; an object data without such a list is "
+                "otherwise kept whole. Dotted paths (geo.city) walk nested "
                 "objects. If no field matches, nothing is removed. meta.shaped "
                 "reports fields_applied, fields_unmatched and records_path. "
                 "Omit to keep every key."
@@ -428,10 +436,14 @@ async def fetch_data(
         Field(
             description=(
                 "Bounds ONLY the records list: the data list, a bare top-level "
-                "array, or the one record list inside data (such as data.items "
-                "or data.observations). Keys beside it such as total and count "
-                "are not rewritten, and lists nested inside records are never "
-                "truncated. meta.shaped reports limit_applied and records_path."
+                "array, or the list inside an object data when exactly one of "
+                "these keys holds a list: data, entries, events, history, items, "
+                "observations, points, records, results, rows, series, timeseries "
+                "(for example data.items). No such list, or several, means the "
+                "limit does not apply. Keys beside the list such as total and "
+                "count are not rewritten, and lists nested inside records are "
+                "never truncated. meta.shaped reports limit_applied and "
+                "records_path."
             ),
         ),
     ] = None,
@@ -440,11 +452,15 @@ async def fetch_data(
         Field(
             description=(
                 "Optional projection of keys to keep on each record of the "
-                "records list (the data list, a bare top-level array, or the "
-                "one record list inside data such as data.items); keys beside "
-                "that list such as total and count stay. If a field names a "
-                "key of data itself, or of a payload without data, that object "
-                "is projected instead. Dotted paths (geo.city) walk nested "
+                "records list: the data list, a bare top-level array, or the "
+                "list inside an object data when exactly one of these keys "
+                "holds a list: data, entries, events, history, items, "
+                "observations, points, records, results, rows, series, "
+                "timeseries (for example data.items). Keys beside that list "
+                "such as total and count stay. If a field names a key of data "
+                "itself, or of a payload without data, that object is "
+                "projected instead; an object data without such a list is "
+                "otherwise kept whole. Dotted paths (geo.city) walk nested "
                 "objects. If no field matches, nothing is removed. meta.shaped "
                 "reports fields_applied, fields_unmatched and records_path. "
                 "Omit to keep every key."

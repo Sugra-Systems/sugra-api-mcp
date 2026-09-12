@@ -49,10 +49,16 @@ New cases in `tests/test_catalog.py`: a news_latest-shaped envelope with limit o
 
 No existing test pinned the old empty-dict behaviour, so none was rewritten; every earlier shaping test passes unchanged.
 
-Mutation evidence: a harness outside the repo applies one mutant per run to `response.py`, runs `tests/test_catalog.py`, `tests/test_group_precheck_and_telemetry.py` and `tests/test_gateway.py`, and restores the file from an in-memory byte copy verified by sha256. 17 mutants, 17 killed, none survived: records list ignored for limit; records list ignored for fields; the never-empty rule removed; the ambiguity check removed (first list wins); top-level-key precedence removed (records tried first); any list treated as records; the list check on allowlisted keys removed; sibling keys dropped; limit_applied false on the records list; records_path dropped, once in the data shaper and once in the meta block; records_path set on an own-key match; limit_applied true on an object without records; the never-empty rule removed separately for object data, list data and envelope-less payloads; `observations` dropped from the allowlist.
+Mutation evidence: a harness outside the repo applies one mutant per run to `response.py`, runs `tests/test_catalog.py`, `tests/test_group_precheck_and_telemetry.py` and `tests/test_gateway.py`, and restores the file from an in-memory byte copy verified by sha256. 18 mutants, 18 killed, none survived: records list ignored for limit; records list ignored for fields; the never-empty rule removed; the ambiguity check removed (first list wins); top-level-key precedence removed (records tried first); any list treated as records; the list check on allowlisted keys removed; sibling keys dropped; limit_applied false on the records list; records_path dropped, once in the data shaper and once in the meta block; records_path set on an own-key match; limit_applied true on an object without records; the never-empty rule removed separately for object data, list data and envelope-less payloads; `observations` dropped from the allowlist; and, after review round 1, `values` added to the allowlist without touching the descriptions (killed by the description test).
 
 Full suite 667 passed; `ruff check sugra_api_mcp tests scripts` and `git diff --check` clean.
 
 ## Review
 
-Independent review round 1: pending.
+Independent review round 1 (head e34f209): APPROVE_WITH_CHANGES, one S2, no S1.
+
+- S2 (business-logic-vs-spec): the limit and fields descriptions said "the one record list inside data" without naming which keys qualify, so a client could expect a lone list under an unlisted key such as `values` to be bounded, while shaping leaves that data whole. Accepted and fixed: both descriptions on both tools now name the twelve keys, say that exactly one of them must hold a list, and say that none or several leave the limit unapplied. The description test pins the key list against `_RECORD_LIST_KEYS` in sorted order, so the published text cannot drift from the code.
+
+Independent review round 2: pending.
+
+Records: the REVIEW files in `ops/reviews/MCP-22/`.
