@@ -55,9 +55,11 @@ READ_ONLY_TOOL = ToolAnnotations(
 
 
 # MCP Apps (SEP-1865, extension io.modelcontextprotocol/ui): the one tool
-# that renders an interactive widget. Its template declaration is attached in
-# SugraFastMCP.list_tools via _meta.ui.resourceUri (spec section "Resource
-# Discovery"; the flat "ui/resourceUri" key is deprecated).
+# that may render an interactive widget. Its template declaration is attached
+# in SugraFastMCP.list_tools via _meta.ui.resourceUri (spec section "Resource
+# Discovery"; the flat "ui/resourceUri" key is deprecated). MCP-24.1: the
+# widget is opt-in, so nothing is attached unless tools/widgets.py registered
+# the template on the server and linked it with link_ui_template.
 UI_TEMPLATE_TOOL = "call_endpoint"
 
 
@@ -74,26 +76,24 @@ def _with_oauth_security(tool: MCPTool) -> MCPTool:
     return MCPTool.model_validate(payload)
 
 
-def _with_ui_template(tool: MCPTool) -> MCPTool:
+def _with_ui_template(tool: MCPTool, resource_uri: str | None) -> MCPTool:
     """Attach the MCP Apps template declaration (SEP-1865 "Resource Discovery").
 
-    Only UI_TEMPLATE_TOOL renders a widget: _meta.ui.resourceUri points at
-    the predeclared ui:// template resource served by tools/widgets.py. The
-    import is lazy because the tools package imports this module at load time.
+    Only UI_TEMPLATE_TOOL renders a widget, and only when the server has a
+    linked template (resource_uri is not None): _meta.ui.resourceUri then
+    points at the ui:// template resource registered on that same server.
     """
-    if tool.name != UI_TEMPLATE_TOOL:
+    if resource_uri is None or tool.name != UI_TEMPLATE_TOOL:
         return tool
-    from .tools.widgets import PRICE_CHART_URI
-
     payload = tool.model_dump(by_alias=True, exclude_none=True)
     meta = dict(payload.get("_meta") or {})
-    meta["ui"] = {"resourceUri": PRICE_CHART_URI}
+    meta["ui"] = {"resourceUri": resource_uri}
     payload["_meta"] = meta
     return MCPTool.model_validate(payload)
 
 
 class SugraFastMCP(FastMCP):
-    """FastMCP with OAuth tool metadata and the SEP-1865 UI template meta.
+    """FastMCP with OAuth tool metadata and the opt-in SEP-1865 UI template meta.
 
     Also pins serverInfo.version to the package version: FastMCP never
     forwards a version to the lowlevel server, whose initialize response then
@@ -103,10 +103,30 @@ class SugraFastMCP(FastMCP):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._mcp_server.version = __version__
+        # MCP-24.1: the ui:// template UI_TEMPLATE_TOOL declares, or None.
+        # None until link_ui_template runs, so by default no tool carries
+        # _meta.ui.
+        self._ui_template_uri: str | None = None
+
+    def link_ui_template(self, resource_uri: str) -> None:
+        """Declare resource_uri as the MCP Apps template of UI_TEMPLATE_TOOL.
+
+        MCP-24.1: the one caller is tools/widgets.py register_ui_widgets,
+        right after it registered that resource here. list_tools never reads
+        the environment; it attaches only what was linked, so the tool
+        declaration and resources/list cannot disagree. A URI that is not a
+        resource of this server is refused, so a tool can never point at a
+        template the server does not serve.
+        """
+        listed = {str(resource.uri) for resource in self._resource_manager.list_resources()}
+        if resource_uri not in listed:
+            raise ValueError(f"cannot link unregistered UI template: {resource_uri}")
+        self._ui_template_uri = resource_uri
 
     async def list_tools(self) -> list[MCPTool]:
+        template_uri = self._ui_template_uri
         return [
-            _with_ui_template(_with_oauth_security(tool))
+            _with_ui_template(_with_oauth_security(tool), template_uri)
             for tool in await super().list_tools()
         ]
 

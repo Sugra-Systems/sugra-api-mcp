@@ -16,7 +16,8 @@ specification/draft/apps.mdx:
   ``visibility: ["model" | "app"]``). The flat ``_meta["ui/resourceUri"]``
   form is explicitly deprecated. Wiring for this server lives in
   ``sugra_api_mcp.server`` (SugraFastMCP.list_tools), which attaches the
-  declaration to the ``call_endpoint`` tool only.
+  declaration to the ``call_endpoint`` tool only, and only once the template
+  is linked (see "Opt-in" below).
 - "Communication Protocol" / "Lifecycle": the iframe talks to the host with
   standard MCP JSON-RPC over ``postMessage``. Handshake: the app sends a
   ``ui/initialize`` request, the host responds, then the app sends the
@@ -40,13 +41,28 @@ specification/draft/apps.mdx:
   template below is therefore fully self-contained: inline CSS, vanilla JS,
   hand-rolled inline SVG chart, zero external requests.
 
-Importing this module registers the template resource against the global
-FastMCP singleton, mirroring how the other tool modules register.
+Opt-in (MCP-24.1). The widget is not ready for an app-directory review, so by
+default none of it is served: the template resource is not registered (absent
+from resources/list, unreadable) and no tool carries ``_meta.ui``. A truthy
+``SUGRA_MCP_UI_WIDGETS`` (config.ui_widgets_enabled) turns both on together,
+exactly as the widget behaved before it became opt-in.
+
+When the flag is read: once, by :func:`register_ui_widgets`, which this module
+calls when the tools package is imported. That is process start on both
+transports (``__main__`` imports the tools after the environment is loaded;
+the hosted service receives its environment before the process starts), so a
+change takes a restart. SugraFastMCP.list_tools does NOT read the flag. It
+attaches only the template that registration linked on that server, after the
+resource was registered there, so the tool declaration and resources/list
+agree by construction rather than by reading the environment twice.
 """
 
 from __future__ import annotations
 
-from ..server import mcp
+from typing import Any
+
+from ..config import ui_widgets_enabled
+from ..server import SugraFastMCP, mcp
 
 PRICE_CHART_URI = "ui://sugra/price-chart.html"
 
@@ -410,17 +426,55 @@ PRICE_CHART_TEMPLATE = """<!doctype html>
 """
 
 
-@mcp.resource(
-    PRICE_CHART_URI,
-    name="price_chart_widget",
-    title="Price chart widget",
-    description=(
-        "Self-contained MCP Apps HTML template (SEP-1865) that renders a line "
-        "chart from a call_endpoint time-series result. Inline CSS and JS "
-        "only - the template makes no external requests."
-    ),
-    mime_type=PRICE_CHART_MIME_TYPE,
-)
+
+# Idempotence latch for the GLOBAL mcp instance only, as in tools/agent.py.
+# Explicit instances (tests) are never latched, so a test can register onto
+# fresh servers repeatedly without touching the global.
+_registered_global = False
+
+
 def price_chart_widget() -> str:
     """The price-chart UI template as an HTML5 document."""
     return PRICE_CHART_TEMPLATE
+
+
+def register_ui_widgets(instance: Any | None = None) -> bool:
+    """Register the price-chart template when the widget flag is on.
+
+    Returns True when the widget is registered. With SUGRA_MCP_UI_WIDGETS off
+    (the default) nothing is registered and nothing is linked: resources/list
+    has no ui:// entry and no tool declares a template.
+
+    On a SugraFastMCP target the template is then linked to call_endpoint
+    (server.UI_TEMPLATE_TOOL), after the resource exists, so the declaration
+    always names a listed resource. A plain FastMCP target gets the resource
+    only.
+
+    Idempotent for the global instance; an explicit ``instance`` (tests) is
+    never latched and never touches the global.
+    """
+    global _registered_global
+    target = mcp if instance is None else instance
+    if instance is None and _registered_global:
+        return True
+    if not ui_widgets_enabled():
+        return False
+    target.resource(
+        PRICE_CHART_URI,
+        name="price_chart_widget",
+        title="Price chart widget",
+        description=(
+            "Self-contained MCP Apps HTML template (SEP-1865) that renders a line "
+            "chart from a call_endpoint time-series result. Inline CSS and JS "
+            "only - the template makes no external requests."
+        ),
+        mime_type=PRICE_CHART_MIME_TYPE,
+    )(price_chart_widget)
+    if isinstance(target, SugraFastMCP):
+        target.link_ui_template(PRICE_CHART_URI)
+    if instance is None:
+        _registered_global = True
+    return True
+
+
+register_ui_widgets()
