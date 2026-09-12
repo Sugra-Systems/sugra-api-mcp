@@ -63,4 +63,6 @@ Full suite 698 passed; `ruff check sugra_api_mcp tests scripts` and `git diff --
 
 Independent review round 1 (head 639b2d5): APPROVE_WITH_CHANGES, no S1 or S2, one S3 (maintainability). The flag-on probe kept only each tool's `_meta`, so an attach that dropped the top-level `securitySchemes` would have passed. Accepted and closed in this PR, because OAuth metadata unchanged in both flag states is this card's own requirement: the fresh-process probe now captures every tool's full JSON serialization, both flag states assert `securitySchemes` at the top level and in `_meta` on every tool, the on-versus-off comparison covers whole serialized tools, and the matching mutant is killed.
 
-Independent review round 2 pending. Records: `ops/reviews/MCP-24.1/REVIEW-*.md`.
+Independent review round 2 (head 0019043): APPROVE, every dimension PASS, no findings. It confirmed the round 1 finding closed (an in-memory top-level OAuth deletion now fails three tests) and independently exercised both `_run_server` branches with the transport runners stubbed: stdio 8 tools and hosted HTTP 11 tools, both with 8 resources and no UI by default and 9 resources with the flag on. It noted as a coverage limit, not a finding, that the committed probes do not go through HTTP startup.
+
+Records: `ops/reviews/MCP-24.1/REVIEW-*.md`.
