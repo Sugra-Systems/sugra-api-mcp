@@ -66,6 +66,59 @@ async def test_deadline_fires_with_a_typed_envelope(monkeypatch) -> None:
         "cancelled at the budget")
 
 
+class _CaptureSpan:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.attributes: dict[str, object] = {}
+
+    def set_attribute(self, key: str, value: object) -> None:
+        self.attributes[key] = value
+
+    def set_status(self, status: object) -> None:
+        self.status = status
+
+    def end(self) -> None:
+        self.ended = True
+
+
+class _CaptureTracer:
+    def __init__(self) -> None:
+        self.spans: list[_CaptureSpan] = []
+
+    def start_span(self, name: str) -> _CaptureSpan:
+        span = _CaptureSpan(name)
+        self.spans.append(span)
+        return span
+
+
+async def test_the_deadline_leaves_a_verdict_on_the_span(monkeypatch) -> None:
+    """MCP-19.1, over a real in-memory session: the budget's cancellation used
+    to end the tool's span with no mcp.success and no code (CancelledError is
+    a BaseException the wrapper never caught), so the one failure that fires
+    when the API is slowest was invisible to every failure query. The client
+    still receives the deadline_exceeded envelope, and now the span says the
+    same thing."""
+    from sugra_api_mcp import observability
+
+    tracer = _CaptureTracer()
+    monkeypatch.setattr(observability, "_TRACER", tracer)
+    monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "0.5")
+    monkeypatch.setattr(gateway, "get_client", lambda: _StallingClient())
+    async with create_connected_server_and_client_session(mcp) as session:
+        result = await session.call_tool(
+            "call_endpoint", {"operation_id": "quotes_symbol_price",
+                              "params": {"symbol": "AAPL"}})
+    assert result.isError is True
+    assert _structured(result)["error"] == "deadline_exceeded"
+
+    spans = [span for span in tracer.spans if span.name == "mcp.tool.call_endpoint"]
+    assert len(spans) == 1
+    assert spans[0].attributes["mcp.success"] is False
+    assert spans[0].attributes["mcp.error.code"] == "deadline_exceeded"
+    assert spans[0].attributes["mcp.operation_id"] == "quotes_symbol_price"
+    assert spans[0].ended is True
+
+
 async def test_fast_call_is_untouched_by_the_deadline(monkeypatch) -> None:
     monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "5")
 

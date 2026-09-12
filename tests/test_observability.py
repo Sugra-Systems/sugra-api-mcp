@@ -1041,3 +1041,85 @@ def test_get_timeseries_envelope_keeps_its_recipe_version_on_the_span(monkeypatc
     assert span.attributes["mcp.agent.recipe_version"] == "timeseries.price@1"
     assert span.attributes["mcp.agent.status"] == "full"
     _assert_span_is_clean(span, _AGENT_SUCCESS_ATTRS)
+
+
+# ---- MCP-19.1: a cancelled call leaves a verdict on its span ----
+
+
+def test_a_call_cancelled_by_the_budget_records_deadline_exceeded(monkeypatch) -> None:
+    """server.py bounds dispatch with asyncio.timeout, which CANCELS the task.
+    CancelledError is a BaseException, so the wrapper's `except Exception`
+    never saw it and the span ended with no mcp.success at all - 66 such spans
+    in 90 days, and the allowlisted deadline_exceeded never once on a span.
+    call_tool publishes the budget's absolute deadline in a ContextVar; a
+    cancellation that arrives at or past it IS the budget."""
+    tracer = _install_fake_tracer(monkeypatch)
+
+    @observability.trace_mcp_tool("call_endpoint")
+    async def slow_call(operation_id: str) -> dict:
+        await asyncio.sleep(5)
+        return {"data": []}
+
+    async def run() -> None:
+        when = asyncio.get_running_loop().time() + 0.05
+        token = observability.budget_deadline_at.set(when)
+        try:
+            async with asyncio.timeout_at(when):
+                await slow_call(operation_id="quotes_symbol_price")
+        finally:
+            observability.budget_deadline_at.reset(token)
+
+    with pytest.raises(TimeoutError):
+        asyncio.run(run())
+
+    span = tracer.spans[0]
+    assert span.attributes["mcp.success"] is False
+    assert span.attributes["mcp.error.code"] == "deadline_exceeded"
+    assert span.attributes["mcp.operation_id"] == "quotes_symbol_price"
+    assert isinstance(span.attributes["mcp.duration_ms"], int)
+    assert "ERROR" in repr(getattr(span.status, "status_code", span.status))
+    assert span.ended is True
+    _assert_span_is_clean(span, _FAILURE_ATTRS | {"mcp.operation_id"})
+
+
+@pytest.mark.parametrize("budget_ahead", [None, 10.0])
+def test_a_cancellation_that_is_not_the_budget_records_cancelled(monkeypatch, budget_ahead) -> None:
+    """A cancellation that arrives with no budget published, or well before
+    the published deadline, is a different fact - the client went away, the
+    session shut down - and is filed as `cancelled`. The exception is
+    re-raised unchanged so cancellation semantics stay intact."""
+    tracer = _install_fake_tracer(monkeypatch)
+
+    @observability.trace_mcp_tool("get_snapshot")
+    async def slow_snapshot() -> dict:
+        await asyncio.sleep(5)
+        return {"status": "full"}
+
+    async def run() -> None:
+        token = None
+        if budget_ahead is not None:
+            token = observability.budget_deadline_at.set(
+                asyncio.get_running_loop().time() + budget_ahead
+            )
+        try:
+            task = asyncio.create_task(slow_snapshot())
+            await asyncio.sleep(0.01)
+            task.cancel()
+            await task
+        finally:
+            if token is not None:
+                observability.budget_deadline_at.reset(token)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(run())
+
+    span = tracer.spans[0]
+    assert span.attributes["mcp.success"] is False
+    assert span.attributes["mcp.error.code"] == "cancelled"
+    assert span.ended is True
+    _assert_span_is_clean(span, _FAILURE_ATTRS)
+
+
+@pytest.mark.parametrize("code", ["deadline_exceeded", "cancelled"])
+def test_cancellation_codes_are_allowlisted(code: str) -> None:
+    assert code in observability._KNOWN_ERROR_CODES

@@ -15,7 +15,9 @@ Custom dimensions captured per MCP tool invocation:
                            are dropped.
     mcp.success          - bool: False when the result is an error payload
                            (errors.is_error_payload - an "error" key with no
-                           "data" beside it) or the tool raised
+                           "data" beside it), the tool raised, or the call was
+                           cancelled (deadline_exceeded for the dispatch
+                           budget, cancelled for anything else)
     mcp.error.code       - the "error" value when it is in the allowlist;
                            otherwise the HTTP status the client recorded,
                            named through a fixed table (upstream_http_429,
@@ -40,12 +42,14 @@ Privacy contract (enforced by tests):
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import functools
 import logging
 import os
 import time
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 from typing import Any, ParamSpec, TypeVar
 
 from .errors import is_error_payload
@@ -58,6 +62,26 @@ R = TypeVar("R")
 _INITIALISED = False
 _TRACER: Any | None = None
 _VALID_OPERATION_IDS: frozenset[str] | None = None
+
+# The absolute loop time at which the dispatch budget will cancel the running
+# call, published by server.py call_tool for the duration of ONE dispatch and
+# reset after it. A CancelledError that reaches the wrapper at or past this
+# instant is the budget (deadline_exceeded); any other is the caller or the
+# session going away (cancelled). Set and read inside one dispatch on one
+# task, so it cannot inherit across calls the way the MCP-17 stamp did.
+budget_deadline_at: ContextVar[float | None] = ContextVar("sugra_budget_deadline_at", default=None)
+
+
+def _cancellation_code() -> str:
+    """deadline_exceeded when the published budget has elapsed, else cancelled."""
+    when = budget_deadline_at.get()
+    if when is None:
+        return "cancelled"
+    try:
+        now = asyncio.get_running_loop().time()
+    except RuntimeError:
+        return "cancelled"
+    return "deadline_exceeded" if now >= when else "cancelled"
 
 # HTTP failures from the Sugra API. SugraClient keeps the API's own text at
 # result["error"] for the CALLER (a bad symbol says which, a quota refusal
@@ -138,8 +162,13 @@ _KNOWN_ERROR_CODES: frozenset[str] = frozenset({
     # Gateway safety net for unexpected exceptions inside call_endpoint.
     "tool_execution_failed",
     # MCP-10: the end-to-end per-call budget fired and the call was
-    # cancelled server-side (audit P1-4).
+    # cancelled server-side (audit P1-4). MCP-19.1: this is what the SPAN
+    # says too - the budget cancels the task with a CancelledError, which
+    # `except Exception` never saw, so the span used to end with no verdict.
     "deadline_exceeded",
+    # MCP-19.1: a cancellation that is not the budget - the client went away
+    # or the session shut down mid-call.
+    "cancelled",
     # Agent Context Layer plane: infra-level credential rejected (hosted-only
     # tools, tools/agent.py remaps the plane 403 to this distinct code).
     "agent_plane_unavailable",
@@ -372,6 +401,18 @@ def trace_mcp_tool(
 
                 try:
                     result = await func(*args, **kwargs)
+                except asyncio.CancelledError:
+                    # A BaseException: the dispatch budget (server.py) cancels
+                    # the task, and the clause below never saw it, so the span
+                    # ended through `finally` with only the tool name - the one
+                    # failure that fires when the API is slowest was invisible
+                    # to every failure query (MCP-19.1). Stamp the verdict and
+                    # re-raise unchanged so the cancellation still propagates.
+                    _safe_attr(span, "mcp.success", False)
+                    _safe_attr(span, "mcp.error.code", _cancellation_code())
+                    _safe_attr(span, "mcp.duration_ms", int((time.perf_counter() - start) * 1000))
+                    _safe_status_error(span)
+                    raise
                 except Exception as e:
                     _safe_attr(span, "mcp.success", False)
                     _safe_attr(span, "mcp.error.code", "exception")

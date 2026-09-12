@@ -16,7 +16,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, Icon, TextContent, ToolAnnotations
 from mcp.types import Tool as MCPTool
 
-from . import __version__
+from . import __version__, observability
 from .client import SugraClient
 from .config import MISSING_API_KEY_HINT, Config, load_allowed_origins, load_config
 from .errors import is_error_payload
@@ -160,6 +160,18 @@ class SugraFastMCP(FastMCP):
         total = load_config(require_api_key=False).tool_deadline
         started = time.monotonic()
         deadline = total
+        # MCP-19.1: publish the instant this budget will cancel the call, so
+        # the tool's span can name the cancellation deadline_exceeded instead
+        # of a bare cancelled. Computed a hair BEFORE asyncio.timeout computes
+        # its own, so at the moment of cancellation loop.time() is past both.
+        # Set and reset around ONE dispatch on this task: it never inherits
+        # across calls the way the MCP-17 stamp did. Reached through the
+        # module attribute, not a from-import: the wrapper reads the SAME
+        # attribute by name at call time, so the two cannot bind to different
+        # objects (a module reload in the test suite did exactly that).
+        budget_token = observability.budget_deadline_at.set(
+            asyncio.get_running_loop().time() + deadline
+        )
         try:
             async with asyncio.timeout(deadline):
                 result = await super().call_tool(name, arguments)
@@ -183,6 +195,8 @@ class SugraFastMCP(FastMCP):
                 content=[TextContent(type="text", text=json.dumps(payload))],
                 structuredContent=payload,
             )
+        finally:
+            observability.budget_deadline_at.reset(budget_token)
 
         # Tools declaring a dict return arrive as (content, structured); the
         # bare forms are accepted so this cannot depend on that detail.
