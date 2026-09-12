@@ -270,6 +270,292 @@ def test_response_shaping_omits_oversized_raw_payload() -> None:
     assert shaped["meta"]["raw_omitted"]["reason"] == "exceeds_raw_size_limit"
 
 
+def _news_latest_envelope() -> dict:
+    """news_latest as the API sends it (NewsLatestData and the stored sample
+    news_latest.json in the API repo): the records sit in data.items beside
+    total and count."""
+    items = [
+        {
+            "title": f"Headline {index}",
+            "description": f"Summary {index}",
+            "link": f"https://example.com/news/{index}",
+            "published": "2026-09-12T08:00:00Z",
+            "source": "feed-a",
+            "source_name": "Feed A",
+            "region": "global",
+            "category": "news",
+        }
+        for index in range(5)
+    ]
+    return {
+        "data": {"total": 1803, "count": 5, "items": items},
+        "meta": {"source": "news_rss"},
+    }
+
+
+def _fred_series_envelope() -> dict:
+    """fred_series_series_id as the API types it (FredSeriesSeriesIdData):
+    series metadata beside data.observations."""
+    return {
+        "data": {
+            "series_id": "CPIAUCSL",
+            "title": "Consumer Price Index for All Urban Consumers",
+            "units": "Index 1982-1984=100",
+            "units_short": "Index 1982-1984=100",
+            "frequency": "Monthly",
+            "seasonal_adjustment": "Seasonally Adjusted",
+            "last_updated": "2026-09-10",
+            "observation_start": "2026-05-01",
+            "observation_end": "2026-07-01",
+            "count": 3,
+            "observations": [
+                {"date": "2026-05-01", "value": 320.1},
+                {"date": "2026-06-01", "value": 320.8},
+                {"date": "2026-07-01", "value": 321.4},
+            ],
+            "license": {"status": "public_domain", "originator": None},
+        },
+        "meta": {"source": "fred"},
+    }
+
+
+def test_response_shaping_limit_bounds_records_inside_data() -> None:
+    """Live 2026-09-12: news_latest with limit=2 returned all 50 items and
+    limit_applied false, because the records sit in data.items."""
+    payload = _news_latest_envelope()
+
+    shaped = shape_response(payload, limit=2)
+
+    assert shaped["data"]["items"] == payload["data"]["items"][:2]
+    # Sibling counts stay exactly as the API sent them.
+    assert shaped["data"]["total"] == 1803
+    assert shaped["data"]["count"] == 5
+    assert shaped["meta"]["source"] == "news_rss"
+    block = shaped["meta"]["shaped"]
+    assert block["limit_applied"] is True
+    assert block["records_path"] == "data.items"
+    assert block["fields_applied"] == []
+    assert block["fields_unmatched"] == []
+
+
+def test_response_shaping_fields_project_records_inside_data() -> None:
+    """Live 2026-09-12: news_latest with fields=["title"] returned data {}."""
+    payload = _news_latest_envelope()
+
+    shaped = shape_response(payload, fields=["title"])
+
+    assert shaped["data"] == {
+        "total": 1803,
+        "count": 5,
+        "items": [{"title": f"Headline {index}"} for index in range(5)],
+    }
+    block = shaped["meta"]["shaped"]
+    assert block["limit_applied"] is False
+    assert block["fields_applied"] == ["title"]
+    assert block["fields_unmatched"] == []
+    assert block["records_path"] == "data.items"
+
+
+def test_response_shaping_limit_and_fields_on_records_inside_data() -> None:
+    payload = _news_latest_envelope()
+
+    shaped = shape_response(payload, limit=2, fields=["title", "link", "missing"])
+
+    assert shaped["data"] == {
+        "total": 1803,
+        "count": 5,
+        "items": [
+            {"title": "Headline 0", "link": "https://example.com/news/0"},
+            {"title": "Headline 1", "link": "https://example.com/news/1"},
+        ],
+    }
+    block = shaped["meta"]["shaped"]
+    assert block["limit_applied"] is True
+    assert block["fields_applied"] == ["title", "link"]
+    assert block["fields_unmatched"] == ["missing"]
+    assert block["records_path"] == "data.items"
+
+
+def test_response_shaping_unmatched_fields_never_empty_records_inside_data() -> None:
+    payload = _news_latest_envelope()
+
+    shaped = shape_response(payload, fields=["headline", "url"])
+
+    assert shaped["data"] == payload["data"]
+    block = shaped["meta"]["shaped"]
+    assert block["fields_applied"] == []
+    assert block["fields_unmatched"] == ["headline", "url"]
+    assert block["records_path"] == "data.items"
+
+
+def test_response_shaping_own_key_of_data_wins_over_records() -> None:
+    """A field naming one of data's own keys projects data itself, as for any
+    single-record payload; the records are not projected."""
+    payload = _news_latest_envelope()
+
+    shaped = shape_response(payload, fields=["total", "title"])
+
+    assert shaped["data"] == {"total": 1803}
+    block = shaped["meta"]["shaped"]
+    assert block["fields_applied"] == ["total"]
+    assert block["fields_unmatched"] == ["title"]
+    assert block["records_path"] is None
+
+
+def test_response_shaping_fred_series_observations() -> None:
+    """A research pass on 2026-09-12 saw fred_series_series_id with fields
+    [date, value] return data {}; the observations sit in data.observations."""
+    payload = _fred_series_envelope()
+
+    shaped = shape_response(payload, fields=["date", "value"])
+
+    assert shaped["data"] == payload["data"]
+    assert shaped["meta"]["shaped"]["fields_applied"] == ["date", "value"]
+    assert shaped["meta"]["shaped"]["records_path"] == "data.observations"
+
+    bounded = shape_response(payload, limit=2, fields=["value"])
+
+    assert bounded["data"]["observations"] == [{"value": 320.1}, {"value": 320.8}]
+    assert bounded["data"]["count"] == 3
+    assert bounded["data"]["series_id"] == "CPIAUCSL"
+    assert bounded["data"]["license"] == {"status": "public_domain", "originator": None}
+    assert bounded["meta"]["shaped"]["limit_applied"] is True
+    assert bounded["meta"]["shaped"]["records_path"] == "data.observations"
+
+
+def test_response_shaping_single_record_data_projects_own_keys() -> None:
+    """No regression: a single-record object data (a quote) is projected by
+    its own keys, and limit does not apply to it."""
+    payload = {
+        "data": {"symbol": "AAPL", "price": 200, "currency": "USD", "volume": 10},
+        "meta": {},
+    }
+
+    shaped = shape_response(payload, limit=2, fields=["symbol", "price"])
+
+    assert shaped["data"] == {"symbol": "AAPL", "price": 200}
+    block = shaped["meta"]["shaped"]
+    assert block["limit_applied"] is False
+    assert block["fields_applied"] == ["symbol", "price"]
+    assert block["records_path"] is None
+
+
+def test_response_shaping_object_data_without_match_is_never_emptied() -> None:
+    payload = {"data": {"symbol": "AAPL", "price": 200}, "meta": {}}
+
+    shaped = shape_response(payload, fields=["title"])
+
+    assert shaped["data"] == {"symbol": "AAPL", "price": 200}
+    assert shaped["meta"]["shaped"]["fields_unmatched"] == ["title"]
+    assert shaped["meta"]["shaped"]["records_path"] is None
+
+
+def test_response_shaping_two_record_lists_are_ambiguous() -> None:
+    """Two allowlisted list keys inside data: no records list, so limit does
+    not apply and fields that match no own key leave data whole."""
+    payload = {
+        "data": {
+            "items": [{"title": "a"}, {"title": "b"}],
+            "results": [{"title": "c"}, {"title": "d"}],
+            "total": 4,
+        },
+        "meta": {},
+    }
+
+    shaped = shape_response(payload, limit=1, fields=["title"])
+
+    assert shaped["data"] == payload["data"]
+    block = shaped["meta"]["shaped"]
+    assert block["limit_applied"] is False
+    assert block["fields_applied"] == []
+    assert block["fields_unmatched"] == ["title"]
+    assert block["records_path"] is None
+
+
+def test_response_shaping_list_data_without_match_keeps_records() -> None:
+    payload = {"data": [{"a": 1, "b": 2}, {"a": 3, "b": 4}], "meta": {}}
+
+    shaped = shape_response(payload, fields=["c"])
+
+    assert shaped["data"] == [{"a": 1, "b": 2}, {"a": 3, "b": 4}]
+    block = shaped["meta"]["shaped"]
+    assert block["fields_applied"] == []
+    assert block["fields_unmatched"] == ["c"]
+    assert block["records_path"] == "data"
+
+    bare = shape_response([{"a": 1}, {"a": 2}], limit=1, fields=["c"])
+
+    assert bare["data"] == [{"a": 1}]
+    assert bare["meta"]["shaped"]["fields_unmatched"] == ["c"]
+    assert bare["meta"]["shaped"]["records_path"] == "data"
+
+
+def test_response_shaping_envelope_less_payload_without_match_is_never_emptied() -> None:
+    payload = {"ip": "8.8.8.8", "asn": 15169, "_meta": {"atlas_built_at": "2026-06-01"}}
+
+    shaped = shape_response(payload, fields=["city"])
+
+    assert shaped["ip"] == "8.8.8.8"
+    assert shaped["asn"] == 15169
+    assert shaped["_meta"] == {"atlas_built_at": "2026-06-01"}
+    block = shaped["meta"]["shaped"]
+    assert block["fields_applied"] == []
+    assert block["fields_unmatched"] == ["city"]
+    assert block["records_path"] is None
+
+
+def test_response_shaping_every_allowlisted_key_is_a_records_list() -> None:
+    """Each record-list key found in the API census bounds and projects."""
+    for key in (
+        "data", "entries", "events", "history", "items", "observations",
+        "points", "records", "results", "rows", "series", "timeseries",
+    ):
+        payload = {"data": {"unit": "x", key: [{"v": 1, "w": 2}, {"v": 3, "w": 4}]}}
+
+        shaped = shape_response(payload, limit=1, fields=["v"])
+
+        assert shaped["data"] == {"unit": "x", key: [{"v": 1}]}, key
+        assert shaped["meta"]["shaped"]["records_path"] == f"data.{key}", key
+
+
+def test_response_shaping_lists_outside_the_allowlist_are_not_records() -> None:
+    """indicators_* (IndicatorPayload) sends time_period as the list of integer
+    look-back periods; limit must not truncate it."""
+    payload = {
+        "data": {
+            "symbol": "AAPL",
+            "indicator": "sma",
+            "time_period": [20, 50],
+            "series_by_period": {"20": [{"date": "2026-09-11", "value": 1.0}]},
+        },
+        "meta": {},
+    }
+
+    shaped = shape_response(payload, limit=1)
+
+    assert shaped["data"] == payload["data"]
+    assert shaped["meta"]["shaped"]["limit_applied"] is False
+    assert shaped["meta"]["shaped"]["records_path"] is None
+
+
+def test_response_shaping_non_list_allowlisted_key_does_not_count() -> None:
+    payload = {"data": {"items": None, "series": {"id": "x"}, "rows": [{"a": 1}, {"a": 2}]}}
+
+    shaped = shape_response(payload, limit=1)
+
+    assert shaped["data"] == {"items": None, "series": {"id": "x"}, "rows": [{"a": 1}]}
+    assert shaped["meta"]["shaped"]["limit_applied"] is True
+    assert shaped["meta"]["shaped"]["records_path"] == "data.rows"
+
+
+def test_response_shaping_records_path_for_other_shapes() -> None:
+    enveloped_list = shape_response({"data": [1, 2], "meta": {}}, limit=1)
+    assert enveloped_list["meta"]["shaped"]["records_path"] == "data"
+    assert shape_response([1, 2], limit=1)["meta"]["shaped"]["records_path"] == "data"
+    assert shape_response(42, limit=1)["meta"]["shaped"]["records_path"] is None
+    assert shape_response({"data": 42}, fields=["x"])["meta"]["shaped"]["records_path"] is None
+
+
 def test_catalog_builder_extracts_request_body_schema_with_ref_resolution() -> None:
     """Field test 2026-06-07: describe_endpoint kept only the required flag
     and discarded the requestBody schema, so clients had to guess POST body
