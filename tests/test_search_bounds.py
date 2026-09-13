@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import hashlib
 import json
 import sys
 import threading
@@ -550,7 +551,8 @@ def test_the_caller_name_follows_the_request_credential_and_never_contains_it(mo
     credential = "sugra_zz_not_a_real_key_0123456789"
     monkeypatch.setattr(server, "_dispatching_http_request", lambda: (True, credential))
     named = server.current_caller()
-    assert named.startswith("http:") and credential not in named and len(named) == len("http:") + 16
+    assert named == "http:" + hashlib.sha256(credential.encode("utf-8")).hexdigest()[:16]
+    assert credential not in named
     monkeypatch.setattr(server, "_dispatching_http_request", lambda: (True, "sugra_zz_other_key_9876543210"))
     assert server.current_caller() != named
     monkeypatch.setattr(server, "_dispatching_http_request", lambda: (True, None))
@@ -571,7 +573,10 @@ class _CaptureSpan:
         self.ended = False
 
     def set_attribute(self, key: str, value: object) -> None:
-        self.attributes[key] = value
+        # The SDK ignores writes to an ended span, and so does this double: an
+        # attribute attached after end() must fail here, not vanish in production.
+        if not self.ended:
+            self.attributes[key] = value
 
     def set_status(self, status: object) -> None:
         self.status = status
@@ -640,6 +645,45 @@ async def test_every_bound_names_itself_on_the_refusal_span(monkeypatch, tool, a
     assert tracer.spans[0].ended is True
     assert server.in_flight_tool_calls() == 0
     assert gateway.search_pending() == 0
+
+
+class _RaisingSpan(_CaptureSpan):
+    """An exporter that fails on every write."""
+
+    def set_attribute(self, key: str, value: object) -> None:
+        raise RuntimeError("exporter died")
+
+    def set_status(self, status: object) -> None:
+        raise RuntimeError("exporter died")
+
+
+class _RaisingTracer(_CaptureTracer):
+    def start_span(self, name: str) -> _CaptureSpan:
+        span = _RaisingSpan(name)
+        self.spans.append(span)
+        return span
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments", "module", "bound", "scope"),
+    [
+        ("list_toolsets", {}, server, "MAX_IN_FLIGHT_TOOL_CALLS", "tool_calls"),
+        ("search_endpoints", {"query": "US CPI"}, gateway, "SEARCH_MAX_PENDING", "search"),
+    ],
+    ids=["admission", "search-queue"],
+)
+async def test_a_failing_exporter_never_hides_a_refusal(monkeypatch, tool, arguments, module, bound, scope) -> None:
+    """A telemetry failure on the refusal span must still hand the caller the
+    structured server_busy payload, on both refusal paths."""
+    tracer = _RaisingTracer()
+    monkeypatch.setattr(observability, "_TRACER", tracer)
+    monkeypatch.setattr(module, bound, 0)
+    monkeypatch.setattr(gateway, "SEARCH_WAIT_SECONDS", 0.05)
+
+    payload = _structured(await mcp.call_tool(tool, arguments))
+
+    assert (payload["error"], payload["scope"]) == ("server_busy", scope)
+    assert [span.ended for span in tracer.spans] == [True]
 
 
 def test_the_new_error_codes_reach_telemetry() -> None:

@@ -55,7 +55,10 @@ class _FakeSpan:
         self.status = None
 
     def set_attribute(self, key: str, value: object) -> None:
-        self.attributes[key] = value
+        # The SDK ignores writes to an ended span, and so does this double: an
+        # attribute attached after end() must fail here, not vanish in production.
+        if not self.ended:
+            self.attributes[key] = value
 
     def set_status(self, status) -> None:
         self.status = status
@@ -1526,3 +1529,79 @@ def test_a_refused_admission_carries_a_scope_only_for_server_busy(monkeypatch) -
 
 def test_the_scope_allowlist_is_exactly_the_four_bounds() -> None:
     assert frozenset(_SCOPE_NAMES) == observability._BUSY_SCOPES
+
+
+class _RaisingSpan(_FakeSpan):
+    """An exporter that fails on every write: telemetry must still never break a result."""
+
+    def set_attribute(self, key: str, value: object) -> None:
+        raise RuntimeError("exporter died")
+
+    def set_status(self, status) -> None:
+        raise RuntimeError("exporter died")
+
+
+class _RaisingTracer(_FakeTracer):
+    def start_span(self, name: str) -> _FakeSpan:
+        span = _RaisingSpan(name)
+        self.spans.append(span)
+        return span
+
+
+def test_a_failing_exporter_keeps_a_returned_server_busy_result(monkeypatch) -> None:
+    tracer = _RaisingTracer()
+    monkeypatch.setattr(observability, "_TRACER", tracer)
+    payload = _busy_payload("search")
+
+    @observability.trace_mcp_tool("search_endpoints")
+    async def fake_search() -> dict:
+        return payload
+
+    assert asyncio.run(fake_search()) is payload
+    assert [span.ended for span in tracer.spans] == [True]
+
+
+def test_a_failing_exporter_never_breaks_a_refused_admission(monkeypatch) -> None:
+    tracer = _RaisingTracer()
+    monkeypatch.setattr(observability, "_TRACER", tracer)
+    assert observability.record_refused_call("call_endpoint", "server_busy", "tool_calls") is None
+    assert [span.ended for span in tracer.spans] == [True]
+
+
+class _NotEqualRaises(str):
+    """An error value that passes the allowlist lookup but raises on `!=`."""
+
+    def __ne__(self, other: object) -> bool:
+        raise RuntimeError("comparison exploded")
+
+
+def test_an_error_value_with_its_own_comparison_cannot_raise_into_the_result(monkeypatch) -> None:
+    tracer = _install_fake_tracer(monkeypatch)
+    payload = {"error": _NotEqualRaises("server_busy"), "scope": "search"}
+
+    @observability.trace_mcp_tool("search_endpoints")
+    async def fake_search() -> dict:
+        return payload
+
+    assert asyncio.run(fake_search()) is payload
+    assert "mcp.busy.scope" not in tracer.spans[0].attributes
+    assert tracer.spans[0].ended is True
+
+
+def test_a_scope_never_carries_over_to_a_later_span(monkeypatch) -> None:
+    tracer = _install_fake_tracer(monkeypatch)
+    payloads = iter([_busy_payload("caller_search"), {"error": "server_busy"}, _busy_payload("everything")])
+
+    @observability.trace_mcp_tool("search_endpoints")
+    async def fake_search() -> dict:
+        return next(payloads)
+
+    for _ in range(3):
+        asyncio.run(fake_search())
+    observability.record_refused_call("call_endpoint", "server_busy", "tool_calls")
+    observability.record_refused_call("call_endpoint", "server_busy")
+    observability.record_refused_call("call_endpoint", "server_busy", "everything")
+
+    assert [span.attributes.get("mcp.busy.scope") for span in tracer.spans] == [
+        "caller_search", None, None, "tool_calls", None, None,
+    ]
