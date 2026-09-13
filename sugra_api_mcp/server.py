@@ -145,7 +145,7 @@ class SugraFastMCP(FastMCP):
             # The refused call never reaches its tool, so the tool's span never
             # starts; record one here, for registered names only.
             if self._tool_manager.get_tool(name) is not None:
-                observability.record_refused_call(name, refusal["error"])
+                observability.record_refused_call(name, refusal["error"], refusal.get("scope"))
             return CallToolResult(
                 isError=True,
                 content=[TextContent(type="text", text=json.dumps(refusal))],
@@ -269,7 +269,7 @@ class SugraFastMCP(FastMCP):
 
 # MCP-26.1: at most MAX_IN_FLIGHT_TOOL_CALLS tool calls run at once in this
 # process, across every server instance, and at most MAX_IN_FLIGHT_PER_CALLER of
-# them for any one caller, so a single credential cannot take every slot. Thirty
+# them for any one caller (current_caller), so no one API key can take every slot. Thirty
 # days of hosted telemetry (21,840 calls) peaked at 6 concurrent calls, so both
 # caps sit above real traffic and only stop a flood from piling up unbounded
 # work. The lock keeps admission and release atomic even when calls arrive from
@@ -284,10 +284,13 @@ _in_flight_by_caller: dict[str, int] = {}
 def current_caller() -> str:
     """A stable name for the principal behind the tool call being dispatched.
 
-    On the HTTP transport it is a short SHA-256 digest of the credential the
-    carrying request presented, so the name never contains the credential, and
-    "http:anonymous" when that request presented none. Outside HTTP (stdio and
-    in-process callers) every call is "local".
+    On the HTTP transport it is "http:" and a short SHA-256 digest of the API key
+    the carrying request resolved to, so the name never contains the key. A
+    `sugra_` bearer is its own key; an OAuth token resolves to the account's
+    primary API key (auth.py), so every OAuth session of one account is one
+    caller and a token refresh keeps the name. A request that carried no
+    credential is "http:anonymous". Outside HTTP (stdio and in-process callers)
+    every call is "local".
     """
     is_http_request, request_key = _dispatching_http_request()
     if request_key:
