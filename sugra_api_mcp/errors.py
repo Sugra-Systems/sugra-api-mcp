@@ -32,10 +32,13 @@ def is_error_payload(payload: Any) -> bool:
 def server_busy_error(scope: str, limit: int, elapsed_ms: int = 0) -> dict[str, Any]:
     """The structured error for work refused at a concurrency limit (MCP-26.1).
 
-    `scope` names the limit that refused it: "tool_calls" for the in-flight cap
-    on tool calls, "search" for the catalog search queue. `elapsed_ms` is the
-    time spent waiting for a slot before the refusal. Nothing about the refused
-    call itself is echoed back.
+    `scope` names the bound that refused it: "tool_calls" for the in-flight cap
+    on tool calls in the process, "caller_tool_calls" for one caller's share of
+    it, "search" for the catalog search queue and "caller_search" for one
+    caller's share of the queue. The scope also reaches the span as
+    `mcp.busy.scope` (MCP-26.1.1), so observability._BUSY_SCOPES lists every
+    value used here. `elapsed_ms` is the time spent waiting for a slot before
+    the refusal. Nothing about the refused call itself is echoed back.
     """
     return {
         "error": "server_busy",

@@ -675,6 +675,7 @@ _ATTR_TYPES: dict[str, type] = {
     "mcp.error.code": str,
     "mcp.operation_id": str,
     "mcp.exception.type": str,
+    "mcp.busy.scope": str,
     "mcp.agent.recipe_version": str,
     "mcp.agent.status": str,
     "mcp.agent.units": int,
@@ -1359,3 +1360,143 @@ def test_an_anyio_cancel_scope_behaves_the_same_through_the_wrapper(monkeypatch,
         _assert_cancelled_verdict(tracer.spans[0], "cancelled")
     else:
         assert tracer.spans == []
+
+
+# ---- MCP-26.1.1: the bound that refused a server_busy call reaches the span ----
+
+
+_SCOPE_NAMES = ("tool_calls", "caller_tool_calls", "search", "caller_search")
+_BUSY_ATTRS = _FAILURE_ATTRS | {"mcp.busy.scope"}
+_BUSY_HINT = "The server is at its concurrency limit. Retry in a few seconds."
+
+
+class _StrSubclass(str):
+    """A str that is not exactly a str: it must not pass as a scope name."""
+
+
+# Values a payload could carry at "scope" that are not one of the four names:
+# near misses, a joined list, free text, other scalar types, containers (a
+# membership test on them would raise into the tool result) and a str subclass.
+_NOT_A_SCOPE = [
+    "everything",
+    "Search",
+    " search",
+    "search ",
+    "",
+    "tool_calls,search",
+    "user@example.com",
+    3,
+    None,
+    True,
+    b"search",
+    ["search"],
+    {"scope": "search"},
+    _StrSubclass("search"),
+]
+
+
+def _busy_payload(scope: object) -> dict:
+    return {"error": "server_busy", "scope": scope, "limit": 8, "elapsed_ms": 2000, "retry_hint": _BUSY_HINT}
+
+
+@pytest.mark.parametrize("scope", _SCOPE_NAMES)
+def test_a_returned_server_busy_keeps_its_scope_on_the_span(monkeypatch, scope: str) -> None:
+    tracer = _install_fake_tracer(monkeypatch)
+
+    @observability.trace_mcp_tool("search_endpoints")
+    async def fake_search() -> dict:
+        return _busy_payload(scope)
+
+    assert asyncio.run(fake_search()) == _busy_payload(scope)
+    span = tracer.spans[0]
+    assert span.attributes["mcp.error.code"] == "server_busy"
+    assert span.attributes["mcp.busy.scope"] == scope
+    _assert_span_is_clean(span, _BUSY_ATTRS, "concurrency limit")
+
+
+@pytest.mark.parametrize("scope", _NOT_A_SCOPE, ids=repr)
+def test_a_returned_scope_outside_the_four_names_never_reaches_the_span(monkeypatch, scope: object) -> None:
+    tracer = _install_fake_tracer(monkeypatch)
+
+    @observability.trace_mcp_tool("search_endpoints")
+    async def fake_search() -> dict:
+        return _busy_payload(scope)
+
+    assert asyncio.run(fake_search()) == _busy_payload(scope)
+    span = tracer.spans[0]
+    assert span.attributes["mcp.error.code"] == "server_busy"
+    _assert_span_is_clean(span, _FAILURE_ATTRS, "concurrency limit", "everything", "user@example.com")
+
+
+def test_a_returned_server_busy_without_a_scope_keeps_its_span(monkeypatch) -> None:
+    tracer = _install_fake_tracer(monkeypatch)
+
+    @observability.trace_mcp_tool("fetch_data")
+    async def fake_fetch() -> dict:
+        return {"error": "server_busy", "limit": 8}
+
+    asyncio.run(fake_fetch())
+    assert tracer.spans[0].attributes["mcp.error.code"] == "server_busy"
+    _assert_span_is_clean(tracer.spans[0], _FAILURE_ATTRS)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"error": "upstream_timeout", "scope": "search"},
+        {"error": "query_too_long", "scope": "caller_search"},
+        {"error": "Upstream text", "scope": "tool_calls", "status_code": 503},
+        {"error": "server_busy", "data": [], "scope": "search"},
+        {"results": [], "scope": "caller_tool_calls"},
+    ],
+    ids=["other-code", "query-too-long", "http-failure", "partial-envelope", "success"],
+)
+def test_only_a_server_busy_failure_carries_a_scope(monkeypatch, payload: dict) -> None:
+    tracer = _install_fake_tracer(monkeypatch)
+
+    @observability.trace_mcp_tool("search_endpoints")
+    async def fake_tool() -> dict:
+        return payload
+
+    asyncio.run(fake_tool())
+    assert "mcp.busy.scope" not in tracer.spans[0].attributes
+    _assert_span_is_clean(tracer.spans[0], _FAILURE_ATTRS)
+
+
+@pytest.mark.parametrize("scope", _SCOPE_NAMES)
+def test_a_refused_admission_keeps_its_scope_on_the_span(monkeypatch, scope: str) -> None:
+    tracer = _install_fake_tracer(monkeypatch)
+    observability.record_refused_call("call_endpoint", "server_busy", scope)
+    span = tracer.spans[0]
+    assert span.attributes == {
+        "mcp.tool.name": "call_endpoint",
+        "mcp.success": False,
+        "mcp.error.code": "server_busy",
+        "mcp.busy.scope": scope,
+        "mcp.duration_ms": 0,
+    }
+    assert span.ended is True
+    _assert_span_is_clean(span, _BUSY_ATTRS)
+
+
+@pytest.mark.parametrize("scope", _NOT_A_SCOPE, ids=repr)
+def test_a_refused_admission_drops_a_scope_outside_the_four_names(monkeypatch, scope: object) -> None:
+    tracer = _install_fake_tracer(monkeypatch)
+    observability.record_refused_call("call_endpoint", "server_busy", scope)
+    span = tracer.spans[0]
+    assert span.attributes["mcp.error.code"] == "server_busy"
+    assert span.ended is True
+    _assert_span_is_clean(span, _FAILURE_ATTRS, "everything", "user@example.com")
+
+
+def test_a_refused_admission_carries_a_scope_only_for_server_busy(monkeypatch) -> None:
+    tracer = _install_fake_tracer(monkeypatch)
+    observability.record_refused_call("call_endpoint", "query_too_long", "search")
+    observability.record_refused_call("call_endpoint", "server_busy")
+    assert [span.attributes.get("mcp.busy.scope") for span in tracer.spans] == [None, None]
+    for span in tracer.spans:
+        _assert_span_is_clean(span, _FAILURE_ATTRS)
+
+
+def test_the_scope_allowlist_is_exactly_the_four_bounds() -> None:
+    assert frozenset(_SCOPE_NAMES) == observability._BUSY_SCOPES

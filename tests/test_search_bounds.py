@@ -605,9 +605,41 @@ async def test_a_refused_call_leaves_a_span_for_registered_tools_only(monkeypatc
         "mcp.tool.name": "list_toolsets",
         "mcp.success": False,
         "mcp.error.code": "server_busy",
+        "mcp.busy.scope": "tool_calls",
         "mcp.duration_ms": 0,
     }
     assert tracer.spans[0].ended is True
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments", "module", "bound", "scope"),
+    [
+        ("list_toolsets", {}, server, "MAX_IN_FLIGHT_TOOL_CALLS", "tool_calls"),
+        ("list_toolsets", {}, server, "MAX_IN_FLIGHT_PER_CALLER", "caller_tool_calls"),
+        ("search_endpoints", {"query": "US CPI"}, gateway, "SEARCH_MAX_PENDING", "search"),
+        ("search_endpoints", {"query": "US CPI"}, gateway, "SEARCH_MAX_PENDING_PER_CALLER", "caller_search"),
+        ("fetch_data", {"query": "US CPI"}, gateway, "SEARCH_MAX_PENDING", "search"),
+        ("fetch_data", {"query": "US CPI"}, gateway, "SEARCH_MAX_PENDING_PER_CALLER", "caller_search"),
+    ],
+    ids=["tool_calls", "caller_tool_calls", "search", "caller_search", "fetch_data-search", "fetch_data-caller_search"],
+)
+async def test_every_bound_names_itself_on_the_refusal_span(monkeypatch, tool, arguments, module, bound, scope) -> None:
+    """MCP-26.1.1: each bound, driven through a real tool call, leaves exactly one
+    span, and its mcp.busy.scope is the scope the refusal payload carries."""
+    tracer = _CaptureTracer()
+    monkeypatch.setattr(observability, "_TRACER", tracer)
+    monkeypatch.setattr(module, bound, 0)
+    monkeypatch.setattr(gateway, "SEARCH_WAIT_SECONDS", 0.05)
+
+    payload = _structured(await mcp.call_tool(tool, arguments))
+
+    assert (payload["error"], payload["scope"], payload["limit"]) == ("server_busy", scope, 0)
+    assert [span.name for span in tracer.spans] == [f"mcp.tool.{tool}"]
+    assert tracer.spans[0].attributes["mcp.error.code"] == "server_busy"
+    assert tracer.spans[0].attributes["mcp.busy.scope"] == scope
+    assert tracer.spans[0].ended is True
+    assert server.in_flight_tool_calls() == 0
+    assert gateway.search_pending() == 0
 
 
 def test_the_new_error_codes_reach_telemetry() -> None:

@@ -23,6 +23,10 @@ Custom dimensions captured per MCP tool invocation:
                            named through a fixed table (upstream_http_429,
                            upstream_http_5xx, ...); otherwise "unknown_error".
                            Free-text upstream messages never reach the span.
+    mcp.busy.scope       - server_busy failures only (MCP-26.1.1): the bound
+                           that refused the call, one of tool_calls /
+                           caller_tool_calls / search / caller_search; any
+                           other value is dropped
     mcp.duration_ms      - integer ms wall-clock from before-call to
                            after-return
     mcp.exception.type   - exception class name only (NEVER the message)
@@ -231,13 +235,34 @@ def _error_code_of(result: dict[str, Any]) -> str:
     return _http_status_error_code(result.get("status_code")) or "unknown_error"
 
 
-def record_refused_call(tool_name: str, error_code: str) -> None:
+# MCP-26.1.1: the bound that refused a server_busy call, exactly as
+# errors.server_busy_error names it. Two of the four are one caller's share, so
+# without the scope a span cannot tell one client held to its share from the
+# whole process at its limit. Any other value is dropped, never mapped to a
+# placeholder.
+_BUSY_SCOPES: frozenset[str] = frozenset({"tool_calls", "caller_tool_calls", "search", "caller_search"})
+
+
+def _busy_scope_of(error_code: str | None, scope: object) -> str | None:
+    """The `mcp.busy.scope` value for a failure, or None when it has none.
+
+    Only a `server_busy` failure has one, and only an exact `str` from the fixed
+    set is kept. The type is checked before membership, so an unhashable value
+    never raises into the tool result and a str subclass never reaches the span.
+    """
+    if error_code != "server_busy" or type(scope) is not str:
+        return None
+    return scope if scope in _BUSY_SCOPES else None
+
+
+def record_refused_call(tool_name: str, error_code: str, scope: object = None) -> None:
     """Leave a failure span for a registered tool call refused before dispatch.
 
     MCP-26.1: a call refused at the in-flight cap never reaches its tool, so the
     tool's own span never starts and the refusal would be invisible. The caller
     passes only a name it found registered, the code must be allowlisted, and
-    nothing from the call's arguments is attached.
+    nothing from the call's arguments is attached. MCP-26.1.1: the refusal's
+    scope rides along as `mcp.busy.scope` when it is one of the fixed names.
     """
     if _TRACER is None or error_code not in _KNOWN_ERROR_CODES:
         return
@@ -249,6 +274,9 @@ def record_refused_call(tool_name: str, error_code: str) -> None:
         _safe_attr(span, "mcp.tool.name", tool_name)
         _safe_attr(span, "mcp.success", False)
         _safe_attr(span, "mcp.error.code", error_code)
+        busy_scope = _busy_scope_of(error_code, scope)
+        if busy_scope is not None:
+            _safe_attr(span, "mcp.busy.scope", busy_scope)
         _safe_attr(span, "mcp.duration_ms", 0)
         _safe_status_error(span)
     finally:
@@ -488,6 +516,9 @@ def trace_mcp_tool(
                 _safe_attr(span, "mcp.success", success)
                 if error_code is not None:
                     _safe_attr(span, "mcp.error.code", error_code)
+                    busy_scope = _busy_scope_of(error_code, result.get("scope"))
+                    if busy_scope is not None:
+                        _safe_attr(span, "mcp.busy.scope", busy_scope)
                 if result_attrs is not None and success:
                     try:
                         for key, value in result_attrs(result).items():
