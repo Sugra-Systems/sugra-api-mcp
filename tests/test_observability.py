@@ -1734,6 +1734,21 @@ def test_client_names_reduce_to_the_same_classes(name: str, expected: str) -> No
     assert observability._text_class(name, observability._CLIENT_NAME_PATTERNS) == expected
 
 
+def test_client_text_is_classified_only_up_to_its_bound() -> None:
+    """Only the first _CALLER_TEXT_MAX characters are scanned, so a huge header costs a bounded scan."""
+    bound = observability._CALLER_TEXT_MAX
+    assert observability._text_class(" " * (bound - 5) + "curl/", observability._UA_PATTERNS) == "curl"
+    assert observability._text_class(" " * (bound - 4) + "curl/", observability._UA_PATTERNS) == "other"
+
+
+def test_host_and_origin_are_read_only_up_to_the_bound() -> None:
+    bound = observability._CALLER_TEXT_MAX
+    assert observability._host_class(" " * (bound - 12) + "app.sugra.ai") == "app.sugra.ai"
+    assert observability._host_class(" " * bound + "app.sugra.ai") is None
+    assert observability._origin_class(" " * (bound - 17) + "https://claude.ai") == "anthropic"
+    assert observability._origin_class(" " * bound + "https://claude.ai") == "none"
+
+
 @pytest.mark.parametrize(
     ("host", "expected"),
     [
@@ -1748,6 +1763,7 @@ def test_client_names_reduce_to_the_same_classes(name: str, expected: str) -> No
         ("[::1]evil", "other"),
         ("[::1]:", "other"),
         ("[::1", "other"),
+        ("[::1]:" + chr(0xFF18) * 4, "other"),  # fullwidth digits are not a bracketed port either
         ("evil.example", "other"),
         ("app.sugra.ai.evil.example", "other"),
         ("app.sugra.ai:4a3", "other"),
