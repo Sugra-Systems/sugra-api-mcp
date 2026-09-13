@@ -507,6 +507,19 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return False
 
     async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[override]
+        # Mark everything this middleware serves as the HTTP transport. A
+        # Streamable HTTP session task inherits the marker from the request that
+        # opened it, so server.get_client refuses the env fallback key there even
+        # when a dispatch carries no HTTP request.
+        from .server import http_transport_ctx
+
+        previous_transport = http_transport_ctx.set(True)
+        try:
+            return await self._dispatch(request, call_next)
+        finally:
+            http_transport_ctx.reset(previous_transport)
+
+    async def _dispatch(self, request: Request, call_next) -> Response:
         if (
             request.method in ("GET", "HEAD")
             and request.url.path in PUBLIC_GET_PATHS
@@ -540,6 +553,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
             auth_budget = min(AUTH_BUDGET_SECONDS, total_budget)
             async with asyncio.timeout(auth_budget):
                 resolved = await self._auth.resolve(token)
+            # The per-session MCP task never sees this request's ContextVars, but the
+            # SDK hands this request's scope to the handler, where server.get_client
+            # reads the key. The ContextVar below stays for in-process callers.
+            from .server import REQUEST_API_KEY_STATE
+
+            request.scope.setdefault("state", {})[REQUEST_API_KEY_STATE] = resolved.api_key
         except TimeoutError:
             return JSONResponse(
                 {"error": "auth_timeout",
