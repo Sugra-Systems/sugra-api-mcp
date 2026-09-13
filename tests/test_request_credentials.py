@@ -180,24 +180,24 @@ async def test_middleware_marks_every_request_it_serves_as_http() -> None:
 
 def test_http_dispatch_without_an_attached_request_refuses_inherited_and_env_keys(upstream, monkeypatch) -> None:
     monkeypatch.setenv("SUGRA_API_KEY", "sugra_SERVER_FALLBACK")
-    transport_token = server.http_transport_ctx.set(True)
-    key_token = server.api_key_ctx.set("sugra_INHERITED_OPENER")
+    previous_transport = server.http_transport_ctx.set(True)
+    previous_key = server.api_key_ctx.set("sugra_INHERITED_OPENER")
     try:
         client = server.get_client()
     finally:
-        server.api_key_ctx.reset(key_token)
-        server.http_transport_ctx.reset(transport_token)
+        server.api_key_ctx.reset(previous_key)
+        server.http_transport_ctx.reset(previous_transport)
     assert isinstance(client, server._KeylessClient)
     assert server._shared_client is None
     assert "sugra_INHERITED_OPENER" not in server._per_key_clients
 
 
 async def test_in_process_callers_keep_api_key_ctx(upstream) -> None:
-    token = server.api_key_ctx.set("sugra_IN_PROCESS")
+    previous = server.api_key_ctx.set("sugra_IN_PROCESS")
     try:
         client = server.get_client()
     finally:
-        server.api_key_ctx.reset(token)
+        server.api_key_ctx.reset(previous)
     try:
         assert isinstance(client, SugraClient)
         assert client._config.api_key == "sugra_IN_PROCESS"

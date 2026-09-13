@@ -513,11 +513,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # when a dispatch carries no HTTP request.
         from .server import http_transport_ctx
 
-        transport_token = http_transport_ctx.set(True)
+        previous_transport = http_transport_ctx.set(True)
         try:
             return await self._dispatch(request, call_next)
         finally:
-            http_transport_ctx.reset(transport_token)
+            http_transport_ctx.reset(previous_transport)
 
     async def _dispatch(self, request: Request, call_next) -> Response:
         if (
@@ -553,6 +553,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
             auth_budget = min(AUTH_BUDGET_SECONDS, total_budget)
             async with asyncio.timeout(auth_budget):
                 resolved = await self._auth.resolve(token)
+            # The per-session MCP task never sees this request's ContextVars, but the
+            # SDK hands this request's scope to the handler, where server.get_client
+            # reads the key. The ContextVar below stays for in-process callers.
+            from .server import REQUEST_API_KEY_STATE
+
+            request.scope.setdefault("state", {})[REQUEST_API_KEY_STATE] = resolved.api_key
         except TimeoutError:
             return JSONResponse(
                 {"error": "auth_timeout",
@@ -575,12 +581,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 headers=self._auth_headers() if e.status == 401 else None,
             )
 
-        # The per-session MCP task never sees this request's ContextVars, but the
-        # SDK hands this request's scope to the handler, where server.get_client
-        # reads the key. The ContextVar stays for in-process callers.
-        from .server import REQUEST_API_KEY_STATE
-
-        request.scope.setdefault("state", {})[REQUEST_API_KEY_STATE] = resolved.api_key
         ctx_token = api_key_ctx.set(resolved.api_key)
         try:
             return await call_next(request)
