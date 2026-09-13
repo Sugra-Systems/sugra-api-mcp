@@ -1463,6 +1463,32 @@ def test_only_a_server_busy_failure_carries_a_scope(monkeypatch, payload: dict) 
     _assert_span_is_clean(tracer.spans[0], _FAILURE_ATTRS)
 
 
+class _ScopeLookupRaises(dict):
+    """A payload mapping whose "scope" lookup raises while every other key reads normally."""
+
+    def get(self, key, default=None):
+        if key == "scope":
+            raise RuntimeError("scope lookup exploded")
+        return super().get(key, default)
+
+
+def test_a_payload_whose_scope_lookup_raises_still_reaches_the_caller(monkeypatch) -> None:
+    """Reading the scope is telemetry, so it must never turn a returned payload
+    into a raised exception (codex r1)."""
+    tracer = _install_fake_tracer(monkeypatch)
+    payload = _ScopeLookupRaises(error="server_busy", scope="search", limit=8)
+
+    @observability.trace_mcp_tool("search_endpoints")
+    async def fake_search() -> dict:
+        return payload
+
+    assert asyncio.run(fake_search()) is payload
+    span = tracer.spans[0]
+    assert span.attributes["mcp.error.code"] == "server_busy"
+    assert span.ended is True
+    _assert_span_is_clean(span, _FAILURE_ATTRS, "exploded")
+
+
 @pytest.mark.parametrize("scope", _SCOPE_NAMES)
 def test_a_refused_admission_keeps_its_scope_on_the_span(monkeypatch, scope: str) -> None:
     tracer = _install_fake_tracer(monkeypatch)

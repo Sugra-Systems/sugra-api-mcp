@@ -255,6 +255,18 @@ def _busy_scope_of(error_code: str | None, scope: object) -> str | None:
     return scope if scope in _BUSY_SCOPES else None
 
 
+def _payload_scope(result: Any) -> object:
+    """The "scope" a returned payload carries, or None when reading it raises.
+
+    The payload is the tool's own result, and a mapping whose lookup raises must
+    still reach the caller unchanged: telemetry never breaks the tool result.
+    """
+    try:
+        return result.get("scope")
+    except Exception:
+        return None
+
+
 def record_refused_call(tool_name: str, error_code: str, scope: object = None) -> None:
     """Leave a failure span for a registered tool call refused before dispatch.
 
@@ -516,7 +528,7 @@ def trace_mcp_tool(
                 _safe_attr(span, "mcp.success", success)
                 if error_code is not None:
                     _safe_attr(span, "mcp.error.code", error_code)
-                    busy_scope = _busy_scope_of(error_code, result.get("scope"))
+                    busy_scope = _busy_scope_of(error_code, _payload_scope(result))
                     if busy_scope is not None:
                         _safe_attr(span, "mcp.busy.scope", busy_scope)
                 if result_attrs is not None and success:
