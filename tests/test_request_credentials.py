@@ -173,8 +173,9 @@ async def test_middleware_marks_every_request_it_serves_as_http(monkeypatch) -> 
     real_resolve = authenticator.resolve
 
     async def resolve(token: str) -> ResolvedAuth:
-        if token.strip() == "jwt-7":
-            return ResolvedAuth(api_key="sugra_TENANT_7", user_id=7, access_token_id="jti-7", method="oauth")
+        token = token.strip()
+        if token == "jwt-7":
+            return ResolvedAuth(api_key=f"sugra_TENANT_{token[4:]}", user_id=7, access_token_id="jti-7", method="oauth")
         return await real_resolve(token)
 
     monkeypatch.setattr(authenticator, "resolve", resolve)
