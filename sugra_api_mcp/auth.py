@@ -562,6 +562,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 headers=self._auth_headers() if e.status == 401 else None,
             )
 
+        # The per-session MCP task never sees this request's ContextVars, but the
+        # SDK hands this request's scope to the handler, where server.get_client
+        # reads the key. The ContextVar stays for in-process callers.
+        from .server import REQUEST_API_KEY_STATE
+
+        request.scope.setdefault("state", {})[REQUEST_API_KEY_STATE] = resolved.api_key
         ctx_token = api_key_ctx.set(resolved.api_key)
         try:
             return await call_next(request)

@@ -72,6 +72,11 @@ def _run_server(args: argparse.Namespace) -> None:
 
         auth = Authenticator(load_auth_config())
         app = mcp.streamable_http_app()
+        # Tool calls on this transport use only the credential of the request
+        # that carries them, never the SUGRA_API_KEY stdio fallback.
+        from .server import enable_http_transport
+
+        enable_http_transport()
         # Human-facing landing on the host root + liveness probe. HTTP-only
         # surface (never registered for stdio); AuthMiddleware exempts exactly
         # these two GET paths via PUBLIC_GET_PATHS.

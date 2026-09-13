@@ -387,25 +387,75 @@ def _build_client(api_key: str) -> SugraClient:
     )
 
 
+# Request-scoped credentials. On the Streamable HTTP transport the per-session
+# server task is started inside the request that OPENED the session and keeps
+# that request's ContextVars for its whole life, so a ContextVar set by
+# AuthMiddleware on a later request never reaches tool dispatch. A session opened
+# without a token then ran every tool on the SUGRA_API_KEY fallback, and a
+# session opened by one principal kept that principal's key for any later
+# caller. The SDK does hand each handler the Starlette Request that delivered
+# its JSON-RPC message, so AuthMiddleware stores the resolved key on that
+# request's scope state and get_client reads it from there.
+REQUEST_API_KEY_STATE = "sugra_api_key"
+
+_http_transport = False
+
+
+def enable_http_transport() -> None:
+    """Mark the process as serving HTTP: tool calls never use the env fallback key."""
+    global _http_transport
+    _http_transport = True
+
+
+def _dispatching_http_request() -> tuple[bool, str | None]:
+    """Return (True, key or None) while a handler runs for an HTTP request.
+
+    Returns (False, None) outside an MCP request context and on stdio, where the
+    SDK carries no HTTP request.
+    """
+    from mcp.server.lowlevel.server import request_ctx
+
+    try:
+        context = request_ctx.get()
+    except LookupError:
+        return False, None
+    scope = getattr(getattr(context, "request", None), "scope", None)
+    if not isinstance(scope, dict):
+        return False, None
+    state = scope.get("state")
+    key = state.get(REQUEST_API_KEY_STATE) if isinstance(state, dict) else None
+    return True, key if isinstance(key, str) and key else None
+
+
+def _client_for_key(api_key: str) -> SugraClient:
+    client = _per_key_clients.get(api_key)
+    if client is None:
+        client = _build_client(api_key)
+        _per_key_clients[api_key] = client
+    return client
+
+
 def get_client() -> SugraClient | _KeylessClient:
     """Return the downstream HTTP client for the current request.
 
-    HTTP transport: ``api_key_ctx`` is set per-request by ``AuthMiddleware`` after
-    validating the Bearer token. We cache one client per distinct key to keep
-    the httpx.AsyncClient alive across calls.
+    HTTP transport: the key comes only from the request that carries the tool
+    call, stored on its scope state by ``AuthMiddleware``. Without one the call
+    gets the keyless stand-in: never the session opener's key and never the
+    SUGRA_API_KEY fallback. We cache one client per distinct key to keep the
+    httpx.AsyncClient alive across calls.
 
-    stdio transport / no middleware: fall back to SUGRA_API_KEY from env. When
-    that is empty too, return the keyless stand-in whose network methods answer
-    with the structured ``missing_api_key`` error - the key requirement is
-    enforced here at call time, never at process startup.
+    stdio transport / in-process callers: ``api_key_ctx`` when set, else
+    SUGRA_API_KEY from env. When that is empty too, return the keyless stand-in
+    whose network methods answer with the structured ``missing_api_key`` error -
+    the key requirement is enforced here at call time, never at process startup.
     """
+    is_http_request, request_key = _dispatching_http_request()
+    if is_http_request or _http_transport:
+        return _client_for_key(request_key) if request_key else _keyless_client
+
     per_request_key = api_key_ctx.get()
     if per_request_key:
-        client = _per_key_clients.get(per_request_key)
-        if client is None:
-            client = _build_client(per_request_key)
-            _per_key_clients[per_request_key] = client
-        return client
+        return _client_for_key(per_request_key)
 
     global _shared_client
     if _shared_client is None:
