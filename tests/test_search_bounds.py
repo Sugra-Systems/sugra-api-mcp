@@ -4,8 +4,8 @@ Before this change a three-word query took about 400 ms on the workstation, and
 a 20,000-character query of distinct words held the only event loop for 133 s.
 It was reachable with a made-up sugra_ Bearer, because catalog tools make no
 upstream call. The search now tokenizes each endpoint once, refuses a query over
-the bounds before any scoring, runs on a worker thread with a bounded queue, and
-every tool call counts against an in-flight cap.
+the bounds before any scoring, runs on a worker thread behind a bounded queue,
+and every tool call counts against a process-wide in-flight cap.
 """
 
 from __future__ import annotations
@@ -14,12 +14,11 @@ import asyncio
 import json
 import sys
 import threading
-import time
 from typing import Any
 
 import pytest
 
-from sugra_api_mcp import observability, tools  # noqa: F401  (registers the tools)
+from sugra_api_mcp import observability, server, tools  # noqa: F401  (registers the tools)
 from sugra_api_mcp.catalog import aliases, search
 from sugra_api_mcp.catalog.loader import load_catalog
 from sugra_api_mcp.server import mcp
@@ -50,6 +49,14 @@ def _vocabulary_query(words: int) -> str:
     return " ".join(vocab[i % len(vocab)] for i in range(words))
 
 
+async def _until(predicate, timeout: float = 5.0) -> bool:
+    for _ in range(int(timeout / 0.01)):
+        if predicate():
+            return True
+        await asyncio.sleep(0.01)
+    return predicate()
+
+
 # ---- bounds -----------------------------------------------------------------
 
 
@@ -65,17 +72,27 @@ async def test_an_oversized_query_is_refused_before_any_search(monkeypatch, tool
         assert len(query) <= search.MAX_QUERY_CHARS
     else:
         query = "x" * (search.MAX_QUERY_CHARS + 1)
-    await mcp.call_tool(tool, {"query": query})  # the first call pays one-time tool setup
-    started = time.perf_counter()
     result = await mcp.call_tool(tool, {"query": query})
-    elapsed = time.perf_counter() - started
 
     payload = _structured(result)
     assert result.isError is True
     assert payload["error"] == "query_too_long"
     assert payload["max_terms"] == search.MAX_QUERY_TERMS
     assert payload["max_chars"] == search.MAX_QUERY_CHARS
-    assert elapsed < 0.1, f"refusing an oversized query took {elapsed:.3f}s"
+    assert payload["elapsed_ms"] == 0
+
+
+def test_a_huge_query_is_refused_without_tokenizing_it(monkeypatch) -> None:
+    real_tokens = search._tokens
+
+    def _tokens(value: str) -> list[str]:
+        assert len(value) <= search.MAX_QUERY_CHARS, "an oversized query was tokenized"
+        return real_tokens(value)
+
+    monkeypatch.setattr(search, "_tokens", _tokens)
+    payload = search.query_limit_error("word " * 1_000_000)
+    assert payload is not None and payload["error"] == "query_too_long"
+    assert "terms" not in payload
 
 
 async def test_a_query_at_the_bounds_still_searches() -> None:
@@ -121,16 +138,27 @@ def test_every_endpoint_profile_equals_its_tokenized_fields() -> None:
         assert profile.text_normalized == " ".join(search._tokens(text)), endpoint.operation_id
 
 
-def test_alias_matching_from_profiles_equals_the_text_form() -> None:
+def test_alias_matching_from_profiles_equals_the_text_form_for_every_endpoint() -> None:
+    """The reference is _alias_matches with the endpoint text tokenized once per
+    endpoint instead of once per expansion, which is what makes a full sweep of
+    every endpoint and every expansion affordable here."""
     expansions = sorted({expansion for values in aliases.ALIASES.values() for expansion in values})
-    for endpoint in load_catalog().endpoints[::40]:
-        text = search._endpoint_text(endpoint)
+    expansion_tokens = {expansion: search._tokens(expansion) for expansion in expansions}
+    for endpoint in load_catalog().endpoints:
+        text_tokens = search._tokens(search._endpoint_text(endpoint))
+        normalized = " ".join(text_tokens)
         profile = search._profile(endpoint)
-        for expansion in expansions:
-            assert search._alias_matches_profile(profile, expansion) == search._alias_matches(text, expansion), (
-                endpoint.operation_id,
-                expansion,
-            )
+        for expansion, tokens in expansion_tokens.items():
+            if len(tokens) <= 1:
+                expected = tokens[0] in text_tokens if tokens else False
+            else:
+                expected = " ".join(tokens) in normalized
+            assert search._alias_matches_profile(profile, expansion) == expected, (endpoint.operation_id, expansion)
+    sample = load_catalog().endpoints[0]
+    for expansion in expansions[:50]:
+        assert search._alias_matches(search._endpoint_text(sample), expansion) == search._alias_matches_profile(
+            search._profile(sample), expansion
+        ), expansion
 
 
 def test_the_profile_cache_is_keyed_by_the_endpoint_object() -> None:
@@ -140,51 +168,95 @@ def test_the_profile_cache_is_keyed_by_the_endpoint_object() -> None:
     assert search._profile(copy) is not search._profile(endpoint)
 
 
-# ---- off the event loop, with a bounded queue --------------------------------
+def test_every_field_reaches_its_profile_when_no_other_field_repeats_it() -> None:
+    """The bundled catalog cannot prove this on its own: every endpoint's
+    source_family words also appear in its tags or toolset today, so a profile
+    that dropped source_family would still equal the tokenized fields there."""
+    from sugra_api_mcp.catalog.models import Endpoint, EndpointParameter
+
+    endpoint = Endpoint(
+        operation_id="zzop_probe",
+        method="GET",
+        path="/api/v1/zzpath/probe",
+        summary="zzsummary words",
+        description="zzdescription words",
+        tags=["Zztag"],
+        toolset="zztoolset",
+        source_family="zzfamily",
+        parameters=[EndpointParameter(name="zzparam", location="query", description="zzparamdesc")],
+    )
+    expected = {
+        "zzop": "operation_id",
+        "zztag": "tag_toolset",
+        "zztoolset": "tag_toolset",
+        "zzfamily": "tag_toolset",
+        "zzsummary": "summary",
+        "zzpath": "path",
+        "zzparam": "params",
+        "zzparamdesc": "params",
+        "zzdescription": "description",
+    }
+    for term, field in expected.items():
+        _score_value, why = search._score(
+            endpoint, [term], {},
+            boost_quotes_symbol=False, boost_markets_toolset=False, boost_symbol_input=False,
+            boost_forex=False, boost_crypto=False, boost_us_macro=False,
+            central_bank_prefixes=[], query_countries=set(),
+        )
+        assert f"{field}:{term}" in why, (term, why)
+
+
+# ---- off the event loop, behind a bounded queue ------------------------------
 
 
 async def test_search_runs_off_the_event_loop(monkeypatch) -> None:
-    def _slow_search(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
-        time.sleep(0.5)
-        return []
-
-    monkeypatch.setattr(gateway, "search_catalog", _slow_search)
-    gaps: list[float] = []
-    stop = asyncio.Event()
-
-    async def _ticker() -> None:
-        last = time.perf_counter()
-        while not stop.is_set():
-            await asyncio.sleep(0.01)
-            now = time.perf_counter()
-            gaps.append(now - last)
-            last = now
-
-    ticker = asyncio.create_task(_ticker())
-    await asyncio.sleep(0.05)
-    result = await mcp.call_tool("search_endpoints", {"query": "US CPI"})
-    stop.set()
-    await ticker
-    assert _structured(result)["results"] == []
-    assert max(gaps) < 0.2, f"the event loop stalled {max(gaps):.2f}s during a 0.5s search"
-
-
-def _blocking_search(started: threading.Event, release: threading.Event):
-    def _search(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
-        started.set()
-        release.wait(5)
-        return []
-
-    return _search
-
-
-async def test_a_full_search_queue_refuses_with_server_busy(monkeypatch) -> None:
+    """Deterministic: the search waits for an event that only the event loop
+    sets, after it sees the search start. A search running ON the loop would
+    hold the loop until its own wait timed out."""
     started, release = threading.Event(), threading.Event()
-    monkeypatch.setattr(gateway, "search_catalog", _blocking_search(started, release))
+    released_in_time: list[bool] = []
+
+    def _search_waiting_for_the_loop(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        started.set()
+        released_in_time.append(release.wait(5))
+        return []
+
+    monkeypatch.setattr(gateway, "search_catalog", _search_waiting_for_the_loop)
+    call = asyncio.create_task(mcp.call_tool("search_endpoints", {"query": "US CPI"}))
+    assert await asyncio.to_thread(started.wait, 5)
+    release.set()
+    result = await call
+    assert released_in_time == [True]
+    assert _structured(result)["results"] == []
+
+
+class _BlockingSearch:
+    """The first call blocks until released; later calls return at once."""
+
+    def __init__(self) -> None:
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.calls = 0
+        self._lock = threading.Lock()
+
+    def __call__(self, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        with self._lock:
+            self.calls += 1
+            first = self.calls == 1
+        if first:
+            self.started.set()
+            self.release.wait(5)
+        return []
+
+
+async def test_a_full_search_queue_answers_server_busy_after_the_wait(monkeypatch) -> None:
+    blocking = _BlockingSearch()
+    monkeypatch.setattr(gateway, "search_catalog", blocking)
     monkeypatch.setattr(gateway, "SEARCH_MAX_PENDING", 1)
+    monkeypatch.setattr(gateway, "SEARCH_WAIT_SECONDS", 0.1)
     first = asyncio.create_task(mcp.call_tool("search_endpoints", {"query": "US CPI"}))
     try:
-        assert await asyncio.to_thread(started.wait, 5)
+        assert await asyncio.to_thread(blocking.started.wait, 5)
         assert gateway.search_pending() == 1
         for tool in ("search_endpoints", "fetch_data"):
             refused = await mcp.call_tool(tool, {"query": "US CPI"})
@@ -193,30 +265,75 @@ async def test_a_full_search_queue_refuses_with_server_busy(monkeypatch) -> None
             assert payload["error"] == "server_busy", tool
             assert payload["scope"] == "search", tool
             assert payload["limit"] == 1, tool
+            assert payload["elapsed_ms"] >= 100, tool
     finally:
-        release.set()
+        blocking.release.set()
         await first
-    assert gateway.search_pending() == 0
+    assert await _until(lambda: gateway.search_pending() == 0)
 
 
-async def test_a_cancelled_search_holds_its_slot_until_the_worker_finishes(monkeypatch) -> None:
-    started, release = threading.Event(), threading.Event()
-    monkeypatch.setattr(gateway, "search_catalog", _blocking_search(started, release))
+async def test_a_slot_freed_during_the_wait_serves_the_search(monkeypatch) -> None:
+    blocking = _BlockingSearch()
+    monkeypatch.setattr(gateway, "search_catalog", blocking)
+    monkeypatch.setattr(gateway, "SEARCH_MAX_PENDING", 1)
+    monkeypatch.setattr(gateway, "SEARCH_WAIT_SECONDS", 5.0)
+    first = asyncio.create_task(mcp.call_tool("search_endpoints", {"query": "US CPI"}))
+    assert await asyncio.to_thread(blocking.started.wait, 5)
+    second = asyncio.create_task(mcp.call_tool("search_endpoints", {"query": "US CPI"}))
+    await asyncio.sleep(0.1)
+    assert not second.done(), "the second search did not wait for a slot"
+    blocking.release.set()
+    await first
+    payload = _structured(await second)
+    assert payload.get("error") is None
+    assert payload["results"] == []
+    assert blocking.calls == 2
+
+
+async def test_a_search_cancelled_while_running_holds_its_slot_until_it_ends(monkeypatch) -> None:
+    blocking = _BlockingSearch()
+    monkeypatch.setattr(gateway, "search_catalog", blocking)
     task = asyncio.create_task(mcp.call_tool("search_endpoints", {"query": "US CPI"}))
-    assert await asyncio.to_thread(started.wait, 5)
+    assert await asyncio.to_thread(blocking.started.wait, 5)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
     assert gateway.search_pending() == 1, "a cancelled caller released the slot of a search still running"
-    release.set()
-    for _ in range(200):
-        if gateway.search_pending() == 0:
-            break
-        await asyncio.sleep(0.01)
-    assert gateway.search_pending() == 0
+    blocking.release.set()
+    assert await _until(lambda: gateway.search_pending() == 0)
 
 
-# ---- the in-flight cap on tool calls -----------------------------------------
+async def test_a_search_cancelled_while_queued_never_runs_and_frees_its_slot(monkeypatch) -> None:
+    blocking = _BlockingSearch()
+    monkeypatch.setattr(gateway, "search_catalog", blocking)
+    monkeypatch.setattr(gateway, "SEARCH_MAX_PENDING", 2)
+    first = asyncio.create_task(mcp.call_tool("search_endpoints", {"query": "US CPI"}))
+    assert await asyncio.to_thread(blocking.started.wait, 5)
+    queued = asyncio.create_task(mcp.call_tool("search_endpoints", {"query": "US CPI"}))
+    assert await _until(lambda: gateway.search_pending() == 2)
+    queued.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await queued
+    assert await _until(lambda: gateway.search_pending() == 1), "a dropped queued search kept its slot"
+    blocking.release.set()
+    await first
+    assert await _until(lambda: gateway.search_pending() == 0)
+    assert blocking.calls == 1, "a search cancelled while queued still ran"
+
+
+async def test_a_search_that_raises_frees_its_slot(monkeypatch) -> None:
+    def _broken_search(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("search exploded")
+
+    monkeypatch.setattr(gateway, "search_catalog", _broken_search)
+    with pytest.raises(Exception, match="search exploded"):
+        await mcp.call_tool("search_endpoints", {"query": "US CPI"})
+    failed = _structured(await mcp.call_tool("fetch_data", {"query": "US CPI"}))
+    assert failed["error"] == "tool_execution_failed"
+    assert await _until(lambda: gateway.search_pending() == 0)
+
+
+# ---- the process-wide in-flight cap on tool calls ----------------------------
 
 
 class _GateClient:
@@ -235,23 +352,26 @@ class _GateClient:
         return {"data": [{"ok": 1}]}
 
 
-async def test_calls_beyond_the_in_flight_cap_are_refused(monkeypatch) -> None:
+async def test_calls_beyond_the_in_flight_cap_are_refused_across_server_instances(monkeypatch) -> None:
     entered, release = asyncio.Event(), asyncio.Event()
     monkeypatch.setattr(gateway, "get_client", lambda: _GateClient(entered, release))
-    monkeypatch.setattr(mcp, "max_in_flight_tool_calls", 1)
+    monkeypatch.setattr(server, "MAX_IN_FLIGHT_TOOL_CALLS", 1)
+    other = server.SugraFastMCP("second-instance-probe")
     first = asyncio.create_task(mcp.call_tool("call_endpoint", QUOTE_CALL))
     try:
         await asyncio.wait_for(entered.wait(), 5)
-        refused = await mcp.call_tool("list_toolsets", {})
-        payload = _structured(refused)
-        assert refused.isError is True
-        assert payload["error"] == "server_busy"
-        assert payload["scope"] == "tool_calls"
-        assert payload["limit"] == 1
+        for instance in (mcp, other):
+            refused = await instance.call_tool("list_toolsets", {})
+            payload = _structured(refused)
+            assert refused.isError is True
+            assert payload["error"] == "server_busy"
+            assert payload["scope"] == "tool_calls"
+            assert payload["limit"] == 1
+            assert payload["elapsed_ms"] == 0
     finally:
         release.set()
         await first
-    assert mcp._in_flight_tool_calls == 0
+    assert server._in_flight_tool_calls == 0
     assert "error" not in _structured(await mcp.call_tool("list_toolsets", {}))
 
 
@@ -271,19 +391,19 @@ async def test_the_in_flight_count_returns_to_zero_after_every_outcome(monkeypat
 
     timed_out = await mcp.call_tool("call_endpoint", QUOTE_CALL)
     assert _structured(timed_out)["error"] == "deadline_exceeded"
-    assert mcp._in_flight_tool_calls == 0
+    assert server._in_flight_tool_calls == 0
 
     cancelled = asyncio.create_task(mcp.call_tool("call_endpoint", QUOTE_CALL))
     await asyncio.sleep(0.05)
     cancelled.cancel()
     with pytest.raises(asyncio.CancelledError):
         await cancelled
-    assert mcp._in_flight_tool_calls == 0
+    assert server._in_flight_tool_calls == 0
 
     monkeypatch.setattr(gateway, "load_catalog", _raising_catalog)
     with pytest.raises(Exception, match="catalog exploded"):
         await mcp.call_tool("list_toolsets", {})
-    assert mcp._in_flight_tool_calls == 0
+    assert server._in_flight_tool_calls == 0
 
 
 class _CaptureSpan:
@@ -315,7 +435,7 @@ class _CaptureTracer:
 async def test_a_refused_call_leaves_a_span_for_registered_tools_only(monkeypatch) -> None:
     tracer = _CaptureTracer()
     monkeypatch.setattr(observability, "_TRACER", tracer)
-    monkeypatch.setattr(mcp, "max_in_flight_tool_calls", 0)
+    monkeypatch.setattr(server, "MAX_IN_FLIGHT_TOOL_CALLS", 0)
 
     refused = await mcp.call_tool("list_toolsets", {})
     assert _structured(refused)["error"] == "server_busy"

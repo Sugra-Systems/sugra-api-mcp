@@ -130,20 +130,18 @@ class SugraFastMCP(FastMCP):
             for tool in await super().list_tools()
         ]
 
-    # MCP-26.1: at most this many tool calls run at once in one process. Thirty
-    # days of hosted telemetry (21,840 calls) peaked at 6 concurrent calls, so
-    # the cap sits well above real traffic and only stops a flood from piling up
-    # unbounded work. One event loop serves every call, so the check and the
-    # increment below cannot interleave with another call.
-    max_in_flight_tool_calls = 32
-    _in_flight_tool_calls = 0
-
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
-        """Refuse a call beyond the in-flight cap with a structured server_busy error."""
-        if self._in_flight_tool_calls >= self.max_in_flight_tool_calls:
+        """Refuse a call beyond the process-wide in-flight cap with server_busy.
+
+        The count is module state, so every server instance in the process
+        shares it. The check and the increment run with no await between them,
+        so on the event loop that serves the calls they cannot interleave.
+        """
+        global _in_flight_tool_calls
+        if _in_flight_tool_calls >= MAX_IN_FLIGHT_TOOL_CALLS:
             from .errors import server_busy_error
 
-            payload = server_busy_error("tool_calls", self.max_in_flight_tool_calls)
+            payload = server_busy_error("tool_calls", MAX_IN_FLIGHT_TOOL_CALLS)
             # The refused call never reaches its tool, so the tool's span never
             # starts; record one here, for registered names only.
             if self._tool_manager.get_tool(name) is not None:
@@ -153,11 +151,11 @@ class SugraFastMCP(FastMCP):
                 content=[TextContent(type="text", text=json.dumps(payload))],
                 structuredContent=payload,
             )
-        self._in_flight_tool_calls += 1
+        _in_flight_tool_calls += 1
         try:
             return await self._call_tool_in_budget(name, arguments)
         finally:
-            self._in_flight_tool_calls -= 1
+            _in_flight_tool_calls -= 1
 
     async def _call_tool_in_budget(self, name: str, arguments: dict[str, Any]) -> Any:
         """Report a failed tool call as a protocol-level error.
@@ -268,6 +266,14 @@ class SugraFastMCP(FastMCP):
             content=[TextContent(type="text", text=json.dumps(structured, indent=2, default=str))],
             structuredContent=structured,
         )
+
+
+# MCP-26.1: at most this many tool calls run at once in this process, across
+# every server instance. Thirty days of hosted telemetry (21,840 calls) peaked at
+# 6 concurrent calls, so the cap sits well above real traffic and only stops a
+# flood from piling up unbounded work.
+MAX_IN_FLIGHT_TOOL_CALLS = 32
+_in_flight_tool_calls = 0
 
 
 def read_only(title: str) -> ToolAnnotations:

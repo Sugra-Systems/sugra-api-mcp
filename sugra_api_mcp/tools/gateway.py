@@ -21,19 +21,33 @@ from ..server import get_client, mcp, read_only
 
 # MCP-26.1: catalog search is pure CPU work, so it runs on one worker thread
 # instead of the event loop that serves every session. SEARCH_MAX_PENDING bounds
-# the searches running or queued at once; beyond it a search is refused with
-# server_busy instead of queuing without limit. Thirty days of hosted telemetry
-# peaked at 3 concurrent search_endpoints and fetch_data calls.
+# the searches running or queued on that worker. A search that finds the bound
+# reached waits up to SEARCH_WAIT_SECONDS for a slot, so an ordinary burst is
+# served in turn, and only then answers server_busy instead of queuing without
+# limit. Thirty days of hosted telemetry peaked at 3 concurrent search_endpoints
+# and fetch_data calls. Like the dispatch budget in server.py, this relies on the
+# asyncio event loop that both transports run on.
 SEARCH_MAX_PENDING = 8
+SEARCH_WAIT_SECONDS = 2.0
+_SEARCH_WAIT_STEP_SECONDS = 0.025
 _search_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="catalog-search")
 _search_lock = threading.Lock()
 _search_pending = 0
 
 
 def search_pending() -> int:
-    """Searches submitted to the worker and not yet finished."""
+    """Searches submitted to the worker that have not finished or been dropped."""
     with _search_lock:
         return _search_pending
+
+
+def _claim_search_slot() -> bool:
+    global _search_pending
+    with _search_lock:
+        if _search_pending >= SEARCH_MAX_PENDING:
+            return False
+        _search_pending += 1
+        return True
 
 
 def _release_search_slot(_future: object) -> None:
@@ -42,18 +56,20 @@ def _release_search_slot(_future: object) -> None:
         _search_pending -= 1
 
 
-async def _search_off_loop(catalog: Any, query: str, **kwargs: Any) -> list[dict[str, Any]] | None:
-    """Run search_catalog on the search worker; None when the search queue is full.
+async def _search_off_loop(catalog: Any, query: str, **kwargs: Any) -> list[dict[str, Any]] | dict[str, Any]:
+    """Run search_catalog on the search worker, or return the server_busy payload.
 
-    The slot is released when the worker FINISHES, not when the caller stops
-    waiting: a call cancelled by its deadline leaves its search running, and that
-    search keeps counting against the bound until it ends.
+    The future's done callback releases the slot. A search the worker has already
+    started runs to completion and holds its slot until then, even when its
+    caller was cancelled meanwhile. A search still queued when its caller is
+    cancelled is cancelled with it: it never runs, and its slot is freed at once.
     """
-    global _search_pending
-    with _search_lock:
-        if _search_pending >= SEARCH_MAX_PENDING:
-            return None
-        _search_pending += 1
+    started = time.monotonic()
+    while not _claim_search_slot():
+        waited = time.monotonic() - started
+        if waited >= SEARCH_WAIT_SECONDS:
+            return server_busy_error("search", SEARCH_MAX_PENDING, elapsed_ms=int(waited * 1000))
+        await asyncio.sleep(_SEARCH_WAIT_STEP_SECONDS)
     try:
         future = _search_executor.submit(search_catalog, catalog, query, **kwargs)
     except BaseException:
@@ -203,8 +219,8 @@ async def search_endpoints(
                 "catalog_source": catalog.source,
             }
     results = await _search_off_loop(catalog, query, toolset=toolset, source=source, limit=limit)
-    if results is None:
-        return server_busy_error("search", SEARCH_MAX_PENDING)
+    if isinstance(results, dict):
+        return results
     return {"results": results, "total_matched": len(results), "catalog_source": catalog.source}
 
 
@@ -562,8 +578,8 @@ async def fetch_data(
             return refusal
         catalog = load_catalog()
         results = await _search_off_loop(catalog, query, limit=3)
-        if results is None:
-            return server_busy_error("search", SEARCH_MAX_PENDING)
+        if isinstance(results, dict):
+            return results
 
         if not results:
             return {
