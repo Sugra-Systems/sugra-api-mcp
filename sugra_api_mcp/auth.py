@@ -115,7 +115,9 @@ class ResolvedAuth:
     access_token_id: str | None = None
     # MCP-26.1.3: how the bearer authenticated, "api_key" (a sugra_ key taken as
     # itself) or "oauth" (a validated JWT resolved to the account's primary key).
-    method: str = "api_key"
+    # No default label: a constructor that does not say leaves None, and spans
+    # then carry no auth class rather than a wrong one.
+    method: str | None = None
 
 
 class _UserLockEntry:
@@ -186,7 +188,7 @@ class Authenticator:
             raise AuthError("Empty token")
 
         if token.startswith("sugra_"):
-            return ResolvedAuth(api_key=token)
+            return ResolvedAuth(api_key=token, method="api_key")
 
         # r2 (codex): a malformed bearer must fail HERE, on the loop, at
         # parse cost - never occupy a JWKS executor slot.

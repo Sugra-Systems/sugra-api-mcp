@@ -371,7 +371,12 @@ def _host_class(value: object) -> str | None:
     if not host:
         return None
     if host.startswith("["):
-        host = host[: host.index("]") + 1] if "]" in host else host
+        # An IPv6 literal: the bracketed address alone, or with a numeric port.
+        end = host.find("]")
+        port = host[end + 1:] if end != -1 else ""
+        if end == -1 or (port and not (port[0] == ":" and port[1:].isascii() and port[1:].isdigit())):
+            return "other"
+        host = host[: end + 1]
     elif host.count(":") == 1:
         name, _, port = host.partition(":")
         if port.isascii() and port.isdigit():

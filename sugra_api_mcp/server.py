@@ -501,7 +501,7 @@ REQUEST_PRINCIPAL_STATE = "sugra_principal"
 
 @dataclass(frozen=True)
 class RequestPrincipal:
-    method: str
+    method: str | None
     user_id: int | None = None
 
 # Set by AuthMiddleware for every request it serves. A Streamable HTTP session

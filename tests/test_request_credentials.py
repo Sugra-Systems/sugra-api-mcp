@@ -11,6 +11,7 @@ call would send upstream.
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 from pathlib import Path
@@ -231,7 +232,8 @@ def _caller(span: _CaptureSpan) -> dict[str, object]:
 async def test_every_tool_span_names_how_its_own_request_arrived(upstream, monkeypatch) -> None:
     """MCP-26.1.3: on one session, each tools/call span carries the auth method,
     host, User-Agent class and Origin of the request that carried that call, and
-    the client class of the session's initialize, never another request's."""
+    the client class the session's most recent initialize asserted. That one is
+    client-reported: any request that re-initializes the session can change it."""
     # The hosted Host and Origin protection, so app.sugra.ai and mcp.sugra.ai are
     # admitted exactly as nginx forwards them in production.
     monkeypatch.setenv("SUGRA_MCP_ALLOWED_HOSTS", "app.sugra.ai,mcp.sugra.ai")
@@ -302,6 +304,199 @@ async def test_every_tool_span_names_how_its_own_request_arrived(upstream, monke
               "mcp.caller.ua_class": "curl", "mcp.caller.origin": "openai"}
     assert [_caller(span) for span in calls] == [by_oauth, by_key, by_oauth]
     assert [span.attributes.get("mcp.error.code") for span in calls] == [None, None, "server_busy"]
+
+
+class _Gate:
+    """Inner ASGI layer: a tagged request waits, after AuthMiddleware wrote its
+    state, until every tagged request of the round has got that far, so every auth
+    write lands before any dispatch reads caller facts."""
+
+    def __init__(self, app: Any, gates: dict[bytes, asyncio.Event]) -> None:
+        self.app = app
+        self.gates = gates
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] == "http":
+            tag = dict(scope["headers"]).get(b"x-gate")
+            if tag is not None and tag in self.gates:
+                self.gates[tag].set()
+                await asyncio.wait_for(asyncio.gather(*(event.wait() for event in self.gates.values())), 5)
+        await self.app(scope, receive, send)
+
+
+async def test_concurrent_calls_each_carry_their_own_request(monkeypatch) -> None:
+    """MCP-26.1.3 (review): two sessions called at once, with every auth write landing
+    before either dispatch and both upstream calls overlapping, still give each span
+    the caller facts of its own request, so no shared last-writer state can stand in."""
+    monkeypatch.setenv("SUGRA_MCP_ALLOWED_HOSTS", "app.sugra.ai,mcp.sugra.ai")
+    monkeypatch.setattr(server.mcp.settings, "transport_security", server._build_transport_security())
+    monkeypatch.setattr(server.mcp, "_session_manager", None)
+    monkeypatch.setattr(server, "_shared_client", None)
+    monkeypatch.delenv("SUGRA_API_KEY", raising=False)
+    arrived: list[str] = []
+    both_arrived = asyncio.Event()
+
+    async def fake_request(self: SugraClient, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        arrived.append(self._config.api_key)
+        if len(arrived) >= 2:
+            both_arrived.set()
+        await asyncio.wait_for(both_arrived.wait(), 5)
+        return {"data": [{"ok": 1}], "meta": {}}
+
+    monkeypatch.setattr(SugraClient, "request", fake_request)
+    gates: dict[bytes, asyncio.Event] = {}
+    app = server.mcp.streamable_http_app()
+    app.add_middleware(_Gate, gates=gates)
+    authenticator = _authenticator()
+    real_resolve = authenticator.resolve
+
+    async def resolve(token: str) -> ResolvedAuth:
+        token = token.strip()
+        if token.startswith("jwt-"):
+            return ResolvedAuth(api_key=f"sugra_TENANT_{token[4:]}", user_id=42, access_token_id=token, method="oauth")
+        return await real_resolve(token)
+
+    monkeypatch.setattr(authenticator, "resolve", resolve)
+    app.add_middleware(AuthMiddleware, authenticator=authenticator)
+    tracer = _CaptureTracer()
+    monkeypatch.setattr(observability, "_TRACER", tracer)
+    arguments = {"operation_id": _operation_without_params()}
+
+    async def open_session(client: httpx.AsyncClient, host: str, name: str, version: str) -> str:
+        initialize = {**INITIALIZE, "params": {**INITIALIZE["params"], "clientInfo": {"name": name, "version": version}}}
+        opened = await client.post("/mcp", json=initialize, headers={**HEADERS, "host": host})
+        assert opened.status_code == 200
+        session_id = opened.headers["mcp-session-id"]
+        await client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "method": "notifications/initialized"},
+            headers={**HEADERS, "mcp-session-id": session_id, "host": host},
+        )
+        return session_id
+
+    async def call(client: httpx.AsyncClient, session_id: str, headers: dict[str, str]) -> None:
+        response = await client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {"name": "call_endpoint", "arguments": arguments},
+            },
+            headers={**HEADERS, "mcp-session-id": session_id, **headers},
+        )
+        assert response.status_code == 200
+
+    by_key = {
+        "authorization": "Bearer sugra_concurrent_a",
+        "host": "mcp.sugra.ai",
+        "user-agent": "python-requests/2.32.0",
+        "origin": "https://chatgpt.com",
+        "x-gate": "a",
+    }
+    by_oauth = {"authorization": "Bearer jwt-B", "host": "app.sugra.ai", "user-agent": "curl/8.5.0", "x-gate": "b"}
+    try:
+        async with server.mcp.session_manager.run():
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:8002") as client:
+                session_a = await open_session(client, "app.sugra.ai", "claude-ai", "1.0.0")
+                session_b = await open_session(client, "mcp.sugra.ai", "openai-mcp", "2.0.0")
+                gates.update({b"a": asyncio.Event(), b"b": asyncio.Event()})
+                await asyncio.gather(call(client, session_a, by_key), call(client, session_b, by_oauth))
+                gates.clear()
+    finally:
+        await _close_clients(["sugra_concurrent_a", "sugra_TENANT_B"])
+        await authenticator.aclose()
+
+    assert sorted(arrived) == ["sugra_TENANT_B", "sugra_concurrent_a"]
+    spans = sorted(
+        (_caller(span) for span in tracer.spans if span.name == "mcp.tool.call_endpoint"),
+        key=lambda facts: str(facts.get("mcp.caller.client")),
+    )
+    common = {"mcp.caller.transport": "streamable_http"}
+    assert spans == [
+        {**common, "mcp.caller.auth": "oauth", "mcp.caller.host": "app.sugra.ai", "mcp.caller.ua_class": "curl",
+         "mcp.caller.origin": "none", "mcp.caller.client": "chatgpt", "mcp.caller.client_version": "2.0.0"},
+        {**common, "mcp.caller.auth": "api_key", "mcp.caller.host": "mcp.sugra.ai", "mcp.caller.ua_class": "python",
+         "mcp.caller.origin": "openai", "mcp.caller.client": "claude", "mcp.caller.client_version": "1.0.0"},
+    ]
+
+
+async def test_an_unauthenticated_tool_call_is_refused_before_any_span(monkeypatch) -> None:
+    """On the real middleware stack a tools/call without a credential is refused with
+    401 before dispatch (tools/call is not a public method), so no tool span, and no
+    caller attribute, can come from an anonymous call."""
+    monkeypatch.setenv("SUGRA_MCP_ALLOWED_HOSTS", "app.sugra.ai,mcp.sugra.ai")
+    monkeypatch.setattr(server.mcp.settings, "transport_security", server._build_transport_security())
+    monkeypatch.setattr(server.mcp, "_session_manager", None)
+    app = server.mcp.streamable_http_app()
+    authenticator = _authenticator()
+    app.add_middleware(AuthMiddleware, authenticator=authenticator)
+    tracer = _CaptureTracer()
+    monkeypatch.setattr(observability, "_TRACER", tracer)
+    try:
+        async with server.mcp.session_manager.run():
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:8002") as client:
+                opened = await client.post("/mcp", json=INITIALIZE, headers={**HEADERS, "host": "app.sugra.ai"})
+                assert opened.status_code == 200
+                session_id = opened.headers["mcp-session-id"]
+                refused = await client.post(
+                    "/mcp",
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "method": "tools/call",
+                        "params": {"name": "list_toolsets", "arguments": {}},
+                    },
+                    headers={**HEADERS, "mcp-session-id": session_id, "host": "app.sugra.ai"},
+                )
+    finally:
+        await authenticator.aclose()
+    assert refused.status_code == 401
+    assert [span.name for span in tracer.spans if span.name.startswith("mcp.tool.")] == []
+
+
+async def test_an_http_call_with_no_principal_is_auth_none(monkeypatch) -> None:
+    """codex r2: where the streamable HTTP app runs without AuthMiddleware (an embedding
+    that mounts it bare), a tool call has a request but no principal, so its span says
+    auth none, with that request's own host, never api_key."""
+    monkeypatch.setattr(server.mcp, "_session_manager", None)
+    app = server.mcp.streamable_http_app()
+    tracer = _CaptureTracer()
+    monkeypatch.setattr(observability, "_TRACER", tracer)
+    async with server.mcp.session_manager.run():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:8002") as client:
+            opened = await client.post("/mcp", json=INITIALIZE, headers=HEADERS)
+            assert opened.status_code == 200
+            session_id = opened.headers["mcp-session-id"]
+            await client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "notifications/initialized"},
+                headers={**HEADERS, "mcp-session-id": session_id},
+            )
+            response = await client.post(
+                "/mcp",
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "tools/call",
+                    "params": {"name": "list_toolsets", "arguments": {}},
+                },
+                headers={**HEADERS, "mcp-session-id": session_id, "user-agent": "curl/8.5.0"},
+            )
+            assert response.status_code == 200
+    spans = [span for span in tracer.spans if span.name == "mcp.tool.list_toolsets"]
+    assert [_caller(span) for span in spans] == [{
+        "mcp.caller.transport": "streamable_http",
+        "mcp.caller.auth": "none",
+        "mcp.caller.host": "loopback",
+        "mcp.caller.ua_class": "curl",
+        "mcp.caller.origin": "none",
+        "mcp.caller.client": "other",
+        "mcp.caller.client_version": "0",
+    }]
 
 
 async def test_a_call_no_http_request_carried_is_local_whatever_it_inherited(monkeypatch) -> None:
