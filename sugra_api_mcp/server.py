@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
+import threading
 import time
 from contextvars import ContextVar
 from copy import deepcopy
@@ -131,31 +133,28 @@ class SugraFastMCP(FastMCP):
         ]
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
-        """Refuse a call beyond the process-wide in-flight cap with server_busy.
+        """Refuse a call past the in-flight caps with server_busy.
 
-        The count is module state, so every server instance in the process
-        shares it. The check and the increment run with no await between them,
-        so on the event loop that serves the calls they cannot interleave.
+        Admission and release go through the module-level counters under their
+        lock (see MAX_IN_FLIGHT_TOOL_CALLS), so every server instance in the
+        process shares them, and one caller holds at most its own share.
         """
-        global _in_flight_tool_calls
-        if _in_flight_tool_calls >= MAX_IN_FLIGHT_TOOL_CALLS:
-            from .errors import server_busy_error
-
-            payload = server_busy_error("tool_calls", MAX_IN_FLIGHT_TOOL_CALLS)
+        caller = current_caller()
+        refusal = _admit_tool_call(caller)
+        if refusal is not None:
             # The refused call never reaches its tool, so the tool's span never
             # starts; record one here, for registered names only.
             if self._tool_manager.get_tool(name) is not None:
-                observability.record_refused_call(name, payload["error"])
+                observability.record_refused_call(name, refusal["error"])
             return CallToolResult(
                 isError=True,
-                content=[TextContent(type="text", text=json.dumps(payload))],
-                structuredContent=payload,
+                content=[TextContent(type="text", text=json.dumps(refusal))],
+                structuredContent=refusal,
             )
-        _in_flight_tool_calls += 1
         try:
             return await self._call_tool_in_budget(name, arguments)
         finally:
-            _in_flight_tool_calls -= 1
+            _release_tool_call(caller)
 
     async def _call_tool_in_budget(self, name: str, arguments: dict[str, Any]) -> Any:
         """Report a failed tool call as a protocol-level error.
@@ -268,12 +267,69 @@ class SugraFastMCP(FastMCP):
         )
 
 
-# MCP-26.1: at most this many tool calls run at once in this process, across
-# every server instance. Thirty days of hosted telemetry (21,840 calls) peaked at
-# 6 concurrent calls, so the cap sits well above real traffic and only stops a
-# flood from piling up unbounded work.
+# MCP-26.1: at most MAX_IN_FLIGHT_TOOL_CALLS tool calls run at once in this
+# process, across every server instance, and at most MAX_IN_FLIGHT_PER_CALLER of
+# them for any one caller, so a single credential cannot take every slot. Thirty
+# days of hosted telemetry (21,840 calls) peaked at 6 concurrent calls, so both
+# caps sit above real traffic and only stop a flood from piling up unbounded
+# work. The lock keeps admission and release atomic even when calls arrive from
+# more than one event loop thread.
 MAX_IN_FLIGHT_TOOL_CALLS = 32
+MAX_IN_FLIGHT_PER_CALLER = 16
+_in_flight_lock = threading.Lock()
 _in_flight_tool_calls = 0
+_in_flight_by_caller: dict[str, int] = {}
+
+
+def current_caller() -> str:
+    """A stable name for the principal behind the tool call being dispatched.
+
+    On the HTTP transport it is a short SHA-256 digest of the credential the
+    carrying request presented, so the name never contains the credential, and
+    "http:anonymous" when that request presented none. Outside HTTP (stdio and
+    in-process callers) every call is "local".
+    """
+    is_http_request, request_key = _dispatching_http_request()
+    if request_key:
+        return "http:" + hashlib.sha256(request_key.encode("utf-8")).hexdigest()[:16]
+    if is_http_request or http_transport_ctx.get():
+        return "http:anonymous"
+    return "local"
+
+
+def in_flight_tool_calls(caller: str | None = None) -> int:
+    """Tool calls admitted and not yet finished; given a caller, only that caller's."""
+    with _in_flight_lock:
+        if caller is None:
+            return _in_flight_tool_calls
+        return _in_flight_by_caller.get(caller, 0)
+
+
+def _admit_tool_call(caller: str) -> dict[str, Any] | None:
+    """Count one call in for caller: None when admitted, else the server_busy payload."""
+    global _in_flight_tool_calls
+    from .errors import server_busy_error
+
+    with _in_flight_lock:
+        if _in_flight_tool_calls >= MAX_IN_FLIGHT_TOOL_CALLS:
+            return server_busy_error("tool_calls", MAX_IN_FLIGHT_TOOL_CALLS)
+        held = _in_flight_by_caller.get(caller, 0)
+        if held >= MAX_IN_FLIGHT_PER_CALLER:
+            return server_busy_error("caller_tool_calls", MAX_IN_FLIGHT_PER_CALLER)
+        _in_flight_tool_calls += 1
+        _in_flight_by_caller[caller] = held + 1
+        return None
+
+
+def _release_tool_call(caller: str) -> None:
+    global _in_flight_tool_calls
+    with _in_flight_lock:
+        _in_flight_tool_calls -= 1
+        held = _in_flight_by_caller.get(caller, 0) - 1
+        if held > 0:
+            _in_flight_by_caller[caller] = held
+        else:
+            _in_flight_by_caller.pop(caller, None)
 
 
 def read_only(title: str) -> ToolAnnotations:

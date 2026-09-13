@@ -395,8 +395,8 @@ Tool failures return structured JSON instead of raising, so agents can pick a re
 | `upstream_transport_error` | Connection dropped mid-request | Retry once. |
 | free-text string + `status_code` | The API answered with HTTP 4xx/5xx; `retry_after` included when the API sent a Retry-After header | Honor `retry_after` for 429/503; fix the request for 4xx. |
 | `tool_execution_failed` | Unexpected failure inside the gateway (`exception_type` included) | Report if persistent. |
-| `query_too_long` | A `search_endpoints` or `fetch_data` query is longer than 64 words or 1000 characters (`max_terms` and `max_chars` included); nothing was searched | Shorten the query to the instrument, series, place or task. |
-| `server_busy` | The server is at a concurrency limit (`scope` is `tool_calls` or `search`); the call did no work | Retry after a few seconds. |
+| `query_too_long` | A `search_endpoints` or `fetch_data` query has more than 64 terms or 1000 characters (`max_terms` and `max_chars` included). A term is a run of two or more letters or digits, and repeats count; nothing was searched | Shorten the query to the instrument, series, place or task. |
+| `server_busy` | A concurrency limit was reached and the call did no work. `scope` is `tool_calls` or `search` for a server-wide limit, `caller_tool_calls` or `caller_search` for the limit on one caller | Retry after a few seconds. |
 
 All error payloads carry `elapsed_ms`. `url` is present on transport and HTTP errors (not on `tool_execution_failed`, which can fire before a URL exists). On the three transport errors `status_code` is `null` (no HTTP status was received) - consumers comparing `status_code` numerically should guard for that. If a tool call instead fails with a bare client-side message and no structured JSON, the timeout fired in your agent harness above this server: raise the client's tool timeout, not `SUGRA_TIMEOUT`.
 

@@ -451,8 +451,9 @@ def query_limit_error(query: str) -> dict[str, Any] | None:
         **({"terms": terms} if terms is not None else {}),
         "elapsed_ms": 0,
         "hint": (
-            f"Shorten the query to at most {MAX_QUERY_TERMS} words and "
-            f"{MAX_QUERY_CHARS} characters: name the instrument, series, place or task."
+            f"Shorten the query to at most {MAX_QUERY_TERMS} terms (runs of two or more "
+            f"letters or digits, repeats counted) and {MAX_QUERY_CHARS} characters: "
+            "name the instrument, series, place or task."
         ),
     }
 

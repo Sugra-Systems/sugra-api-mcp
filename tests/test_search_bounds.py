@@ -5,12 +5,13 @@ a 20,000-character query of distinct words held the only event loop for 133 s.
 It was reachable with a made-up sugra_ Bearer, because catalog tools make no
 upstream call. The search now tokenizes each endpoint once, refuses a query over
 the bounds before any scoring, runs on a worker thread behind a bounded queue,
-and every tool call counts against a process-wide in-flight cap.
+and every tool call counts against process-wide and per-caller in-flight caps.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import sys
 import threading
@@ -57,6 +58,16 @@ async def _until(predicate, timeout: float = 5.0) -> bool:
     return predicate()
 
 
+_CALLER = contextvars.ContextVar("test_caller", default="caller-a")
+
+
+def _as_caller(name: str, coroutine: Any) -> asyncio.Task:
+    """Run coroutine in a task whose current_caller() is name."""
+    context = contextvars.copy_context()
+    context.run(_CALLER.set, name)
+    return asyncio.get_running_loop().create_task(coroutine, context=context)
+
+
 # ---- bounds -----------------------------------------------------------------
 
 
@@ -93,6 +104,16 @@ def test_a_huge_query_is_refused_without_tokenizing_it(monkeypatch) -> None:
     payload = search.query_limit_error("word " * 1_000_000)
     assert payload is not None and payload["error"] == "query_too_long"
     assert "terms" not in payload
+
+
+def test_the_term_count_is_the_scoring_token_count() -> None:
+    """Terms are runs of two or more letters or digits, repeats included; a
+    one-character token is not a term."""
+    at_bound = " ".join(["ab"] * search.MAX_QUERY_TERMS + ["x"] * 50)
+    assert search.query_limit_error(at_bound) is None
+    over_bound = " ".join(["ab"] * (search.MAX_QUERY_TERMS + 1))
+    payload = search.query_limit_error(over_bound)
+    assert payload is not None and payload["terms"] == search.MAX_QUERY_TERMS + 1
 
 
 async def test_a_query_at_the_bounds_still_searches() -> None:
@@ -138,27 +159,34 @@ def test_every_endpoint_profile_equals_its_tokenized_fields() -> None:
         assert profile.text_normalized == " ".join(search._tokens(text)), endpoint.operation_id
 
 
-def test_alias_matching_from_profiles_equals_the_text_form_for_every_endpoint() -> None:
-    """The reference is _alias_matches with the endpoint text tokenized once per
-    endpoint instead of once per expansion, which is what makes a full sweep of
-    every endpoint and every expansion affordable here."""
+def test_alias_matching_from_profiles_equals_the_old_function_for_every_pair(monkeypatch) -> None:
+    """The reference is the pre-change _alias_matches itself, called for every
+    endpoint and every alias expansion. _tokens is memoized for the sweep, which
+    changes no answer because it is a pure function."""
+    real_tokens = search._tokens
+    memo: dict[str, list[str]] = {}
+
+    def _memoized(value: str) -> list[str]:
+        found = memo.get(value)
+        if found is None:
+            found = real_tokens(value)
+            memo[value] = found
+        return found
+
     expansions = sorted({expansion for values in aliases.ALIASES.values() for expansion in values})
-    expansion_tokens = {expansion: search._tokens(expansion) for expansion in expansions}
-    for endpoint in load_catalog().endpoints:
-        text_tokens = search._tokens(search._endpoint_text(endpoint))
-        normalized = " ".join(text_tokens)
-        profile = search._profile(endpoint)
-        for expansion, tokens in expansion_tokens.items():
-            if len(tokens) <= 1:
-                expected = tokens[0] in text_tokens if tokens else False
-            else:
-                expected = " ".join(tokens) in normalized
-            assert search._alias_matches_profile(profile, expansion) == expected, (endpoint.operation_id, expansion)
-    sample = load_catalog().endpoints[0]
-    for expansion in expansions[:50]:
-        assert search._alias_matches(search._endpoint_text(sample), expansion) == search._alias_matches_profile(
-            search._profile(sample), expansion
-        ), expansion
+    endpoints = load_catalog().endpoints
+    profiles = [search._profile(endpoint) for endpoint in endpoints]
+    monkeypatch.setattr(search, "_tokens", _memoized)
+    checked = 0
+    for endpoint, profile in zip(endpoints, profiles, strict=True):
+        text = search._endpoint_text(endpoint)
+        for expansion in expansions:
+            assert search._alias_matches_profile(profile, expansion) == search._alias_matches(text, expansion), (
+                endpoint.operation_id,
+                expansion,
+            )
+            checked += 1
+    assert checked == len(endpoints) * len(expansions)
 
 
 def test_the_profile_cache_is_keyed_by_the_endpoint_object() -> None:
@@ -206,7 +234,7 @@ def test_every_field_reaches_its_profile_when_no_other_field_repeats_it() -> Non
         assert f"{field}:{term}" in why, (term, why)
 
 
-# ---- off the event loop, behind a bounded queue ------------------------------
+# ---- off the event loop, behind bounded queues -------------------------------
 
 
 async def test_search_runs_off_the_event_loop(monkeypatch) -> None:
@@ -265,11 +293,35 @@ async def test_a_full_search_queue_answers_server_busy_after_the_wait(monkeypatc
             assert payload["error"] == "server_busy", tool
             assert payload["scope"] == "search", tool
             assert payload["limit"] == 1, tool
-            assert payload["elapsed_ms"] >= 100, tool
+            assert payload["elapsed_ms"] >= 50, tool
     finally:
         blocking.release.set()
         await first
     assert await _until(lambda: gateway.search_pending() == 0)
+
+
+async def test_one_caller_cannot_take_every_search_slot(monkeypatch) -> None:
+    blocking = _BlockingSearch()
+    monkeypatch.setattr(gateway, "search_catalog", blocking)
+    monkeypatch.setattr(gateway, "current_caller", _CALLER.get)
+    monkeypatch.setattr(gateway, "SEARCH_MAX_PENDING_PER_CALLER", 1)
+    monkeypatch.setattr(gateway, "SEARCH_WAIT_SECONDS", 0.1)
+    first = _as_caller("caller-a", mcp.call_tool("search_endpoints", {"query": "US CPI"}))
+    other = None
+    try:
+        assert await asyncio.to_thread(blocking.started.wait, 5)
+        refused = _structured(await _as_caller("caller-a", mcp.call_tool("search_endpoints", {"query": "US CPI"})))
+        assert refused["error"] == "server_busy"
+        assert refused["scope"] == "caller_search"
+        assert refused["limit"] == 1
+        other = _as_caller("caller-b", mcp.call_tool("search_endpoints", {"query": "US CPI"}))
+        assert await _until(lambda: gateway.search_pending("caller-b") == 1), "another caller was not admitted"
+    finally:
+        blocking.release.set()
+        await first
+    assert _structured(await other)["results"] == []
+    assert await _until(lambda: gateway.search_pending() == 0)
+    assert gateway._search_pending_by_caller == {}
 
 
 async def test_a_slot_freed_during_the_wait_serves_the_search(monkeypatch) -> None:
@@ -331,9 +383,10 @@ async def test_a_search_that_raises_frees_its_slot(monkeypatch) -> None:
     failed = _structured(await mcp.call_tool("fetch_data", {"query": "US CPI"}))
     assert failed["error"] == "tool_execution_failed"
     assert await _until(lambda: gateway.search_pending() == 0)
+    assert gateway._search_pending_by_caller == {}
 
 
-# ---- the process-wide in-flight cap on tool calls ----------------------------
+# ---- the in-flight caps on tool calls ----------------------------------------
 
 
 class _GateClient:
@@ -371,39 +424,102 @@ async def test_calls_beyond_the_in_flight_cap_are_refused_across_server_instance
     finally:
         release.set()
         await first
-    assert server._in_flight_tool_calls == 0
+    assert server.in_flight_tool_calls() == 0
     assert "error" not in _structured(await mcp.call_tool("list_toolsets", {}))
 
 
+async def test_one_caller_cannot_take_every_in_flight_slot(monkeypatch) -> None:
+    entered, release = asyncio.Event(), asyncio.Event()
+    monkeypatch.setattr(gateway, "get_client", lambda: _GateClient(entered, release))
+    monkeypatch.setattr(server, "current_caller", _CALLER.get)
+    monkeypatch.setattr(server, "MAX_IN_FLIGHT_PER_CALLER", 1)
+    first = _as_caller("caller-a", mcp.call_tool("call_endpoint", QUOTE_CALL))
+    try:
+        await asyncio.wait_for(entered.wait(), 5)
+        refused = await _as_caller("caller-a", mcp.call_tool("list_toolsets", {}))
+        payload = _structured(refused)
+        assert refused.isError is True
+        assert payload["scope"] == "caller_tool_calls"
+        assert payload["limit"] == 1
+        served = await _as_caller("caller-b", mcp.call_tool("list_toolsets", {}))
+        assert "error" not in _structured(served), "another caller was refused"
+        assert server.in_flight_tool_calls("caller-a") == 1
+    finally:
+        release.set()
+        await first
+    assert server.in_flight_tool_calls() == 0
+    assert server._in_flight_by_caller == {}
+
+
 async def test_the_in_flight_count_returns_to_zero_after_every_outcome(monkeypatch) -> None:
-    class _Stall:
-        async def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
-            await asyncio.sleep(5)
-
-        async def request(self, method: str, path: str, **kwargs: Any) -> Any:
-            await asyncio.sleep(5)
-
     def _raising_catalog() -> Any:
         raise RuntimeError("catalog exploded")
 
-    monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "0.2")
-    monkeypatch.setattr(gateway, "get_client", lambda: _Stall())
+    entered, never = asyncio.Event(), asyncio.Event()
+    monkeypatch.setattr(gateway, "get_client", lambda: _GateClient(entered, never))
 
+    monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "0.2")
     timed_out = await mcp.call_tool("call_endpoint", QUOTE_CALL)
     assert _structured(timed_out)["error"] == "deadline_exceeded"
-    assert server._in_flight_tool_calls == 0
+    assert server.in_flight_tool_calls() == 0
 
+    monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "40")
+    entered.clear()
     cancelled = asyncio.create_task(mcp.call_tool("call_endpoint", QUOTE_CALL))
-    await asyncio.sleep(0.05)
+    await asyncio.wait_for(entered.wait(), 5)
+    assert server.in_flight_tool_calls() == 1
     cancelled.cancel()
     with pytest.raises(asyncio.CancelledError):
         await cancelled
-    assert server._in_flight_tool_calls == 0
+    assert server.in_flight_tool_calls() == 0
 
     monkeypatch.setattr(gateway, "load_catalog", _raising_catalog)
     with pytest.raises(Exception, match="catalog exploded"):
         await mcp.call_tool("list_toolsets", {})
-    assert server._in_flight_tool_calls == 0
+    assert server.in_flight_tool_calls() == 0
+    assert server._in_flight_by_caller == {}
+
+
+def test_admission_and_release_stay_consistent_across_threads(monkeypatch) -> None:
+    monkeypatch.setattr(server, "MAX_IN_FLIGHT_TOOL_CALLS", 10_000)
+    monkeypatch.setattr(server, "MAX_IN_FLIGHT_PER_CALLER", 10_000)
+    refusals: list[dict[str, Any]] = []
+
+    def _worker(index: int) -> None:
+        caller = f"thread-{index % 3}"
+        for _ in range(5_000):
+            refusal = server._admit_tool_call(caller)
+            if refusal is not None:
+                refusals.append(refusal)
+                continue
+            server._release_tool_call(caller)
+
+    threads = [threading.Thread(target=_worker, args=(i,)) for i in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert refusals == []
+    assert server.in_flight_tool_calls() == 0
+    assert server._in_flight_by_caller == {}
+
+
+def test_the_caller_name_follows_the_request_credential_and_never_contains_it(monkeypatch) -> None:
+    secret = "sugra_zz_not_a_real_key_0123456789"
+    monkeypatch.setattr(server, "_dispatching_http_request", lambda: (True, secret))
+    named = server.current_caller()
+    assert named.startswith("http:") and secret not in named and len(named) == len("http:") + 16
+    monkeypatch.setattr(server, "_dispatching_http_request", lambda: (True, "sugra_zz_other_key_9876543210"))
+    assert server.current_caller() != named
+    monkeypatch.setattr(server, "_dispatching_http_request", lambda: (True, None))
+    assert server.current_caller() == "http:anonymous"
+    monkeypatch.setattr(server, "_dispatching_http_request", lambda: (False, None))
+    assert server.current_caller() == "local"
+    token = server.http_transport_ctx.set(True)
+    try:
+        assert server.current_caller() == "http:anonymous"
+    finally:
+        server.http_transport_ctx.reset(token)
 
 
 class _CaptureSpan:

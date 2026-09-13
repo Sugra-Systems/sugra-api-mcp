@@ -17,43 +17,62 @@ from ..catalog.search import known_sources, known_toolsets, query_limit_error, s
 from ..catalog.toolsets import ordered_toolsets
 from ..errors import is_error_payload, server_busy_error
 from ..observability import trace_mcp_tool
-from ..server import get_client, mcp, read_only
+from ..server import current_caller, get_client, mcp, read_only
 
 # MCP-26.1: catalog search is pure CPU work, so it runs on one worker thread
-# instead of the event loop that serves every session. SEARCH_MAX_PENDING bounds
-# the searches running or queued on that worker. A search that finds the bound
+# instead of the event loop that serves every session. Two bounds admit a search
+# to that worker: SEARCH_MAX_PENDING searches running or queued in total, and
+# SEARCH_MAX_PENDING_PER_CALLER of them for any one caller (server.current_caller),
+# so a single credential cannot hold the whole queue. A search that finds a bound
 # reached waits up to SEARCH_WAIT_SECONDS for a slot, so an ordinary burst is
 # served in turn, and only then answers server_busy instead of queuing without
 # limit. Thirty days of hosted telemetry peaked at 3 concurrent search_endpoints
 # and fetch_data calls. Like the dispatch budget in server.py, this relies on the
 # asyncio event loop that both transports run on.
 SEARCH_MAX_PENDING = 8
+SEARCH_MAX_PENDING_PER_CALLER = 4
 SEARCH_WAIT_SECONDS = 2.0
 _SEARCH_WAIT_STEP_SECONDS = 0.025
 _search_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="catalog-search")
 _search_lock = threading.Lock()
 _search_pending = 0
+_search_pending_by_caller: dict[str, int] = {}
 
 
-def search_pending() -> int:
-    """Searches submitted to the worker that have not finished or been dropped."""
+def search_pending(caller: str | None = None) -> int:
+    """Searches submitted to the worker that have not finished or been dropped.
+
+    Given a caller, only that caller's searches are counted.
+    """
     with _search_lock:
-        return _search_pending
+        if caller is None:
+            return _search_pending
+        return _search_pending_by_caller.get(caller, 0)
 
 
-def _claim_search_slot() -> bool:
+def _claim_search_slot(caller: str) -> str | None:
+    """Claim a slot for caller: None when claimed, else the scope of the bound that is full."""
     global _search_pending
     with _search_lock:
         if _search_pending >= SEARCH_MAX_PENDING:
-            return False
+            return "search"
+        held = _search_pending_by_caller.get(caller, 0)
+        if held >= SEARCH_MAX_PENDING_PER_CALLER:
+            return "caller_search"
         _search_pending += 1
-        return True
+        _search_pending_by_caller[caller] = held + 1
+        return None
 
 
-def _release_search_slot(_future: object) -> None:
+def _release_search_slot(caller: str) -> None:
     global _search_pending
     with _search_lock:
         _search_pending -= 1
+        held = _search_pending_by_caller.get(caller, 0) - 1
+        if held > 0:
+            _search_pending_by_caller[caller] = held
+        else:
+            _search_pending_by_caller.pop(caller, None)
 
 
 async def _search_off_loop(catalog: Any, query: str, **kwargs: Any) -> list[dict[str, Any]] | dict[str, Any]:
@@ -64,18 +83,20 @@ async def _search_off_loop(catalog: Any, query: str, **kwargs: Any) -> list[dict
     caller was cancelled meanwhile. A search still queued when its caller is
     cancelled is cancelled with it: it never runs, and its slot is freed at once.
     """
+    caller = current_caller()
     started = time.monotonic()
-    while not _claim_search_slot():
+    while (full := _claim_search_slot(caller)) is not None:
         waited = time.monotonic() - started
         if waited >= SEARCH_WAIT_SECONDS:
-            return server_busy_error("search", SEARCH_MAX_PENDING, elapsed_ms=int(waited * 1000))
+            limit = SEARCH_MAX_PENDING if full == "search" else SEARCH_MAX_PENDING_PER_CALLER
+            return server_busy_error(full, limit, elapsed_ms=int(waited * 1000))
         await asyncio.sleep(_SEARCH_WAIT_STEP_SECONDS)
     try:
         future = _search_executor.submit(search_catalog, catalog, query, **kwargs)
     except BaseException:
-        _release_search_slot(None)
+        _release_search_slot(caller)
         raise
-    future.add_done_callback(_release_search_slot)
+    future.add_done_callback(lambda _future: _release_search_slot(caller))
     return await asyncio.wrap_future(future)
 
 
