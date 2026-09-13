@@ -30,6 +30,13 @@ Custom dimensions captured per MCP tool invocation:
                            that refused the call, one of tool_calls /
                            caller_tool_calls / search / caller_search; any
                            other value is dropped
+    mcp.caller.*         - MCP-26.1.3, how the call arrived, read from the
+                           request that carried it and its session: transport,
+                           auth (api_key / oauth / none / local), host, ua_class
+                           and origin (HTTP only), client (the initialize
+                           clientInfo name as a class) and client_version. Each
+                           value is a fixed class or a plain dotted version,
+                           never header or clientInfo text
     mcp.duration_ms      - integer ms wall-clock from before-call to
                            after-return
     mcp.exception.type   - exception class name only (NEVER the message)
@@ -56,6 +63,8 @@ import contextlib
 import functools
 import logging
 import os
+import re
+import sys
 import time
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
@@ -273,6 +282,162 @@ def _payload_scope(result: Any) -> object:
         return None
 
 
+@dataclass(frozen=True)
+class CallerFacts:
+    """Raw facts about a tool call's caller, as server.current_caller_facts reads them.
+
+    MCP-26.1.3. transport and auth are set by our own code. Every other field is
+    whatever the client sent (header or clientInfo text, or None), and none of it
+    reaches a span as such: _caller_attrs reduces each to a fixed class.
+    """
+
+    transport: str
+    auth: str
+    host: object = None
+    user_agent: object = None
+    origin: object = None
+    client_name: object = None
+    client_version: object = None
+
+
+_CALLER_TRANSPORTS: frozenset[str] = frozenset({"streamable_http", "local"})
+_CALLER_AUTH_METHODS: frozenset[str] = frozenset({"api_key", "oauth", "none", "local"})
+_CALLER_HOSTS: frozenset[str] = frozenset({"app.sugra.ai", "mcp.sugra.ai"})
+_LOOPBACK_HOSTS: frozenset[str] = frozenset({"localhost", "127.0.0.1", "[::1]"})
+_CALLER_TEXT_MAX = 500
+
+# The API's inbound-client classes (usage_clients.py, APP-15.7), same patterns in
+# the same order, so an MCP span and the API usage mix name a client alike.
+# Order is load-bearing: our own consoles first, named agents before Mozilla.
+_UA_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("playground", re.compile(r"sugra-playground", re.I)),
+    ("mcp", re.compile(r"sugra-api-mcp", re.I)),
+    ("claude", re.compile(r"claude-user|claude-web|anthropic|claude\.ai", re.I)),
+    ("chatgpt", re.compile(r"chatgpt-user|chatgpt", re.I)),
+    ("grok", re.compile(r"grok-agent|\bxai\b", re.I)),
+    ("cursor", re.compile(r"\bcursor\b", re.I)),
+    ("openbb", re.compile(r"openbb", re.I)),
+    ("python", re.compile(r"python-requests|python-httpx|aiohttp|httpx/", re.I)),
+    ("curl", re.compile(r"\bcurl/|\bwget/|httpie/", re.I)),
+    ("node", re.compile(r"\baxios/|node-fetch|\bundici\b|node/", re.I)),
+    ("browser", re.compile(r"mozilla/|chrome/|safari/|firefox/|\bedg/", re.I)),
+)
+
+# The same classes for the initialize clientInfo name, which names a product
+# rather than an HTTP library (for example claude-ai or openai-mcp).
+_CLIENT_NAME_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("playground", re.compile(r"sugra-playground", re.I)),
+    ("mcp", re.compile(r"sugra-api-mcp", re.I)),
+    ("claude", re.compile(r"claude|anthropic", re.I)),
+    ("chatgpt", re.compile(r"chatgpt|openai", re.I)),
+    ("grok", re.compile(r"grok|\bxai\b", re.I)),
+    ("cursor", re.compile(r"cursor", re.I)),
+    ("openbb", re.compile(r"openbb", re.I)),
+)
+
+# The connector origins config.DEFAULT_ALLOWED_ORIGINS admits, by vendor.
+_ORIGIN_CLASSES: dict[str, str] = {
+    "https://chatgpt.com": "openai",
+    "https://chat.openai.com": "openai",
+    "https://platform.openai.com": "openai",
+    "https://claude.ai": "anthropic",
+    "https://claude.com": "anthropic",
+    "https://cursor.sh": "cursor",
+    "https://app.cursor.sh": "cursor",
+}
+
+_VERSION_MAX = 23
+_VERSION_RE = re.compile(r"[0-9]{1,5}(?:\.[0-9]{1,5}){0,3}")
+
+
+def _text_class(value: object, patterns: tuple[tuple[str, re.Pattern[str]], ...]) -> str:
+    """The first class whose pattern occurs in the (truncated) text, else "other"."""
+    if type(value) is not str or not value:
+        return "other"
+    text = value[:_CALLER_TEXT_MAX]
+    for label, pattern in patterns:
+        if pattern.search(text):
+            return label
+    return "other"
+
+
+def _host_class(value: object) -> str | None:
+    """app.sugra.ai, mcp.sugra.ai, loopback or other; None when there is no Host."""
+    if type(value) is not str:
+        return None
+    host = value[:_CALLER_TEXT_MAX].strip().lower()
+    if not host:
+        return None
+    if host.startswith("["):
+        host = host[: host.index("]") + 1] if "]" in host else host
+    elif host.count(":") == 1:
+        name, _, port = host.partition(":")
+        if port.isascii() and port.isdigit():
+            host = name
+    if host in _CALLER_HOSTS:
+        return host
+    return "loopback" if host in _LOOPBACK_HOSTS else "other"
+
+
+def _origin_class(value: object) -> str:
+    """openai, anthropic or cursor for a known connector origin, none without one, else other."""
+    if value is None:
+        return "none"
+    if type(value) is not str:
+        return "other"
+    origin = value[:_CALLER_TEXT_MAX].strip().lower()
+    return _ORIGIN_CLASSES.get(origin, "other") if origin else "none"
+
+
+def _version_of(value: object) -> str | None:
+    """A plain dotted version of at most four ASCII-digit parts, else None."""
+    if type(value) is not str or len(value) > _VERSION_MAX:
+        return None
+    return value if _VERSION_RE.fullmatch(value) else None
+
+
+def _caller_attrs(facts: object) -> dict[str, str]:
+    """The mcp.caller.* attributes for a call: each a fixed class or a strict version.
+
+    Reads the facts by attribute name, so a missing or odd field drops only its
+    own attribute, and nothing a client sent is ever copied through.
+    """
+    attrs: dict[str, str] = {}
+    transport = getattr(facts, "transport", None)
+    if type(transport) is str and transport in _CALLER_TRANSPORTS:
+        attrs["mcp.caller.transport"] = transport
+    auth = getattr(facts, "auth", None)
+    if type(auth) is str and auth in _CALLER_AUTH_METHODS:
+        attrs["mcp.caller.auth"] = auth
+    if attrs.get("mcp.caller.transport") == "streamable_http":
+        host = _host_class(getattr(facts, "host", None))
+        if host is not None:
+            attrs["mcp.caller.host"] = host
+        attrs["mcp.caller.ua_class"] = _text_class(getattr(facts, "user_agent", None), _UA_PATTERNS)
+        attrs["mcp.caller.origin"] = _origin_class(getattr(facts, "origin", None))
+    if getattr(facts, "client_name", None) is not None:
+        attrs["mcp.caller.client"] = _text_class(getattr(facts, "client_name", None), _CLIENT_NAME_PATTERNS)
+    version = _version_of(getattr(facts, "client_version", None))
+    if version is not None:
+        attrs["mcp.caller.client_version"] = version
+    return attrs
+
+
+def _dispatch_caller_attrs() -> dict[str, str]:
+    """The caller attributes of the tool call being dispatched, or {} when there are none.
+
+    server.current_caller_facts is looked up at call time, never imported, so a
+    test that reloads either module cannot leave a stale binding, and any failure
+    to read the facts drops only the attributes, never the tool result.
+    """
+    try:
+        provider = getattr(sys.modules.get("sugra_api_mcp.server"), "current_caller_facts", None)
+        facts = provider() if callable(provider) else None
+        return _caller_attrs(facts) if facts is not None else {}
+    except Exception:
+        return {}
+
+
 def record_refused_call(tool_name: str, error_code: str, scope: object = None) -> None:
     """Leave a failure span for a registered tool call refused before dispatch.
 
@@ -281,7 +446,8 @@ def record_refused_call(tool_name: str, error_code: str, scope: object = None) -
     passes only a name it found registered, the code must be allowlisted, and
     nothing from the call's arguments is attached. MCP-26.1.1: the refusal's
     scope rides along as `mcp.busy.scope` when the code is server_busy and the
-    scope is one of the fixed names.
+    scope is one of the fixed names. MCP-26.1.3: so do the caller attributes of
+    the request that carried the refused call.
     """
     if _TRACER is None or error_code not in _KNOWN_ERROR_CODES:
         return
@@ -291,6 +457,8 @@ def record_refused_call(tool_name: str, error_code: str, scope: object = None) -
         return
     try:
         _safe_attr(span, "mcp.tool.name", tool_name)
+        for key, value in _dispatch_caller_attrs().items():
+            _safe_attr(span, key, value)
         _safe_attr(span, "mcp.success", False)
         _safe_attr(span, "mcp.error.code", error_code)
         busy_scope = _busy_scope_of(error_code, scope)
@@ -494,6 +662,10 @@ def trace_mcp_tool(
 
             try:
                 _safe_attr(span, "mcp.tool.name", tool_name)
+                # MCP-26.1.3: how the call arrived, read before the tool runs so
+                # every exit (success, failure, exception, cancellation) carries it.
+                for key, value in _dispatch_caller_attrs().items():
+                    _safe_attr(span, key, value)
 
                 # operation_id is attached ONLY if the kwarg value matches a
                 # catalog-known operation_id. Arbitrary client-supplied strings

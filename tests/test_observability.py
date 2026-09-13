@@ -679,6 +679,13 @@ _ATTR_TYPES: dict[str, type] = {
     "mcp.operation_id": str,
     "mcp.exception.type": str,
     "mcp.busy.scope": str,
+    "mcp.caller.transport": str,
+    "mcp.caller.auth": str,
+    "mcp.caller.host": str,
+    "mcp.caller.ua_class": str,
+    "mcp.caller.origin": str,
+    "mcp.caller.client": str,
+    "mcp.caller.client_version": str,
     "mcp.agent.recipe_version": str,
     "mcp.agent.status": str,
     "mcp.agent.units": int,
@@ -1605,3 +1612,316 @@ def test_a_scope_never_carries_over_to_a_later_span(monkeypatch) -> None:
     assert [span.attributes.get("mcp.busy.scope") for span in tracer.spans] == [
         "caller_search", None, None, "tool_calls", None, None,
     ]
+
+
+# ---- MCP-26.1.3: how the call arrived, as fixed classes only ----
+
+
+_CALLER_ATTRS = frozenset({
+    "mcp.caller.transport",
+    "mcp.caller.auth",
+    "mcp.caller.host",
+    "mcp.caller.ua_class",
+    "mcp.caller.origin",
+    "mcp.caller.client",
+    "mcp.caller.client_version",
+})
+
+# The API's inbound-client classes (usage_clients.py, APP-15.7).
+_CLASS_VOCABULARY = frozenset({
+    "chatgpt", "claude", "grok", "cursor", "openbb", "python", "curl", "node", "browser", "mcp", "playground", "other",
+})
+
+_CALLER_VALUES: dict[str, frozenset[str]] = {
+    "mcp.caller.transport": frozenset({"streamable_http", "local"}),
+    "mcp.caller.auth": frozenset({"api_key", "oauth", "none", "local"}),
+    "mcp.caller.host": frozenset({"app.sugra.ai", "mcp.sugra.ai", "loopback", "other"}),
+    "mcp.caller.ua_class": _CLASS_VOCABULARY,
+    "mcp.caller.origin": frozenset({"openai", "anthropic", "cursor", "none", "other"}),
+    "mcp.caller.client": _CLASS_VOCABULARY,
+}
+
+_EXPECTED_HTTP_ATTRS = {
+    "mcp.caller.transport": "streamable_http",
+    "mcp.caller.auth": "oauth",
+    "mcp.caller.host": "mcp.sugra.ai",
+    "mcp.caller.ua_class": "python",
+    "mcp.caller.origin": "anthropic",
+    "mcp.caller.client": "claude",
+    "mcp.caller.client_version": "1.2.3",
+}
+
+
+def _http_facts(**overrides: object) -> observability.CallerFacts:
+    fields: dict[str, object] = {
+        "transport": "streamable_http",
+        "auth": "oauth",
+        "host": "mcp.sugra.ai",
+        "user_agent": "python-httpx/0.27.0",
+        "origin": "https://claude.ai",
+        "client_name": "claude-ai",
+        "client_version": "1.2.3",
+    }
+    fields.update(overrides)
+    return observability.CallerFacts(**fields)
+
+
+def _caller_of(span: _FakeSpan) -> dict[str, object]:
+    return {key: value for key, value in span.attributes.items() if key.startswith("mcp.caller.")}
+
+
+class _FactsServer:
+    """Stands in for sugra_api_mcp.server: returns fixed facts, or raises them."""
+
+    def __init__(self, facts: object) -> None:
+        self._facts = facts
+
+    def current_caller_facts(self) -> object:
+        if isinstance(self._facts, BaseException):
+            raise self._facts
+        return self._facts
+
+
+def _install_facts(monkeypatch, facts: object) -> None:
+    monkeypatch.setitem(sys.modules, "sugra_api_mcp.server", _FactsServer(facts))
+
+
+@pytest.mark.parametrize(
+    ("ua", "expected"),
+    [
+        ("sugra-playground/1", "playground"),
+        ("sugra-api-mcp/0.8.0", "mcp"),
+        ("Mozilla/5.0 (compatible; Claude-User/1.0)", "claude"),
+        ("Mozilla/5.0 (compatible; ChatGPT-User/1.0; +https://openai.com)", "chatgpt"),
+        ("Mozilla/5.0 (compatible; grok-agent/1.0; +https://x.ai)", "grok"),
+        ("Cursor/0.50", "cursor"),
+        ("OpenBB-SDK/4.0", "openbb"),
+        ("python-requests/2.32.0", "python"),
+        ("python-httpx/0.27.0", "python"),
+        ("curl/8.5.0", "curl"),
+        ("Wget/1.21", "curl"),
+        ("axios/1.7.0", "node"),
+        ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/126.0 Safari/537.36", "browser"),
+        ("", "other"),
+        (None, "other"),
+        ("GuzzleHttp/7.8", "other"),
+        ("Go-http-client/2.0", "other"),
+    ],
+)
+def test_user_agent_classes_match_the_api_usage_mix(ua: object, expected: str) -> None:
+    """The User-Agents the API's usage_clients tests use land in the same classes."""
+    assert observability._text_class(ua, observability._UA_PATTERNS) == expected
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("claude-ai", "claude"),
+        ("Claude Code", "claude"),
+        ("openai-mcp", "chatgpt"),
+        ("ChatGPT", "chatgpt"),
+        ("cursor-vscode", "cursor"),
+        ("grok", "grok"),
+        ("openbb-platform", "openbb"),
+        ("sugra-playground", "playground"),
+        ("sugra-api-mcp", "mcp"),
+        ("mcp-inspector", "other"),
+        ("", "other"),
+    ],
+)
+def test_client_names_reduce_to_the_same_classes(name: str, expected: str) -> None:
+    assert observability._text_class(name, observability._CLIENT_NAME_PATTERNS) == expected
+
+
+@pytest.mark.parametrize(
+    ("host", "expected"),
+    [
+        ("app.sugra.ai", "app.sugra.ai"),
+        ("MCP.SUGRA.AI", "mcp.sugra.ai"),
+        ("mcp.sugra.ai:443", "mcp.sugra.ai"),
+        ("127.0.0.1:8002", "loopback"),
+        ("localhost", "loopback"),
+        ("[::1]:8002", "loopback"),
+        ("evil.example", "other"),
+        ("app.sugra.ai.evil.example", "other"),
+        ("app.sugra.ai:4a3", "other"),
+        ("app.sugra.ai:" + chr(0xFF14) * 2 + chr(0xFF13), "other"),  # fullwidth digits are not a port
+        ("", None),
+        (None, None),
+    ],
+)
+def test_the_host_is_one_of_four_classes(host: object, expected: str | None) -> None:
+    assert observability._host_class(host) == expected
+
+
+@pytest.mark.parametrize(
+    ("origin", "expected"),
+    [
+        ("https://chatgpt.com", "openai"),
+        ("https://chat.openai.com", "openai"),
+        ("https://CLAUDE.ai", "anthropic"),
+        ("https://app.cursor.sh", "cursor"),
+        (None, "none"),
+        ("", "none"),
+        ("https://chatgpt.com.evil.example", "other"),
+        ("http://chatgpt.com", "other"),
+        ("null", "other"),
+    ],
+)
+def test_the_origin_is_a_vendor_class(origin: object, expected: str) -> None:
+    assert observability._origin_class(origin) == expected
+
+
+@pytest.mark.parametrize(
+    ("version", "expected"),
+    [
+        ("1.2.3", "1.2.3"),
+        ("0", "0"),
+        ("10.20.30.40", "10.20.30.40"),
+        ("1.2.3.4.5", None),
+        ("1.2.3\n", None),
+        ("1.2.3-beta", None),
+        ("1.2.3-sugra_SECRET", None),
+        (chr(0xFF19), None),  # a fullwidth digit is not an ASCII digit
+        ("123456", None),
+        ("1" * 24, None),
+        ("", None),
+        (None, None),
+        (123, None),
+    ],
+)
+def test_only_a_plain_version_is_kept(version: object, expected: str | None) -> None:
+    assert observability._version_of(version) == expected
+
+
+class _StrLookalike(str):
+    """A str subclass: its text must not pass as client text."""
+
+
+@pytest.mark.parametrize(
+    "hostile",
+    [
+        "sugra_zz_SECRETKEY_0123456789",
+        "user@example.com",
+        "claude\r\nX-Injected: 1",
+        "x" * 64_000,
+        _StrLookalike("claude-ai"),
+        b"claude-ai",
+        None,
+        12345,
+        ["claude"],
+    ],
+    ids=["key", "email", "crlf", "64kb", "str-subclass", "bytes", "none", "int", "list"],
+)
+def test_caller_attributes_are_only_fixed_classes(hostile: object) -> None:
+    attrs = observability._caller_attrs(
+        _http_facts(host=hostile, user_agent=hostile, origin=hostile, client_name=hostile, client_version=hostile)
+    )
+    span = _FakeSpan("mcp.tool.call_endpoint")
+    for key, value in attrs.items():
+        span.set_attribute(key, value)
+    _assert_span_is_clean(span, _CALLER_ATTRS, "sugra_zz_SECRETKEY", "user@example.com", "X-Injected", "xxxxxxxx")
+    for key, value in attrs.items():
+        if key in _CALLER_VALUES:
+            assert value in _CALLER_VALUES[key], f"{key}={value!r}"
+    assert "mcp.caller.client_version" not in attrs
+
+
+def test_transport_and_auth_outside_their_sets_are_dropped() -> None:
+    attrs = observability._caller_attrs(_http_facts(transport="carrier-pigeon", auth="password"))
+    assert not {"mcp.caller.transport", "mcp.caller.auth", "mcp.caller.host", "mcp.caller.ua_class"} & set(attrs)
+    local = observability._caller_attrs(
+        observability.CallerFacts(transport="local", auth="local", host="app.sugra.ai", user_agent="curl/8.5.0")
+    )
+    assert local == {"mcp.caller.transport": "local", "mcp.caller.auth": "local"}
+
+
+def test_the_caller_vocabularies_are_exact() -> None:
+    from sugra_api_mcp.config import DEFAULT_ALLOWED_ORIGINS
+
+    assert frozenset(label for label, _ in observability._UA_PATTERNS) | {"other"} == _CLASS_VOCABULARY
+    assert frozenset(label for label, _ in observability._CLIENT_NAME_PATTERNS) <= _CLASS_VOCABULARY
+    assert frozenset(observability._ORIGIN_CLASSES) == frozenset(DEFAULT_ALLOWED_ORIGINS)
+    assert frozenset(observability._ORIGIN_CLASSES.values()) | {"none", "other"} == _CALLER_VALUES["mcp.caller.origin"]
+    assert frozenset({"app.sugra.ai", "mcp.sugra.ai"}) == observability._CALLER_HOSTS
+    assert _CALLER_VALUES["mcp.caller.transport"] == observability._CALLER_TRANSPORTS
+    assert _CALLER_VALUES["mcp.caller.auth"] == observability._CALLER_AUTH_METHODS
+
+
+@pytest.mark.parametrize("outcome", ["success", "failure", "exception", "cancelled"])
+def test_every_exit_of_a_traced_tool_carries_the_caller(monkeypatch, outcome: str) -> None:
+    tracer = _install_fake_tracer(monkeypatch)
+    _install_facts(monkeypatch, _http_facts())
+
+    @observability.trace_mcp_tool("call_endpoint")
+    async def fake_tool() -> dict:
+        if outcome == "exception":
+            raise ValueError("boom")
+        if outcome == "cancelled":
+            raise asyncio.CancelledError()
+        return {"data": []} if outcome == "success" else {"error": "upstream_timeout"}
+
+    if outcome in ("exception", "cancelled"):
+        with pytest.raises((ValueError, asyncio.CancelledError)):
+            asyncio.run(fake_tool())
+    else:
+        asyncio.run(fake_tool())
+    assert _caller_of(tracer.spans[0]) == _EXPECTED_HTTP_ATTRS
+
+
+def test_a_refused_call_carries_the_caller_of_its_request(monkeypatch) -> None:
+    tracer = _install_fake_tracer(monkeypatch)
+    _install_facts(monkeypatch, _http_facts(auth="api_key", host="app.sugra.ai", origin=None))
+    observability.record_refused_call("call_endpoint", "server_busy", "caller_tool_calls")
+    assert _caller_of(tracer.spans[0]) == {
+        **_EXPECTED_HTTP_ATTRS,
+        "mcp.caller.auth": "api_key",
+        "mcp.caller.host": "app.sugra.ai",
+        "mcp.caller.origin": "none",
+    }
+    _assert_span_is_clean(tracer.spans[0], _FAILURE_ATTRS | {"mcp.busy.scope"} | _CALLER_ATTRS)
+
+
+@pytest.mark.parametrize(
+    "facts", [RuntimeError("provider exploded"), None, object()], ids=["raises", "none", "odd-object"]
+)
+def test_unreadable_facts_leave_the_result_and_add_no_caller(monkeypatch, facts: object) -> None:
+    tracer = _install_fake_tracer(monkeypatch)
+    _install_facts(monkeypatch, facts)
+
+    @observability.trace_mcp_tool("call_endpoint")
+    async def fake_tool() -> dict:
+        return {"data": [1]}
+
+    assert asyncio.run(fake_tool()) == {"data": [1]}
+    assert _caller_of(tracer.spans[0]) == {}
+
+
+def test_without_the_server_module_no_caller_is_attached(monkeypatch) -> None:
+    tracer = _install_fake_tracer(monkeypatch)
+    monkeypatch.delitem(sys.modules, "sugra_api_mcp.server", raising=False)
+    observability.record_refused_call("call_endpoint", "server_busy", "tool_calls")
+    assert _caller_of(tracer.spans[0]) == {}
+
+
+def test_the_azure_exporter_keeps_caller_attributes_as_custom_dimensions() -> None:
+    """mcp.caller.* must reach customDimensions. The exporter drops the standard
+    OpenTelemetry names (http.*, client.address, user_agent.original, enduser.*)
+    from them, which is why the caller attributes are not named that way."""
+    from azure.monitor.opentelemetry.exporter.export.trace._exporter import (
+        _convert_span_to_envelope,
+    )
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    memory = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(memory))
+    span = provider.get_tracer("mcp-26.1.3").start_span("mcp.tool.call_endpoint")
+    for key, value in _EXPECTED_HTTP_ATTRS.items():
+        span.set_attribute(key, value)
+    span.end()
+    envelope = _convert_span_to_envelope(memory.get_finished_spans()[0])
+    properties = envelope.data.base_data.properties
+    assert {key: value for key, value in properties.items() if key.startswith("mcp.caller.")} == _EXPECTED_HTTP_ATTRS

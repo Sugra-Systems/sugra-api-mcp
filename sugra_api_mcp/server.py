@@ -11,6 +11,7 @@ import threading
 import time
 from contextvars import ContextVar
 from copy import deepcopy
+from dataclasses import dataclass
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -492,6 +493,17 @@ def _build_client(api_key: str) -> SugraClient:
 # request's scope state and get_client reads it from there.
 REQUEST_API_KEY_STATE = "sugra_api_key"
 
+# MCP-26.1.3: how the request that carried a tool call authenticated, stored by
+# AuthMiddleware beside the key and read at dispatch the same way, for caller
+# attribution on spans. It never holds the token, the token id or the key.
+REQUEST_PRINCIPAL_STATE = "sugra_principal"
+
+
+@dataclass(frozen=True)
+class RequestPrincipal:
+    method: str
+    user_id: int | None = None
+
 # Set by AuthMiddleware for every request it serves. A Streamable HTTP session
 # task inherits it from the request that opened the session, so a dispatch that
 # belongs to the HTTP transport is known as such even with no attached request,
@@ -518,6 +530,49 @@ def _dispatching_http_request() -> tuple[bool, str | None]:
     state = scope.get("state")
     key = state.get(REQUEST_API_KEY_STATE) if isinstance(state, dict) else None
     return True, key if isinstance(key, str) and key else None
+
+
+def current_caller_facts() -> observability.CallerFacts | None:
+    """What the tool call being dispatched says about its caller, or None outside a dispatch.
+
+    MCP-26.1.3. Everything comes from the SDK request context set for this one
+    message: the Starlette Request that carried it and the session it belongs to.
+    Never from a ContextVar a middleware set, which names the request that opened
+    the session. The header and clientInfo values are RAW; observability reduces
+    them to fixed classes before anything reaches a span.
+    """
+    from mcp.server.lowlevel.server import request_ctx
+
+    try:
+        context = request_ctx.get()
+    except LookupError:
+        return None
+    session = getattr(context, "session", None)
+    client_info = getattr(getattr(session, "client_params", None), "clientInfo", None)
+    client_name = getattr(client_info, "name", None)
+    client_version = getattr(client_info, "version", None)
+    request = getattr(context, "request", None)
+    scope = getattr(request, "scope", None)
+    if not isinstance(scope, dict):
+        http = http_transport_ctx.get()
+        return observability.CallerFacts(
+            transport="streamable_http" if http else "local",
+            auth="none" if http else "local",
+            client_name=client_name,
+            client_version=client_version,
+        )
+    state = scope.get("state")
+    principal = state.get(REQUEST_PRINCIPAL_STATE) if isinstance(state, dict) else None
+    headers = getattr(request, "headers", None)
+    return observability.CallerFacts(
+        transport="streamable_http",
+        auth=principal.method if isinstance(principal, RequestPrincipal) else "none",
+        host=headers.get("host") if headers is not None else None,
+        user_agent=headers.get("user-agent") if headers is not None else None,
+        origin=headers.get("origin") if headers is not None else None,
+        client_name=client_name,
+        client_version=client_version,
+    )
 
 
 def _client_for_key(api_key: str) -> SugraClient:

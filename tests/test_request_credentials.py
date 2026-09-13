@@ -11,6 +11,7 @@ call would send upstream.
 
 from __future__ import annotations
 
+import inspect
 import json
 from pathlib import Path
 from typing import Any
@@ -23,7 +24,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 import sugra_api_mcp.tools  # noqa: F401  (registers the tools on server.mcp)
-from sugra_api_mcp import server
+from sugra_api_mcp import observability, server
 from sugra_api_mcp.auth import Authenticator, AuthError, AuthMiddleware, ResolvedAuth
 from sugra_api_mcp.catalog.loader import load_catalog
 from sugra_api_mcp.client import SugraClient
@@ -157,13 +158,26 @@ async def test_http_tool_calls_use_the_credential_of_the_request_that_carries_th
         await authenticator.aclose()
 
 
-async def test_middleware_marks_every_request_it_serves_as_http() -> None:
+async def test_middleware_marks_every_request_it_serves_as_http(monkeypatch) -> None:
     async def probe(request: Request) -> JSONResponse:
         state = request.scope.get("state") or {}
-        return JSONResponse({"http": server.http_transport_ctx.get(), "key": state.get(server.REQUEST_API_KEY_STATE)})
+        principal = state.get(server.REQUEST_PRINCIPAL_STATE)
+        return JSONResponse({
+            "http": server.http_transport_ctx.get(),
+            "key": state.get(server.REQUEST_API_KEY_STATE),
+            "principal": None if principal is None else [principal.method, principal.user_id],
+        })
 
     app = Starlette(routes=[Route("/mcp", probe, methods=["POST"])])
     authenticator = _authenticator()
+    real_resolve = authenticator.resolve
+
+    async def resolve(token: str) -> ResolvedAuth:
+        if token.strip() == "jwt-7":
+            return ResolvedAuth(api_key="sugra_TENANT_7", user_id=7, access_token_id="jti-7", method="oauth")
+        return await real_resolve(token)
+
+    monkeypatch.setattr(authenticator, "resolve", resolve)
     app.add_middleware(AuthMiddleware, authenticator=authenticator)
     try:
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8002") as client:
@@ -171,11 +185,135 @@ async def test_middleware_marks_every_request_it_serves_as_http() -> None:
             keyed = await client.post(
                 "/mcp", json=INITIALIZE, headers={**HEADERS, "authorization": "Bearer sugra_marker_probe"}
             )
+            oauth = await client.post("/mcp", json=INITIALIZE, headers={**HEADERS, "authorization": "Bearer jwt-7"})
     finally:
         await authenticator.aclose()
-    assert public.json() == {"http": True, "key": None}
-    assert keyed.json() == {"http": True, "key": "sugra_marker_probe"}
+    assert public.json() == {"http": True, "key": None, "principal": None}
+    assert keyed.json() == {"http": True, "key": "sugra_marker_probe", "principal": ["api_key", None]}
+    assert oauth.json() == {"http": True, "key": "sugra_TENANT_7", "principal": ["oauth", 7]}
     assert server.http_transport_ctx.get() is False
+
+
+class _CaptureSpan:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.attributes: dict[str, object] = {}
+        self.ended = False
+
+    def set_attribute(self, key: str, value: object) -> None:
+        if not self.ended:
+            self.attributes[key] = value
+
+    def set_status(self, status: object) -> None:
+        pass
+
+    def end(self) -> None:
+        self.ended = True
+
+
+class _CaptureTracer:
+    def __init__(self) -> None:
+        self.spans: list[_CaptureSpan] = []
+
+    def start_span(self, name: str) -> _CaptureSpan:
+        span = _CaptureSpan(name)
+        self.spans.append(span)
+        return span
+
+
+def _caller(span: _CaptureSpan) -> dict[str, object]:
+    return {key: value for key, value in span.attributes.items() if key.startswith("mcp.caller.")}
+
+
+async def test_every_tool_span_names_how_its_own_request_arrived(upstream, monkeypatch) -> None:
+    """MCP-26.1.3: on one session, each tools/call span carries the auth method,
+    host, User-Agent class and Origin of the request that carried that call, and
+    the client class of the session's initialize, never another request's."""
+    # The hosted Host and Origin protection, so app.sugra.ai and mcp.sugra.ai are
+    # admitted exactly as nginx forwards them in production.
+    monkeypatch.setenv("SUGRA_MCP_ALLOWED_HOSTS", "app.sugra.ai,mcp.sugra.ai")
+    monkeypatch.setattr(server.mcp.settings, "transport_security", server._build_transport_security())
+    monkeypatch.setattr(server.mcp, "_session_manager", None)
+    app = server.mcp.streamable_http_app()
+    authenticator = _authenticator()
+    real_resolve = authenticator.resolve
+
+    async def resolve(token: str) -> ResolvedAuth:
+        token = token.strip()
+        if token.startswith("jwt-"):
+            return ResolvedAuth(api_key=f"sugra_TENANT_{token[4:]}", user_id=42, access_token_id=token, method="oauth")
+        return await real_resolve(token)
+
+    monkeypatch.setattr(authenticator, "resolve", resolve)
+    app.add_middleware(AuthMiddleware, authenticator=authenticator)
+    tracer = _CaptureTracer()
+    monkeypatch.setattr(observability, "_TRACER", tracer)
+    arguments = {"operation_id": _operation_without_params()}
+    initialize = {**INITIALIZE, "params": {**INITIALIZE["params"], "clientInfo": {"name": "claude-ai", "version": "1.2.3"}}}
+
+    try:
+        async with server.mcp.session_manager.run():
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:8002") as client:
+                opened = await client.post("/mcp", json=initialize, headers={**HEADERS, "host": "app.sugra.ai"})
+                assert opened.status_code == 200
+                session_id = opened.headers["mcp-session-id"]
+                await client.post(
+                    "/mcp",
+                    json={"jsonrpc": "2.0", "method": "notifications/initialized"},
+                    headers={**HEADERS, "mcp-session-id": session_id, "host": "app.sugra.ai"},
+                )
+
+                async def call(headers: dict[str, str]) -> None:
+                    response = await client.post(
+                        "/mcp",
+                        json={
+                            "jsonrpc": "2.0",
+                            "id": 2,
+                            "method": "tools/call",
+                            "params": {"name": "call_endpoint", "arguments": arguments},
+                        },
+                        headers={**HEADERS, "mcp-session-id": session_id, **headers},
+                    )
+                    assert response.status_code == 200
+
+                await call({"authorization": "Bearer jwt-B", "host": "mcp.sugra.ai", "user-agent": "python-httpx/0.27.0"})
+                await call({
+                    "authorization": "Bearer sugra_made_up",
+                    "host": "app.sugra.ai",
+                    "user-agent": "curl/8.5.0",
+                    "origin": "https://chatgpt.com",
+                })
+    finally:
+        await _close_clients(["sugra_made_up", "sugra_TENANT_B"])
+        await authenticator.aclose()
+
+    calls = [span for span in tracer.spans if span.name == "mcp.tool.call_endpoint"]
+    common = {"mcp.caller.transport": "streamable_http", "mcp.caller.client": "claude", "mcp.caller.client_version": "1.2.3"}
+    assert [_caller(span) for span in calls] == [
+        {**common, "mcp.caller.auth": "oauth", "mcp.caller.host": "mcp.sugra.ai",
+         "mcp.caller.ua_class": "python", "mcp.caller.origin": "none"},
+        {**common, "mcp.caller.auth": "api_key", "mcp.caller.host": "app.sugra.ai",
+         "mcp.caller.ua_class": "curl", "mcp.caller.origin": "openai"},
+    ]
+
+
+def test_caller_attribution_reads_only_the_request_scope() -> None:
+    package = Path(server.__file__).parent
+
+    def files_naming(text: str) -> list[str]:
+        return sorted(
+            path.relative_to(package).as_posix()
+            for path in package.rglob("*.py")
+            if text in path.read_text(encoding="utf-8")
+        )
+
+    assert files_naming("REQUEST_PRINCIPAL_STATE") == ["auth.py", "server.py"]
+    assert files_naming("mcp.caller.") == ["observability.py"]
+    observability_text = (package / "observability.py").read_text(encoding="utf-8")
+    assert "api_key_ctx" not in observability_text and "request_started_at" not in observability_text
+    facts_source = inspect.getsource(server.current_caller_facts)
+    assert "api_key_ctx" not in facts_source and "request_started_at" not in facts_source
 
 
 def test_http_dispatch_without_an_attached_request_refuses_inherited_and_env_keys(upstream, monkeypatch) -> None:

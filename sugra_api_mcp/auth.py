@@ -113,6 +113,9 @@ class ResolvedAuth:
     api_key: str
     user_id: int | None = None
     access_token_id: str | None = None
+    # MCP-26.1.3: how the bearer authenticated, "api_key" (a sugra_ key taken as
+    # itself) or "oauth" (a validated JWT resolved to the account's primary key).
+    method: str = "api_key"
 
 
 class _UserLockEntry:
@@ -262,6 +265,7 @@ class Authenticator:
             api_key=api_key,
             user_id=claims.user_id,
             access_token_id=claims.access_token_id,
+            method="oauth",
         )
         return resolved
 
@@ -556,9 +560,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
             # The per-session MCP task never sees this request's ContextVars, but the
             # SDK hands this request's scope to the handler, where server.get_client
             # reads the key. The ContextVar below stays for in-process callers.
-            from .server import REQUEST_API_KEY_STATE
+            from .server import REQUEST_API_KEY_STATE, REQUEST_PRINCIPAL_STATE, RequestPrincipal
 
-            request.scope.setdefault("state", {})[REQUEST_API_KEY_STATE] = resolved.api_key
+            state = request.scope.setdefault("state", {})
+            state[REQUEST_API_KEY_STATE] = resolved.api_key
+            # MCP-26.1.3: how this request authenticated, read at dispatch from the
+            # same scope for caller attribution. Never the token or the token id.
+            state[REQUEST_PRINCIPAL_STATE] = RequestPrincipal(method=resolved.method, user_id=resolved.user_id)
         except TimeoutError:
             return JSONResponse(
                 {"error": "auth_timeout",
