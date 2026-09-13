@@ -198,6 +198,12 @@ def main() -> None:
             }
         )
     elif args.command == "search":
+        from .catalog.search import query_limit_error
+
+        refusal = query_limit_error(args.query)
+        if refusal is not None:
+            _print_json(refusal)
+            raise SystemExit(2)
         _print_json(
             {
                 "results": search_catalog(

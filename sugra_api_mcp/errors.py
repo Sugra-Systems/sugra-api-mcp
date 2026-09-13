@@ -27,3 +27,18 @@ def is_error_payload(payload: Any) -> bool:
     ordinary prose.
     """
     return isinstance(payload, dict) and "error" in payload and "data" not in payload
+
+
+def server_busy_error(scope: str, limit: int) -> dict[str, Any]:
+    """The structured error for work refused at a concurrency limit (MCP-26.1).
+
+    `scope` names the limit that refused it: "tool_calls" for the in-flight cap
+    on tool calls, "search" for the catalog search queue. Nothing about the
+    refused call itself is echoed back.
+    """
+    return {
+        "error": "server_busy",
+        "scope": scope,
+        "limit": limit,
+        "retry_hint": "The server is at its concurrency limit. Retry in a few seconds.",
+    }

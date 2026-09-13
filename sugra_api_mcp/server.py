@@ -130,7 +130,36 @@ class SugraFastMCP(FastMCP):
             for tool in await super().list_tools()
         ]
 
+    # MCP-26.1: at most this many tool calls run at once in one process. Thirty
+    # days of hosted telemetry (21,840 calls) peaked at 6 concurrent calls, so
+    # the cap sits well above real traffic and only stops a flood from piling up
+    # unbounded work. One event loop serves every call, so the check and the
+    # increment below cannot interleave with another call.
+    max_in_flight_tool_calls = 32
+    _in_flight_tool_calls = 0
+
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+        """Refuse a call beyond the in-flight cap with a structured server_busy error."""
+        if self._in_flight_tool_calls >= self.max_in_flight_tool_calls:
+            from .errors import server_busy_error
+
+            payload = server_busy_error("tool_calls", self.max_in_flight_tool_calls)
+            # The refused call never reaches its tool, so the tool's span never
+            # starts; record one here, for registered names only.
+            if self._tool_manager.get_tool(name) is not None:
+                observability.record_refused_call(name, payload["error"])
+            return CallToolResult(
+                isError=True,
+                content=[TextContent(type="text", text=json.dumps(payload))],
+                structuredContent=payload,
+            )
+        self._in_flight_tool_calls += 1
+        try:
+            return await self._call_tool_in_budget(name, arguments)
+        finally:
+            self._in_flight_tool_calls -= 1
+
+    async def _call_tool_in_budget(self, name: str, arguments: dict[str, Any]) -> Any:
         """Report a failed tool call as a protocol-level error.
 
         Tools return their failures as structured payloads instead of raising,

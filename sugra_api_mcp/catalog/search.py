@@ -165,6 +165,62 @@ def _symbol_input_kind(endpoint: Endpoint) -> str | None:
     return None
 
 
+class _EndpointProfile:
+    """The token sets of one endpoint's searchable fields, built once per endpoint.
+
+    Scoring asks, for every query term and every endpoint, whether the term is a
+    token of a field. Re-tokenizing the field text for each question made a
+    three-word query cost about 400 ms and let one long query hold the event
+    loop for minutes (MCP-26.1). A set answers the same question:
+    ``term in _tokens(field)`` is exactly ``term in set(_tokens(field))``, and
+    the normalized text is exactly what ``_phrase_has`` builds.
+    """
+
+    __slots__ = ("description", "operation_id", "params", "path", "summary", "tags", "text", "text_normalized")
+
+    def __init__(self, endpoint: Endpoint) -> None:
+        tag_text = " ".join([*endpoint.tags, endpoint.toolset, endpoint.source_family])
+        param_text = " ".join(
+            f"{parameter.name} {parameter.description}" for parameter in endpoint.parameters
+        )
+        text_tokens = _tokens(_endpoint_text(endpoint))
+        self.operation_id = frozenset(_tokens(endpoint.operation_id))
+        self.tags = frozenset(_tokens(tag_text))
+        self.summary = frozenset(_tokens(endpoint.summary))
+        self.path = frozenset(_tokens(endpoint.path))
+        self.params = frozenset(_tokens(param_text))
+        self.description = frozenset(_tokens(endpoint.description))
+        self.text = frozenset(text_tokens)
+        self.text_normalized = " ".join(text_tokens)
+
+
+# Keyed by object identity and holding the endpoint itself, so an id is never
+# reused while its entry lives. The bundled catalog needs about 1,600 entries;
+# the bound only matters to callers that keep building new Endpoint objects.
+_PROFILE_CACHE_LIMIT = 8192
+_profiles: dict[int, tuple[Endpoint, _EndpointProfile]] = {}
+
+
+def _profile(endpoint: Endpoint) -> _EndpointProfile:
+    cached = _profiles.get(id(endpoint))
+    if cached is not None and cached[0] is endpoint:
+        return cached[1]
+    profile = _EndpointProfile(endpoint)
+    if len(_profiles) >= _PROFILE_CACHE_LIMIT:
+        _profiles.clear()
+    _profiles[id(endpoint)] = (endpoint, profile)
+    return profile
+
+
+def _alias_matches_profile(profile: _EndpointProfile, expansion: str) -> bool:
+    """``_alias_matches`` answered from the endpoint's cached profile."""
+    expansion_tokens = _tokens(expansion)
+    if len(expansion_tokens) <= 1:
+        return expansion_tokens[0] in profile.text if expansion_tokens else False
+    normalized_phrase = " ".join(expansion_tokens)
+    return bool(normalized_phrase) and normalized_phrase in profile.text_normalized
+
+
 def _score(
     endpoint: Endpoint,
     query_terms: list[str],
@@ -184,11 +240,11 @@ def _score(
     all_terms = [*query_terms, *_tokens(" ".join(alias_terms))]
     why: list[str] = []
     score = 0
-    endpoint_text = _endpoint_text(endpoint)
+    profile = _profile(endpoint)
 
     alias_consumed: set[str] = set()
     for phrase, expansions in aliases.items():
-        if any(_alias_matches(endpoint_text, expansion) for expansion in expansions):
+        if any(_alias_matches_profile(profile, expansion) for expansion in expansions):
             score += ALIAS_PHRASE_BOOST
             why.append(f"alias:{phrase}")
             # The alias boost IS the phrase's contribution - its tokens must
@@ -264,35 +320,30 @@ def _score(
             score += US_MACRO_FED_BOOST
             why.append("pattern:us-macro->fed")
 
-    tag_text = " ".join([*endpoint.tags, endpoint.toolset, endpoint.source_family])
-    param_text = " ".join(
-        f"{parameter.name} {parameter.description}" for parameter in endpoint.parameters
-    )
-
     matched_query_terms: set[str] = set()
     for term in all_terms:
         hit = False
-        if _field_has(endpoint.operation_id, term):
+        if term in profile.operation_id:
             score += 5
             hit = True
             why.append(f"operation_id:{term}")
-        if _field_has(tag_text, term):
+        if term in profile.tags:
             score += 4
             hit = True
             why.append(f"tag_toolset:{term}")
-        if _field_has(endpoint.summary, term):
+        if term in profile.summary:
             score += 3
             hit = True
             why.append(f"summary:{term}")
-        if _field_has(endpoint.path, term):
+        if term in profile.path:
             score += 2
             hit = True
             why.append(f"path:{term}")
-        if _field_has(param_text, term):
+        if term in profile.params:
             score += 2
             hit = True
             why.append(f"params:{term}")
-        if _field_has(endpoint.description, term):
+        if term in profile.description:
             score += 1
             why.append(f"description:{term}")
         # Coverage counts STRONG-field hits only (a description-only match
@@ -371,6 +422,40 @@ def known_sources(catalog: Catalog) -> set[str]:
     return values
 
 
+# MCP-26.1: the bounds a query must fit before any work is done on it. Agent
+# queries name an instrument, series, place or task in a few words; even the
+# long NVDA question in the stopword note above is 16 tokens. A query past
+# either bound is refused, never truncated, so no result is ever computed from
+# words the caller did not know were dropped.
+MAX_QUERY_CHARS = 1000
+MAX_QUERY_TERMS = 64
+
+
+def query_limit_error(query: str) -> dict[str, Any] | None:
+    """The structured query_too_long error for a query past the bounds, else None.
+
+    Characters are counted before tokenizing, so an oversized string costs one
+    len() call and no regex pass. Terms are counted the way scoring counts them:
+    every token of two or more characters, repeats included, because every
+    repeat is scored again.
+    """
+    chars = len(query)
+    terms = None if chars > MAX_QUERY_CHARS else len(_tokens(query))
+    if terms is not None and terms <= MAX_QUERY_TERMS:
+        return None
+    return {
+        "error": "query_too_long",
+        "max_chars": MAX_QUERY_CHARS,
+        "max_terms": MAX_QUERY_TERMS,
+        "chars": chars,
+        **({"terms": terms} if terms is not None else {}),
+        "hint": (
+            f"Shorten the query to at most {MAX_QUERY_TERMS} words and "
+            f"{MAX_QUERY_CHARS} characters: name the instrument, series, place or task."
+        ),
+    }
+
+
 def search_catalog(
     catalog: Catalog,
     query: str,
@@ -379,7 +464,13 @@ def search_catalog(
     source: str | None = None,
     limit: int = 10,
 ) -> list[dict[str, Any]]:
-    """Search catalog operations by free-text query."""
+    """Search catalog operations by free-text query.
+
+    Raises ValueError for a query past the bounds; the tools and the CLI refuse
+    such a query with query_limit_error before they call this.
+    """
+    if query_limit_error(query) is not None:
+        raise ValueError("query_too_long: the query is past the search bounds")
     terms = _tokens(query)
     if not terms:
         return []

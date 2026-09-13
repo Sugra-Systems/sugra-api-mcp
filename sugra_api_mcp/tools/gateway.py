@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated, Any
 
 from pydantic import Field
@@ -10,11 +13,54 @@ from pydantic import Field
 from ..catalog.hints import hints_for
 from ..catalog.loader import load_catalog
 from ..catalog.response import shape_response
-from ..catalog.search import known_sources, known_toolsets, search_catalog
+from ..catalog.search import known_sources, known_toolsets, query_limit_error, search_catalog
 from ..catalog.toolsets import ordered_toolsets
-from ..errors import is_error_payload
+from ..errors import is_error_payload, server_busy_error
 from ..observability import trace_mcp_tool
 from ..server import get_client, mcp, read_only
+
+# MCP-26.1: catalog search is pure CPU work, so it runs on one worker thread
+# instead of the event loop that serves every session. SEARCH_MAX_PENDING bounds
+# the searches running or queued at once; beyond it a search is refused with
+# server_busy instead of queuing without limit. Thirty days of hosted telemetry
+# peaked at 3 concurrent search_endpoints and fetch_data calls.
+SEARCH_MAX_PENDING = 8
+_search_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="catalog-search")
+_search_lock = threading.Lock()
+_search_pending = 0
+
+
+def search_pending() -> int:
+    """Searches submitted to the worker and not yet finished."""
+    with _search_lock:
+        return _search_pending
+
+
+def _release_search_slot(_future: object) -> None:
+    global _search_pending
+    with _search_lock:
+        _search_pending -= 1
+
+
+async def _search_off_loop(catalog: Any, query: str, **kwargs: Any) -> list[dict[str, Any]] | None:
+    """Run search_catalog on the search worker; None when the search queue is full.
+
+    The slot is released when the worker FINISHES, not when the caller stops
+    waiting: a call cancelled by its deadline leaves its search running, and that
+    search keeps counting against the bound until it ends.
+    """
+    global _search_pending
+    with _search_lock:
+        if _search_pending >= SEARCH_MAX_PENDING:
+            return None
+        _search_pending += 1
+    try:
+        future = _search_executor.submit(search_catalog, catalog, query, **kwargs)
+    except BaseException:
+        _release_search_slot(None)
+        raise
+    future.add_done_callback(_release_search_slot)
+    return await asyncio.wrap_future(future)
 
 
 def _resolve_path(path: str, params: dict[str, Any]) -> str:
@@ -123,6 +169,9 @@ async def search_endpoints(
     - search_endpoints("AAPL price", toolset="markets")
     - search_endpoints("container ship AIS", toolset="network")
     """
+    refusal = query_limit_error(query)
+    if refusal is not None:
+        return refusal
     catalog = load_catalog()
     # An unknown filter value used to fall through the per-endpoint comparison and
     # return an empty result list - indistinguishable from "this catalog genuinely
@@ -153,7 +202,9 @@ async def search_endpoints(
                 "known_sources": sorted(valid_sources),
                 "catalog_source": catalog.source,
             }
-    results = search_catalog(catalog, query, toolset=toolset, source=source, limit=limit)
+    results = await _search_off_loop(catalog, query, toolset=toolset, source=source, limit=limit)
+    if results is None:
+        return server_busy_error("search", SEARCH_MAX_PENDING)
     return {"results": results, "total_matched": len(results), "catalog_source": catalog.source}
 
 
@@ -506,8 +557,13 @@ async def fetch_data(
     # selection path must never raise through FastMCP as an empty message.
     start = time.perf_counter()
     try:
+        refusal = query_limit_error(query)
+        if refusal is not None:
+            return refusal
         catalog = load_catalog()
-        results = search_catalog(catalog, query, limit=3)
+        results = await _search_off_loop(catalog, query, limit=3)
+        if results is None:
+            return server_busy_error("search", SEARCH_MAX_PENDING)
 
         if not results:
             return {

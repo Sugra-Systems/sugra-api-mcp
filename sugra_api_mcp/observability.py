@@ -206,6 +206,12 @@ _KNOWN_ERROR_CODES: frozenset[str] = frozenset({
     # stdio without SUGRA_API_KEY (server.py _KeylessClient): every network
     # tool returns this instead of dialling out.
     "missing_api_key",
+    # MCP-26.1: a search query over the search bounds, refused before any
+    # scoring (catalog/search.py query_limit_error).
+    "query_too_long",
+    # MCP-26.1: a tool call refused at the in-flight cap (server.py), or a
+    # search refused because the search queue is full (tools/gateway.py).
+    "server_busy",
 }) | frozenset(_HTTP_STATUS_ERROR_CODES.values()) | frozenset(_HTTP_CLASS_ERROR_CODES.values())
 
 
@@ -223,6 +229,30 @@ def _error_code_of(result: dict[str, Any]) -> str:
     if isinstance(error_value, str) and error_value in _KNOWN_ERROR_CODES:
         return error_value
     return _http_status_error_code(result.get("status_code")) or "unknown_error"
+
+
+def record_refused_call(tool_name: str, error_code: str) -> None:
+    """Leave a failure span for a registered tool call refused before dispatch.
+
+    MCP-26.1: a call refused at the in-flight cap never reaches its tool, so the
+    tool's own span never starts and the refusal would be invisible. The caller
+    passes only a name it found registered, the code must be allowlisted, and
+    nothing from the call's arguments is attached.
+    """
+    if _TRACER is None or error_code not in _KNOWN_ERROR_CODES:
+        return
+    try:
+        span = _TRACER.start_span(name=f"mcp.tool.{tool_name}")
+    except Exception:
+        return
+    try:
+        _safe_attr(span, "mcp.tool.name", tool_name)
+        _safe_attr(span, "mcp.success", False)
+        _safe_attr(span, "mcp.error.code", error_code)
+        _safe_attr(span, "mcp.duration_ms", 0)
+        _safe_status_error(span)
+    finally:
+        _safe_end(span)
 
 # azure-monitor-opentelemetry enables all bundled instrumentations by default
 # (fastapi, requests, urllib, urllib3, azure_sdk, django, flask, psycopg2).
