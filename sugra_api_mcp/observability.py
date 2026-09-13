@@ -33,8 +33,10 @@ Custom dimensions captured per MCP tool invocation:
     mcp.caller.*         - MCP-26.1.3, how the call arrived, read from the
                            request that carried it and its session: transport,
                            auth (api_key / oauth / none / local), host, ua_class
-                           and origin (HTTP only), client (the initialize
-                           clientInfo name as a class) and client_version. Each
+                           and origin (HTTP only), client and client_version
+                           (the clientInfo name as a class, and its version, as
+                           the session's most recent initialize asserted them:
+                           any re-initialize of the session replaces both). Each
                            value is a fixed class or a plain dotted version
                            (one to four parts of one to five ASCII digits),
                            never header or clientInfo text. A call no HTTP

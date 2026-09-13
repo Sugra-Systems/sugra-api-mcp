@@ -324,10 +324,12 @@ class _Gate:
         await self.app(scope, receive, send)
 
 
-async def test_concurrent_calls_each_carry_their_own_request(monkeypatch) -> None:
-    """MCP-26.1.3 (review): two sessions called at once, with every auth write landing
-    before either dispatch and both upstream calls overlapping, still give each span
-    the caller facts of its own request, so no shared last-writer state can stand in."""
+@pytest.mark.parametrize("one_session", [False, True], ids=["two-sessions", "one-session"])
+async def test_concurrent_calls_each_carry_their_own_request(monkeypatch, one_session: bool) -> None:
+    """MCP-26.1.3 (review): two calls at once, on two sessions or on one, with every auth
+    write landing before either dispatch and both upstream calls overlapping, still give
+    each span the caller facts of its own request, so no last-writer state, process-wide
+    or per session, can stand in."""
     monkeypatch.setenv("SUGRA_MCP_ALLOWED_HOSTS", "app.sugra.ai,mcp.sugra.ai")
     monkeypatch.setattr(server.mcp.settings, "transport_security", server._build_transport_security())
     monkeypatch.setattr(server.mcp, "_session_manager", None)
@@ -374,12 +376,12 @@ async def test_concurrent_calls_each_carry_their_own_request(monkeypatch) -> Non
         )
         return session_id
 
-    async def call(client: httpx.AsyncClient, session_id: str, headers: dict[str, str]) -> None:
+    async def call(client: httpx.AsyncClient, session_id: str, headers: dict[str, str], request_id: int) -> None:
         response = await client.post(
             "/mcp",
             json={
                 "jsonrpc": "2.0",
-                "id": 2,
+                "id": request_id,
                 "method": "tools/call",
                 "params": {"name": "call_endpoint", "arguments": arguments},
             },
@@ -400,9 +402,13 @@ async def test_concurrent_calls_each_carry_their_own_request(monkeypatch) -> Non
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:8002") as client:
                 session_a = await open_session(client, "app.sugra.ai", "claude-ai", "1.0.0")
-                session_b = await open_session(client, "mcp.sugra.ai", "openai-mcp", "2.0.0")
+                if one_session:
+                    session_b = session_a
+                else:
+                    session_b = await open_session(client, "mcp.sugra.ai", "openai-mcp", "2.0.0")
                 gates.update({b"a": asyncio.Event(), b"b": asyncio.Event()})
-                await asyncio.gather(call(client, session_a, by_key), call(client, session_b, by_oauth))
+                # Distinct JSON-RPC ids: two in-flight requests on one session must not share one.
+                await asyncio.gather(call(client, session_a, by_key, 2), call(client, session_b, by_oauth, 3))
                 gates.clear()
     finally:
         await _close_clients(["sugra_concurrent_a", "sugra_TENANT_B"])
@@ -411,14 +417,20 @@ async def test_concurrent_calls_each_carry_their_own_request(monkeypatch) -> Non
     assert sorted(arrived) == ["sugra_TENANT_B", "sugra_concurrent_a"]
     spans = sorted(
         (_caller(span) for span in tracer.spans if span.name == "mcp.tool.call_endpoint"),
-        key=lambda facts: str(facts.get("mcp.caller.client")),
+        key=lambda facts: str(facts.get("mcp.caller.auth")),
     )
     common = {"mcp.caller.transport": "streamable_http"}
+    # clientInfo belongs to the session, so on one session both calls report its initialize.
+    client_of_b = (
+        {"mcp.caller.client": "claude", "mcp.caller.client_version": "1.0.0"}
+        if one_session
+        else {"mcp.caller.client": "chatgpt", "mcp.caller.client_version": "2.0.0"}
+    )
     assert spans == [
-        {**common, "mcp.caller.auth": "oauth", "mcp.caller.host": "app.sugra.ai", "mcp.caller.ua_class": "curl",
-         "mcp.caller.origin": "none", "mcp.caller.client": "chatgpt", "mcp.caller.client_version": "2.0.0"},
         {**common, "mcp.caller.auth": "api_key", "mcp.caller.host": "mcp.sugra.ai", "mcp.caller.ua_class": "python",
          "mcp.caller.origin": "openai", "mcp.caller.client": "claude", "mcp.caller.client_version": "1.0.0"},
+        {**common, "mcp.caller.auth": "oauth", "mcp.caller.host": "app.sugra.ai", "mcp.caller.ua_class": "curl",
+         "mcp.caller.origin": "none", **client_of_b},
     ]
 
 

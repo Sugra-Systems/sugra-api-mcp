@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import os
+import re
 import sys
 import time
 import types
@@ -1751,6 +1752,7 @@ def test_client_names_reduce_to_the_same_classes(name: str, expected: str) -> No
         ("app.sugra.ai.evil.example", "other"),
         ("app.sugra.ai:4a3", "other"),
         ("app.sugra.ai:" + chr(0xFF14) * 2 + chr(0xFF13), "other"),  # fullwidth digits are not a port
+        (" app.sugra.ai ", "app.sugra.ai"),
         ("", None),
         (None, None),
     ],
@@ -1765,6 +1767,7 @@ def test_the_host_is_one_of_four_classes(host: object, expected: str | None) -> 
         ("https://chatgpt.com", "openai"),
         ("https://chat.openai.com", "openai"),
         ("https://CLAUDE.ai", "anthropic"),
+        (" https://claude.ai ", "anthropic"),
         ("https://app.cursor.sh", "cursor"),
         (None, "none"),
         ("", "none"),
@@ -1869,10 +1872,56 @@ def test_the_caller_vocabularies_are_exact() -> None:
     assert frozenset(label for label, _ in observability._UA_PATTERNS) | {"other"} == _CLASS_VOCABULARY
     assert frozenset(label for label, _ in observability._CLIENT_NAME_PATTERNS) <= _CLASS_VOCABULARY
     assert frozenset(observability._ORIGIN_CLASSES) == frozenset(DEFAULT_ALLOWED_ORIGINS)
+    assert observability._ORIGIN_CLASSES == {
+        "https://chatgpt.com": "openai",
+        "https://chat.openai.com": "openai",
+        "https://platform.openai.com": "openai",
+        "https://claude.ai": "anthropic",
+        "https://claude.com": "anthropic",
+        "https://cursor.sh": "cursor",
+        "https://app.cursor.sh": "cursor",
+    }
     assert frozenset(observability._ORIGIN_CLASSES.values()) | {"none", "other"} == _CALLER_VALUES["mcp.caller.origin"]
     assert frozenset({"app.sugra.ai", "mcp.sugra.ai"}) == observability._CALLER_HOSTS
     assert _CALLER_VALUES["mcp.caller.transport"] == observability._CALLER_TRANSPORTS
     assert _CALLER_VALUES["mcp.caller.auth"] == observability._CALLER_AUTH_METHODS
+
+
+def _pattern_table(patterns: tuple[tuple[str, re.Pattern[str]], ...]) -> list[tuple[str, str, bool]]:
+    return [(label, pattern.pattern, bool(pattern.flags & re.IGNORECASE)) for label, pattern in patterns]
+
+
+def test_the_client_tables_are_pinned_alternative_by_alternative() -> None:
+    """One sample per class let an alternative, a case flag or the order change unseen.
+    The User-Agent table is the API's usage_clients table (APP-15.7): change both together."""
+    assert _pattern_table(observability._UA_PATTERNS) == [
+        ("playground", r"sugra-playground", True),
+        ("mcp", r"sugra-api-mcp", True),
+        ("claude", r"claude-user|claude-web|anthropic|claude\.ai", True),
+        ("chatgpt", r"chatgpt-user|chatgpt", True),
+        ("grok", r"grok-agent|\bxai\b", True),
+        ("cursor", r"\bcursor\b", True),
+        ("openbb", r"openbb", True),
+        ("python", r"python-requests|python-httpx|aiohttp|httpx/", True),
+        ("curl", r"\bcurl/|\bwget/|httpie/", True),
+        ("node", r"\baxios/|node-fetch|\bundici\b|node/", True),
+        ("browser", r"mozilla/|chrome/|safari/|firefox/|\bedg/", True),
+    ]
+    assert _pattern_table(observability._CLIENT_NAME_PATTERNS) == [
+        ("playground", r"sugra-playground", True),
+        ("mcp", r"sugra-api-mcp", True),
+        ("claude", r"claude|anthropic", True),
+        ("chatgpt", r"chatgpt|openai", True),
+        ("grok", r"grok|\bxai\b", True),
+        ("cursor", r"cursor", True),
+        ("openbb", r"openbb", True),
+    ]
+
+
+def test_a_request_without_a_host_carries_no_host_class() -> None:
+    attrs = observability._caller_attrs(_http_facts(host=None))
+    assert "mcp.caller.host" not in attrs
+    assert attrs["mcp.caller.ua_class"] == "python"
 
 
 @pytest.mark.parametrize("outcome", ["success", "failure", "exception", "cancelled"])
@@ -1909,8 +1958,18 @@ def test_a_refused_call_carries_the_caller_of_its_request(monkeypatch) -> None:
     _assert_span_is_clean(tracer.spans[0], _FAILURE_ATTRS | {"mcp.busy.scope"} | _CALLER_ATTRS)
 
 
+class _FactsWhoseFieldRaises:
+    """Facts whose field read raises something getattr with a default does not absorb."""
+
+    @property
+    def transport(self) -> str:
+        raise RuntimeError("field exploded")
+
+
 @pytest.mark.parametrize(
-    "facts", [RuntimeError("provider exploded"), None, object()], ids=["raises", "none", "odd-object"]
+    "facts",
+    [RuntimeError("provider exploded"), None, object(), _FactsWhoseFieldRaises()],
+    ids=["raises", "none", "odd-object", "field-raises"],
 )
 def test_unreadable_facts_leave_the_result_and_add_no_caller(monkeypatch, facts: object) -> None:
     tracer = _install_fake_tracer(monkeypatch)
