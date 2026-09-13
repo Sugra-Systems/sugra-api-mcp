@@ -504,22 +504,64 @@ def test_admission_and_release_stay_consistent_across_threads(monkeypatch) -> No
     assert server._in_flight_by_caller == {}
 
 
+def test_admission_and_release_touch_the_counts_only_under_the_lock(monkeypatch) -> None:
+    """The thread test above cannot prove the lock on CPython, where the
+    interpreter lock hides most lost updates. This one fails whenever a
+    per-caller count is read or written outside the admission lock."""
+
+    class _TrackedLock:
+        def __init__(self) -> None:
+            self.held = False
+            self.acquired = 0
+
+        def __enter__(self) -> _TrackedLock:
+            self.held = True
+            self.acquired += 1
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            self.held = False
+
+    lock = _TrackedLock()
+
+    class _GuardedCounts(dict):
+        def get(self, key: Any, default: Any = None) -> Any:
+            assert lock.held, "a per-caller count was read outside the lock"
+            return super().get(key, default)
+
+        def __setitem__(self, key: Any, value: Any) -> None:
+            assert lock.held, "a per-caller count was written outside the lock"
+            super().__setitem__(key, value)
+
+        def pop(self, key: Any, default: Any = None) -> Any:
+            assert lock.held, "a per-caller count was removed outside the lock"
+            return super().pop(key, default)
+
+    monkeypatch.setattr(server, "_in_flight_lock", lock)
+    monkeypatch.setattr(server, "_in_flight_by_caller", _GuardedCounts())
+    assert server._admit_tool_call("caller-a") is None
+    assert server.in_flight_tool_calls("caller-a") == 1
+    server._release_tool_call("caller-a")
+    assert server.in_flight_tool_calls() == 0
+    assert lock.acquired == 4
+
+
 def test_the_caller_name_follows_the_request_credential_and_never_contains_it(monkeypatch) -> None:
-    secret = "sugra_zz_not_a_real_key_0123456789"
-    monkeypatch.setattr(server, "_dispatching_http_request", lambda: (True, secret))
+    credential = "sugra_zz_not_a_real_key_0123456789"
+    monkeypatch.setattr(server, "_dispatching_http_request", lambda: (True, credential))
     named = server.current_caller()
-    assert named.startswith("http:") and secret not in named and len(named) == len("http:") + 16
+    assert named.startswith("http:") and credential not in named and len(named) == len("http:") + 16
     monkeypatch.setattr(server, "_dispatching_http_request", lambda: (True, "sugra_zz_other_key_9876543210"))
     assert server.current_caller() != named
     monkeypatch.setattr(server, "_dispatching_http_request", lambda: (True, None))
     assert server.current_caller() == "http:anonymous"
     monkeypatch.setattr(server, "_dispatching_http_request", lambda: (False, None))
     assert server.current_caller() == "local"
-    token = server.http_transport_ctx.set(True)
+    previous = server.http_transport_ctx.set(True)
     try:
         assert server.current_caller() == "http:anonymous"
     finally:
-        server.http_transport_ctx.reset(token)
+        server.http_transport_ctx.reset(previous)
 
 
 class _CaptureSpan:
