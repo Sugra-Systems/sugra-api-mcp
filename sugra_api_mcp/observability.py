@@ -35,8 +35,10 @@ Custom dimensions captured per MCP tool invocation:
                            auth (api_key / oauth / none / local), host, ua_class
                            and origin (HTTP only), client (the initialize
                            clientInfo name as a class) and client_version. Each
-                           value is a fixed class or a plain dotted version,
-                           never header or clientInfo text
+                           value is a fixed class or a plain dotted version
+                           (one to four parts of one to five ASCII digits),
+                           never header or clientInfo text. A call no HTTP
+                           request carried is transport and auth local
     mcp.duration_ms      - integer ms wall-clock from before-call to
                            after-return
     mcp.exception.type   - exception class name only (NEVER the message)
@@ -390,7 +392,12 @@ def _origin_class(value: object) -> str:
 
 
 def _version_of(value: object) -> str | None:
-    """A plain dotted version of at most four ASCII-digit parts, else None."""
+    """A plain dotted version, else None.
+
+    One to four parts of one to five ASCII digits each, at most 23 characters in
+    all. The bounds are deliberate: a client version is short, and anything
+    longer or looser is dropped rather than trimmed.
+    """
     if type(value) is not str or len(value) > _VERSION_MAX:
         return None
     return value if _VERSION_RE.fullmatch(value) else None

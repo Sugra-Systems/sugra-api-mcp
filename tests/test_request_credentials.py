@@ -18,6 +18,8 @@ from typing import Any
 
 import httpx
 import pytest
+from mcp.shared.memory import create_connected_server_and_client_session
+from mcp.types import Implementation
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -285,18 +287,44 @@ async def test_every_tool_span_names_how_its_own_request_arrived(upstream, monke
                     "user-agent": "curl/8.5.0",
                     "origin": "https://chatgpt.com",
                 })
+                # Refused at admission: this span comes from record_refused_call.
+                monkeypatch.setattr(server, "MAX_IN_FLIGHT_TOOL_CALLS", 0)
+                await call({"authorization": "Bearer jwt-B", "host": "mcp.sugra.ai", "user-agent": "python-httpx/0.27.0"})
     finally:
         await _close_clients(["sugra_made_up", "sugra_TENANT_B"])
         await authenticator.aclose()
 
     calls = [span for span in tracer.spans if span.name == "mcp.tool.call_endpoint"]
     common = {"mcp.caller.transport": "streamable_http", "mcp.caller.client": "claude", "mcp.caller.client_version": "1.2.3"}
-    assert [_caller(span) for span in calls] == [
-        {**common, "mcp.caller.auth": "oauth", "mcp.caller.host": "mcp.sugra.ai",
-         "mcp.caller.ua_class": "python", "mcp.caller.origin": "none"},
-        {**common, "mcp.caller.auth": "api_key", "mcp.caller.host": "app.sugra.ai",
-         "mcp.caller.ua_class": "curl", "mcp.caller.origin": "openai"},
-    ]
+    by_oauth = {**common, "mcp.caller.auth": "oauth", "mcp.caller.host": "mcp.sugra.ai",
+                "mcp.caller.ua_class": "python", "mcp.caller.origin": "none"}
+    by_key = {**common, "mcp.caller.auth": "api_key", "mcp.caller.host": "app.sugra.ai",
+              "mcp.caller.ua_class": "curl", "mcp.caller.origin": "openai"}
+    assert [_caller(span) for span in calls] == [by_oauth, by_key, by_oauth]
+    assert [span.attributes.get("mcp.error.code") for span in calls] == [None, None, "server_busy"]
+
+
+async def test_a_call_no_http_request_carried_is_local_whatever_it_inherited(monkeypatch) -> None:
+    """MCP-26.1.3 (codex r1): a stdio or in-process client carries no HTTP request,
+    so its span says transport and auth local even when the task inherited the
+    HTTP transport marker, and carries no host, User-Agent or origin."""
+    tracer = _CaptureTracer()
+    monkeypatch.setattr(observability, "_TRACER", tracer)
+    previous = server.http_transport_ctx.set(True)
+    try:
+        async with create_connected_server_and_client_session(
+            server.mcp, client_info=Implementation(name="claude-code", version="2.0.1")
+        ) as session:
+            await session.call_tool("list_toolsets", {})
+    finally:
+        server.http_transport_ctx.reset(previous)
+    spans = [span for span in tracer.spans if span.name == "mcp.tool.list_toolsets"]
+    assert [_caller(span) for span in spans] == [{
+        "mcp.caller.transport": "local",
+        "mcp.caller.auth": "local",
+        "mcp.caller.client": "claude",
+        "mcp.caller.client_version": "2.0.1",
+    }]
 
 
 def test_caller_attribution_reads_only_the_request_scope() -> None:
@@ -315,6 +343,7 @@ def test_caller_attribution_reads_only_the_request_scope() -> None:
     assert "api_key_ctx" not in observability_text and "request_started_at" not in observability_text
     facts_source = inspect.getsource(server.current_caller_facts)
     assert "api_key_ctx" not in facts_source and "request_started_at" not in facts_source
+    assert "http_transport_ctx" not in facts_source
 
 
 def test_http_dispatch_without_an_attached_request_refuses_inherited_and_env_keys(upstream, monkeypatch) -> None:

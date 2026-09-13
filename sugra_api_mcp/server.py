@@ -538,7 +538,8 @@ def current_caller_facts() -> observability.CallerFacts | None:
     MCP-26.1.3. Everything comes from the SDK request context set for this one
     message: the Starlette Request that carried it and the session it belongs to.
     Never from a ContextVar a middleware set, which names the request that opened
-    the session. The header and clientInfo values are RAW; observability reduces
+    the session. A message no HTTP request carried (stdio, an in-process client)
+    is local. The header and clientInfo values are RAW; observability reduces
     them to fixed classes before anything reaches a span.
     """
     from mcp.server.lowlevel.server import request_ctx
@@ -554,10 +555,12 @@ def current_caller_facts() -> observability.CallerFacts | None:
     request = getattr(context, "request", None)
     scope = getattr(request, "scope", None)
     if not isinstance(scope, dict):
-        http = http_transport_ctx.get()
+        # No HTTP request carried this message: a stdio or in-process client. Not
+        # the transport marker AuthMiddleware sets either, because a session task
+        # inherits that from the request that opened the session (codex r1).
         return observability.CallerFacts(
-            transport="streamable_http" if http else "local",
-            auth="none" if http else "local",
+            transport="local",
+            auth="local",
             client_name=client_name,
             client_version=client_version,
         )

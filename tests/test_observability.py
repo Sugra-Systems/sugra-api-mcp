@@ -1836,6 +1836,28 @@ def test_transport_and_auth_outside_their_sets_are_dropped() -> None:
     assert local == {"mcp.caller.transport": "local", "mcp.caller.auth": "local"}
 
 
+class _SliceRaises(str):
+    """Client text whose slicing raises: the other caller attributes must survive it."""
+
+    def __getitem__(self, key: object) -> str:
+        raise RuntimeError("slice exploded")
+
+
+def test_one_hostile_field_never_costs_the_other_caller_attributes() -> None:
+    hostile = _SliceRaises("claude-ai")
+    attrs = observability._caller_attrs(
+        _http_facts(host=hostile, user_agent=hostile, origin=hostile, client_name=hostile)
+    )
+    assert attrs == {
+        "mcp.caller.transport": "streamable_http",
+        "mcp.caller.auth": "oauth",
+        "mcp.caller.ua_class": "other",
+        "mcp.caller.origin": "other",
+        "mcp.caller.client": "other",
+        "mcp.caller.client_version": "1.2.3",
+    }
+
+
 def test_the_caller_vocabularies_are_exact() -> None:
     from sugra_api_mcp.config import DEFAULT_ALLOWED_ORIGINS
 
