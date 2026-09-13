@@ -507,6 +507,19 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return False
 
     async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[override]
+        # Mark everything this middleware serves as the HTTP transport. A
+        # Streamable HTTP session task inherits the marker from the request that
+        # opened it, so server.get_client refuses the env fallback key there even
+        # when a dispatch carries no HTTP request.
+        from .server import http_transport_ctx
+
+        transport_token = http_transport_ctx.set(True)
+        try:
+            return await self._dispatch(request, call_next)
+        finally:
+            http_transport_ctx.reset(transport_token)
+
+    async def _dispatch(self, request: Request, call_next) -> Response:
         if (
             request.method in ("GET", "HEAD")
             and request.url.path in PUBLIC_GET_PATHS

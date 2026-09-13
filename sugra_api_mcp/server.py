@@ -398,13 +398,12 @@ def _build_client(api_key: str) -> SugraClient:
 # request's scope state and get_client reads it from there.
 REQUEST_API_KEY_STATE = "sugra_api_key"
 
-_http_transport = False
-
-
-def enable_http_transport() -> None:
-    """Mark the process as serving HTTP: tool calls never use the env fallback key."""
-    global _http_transport
-    _http_transport = True
+# Set by AuthMiddleware for every request it serves. A Streamable HTTP session
+# task inherits it from the request that opened the session, so a dispatch that
+# belongs to the HTTP transport is known as such even with no attached request,
+# and never borrows an inherited key or the SUGRA_API_KEY fallback. stdio never
+# sets it, so a process that also serves stdio keeps the env key there.
+http_transport_ctx: ContextVar[bool] = ContextVar("sugra_http_transport", default=False)
 
 
 def _dispatching_http_request() -> tuple[bool, str | None]:
@@ -441,8 +440,10 @@ def get_client() -> SugraClient | _KeylessClient:
     HTTP transport: the key comes only from the request that carries the tool
     call, stored on its scope state by ``AuthMiddleware``. Without one the call
     gets the keyless stand-in: never the session opener's key and never the
-    SUGRA_API_KEY fallback. We cache one client per distinct key to keep the
-    httpx.AsyncClient alive across calls.
+    SUGRA_API_KEY fallback. A dispatch that belongs to the HTTP transport
+    (``http_transport_ctx``) but carries no request is refused the same way. We
+    cache one client per distinct key to keep the httpx.AsyncClient alive
+    across calls.
 
     stdio transport / in-process callers: ``api_key_ctx`` when set, else
     SUGRA_API_KEY from env. When that is empty too, return the keyless stand-in
@@ -450,8 +451,10 @@ def get_client() -> SugraClient | _KeylessClient:
     the key requirement is enforced here at call time, never at process startup.
     """
     is_http_request, request_key = _dispatching_http_request()
-    if is_http_request or _http_transport:
+    if is_http_request:
         return _client_for_key(request_key) if request_key else _keyless_client
+    if http_transport_ctx.get():
+        return _keyless_client
 
     per_request_key = api_key_ctx.get()
     if per_request_key:
