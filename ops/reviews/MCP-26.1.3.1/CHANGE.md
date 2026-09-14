@@ -25,7 +25,7 @@ Unit pins on the four new normalizers (admission name, OAuth id, session digest,
 
 ## Review
 
-Pending T2 quorum (author grok; two other pilots).
+Two independent vendor reviews of the implementation. Hosted nginx overwrites X-Real-IP, so a client cannot make both headers agree on a forged address there. A self-hosted process with FORWARDED_ALLOW_IPS=* and no such proxy can still record a client-claimed prefix; the tests pin the disagreeing-header case as dropped.
 
 ## Acceptance
 

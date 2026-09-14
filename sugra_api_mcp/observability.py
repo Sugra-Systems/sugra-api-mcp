@@ -476,9 +476,11 @@ def _network_of(client_addr: object, x_real_ip: object) -> str | None:
     """Coarse origin: loopback, private, IPv4 /24 or IPv6 /48.
 
     A public or private prefix is attached only when the ASGI peer equals
-    X-Real-IP, so a client-forgeable X-Forwarded-For cannot name the span.
-    Loopback is allowed without X-Real-IP: that is a local ASGI client.
-    IPv4-mapped IPv6 (`::ffff:a.b.c.d`) is treated as the IPv4 address.
+    X-Real-IP, so a client-forgeable X-Forwarded-For cannot name the span
+    when the process is behind a proxy that overwrites X-Real-IP (hosted
+    nginx). Loopback is allowed without X-Real-IP: that is a local ASGI
+    client. IPv4-mapped IPv6 (`::ffff:a.b.c.d`) is treated as the IPv4
+    address.
     """
     addr = _ip_of(client_addr)
     if addr is None:
