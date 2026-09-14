@@ -573,7 +573,7 @@ def current_caller_facts() -> observability.CallerFacts | None:
     principal = state.get(REQUEST_PRINCIPAL_STATE) if isinstance(state, dict) else None
     headers = getattr(request, "headers", None)
     peer = scope.get("client")
-    client_addr = peer[0] if type(peer) is tuple and peer else None
+    client_addr = peer[0] if type(peer) in (tuple, list) and peer else None
     return observability.CallerFacts(
         transport="streamable_http",
         auth=principal.method if isinstance(principal, RequestPrincipal) else "none",

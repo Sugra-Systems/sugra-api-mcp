@@ -460,36 +460,36 @@ def _session_digest(value: object) -> str | None:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
 
 
+def _ip_of(value: object) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    """An IP address, with IPv4-mapped IPv6 unwrapped to IPv4."""
+    if type(value) is not str or not value or len(value) > _ADDR_MAX:
+        return None
+    try:
+        addr = ipaddress.ip_address(value)
+    except ValueError:
+        return None
+    mapped = getattr(addr, "ipv4_mapped", None)
+    return mapped if mapped is not None else addr
+
+
 def _network_of(client_addr: object, x_real_ip: object) -> str | None:
     """Coarse origin: loopback, private, IPv4 /24 or IPv6 /48.
 
     A public or private prefix is attached only when the ASGI peer equals
     X-Real-IP, so a client-forgeable X-Forwarded-For cannot name the span.
     Loopback is allowed without X-Real-IP: that is a local ASGI client.
+    IPv4-mapped IPv6 (`::ffff:a.b.c.d`) is treated as the IPv4 address.
     """
-    if type(client_addr) is not str or not client_addr or len(client_addr) > _ADDR_MAX:
-        return None
-    try:
-        addr = ipaddress.ip_address(client_addr)
-    except ValueError:
+    addr = _ip_of(client_addr)
+    if addr is None:
         return None
     if addr.is_loopback:
         if x_real_ip is None:
             return "loopback"
-        if type(x_real_ip) is not str or len(x_real_ip) > _ADDR_MAX:
-            return None
-        try:
-            real = ipaddress.ip_address(x_real_ip)
-        except ValueError:
-            return None
-        return "loopback" if real.is_loopback else None
-    if type(x_real_ip) is not str or not x_real_ip or len(x_real_ip) > _ADDR_MAX:
-        return None
-    try:
-        real = ipaddress.ip_address(x_real_ip)
-    except ValueError:
-        return None
-    if addr != real:
+        real = _ip_of(x_real_ip)
+        return "loopback" if real is not None and real.is_loopback else None
+    real = _ip_of(x_real_ip)
+    if real is None or addr != real:
         return None
     if addr.is_private or addr.is_link_local:
         return "private"
