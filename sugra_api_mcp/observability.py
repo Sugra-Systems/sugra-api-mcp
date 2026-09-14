@@ -36,11 +36,22 @@ Custom dimensions captured per MCP tool invocation:
                            and origin (HTTP only), client and client_version
                            (the clientInfo name as a class, and its version, as
                            the session's most recent initialize asserted them:
-                           any re-initialize of the session replaces both). Each
-                           value is a fixed class or a plain dotted version
-                           (one to four parts of one to five ASCII digits),
-                           never header or clientInfo text. A call no HTTP
-                           request carried is transport and auth local
+                           any re-initialize of the session replaces both).
+                           Stage B (MCP-26.1.3.1) adds session (16 hex of the
+                           SHA-256 of Mcp-Session-Id, never the id) and net
+                           (IPv4 /24, IPv6 /48, loopback or private; only when
+                           the ASGI peer equals X-Real-IP, never a raw address).
+                           Each value is a fixed class, a digest, a prefix or a
+                           plain dotted version, never header, clientInfo or
+                           address text. A call no HTTP request carried is
+                           transport and auth local
+    enduser.pseudo.id    - MCP-26.1.3.1, the Azure user_Id column: the same
+                           name admission uses (http: plus 16 hex of SHA-256
+                           of the resolved API key, http:anonymous, or local).
+                           Never the key
+    enduser.id           - MCP-26.1.3.1, the Azure user_AuthenticatedId column:
+                           the numeric OAuth user id as a decimal string, OAuth
+                           callers only. Absent for a sugra_ key
     mcp.duration_ms      - integer ms wall-clock from before-call to
                            after-return
     mcp.exception.type   - exception class name only (NEVER the message)
@@ -53,6 +64,10 @@ Privacy contract (enforced by tests):
 - Exception messages are NEVER attached (only the class name).
 - operation_id and error_code are validated against catalog/whitelist
   allowlists before attachment.
+- API keys, tokens, JWT claims other than the numeric OAuth sub, raw
+  addresses, raw Host / User-Agent / Origin / clientInfo / session id
+  NEVER reach a span. Identity is a digest, a decimal user id, a session
+  digest or a coarse network prefix.
 - All bundled OpenTelemetry instrumentations (fastapi, requests, urllib,
   urllib3, azure_sdk, etc.) are explicitly DISABLED to prevent them from
   emitting auto-spans with URL/query attributes outside this allowlist.
@@ -65,6 +80,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import functools
+import hashlib
+import ipaddress
 import logging
 import os
 import re
@@ -290,9 +307,11 @@ def _payload_scope(result: Any) -> object:
 class CallerFacts:
     """Raw facts about a tool call's caller, as server.current_caller_facts reads them.
 
-    MCP-26.1.3. transport and auth are set by our own code. Every other field is
-    whatever the client sent (header or clientInfo text, or None), and none of it
-    reaches a span as such: _caller_attrs reduces each to a fixed class.
+    MCP-26.1.3. transport and auth are set by our own code. caller is the
+    admission name from current_caller (already a digest). user_id is the
+    numeric OAuth sub, or None. Every other field is whatever the client sent
+    (header, clientInfo text, ASGI peer, or None), and none of it reaches a
+    span as such: _caller_attrs reduces each to a fixed class, digest or prefix.
     """
 
     transport: str
@@ -302,6 +321,11 @@ class CallerFacts:
     origin: object = None
     client_name: object = None
     client_version: object = None
+    caller: object = None
+    user_id: object = None
+    session_id: object = None
+    client_addr: object = None
+    x_real_ip: object = None
 
 
 _CALLER_TRANSPORTS: frozenset[str] = frozenset({"streamable_http", "local"})
@@ -352,6 +376,10 @@ _ORIGIN_CLASSES: dict[str, str] = {
 
 _VERSION_MAX = 23
 _VERSION_RE = re.compile(r"[0-9]{1,5}(?:\.[0-9]{1,5}){0,3}")
+_PSEUDO_ID_RE = re.compile(r"(?:http:[0-9a-f]{16}|http:anonymous|local)")
+_AUTH_USER_RE = re.compile(r"[1-9][0-9]{0,9}")
+_SESSION_ID_MAX = 256
+_ADDR_MAX = 64
 
 
 def _text_class(value: object, patterns: tuple[tuple[str, re.Pattern[str]], ...]) -> str:
@@ -410,8 +438,70 @@ def _version_of(value: object) -> str | None:
     return value if _VERSION_RE.fullmatch(value) else None
 
 
+def _pseudo_id_of(value: object) -> str | None:
+    """Admission name for user_Id: http:<16 hex>, http:anonymous, or local."""
+    if type(value) is not str:
+        return None
+    return value if _PSEUDO_ID_RE.fullmatch(value) else None
+
+
+def _authenticated_id_of(auth: object, user_id: object) -> str | None:
+    """OAuth user id as a decimal string, only when auth is oauth."""
+    if auth != "oauth" or type(user_id) is not int:
+        return None
+    text = str(user_id)
+    return text if _AUTH_USER_RE.fullmatch(text) else None
+
+
+def _session_digest(value: object) -> str | None:
+    """16 lowercase hex of SHA-256 of the session id, never the id itself."""
+    if type(value) is not str or not value or len(value) > _SESSION_ID_MAX:
+        return None
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+
+def _ip_of(value: object) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    """An IP address, with IPv4-mapped IPv6 unwrapped to IPv4."""
+    if type(value) is not str or not value or len(value) > _ADDR_MAX:
+        return None
+    try:
+        addr = ipaddress.ip_address(value)
+    except ValueError:
+        return None
+    mapped = getattr(addr, "ipv4_mapped", None)
+    return mapped if mapped is not None else addr
+
+
+def _network_of(client_addr: object, x_real_ip: object) -> str | None:
+    """Coarse origin: loopback, private, IPv4 /24 or IPv6 /48.
+
+    A public or private prefix is attached only when the ASGI peer equals
+    X-Real-IP, so a client-forgeable X-Forwarded-For cannot name the span
+    when the process is behind a proxy that overwrites X-Real-IP (hosted
+    nginx). Loopback is allowed without X-Real-IP: that is a local ASGI
+    client. IPv4-mapped IPv6 (`::ffff:a.b.c.d`) is treated as the IPv4
+    address.
+    """
+    addr = _ip_of(client_addr)
+    if addr is None:
+        return None
+    if addr.is_loopback:
+        if x_real_ip is None:
+            return "loopback"
+        real = _ip_of(x_real_ip)
+        return "loopback" if real is not None and real.is_loopback else None
+    real = _ip_of(x_real_ip)
+    if real is None or addr != real:
+        return None
+    if addr.is_private or addr.is_link_local:
+        return "private"
+    if addr.version == 4:
+        return str(ipaddress.ip_network(f"{addr}/24", strict=False))
+    return str(ipaddress.ip_network(f"{addr}/48", strict=False))
+
+
 def _caller_attrs(facts: object) -> dict[str, str]:
-    """The mcp.caller.* attributes for a call: each a fixed class or a strict version.
+    """The caller attributes for a call: each a fixed class, digest or prefix.
 
     Reads the facts by attribute name, so a missing or odd field drops only its
     own attribute, and nothing a client sent is ever copied through.
@@ -429,11 +519,23 @@ def _caller_attrs(facts: object) -> dict[str, str]:
             attrs["mcp.caller.host"] = host
         attrs["mcp.caller.ua_class"] = _text_class(getattr(facts, "user_agent", None), _UA_PATTERNS)
         attrs["mcp.caller.origin"] = _origin_class(getattr(facts, "origin", None))
+        session = _session_digest(getattr(facts, "session_id", None))
+        if session is not None:
+            attrs["mcp.caller.session"] = session
+        net = _network_of(getattr(facts, "client_addr", None), getattr(facts, "x_real_ip", None))
+        if net is not None:
+            attrs["mcp.caller.net"] = net
     if getattr(facts, "client_name", None) is not None:
         attrs["mcp.caller.client"] = _text_class(getattr(facts, "client_name", None), _CLIENT_NAME_PATTERNS)
     version = _version_of(getattr(facts, "client_version", None))
     if version is not None:
         attrs["mcp.caller.client_version"] = version
+    pseudo = _pseudo_id_of(getattr(facts, "caller", None))
+    if pseudo is not None:
+        attrs["enduser.pseudo.id"] = pseudo
+    authenticated = _authenticated_id_of(attrs.get("mcp.caller.auth"), getattr(facts, "user_id", None))
+    if authenticated is not None:
+        attrs["enduser.id"] = authenticated
     return attrs
 
 
