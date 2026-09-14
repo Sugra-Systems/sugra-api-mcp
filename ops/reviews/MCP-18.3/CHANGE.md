@@ -2,10 +2,8 @@
 
 - change-id:        MCP-18.3
 - board-card:       https://github.com/Sugra-Systems/sugra-board/blob/main/cards/MCP-18.3.md
-- author-pilot:     grok
 - risk-tier:        T1
 - tier-justification: Hosted tool argument schema completeness. Same required keys and payload shape. Extra keys still ignored. Covered by existing agent-tool tests plus new schema and extra-key pins. No auth or URL change. T1.
-- required-reviewers: T1: any one of claude / codex / agy (author is grok)
 
 ## touched-paths
 - sugra_api_mcp/tools/agent.py
