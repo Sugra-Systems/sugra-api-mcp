@@ -535,12 +535,13 @@ def _dispatching_http_request() -> tuple[bool, str | None]:
 def current_caller_facts() -> observability.CallerFacts | None:
     """What the tool call being dispatched says about its caller, or None outside a dispatch.
 
-    MCP-26.1.3. Everything comes from the SDK request context set for this one
-    message: the Starlette Request that carried it and the session it belongs to.
-    Never from a ContextVar a middleware set, which names the request that opened
-    the session. A message no HTTP request carried (stdio, an in-process client)
-    is local. The header and clientInfo values are RAW; observability reduces
-    them to fixed classes before anything reaches a span.
+    MCP-26.1.3 / MCP-26.1.3.1. Everything comes from the SDK request context set
+    for this one message: the Starlette Request that carried it and the session
+    it belongs to. Never from a ContextVar a middleware set, which names the
+    request that opened the session. A message no HTTP request carried (stdio,
+    an in-process client) is local. caller is current_caller(), already a digest.
+    The header, peer and clientInfo values are RAW; observability reduces them
+    to fixed classes, digests or a coarse prefix before anything reaches a span.
     """
     from mcp.server.lowlevel.server import request_ctx
 
@@ -552,6 +553,9 @@ def current_caller_facts() -> observability.CallerFacts | None:
     client_info = getattr(getattr(session, "client_params", None), "clientInfo", None)
     client_name = getattr(client_info, "name", None)
     client_version = getattr(client_info, "version", None)
+    # Through the module global so a test that patches current_caller, and the
+    # admission count, share one name with the span's user_Id.
+    caller = current_caller()
     request = getattr(context, "request", None)
     scope = getattr(request, "scope", None)
     if not isinstance(scope, dict):
@@ -561,12 +565,15 @@ def current_caller_facts() -> observability.CallerFacts | None:
         return observability.CallerFacts(
             transport="local",
             auth="local",
+            caller=caller,
             client_name=client_name,
             client_version=client_version,
         )
     state = scope.get("state")
     principal = state.get(REQUEST_PRINCIPAL_STATE) if isinstance(state, dict) else None
     headers = getattr(request, "headers", None)
+    peer = scope.get("client")
+    client_addr = peer[0] if type(peer) is tuple and peer else None
     return observability.CallerFacts(
         transport="streamable_http",
         auth=principal.method if isinstance(principal, RequestPrincipal) else "none",
@@ -575,6 +582,11 @@ def current_caller_facts() -> observability.CallerFacts | None:
         origin=headers.get("origin") if headers is not None else None,
         client_name=client_name,
         client_version=client_version,
+        caller=caller,
+        user_id=principal.user_id if isinstance(principal, RequestPrincipal) else None,
+        session_id=headers.get("mcp-session-id") if headers is not None else None,
+        client_addr=client_addr,
+        x_real_ip=headers.get("x-real-ip") if headers is not None else None,
     )
 
 

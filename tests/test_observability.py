@@ -22,6 +22,7 @@ active.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import importlib
 import os
 import re
@@ -687,6 +688,10 @@ _ATTR_TYPES: dict[str, type] = {
     "mcp.caller.origin": str,
     "mcp.caller.client": str,
     "mcp.caller.client_version": str,
+    "mcp.caller.session": str,
+    "mcp.caller.net": str,
+    "enduser.pseudo.id": str,
+    "enduser.id": str,
     "mcp.agent.recipe_version": str,
     "mcp.agent.status": str,
     "mcp.agent.units": int,
@@ -1626,7 +1631,11 @@ _CALLER_ATTRS = frozenset({
     "mcp.caller.origin",
     "mcp.caller.client",
     "mcp.caller.client_version",
+    "mcp.caller.session",
+    "mcp.caller.net",
 })
+_IDENTITY_ATTRS = frozenset({"enduser.pseudo.id", "enduser.id"})
+_CALLER_SPAN_ATTRS = _CALLER_ATTRS | _IDENTITY_ATTRS
 
 # The API's inbound-client classes (usage_clients.py, APP-15.7).
 _CLASS_VOCABULARY = frozenset({
@@ -1640,7 +1649,12 @@ _CALLER_VALUES: dict[str, frozenset[str]] = {
     "mcp.caller.ua_class": _CLASS_VOCABULARY,
     "mcp.caller.origin": frozenset({"openai", "anthropic", "cursor", "none", "other"}),
     "mcp.caller.client": _CLASS_VOCABULARY,
+    "mcp.caller.net": frozenset({"loopback", "private"}),
 }
+
+_HTTP_SESSION_ID = "sess-test-id"
+_HTTP_CALLER = "http:0123456789abcdef"
+_HTTP_SESSION = hashlib.sha256(_HTTP_SESSION_ID.encode("utf-8")).hexdigest()[:16]
 
 _EXPECTED_HTTP_ATTRS = {
     "mcp.caller.transport": "streamable_http",
@@ -1650,6 +1664,13 @@ _EXPECTED_HTTP_ATTRS = {
     "mcp.caller.origin": "anthropic",
     "mcp.caller.client": "claude",
     "mcp.caller.client_version": "1.2.3",
+    "mcp.caller.session": _HTTP_SESSION,
+    "mcp.caller.net": "8.8.8.0/24",
+}
+
+_EXPECTED_HTTP_IDENTITY = {
+    "enduser.pseudo.id": _HTTP_CALLER,
+    "enduser.id": "7",
 }
 
 
@@ -1662,6 +1683,11 @@ def _http_facts(**overrides: object) -> observability.CallerFacts:
         "origin": "https://claude.ai",
         "client_name": "claude-ai",
         "client_version": "1.2.3",
+        "caller": _HTTP_CALLER,
+        "user_id": 7,
+        "session_id": _HTTP_SESSION_ID,
+        "client_addr": "8.8.8.8",
+        "x_real_ip": "8.8.8.8",
     }
     fields.update(overrides)
     return observability.CallerFacts(**fields)
@@ -1839,16 +1865,35 @@ class _StrLookalike(str):
 )
 def test_caller_attributes_are_only_fixed_classes(hostile: object) -> None:
     attrs = observability._caller_attrs(
-        _http_facts(host=hostile, user_agent=hostile, origin=hostile, client_name=hostile, client_version=hostile)
+        _http_facts(
+            host=hostile,
+            user_agent=hostile,
+            origin=hostile,
+            client_name=hostile,
+            client_version=hostile,
+            caller=hostile,
+            user_id=hostile,
+            session_id=hostile,
+            client_addr=hostile,
+            x_real_ip=hostile,
+        )
     )
     span = _FakeSpan("mcp.tool.call_endpoint")
     for key, value in attrs.items():
         span.set_attribute(key, value)
-    _assert_span_is_clean(span, _CALLER_ATTRS, "sugra_zz_SECRETKEY", "user@example.com", "X-Injected", "xxxxxxxx")
+    _assert_span_is_clean(
+        span, _CALLER_SPAN_ATTRS, "sugra_zz_SECRETKEY", "user@example.com", "X-Injected", "xxxxxxxx"
+    )
     for key, value in attrs.items():
         if key in _CALLER_VALUES:
             assert value in _CALLER_VALUES[key], f"{key}={value!r}"
     assert "mcp.caller.client_version" not in attrs
+    assert "enduser.pseudo.id" not in attrs
+    if type(hostile) is not int:
+        assert "enduser.id" not in attrs
+    if isinstance(hostile, str) and hostile:
+        assert "mcp.caller.session" not in attrs or attrs["mcp.caller.session"] != hostile
+        assert "mcp.caller.net" not in attrs or attrs["mcp.caller.net"] != hostile
 
 
 def test_transport_and_auth_outside_their_sets_are_dropped() -> None:
@@ -1879,6 +1924,9 @@ def test_one_hostile_field_never_costs_the_other_caller_attributes() -> None:
         "mcp.caller.origin": "other",
         "mcp.caller.client": "other",
         "mcp.caller.client_version": "1.2.3",
+        "mcp.caller.session": _HTTP_SESSION,
+        "mcp.caller.net": "8.8.8.0/24",
+        **_EXPECTED_HTTP_IDENTITY,
     }
 
 
@@ -1959,6 +2007,8 @@ def test_every_exit_of_a_traced_tool_carries_the_caller(monkeypatch, outcome: st
     else:
         asyncio.run(fake_tool())
     assert _caller_of(tracer.spans[0]) == _EXPECTED_HTTP_ATTRS
+    for key, value in _EXPECTED_HTTP_IDENTITY.items():
+        assert tracer.spans[0].attributes[key] == value
 
 
 def test_a_refused_call_carries_the_caller_of_its_request(monkeypatch) -> None:
@@ -1971,7 +2021,9 @@ def test_a_refused_call_carries_the_caller_of_its_request(monkeypatch) -> None:
         "mcp.caller.host": "app.sugra.ai",
         "mcp.caller.origin": "none",
     }
-    _assert_span_is_clean(tracer.spans[0], _FAILURE_ATTRS | {"mcp.busy.scope"} | _CALLER_ATTRS)
+    assert tracer.spans[0].attributes["enduser.pseudo.id"] == _HTTP_CALLER
+    assert "enduser.id" not in tracer.spans[0].attributes
+    _assert_span_is_clean(tracer.spans[0], _FAILURE_ATTRS | {"mcp.busy.scope"} | _CALLER_SPAN_ATTRS)
 
 
 class _FactsWhoseFieldRaises:
@@ -2006,10 +2058,88 @@ def test_without_the_server_module_no_caller_is_attached(monkeypatch) -> None:
     assert _caller_of(tracer.spans[0]) == {}
 
 
+@pytest.mark.parametrize(
+    ("caller", "expected"),
+    [
+        ("http:0123456789abcdef", "http:0123456789abcdef"),
+        ("http:anonymous", "http:anonymous"),
+        ("local", "local"),
+        ("http:0123456789ABCDEF", None),
+        ("http:0123456789abcde", None),
+        ("sugra_zz_SECRETKEY_0123456789", None),
+        ("http:" + "g" * 16, None),
+        (None, None),
+        (123, None),
+        (_StrLookalike("local"), None),
+    ],
+)
+def test_only_the_admission_name_becomes_user_id(caller: object, expected: str | None) -> None:
+    assert observability._pseudo_id_of(caller) == expected
+
+
+@pytest.mark.parametrize(
+    ("auth", "user_id", "expected"),
+    [
+        ("oauth", 7, "7"),
+        ("oauth", 1, "1"),
+        ("oauth", 9_999_999_999, "9999999999"),
+        ("oauth", 0, None),
+        ("oauth", 10_000_000_000, None),
+        ("oauth", True, None),
+        ("oauth", "7", None),
+        ("api_key", 7, None),
+        ("local", 7, None),
+        ("oauth", None, None),
+    ],
+)
+def test_authenticated_user_id_is_oauth_only_and_decimal(auth: object, user_id: object, expected: str | None) -> None:
+    assert observability._authenticated_id_of(auth, user_id) == expected
+
+
+def test_the_session_id_is_hashed_and_never_copied() -> None:
+    raw = "live-session-handle"
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+    assert observability._session_digest(raw) == digest
+    assert observability._session_digest(raw) != raw
+    assert observability._session_digest("") is None
+    assert observability._session_digest("x" * 257) is None
+    assert observability._session_digest(_StrLookalike(raw)) is None
+    assert observability._session_digest(None) is None
+
+
+@pytest.mark.parametrize(
+    ("addr", "real", "expected"),
+    [
+        ("8.8.8.8", "8.8.8.8", "8.8.8.0/24"),
+        ("8.8.8.8", "8.8.8.9", None),
+        ("1.1.1.1", "8.8.8.8", None),
+        ("127.0.0.1", None, "loopback"),
+        ("127.0.0.1", "127.0.0.1", "loopback"),
+        ("::1", None, "loopback"),
+        ("10.1.2.3", "10.1.2.3", "private"),
+        ("192.168.1.10", "192.168.1.10", "private"),
+        ("2606:4700:4700::1111", "2606:4700:4700::1111", "2606:4700:4700::/48"),
+        ("not-an-ip", "not-an-ip", None),
+        (None, "8.8.8.8", None),
+        ("8.8.8.8", None, None),
+        ("8.8.8.8", _StrLookalike("8.8.8.8"), None),
+    ],
+)
+def test_the_network_is_coarse_and_checks_x_real_ip(addr: object, real: object, expected: str | None) -> None:
+    assert observability._network_of(addr, real) == expected
+
+
+def test_api_key_auth_never_carries_an_authenticated_user_id() -> None:
+    attrs = observability._caller_attrs(_http_facts(auth="api_key", user_id=7))
+    assert attrs["enduser.pseudo.id"] == _HTTP_CALLER
+    assert "enduser.id" not in attrs
+
+
 def test_the_azure_exporter_keeps_caller_attributes_as_custom_dimensions() -> None:
     """mcp.caller.* must reach customDimensions. The exporter drops the standard
     OpenTelemetry names (http.*, client.address, user_agent.original, enduser.*)
-    from them, which is why the caller attributes are not named that way."""
+    from them, which is why the door attributes are mcp.caller.* and identity
+    uses enduser.* so Azure fills user_Id / user_AuthenticatedId."""
     from azure.monitor.opentelemetry.exporter.export.trace._exporter import (
         _convert_span_to_envelope,
     )
@@ -2020,10 +2150,16 @@ def test_the_azure_exporter_keeps_caller_attributes_as_custom_dimensions() -> No
     memory = InMemorySpanExporter()
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(memory))
-    span = provider.get_tracer("mcp-26.1.3").start_span("mcp.tool.call_endpoint")
-    for key, value in _EXPECTED_HTTP_ATTRS.items():
+    span = provider.get_tracer("mcp-26.1.3.1").start_span("mcp.tool.call_endpoint")
+    for key, value in {**_EXPECTED_HTTP_ATTRS, **_EXPECTED_HTTP_IDENTITY}.items():
         span.set_attribute(key, value)
     span.end()
     envelope = _convert_span_to_envelope(memory.get_finished_spans()[0])
-    properties = envelope.data.base_data.properties
+    properties = envelope.data.base_data.properties or {}
+    tags = envelope.tags or envelope.data.base_data.tags or {}
     assert {key: value for key, value in properties.items() if key.startswith("mcp.caller.")} == _EXPECTED_HTTP_ATTRS
+    assert "enduser.pseudo.id" not in properties
+    assert "enduser.id" not in properties
+    assert tags.get("ai.user.id") == _HTTP_CALLER
+    assert tags.get("ai.user.authUserId") == "7"
+    assert envelope.data.base_data.type == "InProc"
