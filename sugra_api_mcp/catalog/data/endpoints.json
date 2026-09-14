@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-09-12T07:44:56Z",
+  "built_at": "2026-09-13T22:08:58Z",
   "endpoint_count": 1626,
   "endpoints": [
     {
@@ -15210,7 +15210,7 @@
       "toolset": "crypto"
     },
     {
-      "description": "Get historical price, market cap, and volume for a coin.\n\n- `days`: 1, 7, 14, 30, 90, 180, 365, or max\n- Auto-granularity: <=1d minutely, 1-90d hourly, >90d daily",
+      "description": "Get historical price, market cap, and volume for a coin.\n\n- `days`: 1, 7, 14, 30, 90, 180, or 365\n- Auto-granularity: <=1d minutely, 1-90d hourly, >90d daily",
       "method": "GET",
       "operation_id": "crypto_coin_id_history",
       "parameters": [
@@ -15240,14 +15240,14 @@
           }
         },
         {
-          "description": "Window: 1, 7, 14, 30, 90, 180, 365, or max.",
+          "description": "Window: 1, 7, 14, 30, 90, 180, or 365 days.",
           "example": "30",
           "location": "query",
           "name": "days",
           "required": false,
           "schema": {
             "default": "30",
-            "description": "Window: 1, 7, 14, 30, 90, 180, 365, or max.",
+            "description": "Window: 1, 7, 14, 30, 90, 180, or 365 days.",
             "title": "Days",
             "type": "string"
           }
@@ -92359,5 +92359,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "a955e49e51623198fb0339377a5fca36aa06fc6013136db00730f47a0854e2da"
+  "spec_sha256": "e5fc924792140af3672316e8f453da46385b6fedcdb707c0000b6c50663009ee"
 }
