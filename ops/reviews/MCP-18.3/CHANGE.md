@@ -24,3 +24,8 @@ git revert <squash-merge sha of this PR>
 ## test-evidence
 pytest tests/test_tool_arg_schemas.py tests/test_agent_tools.py
 python -m ruff check sugra_api_mcp tests
+
+Independent reviews of this change (PR 132):
+- Gemini 3.8 Flash (High) via the Directory review lane: S4 extra-key coverage on get_timeseries; S1-S3 did not reproduce under pytest/CI.
+- Codex exec review vs origin/main (read-only): no findings; inline object schema and extra-key ignore hold.
+- Third independent review is recorded on the PR after this extra-key test lands.
