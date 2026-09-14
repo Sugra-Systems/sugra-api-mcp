@@ -257,3 +257,19 @@ _FAKE_JWT_WITH_KID = ".".join([
     _b64.urlsafe_b64encode(_json.dumps({"sub": "1"}).encode()).rstrip(b"=").decode(),
     "sig",
 ])
+
+
+async def test_resolve_names_how_the_bearer_authenticated() -> None:
+    """MCP-26.1.3: the real resolve marks a validated JWT oauth and a sugra_ key api_key.
+
+    Spans name the door from this method, so the OAuth path has to set it
+    itself; a fake resolver elsewhere cannot prove that it does."""
+    auth, _ = _authenticator()
+    auth._validate_jwt = lambda token, has_kid: _JwtClaims(user_id=7, access_token_id="jti-7")  # type: ignore[method-assign]
+    try:
+        oauth = await auth.resolve(_FAKE_JWT)
+        raw = await auth.resolve("sugra_direct_key")
+    finally:
+        await auth.aclose()
+    assert (oauth.method, oauth.user_id, oauth.api_key) == ("oauth", 7, "sugra_test_key")
+    assert (raw.method, raw.user_id) == ("api_key", None)

@@ -60,6 +60,7 @@ async def test_api_key_passthrough(auth_config):
     assert resolved.api_key == "sugra_ao1_abc123xyz"
     assert resolved.user_id is None
     assert resolved.access_token_id is None
+    assert resolved.method == "api_key"
 
 
 async def test_empty_token_rejected(auth_config):
@@ -105,6 +106,7 @@ async def test_jwt_with_valid_signature_and_cached_key(auth_config, rsa_keypair)
     assert resolved.api_key == "sugra_cached_key"
     assert resolved.user_id == 42
     assert resolved.access_token_id == "cached-token-id"
+    assert resolved.method == "oauth"
 
 
 async def test_passport_jwt_without_issuer_with_mcp_audience_is_accepted(auth_config, rsa_keypair):
@@ -147,6 +149,7 @@ async def test_passport_jwt_without_issuer_with_mcp_audience_is_accepted(auth_co
     assert resolved.api_key == "sugra_cached_key"
     assert resolved.user_id == 42
     assert resolved.access_token_id == "test-token-id"
+    assert resolved.method == "oauth"
     assert posts == [
         (
             "https://app.sugra.ai/api/internal/mcp/activity",
