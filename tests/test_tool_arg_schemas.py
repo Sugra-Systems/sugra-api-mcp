@@ -62,9 +62,19 @@ def test_get_timeseries_metric_is_enum(tool_schemas):
     ]
 
 
-def test_agent_entity_params_are_structured(tool_schemas):
+def test_agent_entity_params_are_inlined_objects(tool_schemas):
+    """Anthropic Directory flags ``{$ref}`` without type on the property.
+    The parameter itself must be type object with namespace + ids; extra
+    keys stay allowed so a resolve_entity result can be passed through."""
     for tool in ("get_snapshot", "get_timeseries"):
-        assert _has_ref(tool_schemas[tool]["entity"]), f"{tool}.entity lost its typed shape"
+        entity = tool_schemas[tool]["entity"]
+        assert not _has_ref(entity), f"{tool}.entity must not be a ref"
+        assert entity.get("type") == "object", f"{tool}.entity missing type object"
+        assert entity.get("additionalProperties") is True
+        props = entity.get("properties") or {}
+        assert props["namespace"].get("type") == "string"
+        assert props["ids"].get("type") == "object"
+        assert set(entity.get("required") or []) == {"namespace", "ids"}
 
 
 def test_search_endpoints_params_have_descriptions(tool_schemas):

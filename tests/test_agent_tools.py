@@ -175,6 +175,56 @@ def test_get_snapshot_passes_envelope_through(monkeypatch, fake_client):
     assert call["json"] == {"recipe": "company_snapshot", "entity": entity}
 
 
+def test_get_snapshot_ignores_extra_entity_keys(monkeypatch, fake_client):
+    monkeypatch.setenv("SUGRA_AGENT_INTERNAL_TOKEN", "tok-123")
+    client = fake_client(_ENVELOPE)
+    entity = {
+        "namespace": "equity",
+        "ids": {"symbol": "AAPL"},
+        "label": "Apple Inc",
+        "confidence": 0.9,
+    }
+    result = asyncio.run(get_snapshot("company_snapshot", entity))
+    assert result == _ENVELOPE
+    assert client.calls[0]["json"]["entity"] == {
+        "namespace": "equity",
+        "ids": {"symbol": "AAPL"},
+    }
+
+
+def test_fastmcp_get_snapshot_extra_keys_do_not_fail(monkeypatch, fake_client):
+    """Directory clients send the full resolve_entity dict. Extra keys must
+    not 400; the plane sees only namespace + ids."""
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    monkeypatch.setenv("SUGRA_AGENT_INTERNAL_TOKEN", "tok-123")
+    client = fake_client(_ENVELOPE)
+    instance = FastMCP("probe")
+    assert register_agent_tools(instance) is True
+
+    async def _call():
+        async with create_connected_server_and_client_session(instance) as session:
+            return await session.call_tool(
+                "get_snapshot",
+                {
+                    "recipe": "company_snapshot",
+                    "entity": {
+                        "namespace": "equity",
+                        "ids": {"symbol": "AAPL"},
+                        "label": "Apple Inc",
+                        "confidence": 0.9,
+                    },
+                },
+            )
+
+    result = asyncio.run(_call())
+    assert result.isError is False
+    assert client.calls[0]["json"]["entity"] == {
+        "namespace": "equity",
+        "ids": {"symbol": "AAPL"},
+    }
+
+
 def test_get_timeseries_defaults(monkeypatch, fake_client):
     monkeypatch.setenv("SUGRA_AGENT_INTERNAL_TOKEN", "tok-123")
     client = fake_client({"data": {"points": []}})
@@ -187,6 +237,55 @@ def test_get_timeseries_defaults(monkeypatch, fake_client):
         "entity": entity,
         "granularity": "1d",
         "max_points": 500,
+    }
+
+
+def test_get_timeseries_ignores_extra_entity_keys(monkeypatch, fake_client):
+    monkeypatch.setenv("SUGRA_AGENT_INTERNAL_TOKEN", "tok-123")
+    client = fake_client({"data": {"points": []}})
+    entity = {
+        "namespace": "etf",
+        "ids": {"symbol": "SPY"},
+        "label": "SPDR S&P 500",
+        "confidence": 0.9,
+    }
+    asyncio.run(get_timeseries("etf_flows", entity))
+    assert client.calls[0]["json"]["entity"] == {
+        "namespace": "etf",
+        "ids": {"symbol": "SPY"},
+    }
+    assert client.calls[0]["json"]["metric"] == "etf_flows"
+
+
+def test_fastmcp_get_timeseries_extra_keys_do_not_fail(monkeypatch, fake_client):
+    """Same Directory extra-key contract as get_snapshot, on get_timeseries."""
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    monkeypatch.setenv("SUGRA_AGENT_INTERNAL_TOKEN", "tok-123")
+    client = fake_client({"data": {"points": []}})
+    instance = FastMCP("probe")
+    assert register_agent_tools(instance) is True
+
+    async def _call():
+        async with create_connected_server_and_client_session(instance) as session:
+            return await session.call_tool(
+                "get_timeseries",
+                {
+                    "metric": "etf_flows",
+                    "entity": {
+                        "namespace": "etf",
+                        "ids": {"symbol": "SPY"},
+                        "label": "SPDR S&P 500",
+                        "confidence": 0.9,
+                    },
+                },
+            )
+
+    result = asyncio.run(_call())
+    assert result.isError is False
+    assert client.calls[0]["json"]["entity"] == {
+        "namespace": "etf",
+        "ids": {"symbol": "SPY"},
     }
 
 
