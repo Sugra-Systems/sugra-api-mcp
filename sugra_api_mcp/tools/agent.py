@@ -36,9 +36,9 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Any, Literal, get_args
+from typing import Annotated, Any, Literal, get_args
 
-from typing_extensions import TypedDict
+from pydantic import BaseModel, ConfigDict, WithJsonSchema
 
 from ..observability import trace_mcp_tool
 from ..server import get_client, mcp, read_only
@@ -46,14 +46,51 @@ from ..server import get_client, mcp, read_only
 _PLANE_BASE = "/internal/agent/v1"
 _TOKEN_ENV = "SUGRA_AGENT_INTERNAL_TOKEN"
 
+# Directory scanners (Anthropic Connectors) require ``type`` on the parameter
+# itself. A TypedDict / BaseModel annotation becomes ``{$ref: #/$defs/...}``
+# with no type on the property, which they flag as "Parameters missing type".
+# WithJsonSchema inlines the object schema. extra="ignore" keeps extra keys
+# (label, confidence from resolve_entity) from failing validation; only
+# namespace + ids are forwarded to the plane.
+_ENTITY_JSON_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "description": (
+        "Entity dict from resolve_entity ({namespace, ids}). Extra keys are ignored."
+    ),
+    "properties": {
+        "namespace": {
+            "type": "string",
+            "description": "Entity namespace from resolve_entity.",
+        },
+        "ids": {
+            "type": "object",
+            "additionalProperties": True,
+            "description": "Identifier map from resolve_entity.",
+        },
+    },
+    "required": ["namespace", "ids"],
+    "additionalProperties": True,
+}
 
-class AgentEntity(TypedDict):
+
+class AgentEntity(BaseModel):
     """The agent-plane entity shape returned by resolve_entity and consumed by
     get_snapshot / get_timeseries. Extra keys from a resolve result (label,
     confidence) are accepted and ignored - only namespace + ids are sent on."""
 
+    model_config = ConfigDict(extra="ignore")
+
     namespace: str
     ids: dict[str, Any]
+
+
+EntityArg = Annotated[AgentEntity, WithJsonSchema(_ENTITY_JSON_SCHEMA)]
+
+
+def _entity_payload(entity: AgentEntity | dict[str, Any]) -> dict[str, Any]:
+    """namespace + ids only; extra keys dropped. Accepts a dict from direct
+    Python callers and a model instance from FastMCP."""
+    return AgentEntity.model_validate(entity).model_dump()
 
 # Idempotence latch for the GLOBAL mcp instance only. Explicit instances
 # (tests) are the caller's responsibility - they are never latched so a test
@@ -203,7 +240,7 @@ async def resolve_entity(query: str, type_hint: str | None = None) -> dict[str, 
 
 
 @trace_mcp_tool("get_snapshot", result_attrs=_agent_result_attrs)
-async def get_snapshot(recipe: str, entity: AgentEntity) -> dict[str, Any]:
+async def get_snapshot(recipe: str, entity: EntityArg) -> dict[str, Any]:
     """Composed current view of an entity via a named recipe.
 
     Executes a fixed server-side recipe (company_snapshot, etf_snapshot,
@@ -221,7 +258,7 @@ async def get_snapshot(recipe: str, entity: AgentEntity) -> dict[str, Any]:
     """
     result = await get_client().post(
         f"{_PLANE_BASE}/snapshot",
-        json={"recipe": recipe, "entity": entity},
+        json={"recipe": recipe, "entity": _entity_payload(entity)},
         headers=_internal_headers(),
     )
     return _map_plane_error(result)
@@ -230,7 +267,7 @@ async def get_snapshot(recipe: str, entity: AgentEntity) -> dict[str, Any]:
 @trace_mcp_tool("get_timeseries", result_attrs=_agent_result_attrs)
 async def get_timeseries(
     metric: MetricName,
-    entity: AgentEntity,
+    entity: EntityArg,
     granularity: str = "1d",
     max_points: int = 500,
 ) -> dict[str, Any]:
@@ -266,7 +303,7 @@ async def get_timeseries(
         f"{_PLANE_BASE}/timeseries",
         json={
             "metric": metric,
-            "entity": entity,
+            "entity": _entity_payload(entity),
             "granularity": granularity,
             "max_points": max_points,
         },
