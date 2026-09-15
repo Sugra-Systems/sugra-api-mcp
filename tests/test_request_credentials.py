@@ -169,7 +169,7 @@ async def test_middleware_marks_every_request_it_serves_as_http(monkeypatch) -> 
         return JSONResponse({
             "http": server.http_transport_ctx.get(),
             "key": state.get(server.REQUEST_API_KEY_STATE),
-            "principal": None if principal is None else [principal.method, principal.user_id],
+            "principal": None if principal is None else [principal.method, principal.user_id, principal.platform],
         })
 
     app = Starlette(routes=[Route("/mcp", probe, methods=["POST"])])
@@ -179,7 +179,7 @@ async def test_middleware_marks_every_request_it_serves_as_http(monkeypatch) -> 
     async def resolve(token: str) -> ResolvedAuth:
         token = token.strip()
         if token == "jwt-7":
-            return ResolvedAuth(api_key=f"sugra_TENANT_{token[4:]}", user_id=7, access_token_id="jti-7", method="oauth")
+            return ResolvedAuth(api_key=f"sugra_TENANT_{token[4:]}", user_id=7, access_token_id="jti-7", method="oauth", platform="openai")
         return await real_resolve(token)
 
     monkeypatch.setattr(authenticator, "resolve", resolve)
@@ -194,8 +194,8 @@ async def test_middleware_marks_every_request_it_serves_as_http(monkeypatch) -> 
     finally:
         await authenticator.aclose()
     assert public.json() == {"http": True, "key": None, "principal": None}
-    assert keyed.json() == {"http": True, "key": "sugra_marker_probe", "principal": ["api_key", None]}
-    assert oauth.json() == {"http": True, "key": "sugra_TENANT_7", "principal": ["oauth", 7]}
+    assert keyed.json() == {"http": True, "key": "sugra_marker_probe", "principal": ["api_key", None, None]}
+    assert oauth.json() == {"http": True, "key": "sugra_TENANT_7", "principal": ["oauth", 7, "openai"]}
     assert server.http_transport_ctx.get() is False
 
 
@@ -255,7 +255,7 @@ async def test_every_tool_span_names_how_its_own_request_arrived(upstream, monke
     async def resolve(token: str) -> ResolvedAuth:
         token = token.strip()
         if token.startswith("jwt-"):
-            return ResolvedAuth(api_key=f"sugra_TENANT_{token[4:]}", user_id=42, access_token_id=token, method="oauth")
+            return ResolvedAuth(api_key=f"sugra_TENANT_{token[4:]}", user_id=42, access_token_id=token, method="oauth", platform="anthropic")
         return await real_resolve(token)
 
     monkeypatch.setattr(authenticator, "resolve", resolve)
@@ -314,7 +314,8 @@ async def test_every_tool_span_names_how_its_own_request_arrived(upstream, monke
         "mcp.caller.net": "loopback",
     }
     by_oauth = {**common, "mcp.caller.auth": "oauth", "mcp.caller.host": "mcp.sugra.ai",
-                "mcp.caller.ua_class": "python", "mcp.caller.origin": "none"}
+                "mcp.caller.ua_class": "python", "mcp.caller.origin": "none",
+                "mcp.caller.platform": "anthropic"}
     by_key = {**common, "mcp.caller.auth": "api_key", "mcp.caller.host": "app.sugra.ai",
               "mcp.caller.ua_class": "curl", "mcp.caller.origin": "openai"}
     assert [_caller(span) for span in calls] == [by_oauth, by_key, by_oauth]
@@ -374,7 +375,7 @@ async def test_concurrent_calls_each_carry_their_own_request(monkeypatch, one_se
     async def resolve(token: str) -> ResolvedAuth:
         token = token.strip()
         if token.startswith("jwt-"):
-            return ResolvedAuth(api_key=f"sugra_TENANT_{token[4:]}", user_id=42, access_token_id=token, method="oauth")
+            return ResolvedAuth(api_key=f"sugra_TENANT_{token[4:]}", user_id=42, access_token_id=token, method="oauth", platform="anthropic")
         return await real_resolve(token)
 
     monkeypatch.setattr(authenticator, "resolve", resolve)
@@ -451,7 +452,8 @@ async def test_concurrent_calls_each_carry_their_own_request(monkeypatch, one_se
          "mcp.caller.session": _session_attr(session_a), "mcp.caller.net": "loopback"},
         {**common, "mcp.caller.auth": "oauth", "mcp.caller.host": "app.sugra.ai", "mcp.caller.ua_class": "curl",
          "mcp.caller.origin": "none", **client_of_b,
-         "mcp.caller.session": _session_attr(session_b), "mcp.caller.net": "loopback"},
+         "mcp.caller.session": _session_attr(session_b), "mcp.caller.net": "loopback",
+         "mcp.caller.platform": "anthropic"},
     ]
     by_auth = sorted(
         (span for span in tracer.spans if span.name == "mcp.tool.call_endpoint"),

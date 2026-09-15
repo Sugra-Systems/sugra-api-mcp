@@ -49,6 +49,11 @@ ACCESS_CACHE_MAX_ENTRIES = 4096
 # Prune BELOW the cap (agy r2): shrinking to exactly the cap re-runs the
 # O(N log N) sweep on every subsequent miss.
 ACCESS_CACHE_PRUNE_WATERMARK = ACCESS_CACHE_MAX_ENTRIES - 512
+# Same set as APP McpConnectionService::ALLOWED_PLATFORMS. Anything else is
+# dropped, never copied onto a span.
+ACCESS_PLATFORMS: frozenset[str] = frozenset({
+    "openai", "anthropic", "cursor", "google", "xai", "custom",
+})
 JWKS_ADMISSION_SLOTS = 4
 JWKS_ADMISSION_WAIT_SECONDS = 2.0
 JWKS_FAILURE_COOLDOWN_SECONDS = 5.0
@@ -109,6 +114,32 @@ class _CachedKey:
 
 
 @dataclass(frozen=True)
+class _AccessPass:
+    """A passing activity check: expiry plus optional connector platform."""
+
+    expires_at: float
+    platform: str | None = None
+
+
+def _platform_from_activity(resp: object) -> str | None:
+    """Allowlisted connector platform from a 2xx activity body, else None.
+
+    A missing, non-JSON or unknown value must not fail auth: an older APP
+    still answers {"ok": true} or 204, and the call is already admitted.
+    """
+    try:
+        body = resp.json()  # type: ignore[union-attr]
+    except Exception:
+        return None
+    if not isinstance(body, dict):
+        return None
+    platform = body.get("platform")
+    if type(platform) is not str:
+        return None
+    return platform if platform in ACCESS_PLATFORMS else None
+
+
+@dataclass(frozen=True)
 class ResolvedAuth:
     api_key: str
     user_id: int | None = None
@@ -118,6 +149,9 @@ class ResolvedAuth:
     # No default label: a constructor that does not say leaves None, and spans
     # then carry no auth class rather than a wrong one.
     method: str | None = None
+    # MCP-26.1.4: server-verified connector platform from the APP activity
+    # response. Allowlisted at the span. None when the APP omitted it.
+    platform: str | None = None
 
 
 class _UserLockEntry:
@@ -165,7 +199,7 @@ class Authenticator:
         # the check ran an internal HTTP round-trip on EVERY tool call.
         # Failures are never cached; the TTL only coarsens the activity
         # heartbeat, not the access decision it grants.
-        self._access_cache: dict[str, float] = {}
+        self._access_cache: dict[str, _AccessPass] = {}
         # One pooled client for all internal calls (a fresh client per call
         # paid TCP+TLS setup on every tool invocation).
         self._http = httpx.AsyncClient(timeout=INTERNAL_HTTP_TIMEOUT_SECONDS)
@@ -234,7 +268,7 @@ class Authenticator:
             user_for_log = claims.user_id
             t1 = time.monotonic()
             try:
-                await self._validate_mcp_access(claims)
+                platform = await self._validate_mcp_access(claims)
             except AuthError:
                 outcome = "activity_denied"
                 raise
@@ -268,6 +302,7 @@ class Authenticator:
             user_id=claims.user_id,
             access_token_id=claims.access_token_id,
             method="oauth",
+            platform=platform,
         )
         return resolved
 
@@ -405,15 +440,15 @@ class Authenticator:
             )
             return api_key
 
-    async def _validate_mcp_access(self, claims: _JwtClaims) -> None:
+    async def _validate_mcp_access(self, claims: _JwtClaims) -> str | None:
         if not self._config.internal_token:
             raise AuthError("INTERNAL_API_TOKEN not configured on MCP server", status=500)
 
         # jti-TTL cache: a PASS within the window skips the round-trip.
         now = time.time()
-        expires = self._access_cache.get(claims.access_token_id)
-        if expires is not None and expires > now:
-            return
+        cached = self._access_cache.get(claims.access_token_id)
+        if cached is not None and cached.expires_at > now:
+            return cached.platform
 
         url = f"{self._config.app_url}/api/internal/mcp/activity"
         try:
@@ -430,21 +465,24 @@ class Authenticator:
             raise AuthError("Internal MCP access validation failed", status=502) from e
 
         if 200 <= resp.status_code < 300:
-            self._access_cache[claims.access_token_id] = (
-                now + ACCESS_VALIDATION_TTL_SECONDS)
+            platform = _platform_from_activity(resp)
+            self._access_cache[claims.access_token_id] = _AccessPass(
+                expires_at=now + ACCESS_VALIDATION_TTL_SECONDS,
+                platform=platform,
+            )
             # The cache only ever holds passes. HARD bound (agy r2): pruning
             # expired entries alone cannot shrink a cache full of LIVE jtis,
             # and re-running an O(N) comprehension per auth is itself the
             # DoS. Keep the newest entries by expiry when over the cap.
             if len(self._access_cache) > ACCESS_CACHE_MAX_ENTRIES:
-                live = {jti: exp for jti, exp in self._access_cache.items()
-                        if exp > now}
+                live = {jti: item for jti, item in self._access_cache.items()
+                        if item.expires_at > now}
                 if len(live) > ACCESS_CACHE_PRUNE_WATERMARK:
                     live = dict(sorted(
-                        live.items(), key=lambda kv: kv[1],
+                        live.items(), key=lambda kv: kv[1].expires_at,
                     )[-ACCESS_CACHE_PRUNE_WATERMARK:])
                 self._access_cache = live
-            return
+            return platform
 
         logger.info(
             "mcp_access_validation_failed user_id=%d status=%d",
@@ -568,7 +606,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
             state[REQUEST_API_KEY_STATE] = resolved.api_key
             # MCP-26.1.3: how this request authenticated, read at dispatch from the
             # same scope for caller attribution. Never the token or the token id.
-            state[REQUEST_PRINCIPAL_STATE] = RequestPrincipal(method=resolved.method, user_id=resolved.user_id)
+            state[REQUEST_PRINCIPAL_STATE] = RequestPrincipal(
+                method=resolved.method,
+                user_id=resolved.user_id,
+                platform=resolved.platform,
+            )
         except TimeoutError:
             return JSONResponse(
                 {"error": "auth_timeout",

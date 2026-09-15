@@ -503,6 +503,7 @@ REQUEST_PRINCIPAL_STATE = "sugra_principal"
 class RequestPrincipal:
     method: str | None
     user_id: int | None = None
+    platform: str | None = None
 
 # Set by AuthMiddleware for every request it serves. A Streamable HTTP session
 # task inherits it from the request that opened the session, so a dispatch that
@@ -584,6 +585,7 @@ def current_caller_facts() -> observability.CallerFacts | None:
         client_version=client_version,
         caller=caller,
         user_id=principal.user_id if isinstance(principal, RequestPrincipal) else None,
+        platform=principal.platform if isinstance(principal, RequestPrincipal) else None,
         session_id=headers.get("mcp-session-id") if headers is not None else None,
         client_addr=client_addr,
         x_real_ip=headers.get("x-real-ip") if headers is not None else None,
