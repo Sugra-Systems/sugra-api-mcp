@@ -1757,6 +1757,12 @@ def _install_facts(monkeypatch, facts: object) -> None:
         ("curl/8.5.0", "curl"),
         ("Wget/1.21", "curl"),
         ("axios/1.7.0", "node"),
+        ("node", "node"),
+        ("Node", "node"),
+        (" node", "node"),
+        ("node ", "node"),
+        ("node/18.20.0", "node"),
+        ("Node.js/18", "other"),
         ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/126.0 Safari/537.36", "browser"),
         ("", "other"),
         (None, "other"),
@@ -1997,7 +2003,7 @@ def test_the_client_tables_are_pinned_alternative_by_alternative() -> None:
         ("openbb", r"openbb", True),
         ("python", r"python-requests|python-httpx|aiohttp|httpx/", True),
         ("curl", r"\bcurl/|\bwget/|httpie/", True),
-        ("node", r"\baxios/|node-fetch|\bundici\b|node/", True),
+        ("node", r"\baxios/|node-fetch|\bundici\b|node/|(?:^|[\s;(])node(?:$|[\s;)])", True),
         ("browser", r"mozilla/|chrome/|safari/|firefox/|\bedg/", True),
     ]
     assert _pattern_table(observability._CLIENT_NAME_PATTERNS) == [
