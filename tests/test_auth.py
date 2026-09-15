@@ -22,6 +22,7 @@ from sugra_api_mcp.auth import (
     AuthError,
     AuthMiddleware,
     _CachedKey,
+    _JwtClaims,
 )
 from sugra_api_mcp.config import AuthConfig
 
@@ -150,6 +151,7 @@ async def test_passport_jwt_without_issuer_with_mcp_audience_is_accepted(auth_co
     assert resolved.user_id == 42
     assert resolved.access_token_id == "test-token-id"
     assert resolved.method == "oauth"
+    assert resolved.platform is None
     assert posts == [
         (
             "https://app.sugra.ai/api/internal/mcp/activity",
@@ -157,6 +159,74 @@ async def test_passport_jwt_without_issuer_with_mcp_audience_is_accepted(auth_co
             {"user_id": 42, "access_token_id": "test-token-id"},
         )
     ]
+
+
+async def test_jwt_activity_pass_carries_allowlisted_platform(auth_config, rsa_keypair):
+    private_key, public_pem = rsa_keypair
+    now = int(time.time())
+    token = _make_jwt(
+        private_key,
+        {
+            "aud": "https://app.sugra.ai/mcp",
+            "jti": "platform-token-id",
+            "sub": "42",
+            "exp": now + 3600,
+            "iat": now,
+            "nbf": now,
+            "scopes": ["sugra:read"],
+        },
+    )
+    auth = Authenticator(auth_config)
+    mock_signing_key = MagicMock()
+    mock_signing_key.key = public_pem
+    auth._jwks.get_signing_key_from_jwt = MagicMock(return_value=mock_signing_key)
+    auth._jwks.get_signing_keys = MagicMock(return_value=[mock_signing_key])
+    auth._api_key_cache[42] = _CachedKey(
+        api_key="sugra_cached_key",
+        expires_at=time.time() + 60,
+    )
+
+    async def fake_post(self, url, headers=None, json=None):
+        return httpx.Response(200, json={"ok": True, "platform": "anthropic", "connection_id": 9})
+
+    with patch("httpx.AsyncClient.post", new=fake_post):
+        resolved = await auth.resolve(token)
+    assert resolved.platform == "anthropic"
+    cached = await auth._validate_mcp_access(_JwtClaims(user_id=42, access_token_id="platform-token-id"))
+    assert cached == "anthropic"
+
+
+async def test_jwt_activity_unknown_platform_is_omitted(auth_config, rsa_keypair):
+    private_key, public_pem = rsa_keypair
+    now = int(time.time())
+    token = _make_jwt(
+        private_key,
+        {
+            "aud": "https://app.sugra.ai/mcp",
+            "jti": "unknown-platform-id",
+            "sub": "42",
+            "exp": now + 3600,
+            "iat": now,
+            "nbf": now,
+            "scopes": ["sugra:read"],
+        },
+    )
+    auth = Authenticator(auth_config)
+    mock_signing_key = MagicMock()
+    mock_signing_key.key = public_pem
+    auth._jwks.get_signing_key_from_jwt = MagicMock(return_value=mock_signing_key)
+    auth._jwks.get_signing_keys = MagicMock(return_value=[mock_signing_key])
+    auth._api_key_cache[42] = _CachedKey(
+        api_key="sugra_cached_key",
+        expires_at=time.time() + 60,
+    )
+
+    async def fake_post(self, url, headers=None, json=None):
+        return httpx.Response(200, json={"ok": True, "platform": "not-a-vendor"})
+
+    with patch("httpx.AsyncClient.post", new=fake_post):
+        resolved = await auth.resolve(token)
+    assert resolved.platform is None
 
 
 async def test_jwt_activity_validation_failure_denies_auth(auth_config, rsa_keypair):

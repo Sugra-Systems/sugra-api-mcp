@@ -690,6 +690,7 @@ _ATTR_TYPES: dict[str, type] = {
     "mcp.caller.client_version": str,
     "mcp.caller.session": str,
     "mcp.caller.net": str,
+    "mcp.caller.platform": str,
     "enduser.pseudo.id": str,
     "enduser.id": str,
     "mcp.agent.recipe_version": str,
@@ -1659,6 +1660,7 @@ _CALLER_ATTRS = frozenset({
     "mcp.caller.client_version",
     "mcp.caller.session",
     "mcp.caller.net",
+    "mcp.caller.platform",
 })
 _IDENTITY_ATTRS = frozenset({"enduser.pseudo.id", "enduser.id"})
 _CALLER_SPAN_ATTRS = _CALLER_ATTRS | _IDENTITY_ATTRS
@@ -1674,6 +1676,7 @@ _CALLER_VALUES: dict[str, frozenset[str]] = {
     "mcp.caller.host": frozenset({"app.sugra.ai", "mcp.sugra.ai", "loopback", "other"}),
     "mcp.caller.ua_class": _CLASS_VOCABULARY,
     "mcp.caller.origin": frozenset({"openai", "anthropic", "cursor", "none", "other"}),
+    "mcp.caller.platform": frozenset({"openai", "anthropic", "cursor", "google", "xai", "custom"}),
     "mcp.caller.client": _CLASS_VOCABULARY,
     "mcp.caller.net": frozenset({"loopback", "private"}),
 }
@@ -2161,6 +2164,18 @@ def test_api_key_auth_never_carries_an_authenticated_user_id() -> None:
     attrs = observability._caller_attrs(_http_facts(auth="api_key", user_id=7))
     assert attrs["enduser.pseudo.id"] == _HTTP_CALLER
     assert "enduser.id" not in attrs
+
+
+def test_oauth_span_carries_allowlisted_platform() -> None:
+    attrs = observability._caller_attrs(_http_facts(platform="openai"))
+    assert attrs["mcp.caller.platform"] == "openai"
+
+
+def test_unknown_or_api_key_platform_is_omitted() -> None:
+    assert "mcp.caller.platform" not in observability._caller_attrs(_http_facts(platform="not-a-vendor"))
+    assert "mcp.caller.platform" not in observability._caller_attrs(
+        _http_facts(auth="api_key", platform="openai")
+    )
 
 
 def test_the_azure_exporter_keeps_caller_attributes_as_custom_dimensions() -> None:

@@ -44,7 +44,10 @@ Custom dimensions captured per MCP tool invocation:
                            Each value is a fixed class, a digest, a prefix or a
                            plain dotted version, never header, clientInfo or
                            address text. A call no HTTP request carried is
-                           transport and auth local
+                           transport and auth local. MCP-26.1.4 adds platform
+                           for OAuth only: the APP-verified connector class
+                           (openai, anthropic, cursor, google, xai, custom).
+                           Missing or unknown is omitted, never guessed
     enduser.pseudo.id    - MCP-26.1.3.1, the Azure user_Id column: the same
                            name admission uses (http: plus 16 hex of SHA-256
                            of the resolved API key, http:anonymous, or local).
@@ -336,10 +339,14 @@ class CallerFacts:
     session_id: object = None
     client_addr: object = None
     x_real_ip: object = None
+    platform: object = None
 
 
 _CALLER_TRANSPORTS: frozenset[str] = frozenset({"streamable_http", "local"})
 _CALLER_AUTH_METHODS: frozenset[str] = frozenset({"api_key", "oauth", "none", "local"})
+_CALLER_PLATFORMS: frozenset[str] = frozenset({
+    "openai", "anthropic", "cursor", "google", "xai", "custom",
+})
 _CALLER_HOSTS: frozenset[str] = frozenset({"app.sugra.ai", "mcp.sugra.ai"})
 _LOOPBACK_HOSTS: frozenset[str] = frozenset({"localhost", "127.0.0.1", "[::1]"})
 _CALLER_TEXT_MAX = 500
@@ -546,6 +553,10 @@ def _caller_attrs(facts: object) -> dict[str, str]:
     authenticated = _authenticated_id_of(attrs.get("mcp.caller.auth"), getattr(facts, "user_id", None))
     if authenticated is not None:
         attrs["enduser.id"] = authenticated
+    if attrs.get("mcp.caller.auth") == "oauth":
+        platform = getattr(facts, "platform", None)
+        if type(platform) is str and platform in _CALLER_PLATFORMS:
+            attrs["mcp.caller.platform"] = platform
     return attrs
 
 
