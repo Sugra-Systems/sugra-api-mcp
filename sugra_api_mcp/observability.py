@@ -364,7 +364,7 @@ _UA_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("openbb", re.compile(r"openbb", re.I)),
     ("python", re.compile(r"python-requests|python-httpx|aiohttp|httpx/", re.I)),
     ("curl", re.compile(r"\bcurl/|\bwget/|httpie/", re.I)),
-    ("node", re.compile(r"\baxios/|node-fetch|\bundici\b|node/", re.I)),
+    ("node", re.compile(r"\baxios/|node-fetch|\bundici\b|node/|(?:^|[\s;(])node(?:$|[\s;)])", re.I)),
     ("browser", re.compile(r"mozilla/|chrome/|safari/|firefox/|\bedg/", re.I)),
 )
 
