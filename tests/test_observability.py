@@ -823,6 +823,26 @@ def test_allowlisted_code_wins_over_the_status_beside_it(monkeypatch) -> None:
     _assert_span_is_clean(span, _FAILURE_ATTRS, "plane text")
 
 
+def test_a_str_subclass_error_code_reaches_the_span_as_str(monkeypatch) -> None:
+    """MCP-26.1.2: an allowlisted str subclass is stored as an exact str."""
+    class _Code(str):
+        pass
+
+    tracer = _install_fake_tracer(monkeypatch)
+
+    @observability.trace_mcp_tool("search_endpoints")
+    async def fake_search() -> dict:
+        return {"error": _Code("query_too_long")}
+
+    asyncio.run(fake_search())
+    span = tracer.spans[0]
+    code = span.attributes["mcp.error.code"]
+    assert code == "query_too_long"
+    assert type(code) is str
+    _assert_span_is_clean(span, _FAILURE_ATTRS)
+
+
+
 def test_every_status_derived_code_is_allowlisted() -> None:
     """The status table and the allowlist must not drift: a code the mapping
     can produce that the allowlist does not know would be a value no test
@@ -1589,6 +1609,9 @@ class _NotEqualRaises(str):
 
 
 def test_an_error_value_with_its_own_comparison_cannot_raise_into_the_result(monkeypatch) -> None:
+    """MCP-26.1.2: the interned allowlisted str is what later comparisons see, so
+    a subclass that raises on != cannot explode into the tool result or drop
+    mcp.busy.scope."""
     tracer = _install_fake_tracer(monkeypatch)
     payload = {"error": _NotEqualRaises("server_busy"), "scope": "search"}
 
@@ -1597,8 +1620,11 @@ def test_an_error_value_with_its_own_comparison_cannot_raise_into_the_result(mon
         return payload
 
     assert asyncio.run(fake_search()) is payload
-    assert "mcp.busy.scope" not in tracer.spans[0].attributes
-    assert tracer.spans[0].ended is True
+    span = tracer.spans[0]
+    assert span.attributes["mcp.error.code"] == "server_busy"
+    assert type(span.attributes["mcp.error.code"]) is str
+    assert span.attributes["mcp.busy.scope"] == "search"
+    assert span.ended is True
 
 
 def test_a_scope_never_carries_over_to_a_later_span(monkeypatch) -> None:

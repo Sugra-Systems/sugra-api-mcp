@@ -16,6 +16,7 @@ import hashlib
 import json
 import sys
 import threading
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -108,13 +109,30 @@ def test_a_huge_query_is_refused_without_tokenizing_it(monkeypatch) -> None:
 
 
 def test_the_term_count_is_the_scoring_token_count() -> None:
-    """Terms are runs of two or more letters or digits, repeats included; a
+    """Terms are runs of two or more ASCII letters or digits, repeats included; a
     one-character token is not a term."""
     at_bound = " ".join(["ab"] * search.MAX_QUERY_TERMS + ["x"] * 50)
     assert search.query_limit_error(at_bound) is None
     over_bound = " ".join(["ab"] * (search.MAX_QUERY_TERMS + 1))
     payload = search.query_limit_error(over_bound)
     assert payload is not None and payload["terms"] == search.MAX_QUERY_TERMS + 1
+    assert "ASCII letters or digits" in payload["hint"]
+
+
+def test_the_term_bound_counts_ascii_runs_only() -> None:
+    """Non-ASCII text yields no terms, so only the character bound can refuse it."""
+    cyrillic = " ".join(["москва"] * (search.MAX_QUERY_TERMS + 1))
+    assert len(cyrillic) <= search.MAX_QUERY_CHARS
+    assert search._tokens(cyrillic) == []
+    assert search.query_limit_error(cyrillic) is None
+    assert search._tokens("café ticker") == ["caf", "ticker"]
+
+
+def test_the_readme_describes_the_ascii_term_rule() -> None:
+    text = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
+    assert "two or more ASCII letters or digits" in text
+
+
 
 
 async def test_a_query_at_the_bounds_still_searches() -> None:
@@ -689,3 +707,16 @@ async def test_a_failing_exporter_never_hides_a_refusal(monkeypatch, tool, argum
 def test_the_new_error_codes_reach_telemetry() -> None:
     assert observability._error_code_of({"error": "query_too_long"}) == "query_too_long"
     assert observability._error_code_of({"error": "server_busy"}) == "server_busy"
+
+
+def test_an_allowlisted_str_subclass_is_not_attached() -> None:
+    """MCP-26.1.2: the span gets the interned allowlisted str, not the caller's object."""
+    class _Code(str):
+        pass
+
+    raw = _Code("query_too_long")
+    got = observability._error_code_of({"error": raw})
+    assert got == "query_too_long"
+    assert type(got) is str
+    assert got is not raw
+    assert got is observability._KNOWN_ERROR_CODE_OF["query_too_long"]
