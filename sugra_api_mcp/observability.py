@@ -252,6 +252,9 @@ _KNOWN_ERROR_CODES: frozenset[str] = frozenset({
     # search refused because the search queue is full (tools/gateway.py).
     "server_busy",
 }) | frozenset(_HTTP_STATUS_ERROR_CODES.values()) | frozenset(_HTTP_CLASS_ERROR_CODES.values())
+# Identity map so a str subclass that equals an allowlisted code attaches the
+# interned constant, never the caller's object (MCP-26.1.2).
+_KNOWN_ERROR_CODE_OF: dict[str, str] = {code: code for code in _KNOWN_ERROR_CODES}
 
 
 def _error_code_of(result: dict[str, Any]) -> str:
@@ -259,22 +262,29 @@ def _error_code_of(result: dict[str, Any]) -> str:
 
     A code the tool named itself wins - it is the more specific signal (the
     plane's `agent_plane_unavailable` sits beside a status_code of 403).
+    The attached value is the interned constant from `_KNOWN_ERROR_CODES`, not
+    the object in the result, so a str subclass cannot reach the span.
     Otherwise the HTTP status the client recorded names the failure through
     the fixed table. Anything else is the residual `unknown_error`: free text
     with no status, or a shape no contract produces. Nothing taken from the
     dict itself is ever attached.
     """
     error_value = result.get("error")
-    if isinstance(error_value, str) and error_value in _KNOWN_ERROR_CODES:
-        return error_value
+    if isinstance(error_value, str):
+        known = _KNOWN_ERROR_CODE_OF.get(error_value)
+        if known is not None:
+            return known
     return _http_status_error_code(result.get("status_code")) or "unknown_error"
 
 
 # MCP-26.1.1: the bound that refused a server_busy call, exactly as
-# errors.server_busy_error names it. Two of the four are one caller's share, so
-# without the scope a span cannot tell one caller (one API key, see
-# server.current_caller) held to its share from the whole process at its limit.
-# Any other value is dropped, never mapped to a placeholder.
+# errors.server_busy_error names it. Two of the four are one caller's share
+# (the name current_caller returns: http:<digest> of one key, http:anonymous
+# for every unauthenticated HTTP request together, or local for everything
+# off HTTP), so without the scope a span cannot tell one such caller held to
+# its share from the process at its limit. Other callers are served only
+# while the process-wide bound has room. Any other value is dropped, never
+# mapped to a placeholder.
 _BUSY_SCOPES: frozenset[str] = frozenset({"tool_calls", "caller_tool_calls", "search", "caller_search"})
 
 
