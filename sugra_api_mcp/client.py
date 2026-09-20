@@ -25,6 +25,8 @@ retry strategy (field-test defect D2).
 from __future__ import annotations
 
 import json
+import ssl
+import threading
 import time
 from typing import Any
 
@@ -37,6 +39,55 @@ from .config import Config
 # Using ~4 chars per token as a conservative heuristic, we cap at 85 000 chars
 # (~21 000 tokens) to leave headroom for MCP envelope overhead.
 MAX_RESPONSE_CHARS = 85_000
+
+
+_ssl_context: ssl.SSLContext | None = None
+_ssl_context_lock = threading.Lock()
+
+
+def shared_ssl_context() -> ssl.SSLContext:
+    """The one TLS context every outbound client in this process shares.
+
+    httpx builds a fresh SSLContext per AsyncClient whenever `verify` is left
+    at its default. A context is expensive in both memory and construction
+    time, and a long-running server that builds a client per credential pays
+    that cost again for every one of them.
+
+    It is `httpx.create_ssl_context()`, NOT `ssl.create_default_context()`:
+    httpx's own default loads certifi's CA bundle and honours SSL_CERT_FILE /
+    SSL_CERT_DIR, while the stdlib constructor loads the system store, which
+    is a different set of trust anchors. The anchors here stay exactly the
+    ones an unconfigured httpx client would use.
+
+    Trust material is therefore read ONCE per process: a CA rotation or an
+    env change on a running host takes effect on restart.
+
+    ONE THING DOES write to the shared object. Before every TLS connect,
+    httpcore calls `ssl_context.set_alpn_protocols(...)` on it (httpcore 1.0.9,
+    `_async/connection.py`), with `["http/1.1", "h2"]` when that POOL was built
+    with `http2=True` and `["http/1.1"]` otherwise. Every client in this package
+    leaves httpx's `http2` default off, so every pool writes the same list and
+    the write is idempotent - which is what makes one shared object safe here,
+    not any promise that httpcore leaves it alone. Enabling HTTP/2 on ONE client
+    while others share this context would let the pools overwrite each other's
+    ALPN offer between connects; give that client its own context instead.
+    A test pins the condition.
+
+    Built on first use, not at import, so a process that never constructs a
+    client on the default transport never builds one at all.
+
+    `lru_cache` would not do here. Its miss path is not atomic, so two threads
+    arriving first can each run the factory and each keep a DIFFERENT context,
+    which is exactly the invariant this function exists to hold. Double-checked
+    locking does hold it: the global is only ever assigned a fully-built
+    context, so the fast path reads either None or the final object.
+    """
+    global _ssl_context
+    if _ssl_context is None:
+        with _ssl_context_lock:
+            if _ssl_context is None:
+                _ssl_context = httpx.create_ssl_context()
+    return _ssl_context
 
 
 def _pkg_version() -> str:
@@ -116,6 +167,10 @@ class SugraClient:
             },
             timeout=config.timeout,
             transport=transport,
+            # Only when httpx would build a context of its own: a supplied
+            # transport carries its own, and asking for the shared one there
+            # would build a real TLS context for a mock-transport test.
+            **({} if transport is not None else {"verify": shared_ssl_context()}),
         )
 
     async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:

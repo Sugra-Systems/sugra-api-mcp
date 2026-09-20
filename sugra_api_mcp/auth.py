@@ -28,6 +28,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
+from .client import shared_ssl_context
 from .config import AuthConfig
 from .server import api_key_ctx
 
@@ -201,8 +202,12 @@ class Authenticator:
         # heartbeat, not the access decision it grants.
         self._access_cache: dict[str, _AccessPass] = {}
         # One pooled client for all internal calls (a fresh client per call
-        # paid TCP+TLS setup on every tool invocation).
-        self._http = httpx.AsyncClient(timeout=INTERNAL_HTTP_TIMEOUT_SECONDS)
+        # paid TCP+TLS setup on every tool invocation), on the process-wide
+        # TLS context so it does not build a second one.
+        self._http = httpx.AsyncClient(
+            timeout=INTERNAL_HTTP_TIMEOUT_SECONDS,
+            verify=shared_ssl_context(),
+        )
 
     async def aclose(self) -> None:
         self._jwks_executor.shutdown(wait=False, cancel_futures=True)
