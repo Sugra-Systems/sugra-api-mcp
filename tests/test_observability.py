@@ -1301,7 +1301,7 @@ def test_the_re_raised_cancellation_is_the_same_object_with_its_reason(monkeypat
     """The wrapper promises to re-raise UNCHANGED. A bare `raise` keeps the
     exception object, so the reason handed to Task.cancel() reaches whoever
     awaits the task; `raise asyncio.CancelledError()` in its place passed
-    every earlier test while replacing it with an empty one).
+    every earlier test while replacing it with an empty one.
     """
     tracer = _install_fake_tracer(monkeypatch)
     seen: list = []

@@ -37,15 +37,15 @@ Custom dimensions captured per MCP tool invocation:
                            (the clientInfo name as a class, and its version, as
                            the session's most recent initialize asserted them:
                            any re-initialize of the session replaces both).
-                           A later stage adds session (16 hex of the
+                           Also session (16 hex of the
                            SHA-256 of Mcp-Session-Id, never the id) and net
                            (IPv4 /24, IPv6 /48, loopback or private; only when
                            the ASGI peer equals X-Real-IP, never a raw address).
                            Each value is a fixed class, a digest, a prefix or a
                            plain dotted version, never header, clientInfo or
                            address text. A call no HTTP request carried is
-                           transport and auth local. A later stage adds platform
-                           for OAuth only: the APP-verified connector class
+                           transport and auth local. For OAuth only, platform
+                           carries the APP-verified connector class
                            (openai, anthropic, cursor, google, xai, custom).
                            Missing or unknown is omitted, never guessed
     enduser.pseudo.id    - the Azure user_Id column: the same
