@@ -47,7 +47,7 @@ def _run_server(args: argparse.Namespace) -> None:
     from .config import validate_startup_budgets
     from .server import mcp
 
-    # MCP-17 (codex F5): fail on the startup path, where an operator sees it.
+    # Fail on the startup path, where an operator sees it.
     # Nothing here called load_config before, so a budget that cannot bound
     # anything started cleanly and first appeared as an unstructured 500 from
     # inside the auth middleware. Both transports validate.

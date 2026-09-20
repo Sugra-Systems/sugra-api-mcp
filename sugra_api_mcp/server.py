@@ -60,7 +60,7 @@ READ_ONLY_TOOL = ToolAnnotations(
 # MCP Apps (SEP-1865, extension io.modelcontextprotocol/ui): the one tool
 # that may render an interactive widget. Its template declaration is attached
 # in SugraFastMCP.list_tools via _meta.ui.resourceUri (spec section "Resource
-# Discovery"; the flat "ui/resourceUri" key is deprecated). MCP-24.1: the
+# Discovery"; the flat "ui/resourceUri" key is deprecated). The
 # widget is opt-in, so nothing is attached unless tools/widgets.py registered
 # the template on the server and linked it with link_ui_template.
 UI_TEMPLATE_TOOL = "call_endpoint"
@@ -106,7 +106,7 @@ class SugraFastMCP(FastMCP):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._mcp_server.version = __version__
-        # MCP-24.1: the ui:// template UI_TEMPLATE_TOOL declares, or None.
+        # The ui:// template UI_TEMPLATE_TOOL declares, or None.
         # None until link_ui_template runs, so by default no tool carries
         # _meta.ui.
         self._ui_template_uri: str | None = None
@@ -114,7 +114,7 @@ class SugraFastMCP(FastMCP):
     def link_ui_template(self, resource_uri: str) -> None:
         """Declare resource_uri as the MCP Apps template of UI_TEMPLATE_TOOL.
 
-        MCP-24.1: the one caller is tools/widgets.py register_ui_widgets,
+        The one caller is tools/widgets.py register_ui_widgets,
         right after it registered that resource here. list_tools never reads
         the environment; it attaches only what was linked, so the tool
         declaration and resources/list cannot disagree. A URI that is not a
@@ -175,16 +175,16 @@ class SugraFastMCP(FastMCP):
         Nothing is lost: every tool declares a dict result, so the block being
         replaced is the JSON rendering of that same dict.
         """
-        # MCP-10 (audit P1-4): ONE end-to-end budget for the whole call.
+        # ONE end-to-end budget for the whole call.
         # Without it, a wedged upstream held the session past every client's
         # read timeout and the typed envelope never reached the agent; the
         # asyncio scope also CANCELS the outbound request instead of letting
         # it complete server-side after the caller has given up.
-        # codex r2: the budget is END-TO-END - auth already consumed part
+        # The budget is END-TO-END - auth already consumed part
         # of it. The middleware stamps the request start; what remains (with
         # a small floor so a slow-auth call still gets a real attempt) is the
         # tool budget. Stdio transport has no middleware stamp - full budget.
-        # MCP-17: the budget is the tool's own, and auth is bounded separately.
+        # The budget is the tool's own, and auth is bounded separately.
         #
         # This used to subtract the auth leg, read from a ContextVar stamped by
         # AuthMiddleware. That subtraction was unsound on the streamable-HTTP
@@ -207,13 +207,13 @@ class SugraFastMCP(FastMCP):
         total = load_config(require_api_key=False).tool_deadline
         started = time.monotonic()
         deadline = total
-        # MCP-19.1: publish the timeout that bounds this dispatch, with the
+        # Publish the timeout that bounds this dispatch, with the
         # task's cancellation count at entry, so the tool's span can ask
         # whether the budget owns a cancellation and name it deadline_exceeded
         # instead of a bare cancelled (the timeout's own state, never a clock
         # comparison - see observability.DispatchBudget for the ways a clock
         # or expired() alone misfile). Set and reset around ONE dispatch on
-        # this task: it never inherits across calls the way the MCP-17 stamp
+        # this task: it never inherits across calls the way the ambient stamp
         # did. Reached through the module attribute, not a from-import: the
         # wrapper reads the SAME attribute by name at call time, so the two
         # cannot bind to different objects (a module reload in the test suite
@@ -268,7 +268,7 @@ class SugraFastMCP(FastMCP):
         )
 
 
-# MCP-26.1: at most MAX_IN_FLIGHT_TOOL_CALLS tool calls run at once in this
+# At most MAX_IN_FLIGHT_TOOL_CALLS tool calls run at once in this
 # process, across every server instance, and at most MAX_IN_FLIGHT_PER_CALLER of
 # them for any one caller (current_caller), so no one API key can take every slot. Thirty
 # days of hosted telemetry (21,840 calls) peaked at 6 concurrent calls, so both
@@ -493,7 +493,7 @@ def _build_client(api_key: str) -> SugraClient:
 # request's scope state and get_client reads it from there.
 REQUEST_API_KEY_STATE = "sugra_api_key"
 
-# MCP-26.1.3: how the request that carried a tool call authenticated, stored by
+# How the request that carried a tool call authenticated, stored by
 # AuthMiddleware beside the key and read at dispatch the same way, for caller
 # attribution on spans. It never holds the token, the token id or the key.
 REQUEST_PRINCIPAL_STATE = "sugra_principal"
@@ -536,7 +536,7 @@ def _dispatching_http_request() -> tuple[bool, str | None]:
 def current_caller_facts() -> observability.CallerFacts | None:
     """What the tool call being dispatched says about its caller, or None outside a dispatch.
 
-    MCP-26.1.3 / MCP-26.1.3.1. Everything comes from the SDK request context set
+    Everything comes from the SDK request context set
     for this one message: the Starlette Request that carried it and the session
     it belongs to. Never from a ContextVar a middleware set, which names the
     request that opened the session. A message no HTTP request carried (stdio,
@@ -562,7 +562,7 @@ def current_caller_facts() -> observability.CallerFacts | None:
     if not isinstance(scope, dict):
         # No HTTP request carried this message: a stdio or in-process client. Not
         # the transport marker AuthMiddleware sets either, because a session task
-        # inherits that from the request that opened the session (codex r1).
+        # inherits that from the request that opened the session.
         return observability.CallerFacts(
             transport="local",
             auth="local",

@@ -1,4 +1,4 @@
-"""Plugin marketplace manifests point at the existing SKILL.md pack (MCP-15.7)."""
+"""Plugin marketplace manifests point at the existing SKILL.md pack."""
 
 from __future__ import annotations
 

@@ -29,7 +29,7 @@ FIXTURE = Path(__file__).parent / "fixtures" / "openapi_minimal.json"
 
 EXPECTED_TOOL_COUNT = 8
 EXPECTED_PROMPT_COUNT = 6
-# The default surface: the opt-in ui:// widget (MCP-24.1) is off, and
+# The default surface: the opt-in ui:// widget is off, and
 # _keyless_env removes SUGRA_MCP_UI_WIDGETS so the runner's env cannot add it.
 EXPECTED_RESOURCE_COUNT = 8
 

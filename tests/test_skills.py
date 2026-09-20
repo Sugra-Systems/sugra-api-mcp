@@ -1,4 +1,4 @@
-"""Official SKILL.md pack as MCP resources (MCP-15.4)."""
+"""Official SKILL.md pack as MCP resources."""
 
 from __future__ import annotations
 

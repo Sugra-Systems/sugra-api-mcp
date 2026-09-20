@@ -41,13 +41,13 @@ REQUIRED_SCOPE = "sugra:read"
 API_KEY_CACHE_TTL_SECONDS = 300
 
 INTERNAL_HTTP_TIMEOUT_SECONDS = 10.0
-# MCP-10: how long a PASSING activity validation is trusted per token jti.
+# How long a PASSING activity validation is trusted per token jti.
 # Short on purpose - it coarsens the activity heartbeat, never the denial
 # path (failures are not cached).
 ACCESS_VALIDATION_TTL_SECONDS = 60.0
-# MCP-10 r2: hard bounds and flood protection for the auth layer.
+# Hard bounds and flood protection for the auth layer.
 ACCESS_CACHE_MAX_ENTRIES = 4096
-# Prune BELOW the cap (agy r2): shrinking to exactly the cap re-runs the
+# Prune BELOW the cap: shrinking to exactly the cap re-runs the
 # O(N log N) sweep on every subsequent miss.
 ACCESS_CACHE_PRUNE_WATERMARK = ACCESS_CACHE_MAX_ENTRIES - 512
 # Same set as APP McpConnectionService::ALLOWED_PLATFORMS. Anything else is
@@ -59,7 +59,7 @@ JWKS_ADMISSION_SLOTS = 4
 JWKS_ADMISSION_WAIT_SECONDS = 2.0
 JWKS_FAILURE_COOLDOWN_SECONDS = 5.0
 JWKS_FETCH_TIMEOUT_SECONDS = 5.0
-# codex r2: the tool deadline started AFTER the auth path, so cold auth
+# The tool deadline used to start AFTER the auth path, so cold auth
 # (JWKS + two internal calls) ran on top of the 40s budget. Auth gets its own
 # bounded slice, and the request start is stamped so the tool budget consumes
 # only what REMAINS of the total.
@@ -67,7 +67,7 @@ AUTH_BUDGET_SECONDS = 15.0
 
 # Stamped by AuthMiddleware at request entry, for diagnostics only.
 #
-# MCP-17: do NOT wire this back into the tool budget. call_tool used to
+# Do NOT wire this back into the tool budget. call_tool used to
 # subtract it, and on the streamable-HTTP transport that took the hosted
 # gateway down for three weeks: the SDK starts the per-session server loop
 # from inside the request that creates the session, so the loop inherits that
@@ -145,12 +145,12 @@ class ResolvedAuth:
     api_key: str
     user_id: int | None = None
     access_token_id: str | None = None
-    # MCP-26.1.3: how the bearer authenticated, "api_key" (a sugra_ key taken as
+    # How the bearer authenticated, "api_key" (a sugra_ key taken as
     # itself) or "oauth" (a validated JWT resolved to the account's primary key).
     # No default label: a constructor that does not say leaves None, and spans
     # then carry no auth class rather than a wrong one.
     method: str | None = None
-    # MCP-26.1.4: server-verified connector platform from the APP activity
+    # Server-verified connector platform from the APP activity
     # response. Allowlisted at the span. None when the APP omitted it.
     platform: str | None = None
 
@@ -178,7 +178,7 @@ class Authenticator:
             config.jwks_url, cache_keys=True, lifespan=3600,
             timeout=JWKS_FETCH_TIMEOUT_SECONDS)
         self._api_key_cache: dict[int, _CachedKey] = {}
-        # MCP-10 (audit P1-5): per-user single-flight locks. The old single
+        # Per-user single-flight locks. The old single
         # Authenticator-wide lock was HELD ACROSS the internal HTTP call, so
         # every user's cold-cache lookup serialized behind every other's.
         self._user_locks: dict[int, _UserLockEntry] = {}
@@ -188,13 +188,13 @@ class Authenticator:
         # offload from competing with the default pool (fleet review rule).
         self._jwks_executor = ThreadPoolExecutor(
             max_workers=2, thread_name_prefix="jwks")
-        # r2 (codex+agy): flood protection. Admission to the executor is
+        # Flood protection. Admission to the executor is
         # bounded (a queue of malformed/unique-kid bearers must not bury
         # legitimate JWTs), and a failing JWKS endpoint puts the whole JWT
         # path on a short cooldown instead of hammering the pool.
         self._jwks_gate = asyncio.Semaphore(JWKS_ADMISSION_SLOTS)
         # -inf: monotonic() can be near zero right after boot -
-        # a 0.0 init would false-arm the cooldown (agy r3).
+        # a 0.0 init would false-arm the cooldown.
         self._jwks_failed_at = float("-inf")
         # Short-TTL cache of a PASSING activity validation per token jti:
         # the check ran an internal HTTP round-trip on EVERY tool call.
@@ -229,7 +229,7 @@ class Authenticator:
         if token.startswith("sugra_"):
             return ResolvedAuth(api_key=token, method="api_key")
 
-        # r2 (codex): a malformed bearer must fail HERE, on the loop, at
+        # A malformed bearer must fail HERE, on the loop, at
         # parse cost - never occupy a JWKS executor slot.
         try:
             header = jwt.get_unverified_header(token)
@@ -237,12 +237,12 @@ class Authenticator:
             raise AuthError(f"Malformed token: {e}") from e
         has_kid = bool(header.get("kid"))
 
-        # r2 (agy): a failing JWKS endpoint cooldowns the whole JWT path.
+        # A failing JWKS endpoint cooldowns the whole JWT path.
         if time.monotonic() - self._jwks_failed_at < JWKS_FAILURE_COOLDOWN_SECONDS:
             raise AuthError("Signing keys temporarily unavailable", status=503)
 
-        # MCP-10 stage attribution: the audit observed 45-120s holds no log
-        # could attribute to a stage. The line lands in a finally (codex r2:
+        # Stage attribution: 45-120s holds were observed that no log
+        # could attribute to a stage. The line lands in a finally (
         # the degraded paths this exists for exited before the old log).
         stages = {"jwks_ms": -1, "activity_ms": -1, "key_ms": -1}
         outcome = "ok"
@@ -312,7 +312,7 @@ class Authenticator:
         return resolved
 
     def _validate_jwt(self, token: str, has_kid: bool = False) -> _JwtClaims:
-        # r2 (codex): the fallback exists ONLY for the expected no-kid case
+        # The fallback exists ONLY for the expected no-kid case
         # (Passport / league-oauth2-server). A token WITH a kid that fails
         # lookup is invalid - retrying the whole key list on it let malformed
         # traffic double its JWKS I/O.
@@ -320,7 +320,7 @@ class Authenticator:
             try:
                 signing_key = self._jwks.get_signing_key_from_jwt(token)
             except jwt.exceptions.PyJWKClientConnectionError as e:
-                # agy r2: an unreachable JWKS on the STANDARD path must be a
+                # An unreachable JWKS on the STANDARD path must be a
                 # 503 - it is what arms the failure cooldown.
                 raise AuthError(
                     f"Unable to load signing keys: {e}", status=503) from e
@@ -395,7 +395,7 @@ class Authenticator:
         # Per-user single-flight: concurrent requests for the SAME user share
         # one fetch; different users never wait on each other. setdefault is
         # atomic under the GIL, so the occasional extra Lock object is inert.
-        # codex r3: entries are reference-counted and remove themselves
+        # Entries are reference-counted and remove themselves
         # when the last user leaves - a locked()-based sweep raced the
         # release/wakeup window and could split the single-flight exactly
         # on degraded lookups.
@@ -475,7 +475,7 @@ class Authenticator:
                 expires_at=now + ACCESS_VALIDATION_TTL_SECONDS,
                 platform=platform,
             )
-            # The cache only ever holds passes. HARD bound (agy r2): pruning
+            # The cache only ever holds passes. HARD bound: pruning
             # expired entries alone cannot shrink a cache full of LIVE jtis,
             # and re-running an O(N) comprehension per auth is itself the
             # DoS. Keep the newest entries by expiry when over the cap.
@@ -595,7 +595,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         token = header[7:].strip()
         request_started_at.set(time.monotonic())
         try:
-            # codex final: the auth slice also respects a SMALL total budget.
+            # The auth slice also respects a SMALL total budget.
             from .config import load_config as _load_config
 
             total_budget = _load_config(require_api_key=False).tool_deadline
@@ -609,7 +609,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
             state = request.scope.setdefault("state", {})
             state[REQUEST_API_KEY_STATE] = resolved.api_key
-            # MCP-26.1.3: how this request authenticated, read at dispatch from the
+            # How this request authenticated, read at dispatch from the
             # same scope for caller attribution. Never the token or the token id.
             state[REQUEST_PRINCIPAL_STATE] = RequestPrincipal(
                 method=resolved.method,

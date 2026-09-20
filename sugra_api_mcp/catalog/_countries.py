@@ -1,4 +1,4 @@
-"""Country-name vocabulary for query geography detection (MCP-9).
+"""Country-name vocabulary for query geography detection.
 
 GENERATED from pycountry 24.6.1 names/common names plus curated demonyms
 and short forms - regenerate rather than hand-edit the big block. Values

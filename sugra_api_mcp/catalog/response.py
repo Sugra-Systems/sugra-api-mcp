@@ -243,7 +243,7 @@ def shape_response(
         # call_endpoint/fetch_data against dict[str, Any], and MCP
         # CallToolResult.structuredContent is dict-only. Returning the list
         # unchanged made a successful call arrive as isError with a
-        # pydantic dict_type message and no rows (MCP-7.1).
+        # pydantic dict_type message and no rows.
         data, limit_applied, records_path = _shape_data(
             payload, limit=limit, fields=fields, matched=matched
         )

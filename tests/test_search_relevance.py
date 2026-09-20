@@ -264,9 +264,9 @@ def test_search_top_1_lands_in_correct_namespace(
     )
 
 
-# Entity screening-corpus metadata discoverability (MCP-3.1). The STRAT-1.7
+# Entity screening-corpus metadata discoverability. The screening
 # benchmark found agents could not reach /entity/sources via the gateway
-# (claude abstained; codex brute-forced). These are the exact agent-vocabulary
+# queries below are the exact agent-vocabulary
 # queries that must now surface the coverage/staleness manifest top-1.
 ENTITY_SOURCES_TOP_1_QUERIES = [
     "ofac_sdn max_age_hours",
@@ -488,7 +488,7 @@ def test_us_context_without_macro_keyword_does_not_boost_fred(catalog) -> None:
         f"top-3 {[r['operation_id'] for r in results[:3]]}"
     )
 # ---- Symbol-aware relevance: ticker queries prefer symbol-routed endpoints ----
-# Board MCP-4.9: "MSFT earnings" ranked market_calendar_earnings (market-wide,
+# "MSFT earnings" ranked market_calendar_earnings (market-wide,
 # parameters from/to only) above quotes_symbol_earnings_events (symbol-routed).
 # The symbol-input boost fires only when the raw query carries a ticker-like
 # token and must leave every no-ticker query byte-identical to the pre-boost
@@ -508,9 +508,9 @@ def test_msft_earnings_prefers_symbol_routed_endpoint(catalog) -> None:
     """A ticker plus "earnings" must land on a SYMBOL-TAKING earnings endpoint,
     never the market-wide earnings calendar (params from/to only - it cannot
     answer a single-ticker question). The pin is semantic, not name-based:
-    after the toolset-coverage change (MCP-4.8) the v1 `earnings` endpoint
+    after the toolset-coverage change the v1 `earnings` endpoint
     (required symbol param, markets toolset) legitimately outranks
-    quotes_symbol_earnings_events - both satisfy the MCP-4.9 goal."""
+    quotes_symbol_earnings_events - both satisfy the symbol-aware goal."""
     results = search_catalog(catalog, "MSFT earnings", limit=5)
     assert results, "search returned no results for 'MSFT earnings'"
     top_1 = results[0]
@@ -598,7 +598,7 @@ def test_imf_reserves_lands_in_the_imf_namespace(catalog) -> None:
     )
 
 
-# ---- MCP-9 (audit P1-3): versioned semantic eval set --------------------------
+# ---- Versioned semantic eval set ---------------------------------------------
 # The six audit scenarios with semantic top-1 oracles plus acronym negatives.
 # PASS is stricter than "technically callable": right domain, right geography,
 # right data type, never a deprecated route above its available replacement.
@@ -674,7 +674,7 @@ def test_audit_eval_acronyms_are_not_tickers(query) -> None:
     assert detect_tickers(query) == []
 
 
-# ---- MCP-9 review round: codex + agy findings pinned -------------------------
+# ---- Review findings pinned -------------------------------------------------
 
 @pytest.mark.parametrize("query,expected", [
     ("PLTR", ["PLTR"]),               # sole substantive token = quote lookup
@@ -692,7 +692,7 @@ def test_bare_ticker_routes_to_quotes(catalog) -> None:
 
 
 def test_unlisted_country_is_still_detected(catalog) -> None:
-    """codex review: the closed vocabulary recreated silent substitution for
+    """The closed vocabulary recreated silent substitution for
     every omitted country - the generated module must know them all."""
     from sugra_api_mcp.catalog.aliases import SOURCE_COUNTRY_PREFIXES, detect_query_countries
 
@@ -707,7 +707,7 @@ def test_unlisted_country_is_still_detected(catalog) -> None:
 
 
 def test_source_country_prefixes_match_live_operations(catalog) -> None:
-    """Dead-prefix guard (codex review: bcra_/bcrp_ mapped a namespace that
+    """Dead-prefix guard (bcra_/bcrp_ mapped a namespace that
     does not exist in the bundle while central_banks_bcra_ evaded the
     penalty). Every mapped prefix must match at least one bundled op."""
     from sugra_api_mcp.catalog.aliases import SOURCE_COUNTRY_PREFIXES
@@ -728,7 +728,7 @@ def test_every_deprecated_operation_resolves_or_is_allowlisted(catalog) -> None:
 
 
 def test_empty_toolset_gets_no_intent_boost() -> None:
-    """agy review: startswith('') is True for every term - a toolset-less
+    """startswith('') is True for every term - a toolset-less
     endpoint must never collect the intent boost."""
     from sugra_api_mcp.catalog.models import Endpoint
     from sugra_api_mcp.catalog.search import _score
@@ -743,10 +743,10 @@ def test_empty_toolset_gets_no_intent_boost() -> None:
     assert not any(w.startswith("toolset-intent") for w in why), why
 
 
-# ---- MCP-9 review round 2 pins ----------------------------------------------
+# ---- Further review pins ----------------------------------------------------
 
 def test_georgia_us_state_cues_suppress_the_country_reading(catalog) -> None:
-    """codex r2: 'Georgia census states' is a US-state query - the sovereign
+    """'Georgia census states' is a US-state query - the sovereign
     GE reading must not strip the US census namespace out of the results."""
     from sugra_api_mcp.catalog.aliases import detect_query_countries
 
@@ -758,7 +758,7 @@ def test_georgia_us_state_cues_suppress_the_country_reading(catalog) -> None:
 
 
 def test_bare_iso2_code_is_recognized(catalog) -> None:
-    """codex r2: 'NL CPI inflation' must trigger geography protection."""
+    """'NL CPI inflation' must trigger geography protection."""
     from sugra_api_mcp.catalog.aliases import SOURCE_COUNTRY_PREFIXES, detect_query_countries
 
     assert detect_query_countries("NL CPI inflation") == {"NL"}
@@ -779,7 +779,7 @@ def test_ambiguous_iso2_words_are_not_countries() -> None:
 
 
 def test_unmatched_replacement_clamps_the_deprecated_route_out(catalog) -> None:
-    """agy r2: a deprecated route whose replacement matches nothing must not
+    """A deprecated route whose replacement matches nothing must not
     stand on its legacy text alone."""
     from sugra_api_mcp.catalog.search import search_catalog as sc
 
@@ -794,7 +794,7 @@ def test_unmatched_replacement_clamps_the_deprecated_route_out(catalog) -> None:
 
 
 def test_us_postal_country_collisions_resolve_by_intent() -> None:
-    """agy r3 + codex r4 (deliberate refinement): colliding codes read as a
+    """Colliding codes read as a
     COUNTRY under macro vocabulary, as postal under state cues or none."""
     from sugra_api_mcp.catalog.aliases import detect_query_countries
 
@@ -806,7 +806,7 @@ def test_us_postal_country_collisions_resolve_by_intent() -> None:
 
 
 def test_compound_country_phrases_resolve_longest_first() -> None:
-    """codex r4: 'American Samoa' is AS alone - component matches (american
+    """'American Samoa' is AS alone - component matches (american
     -> US, samoa -> WS) must not survive and defeat the geo guard."""
     from sugra_api_mcp.catalog.aliases import detect_query_countries
 
@@ -828,7 +828,7 @@ def test_bare_dotted_ticker_is_sole_token() -> None:
 
 
 def test_postal_iso2_countries_resolve_by_intent_everywhere() -> None:
-    """agy final: EVERY postal/ISO2 collision resolves by intent - the
+    """EVERY postal/ISO2 collision resolves by intent - the
     blanket drop suppressed valid country queries like DE CPI (Germany)."""
     from sugra_api_mcp.catalog.aliases import detect_query_countries as d
 
@@ -839,7 +839,7 @@ def test_postal_iso2_countries_resolve_by_intent_everywhere() -> None:
 
 
 def test_component_country_survives_outside_the_compound() -> None:
-    """codex confirm: a component term dies only where its span lies inside
+    """A component term dies only where its span lies inside
     a longer match - separate occurrences survive."""
     from sugra_api_mcp.catalog.aliases import detect_query_countries as d
 
@@ -871,7 +871,7 @@ def test_uniform_iso2_intent_gate() -> None:
     assert d("IL state census") == set()
 
 def test_american_samoa_macro_does_not_route_to_fred(catalog) -> None:
-    """codex final: cross-detector conflict - 'American' inside 'American
+    """Cross-detector conflict - 'American' inside 'American
     Samoa' must not arm the US-macro FRED boost. End-to-end ranking pin."""
     for q in ("American Samoa CPI inflation", "American Samoa GDP"):
         results = search_catalog(catalog, q, limit=3)
@@ -883,7 +883,7 @@ def test_american_samoa_macro_does_not_route_to_fred(catalog) -> None:
 
 
 def test_adjectival_compound_territories_do_not_read_as_us(catalog) -> None:
-    """codex confirm 2: 'American Samoan GDP' is the adjectival form - it
+    """'American Samoan GDP' is the adjectival form - it
     must resolve AS (longest phrase) and never arm the US FRED boost."""
     from sugra_api_mcp.catalog.aliases import detect_query_countries as d
 
@@ -928,7 +928,7 @@ def test_uk_short_form_resolves_to_gb() -> None:
 
 
 def test_untagged_us_source_no_longer_wins_german_cpi() -> None:
-    """MCP-12: fixed_income_treasury (US TIPS) escaped the wrong-country
+    """fixed_income_treasury (US TIPS) escaped the wrong-country
     penalty and ranked top-1 for 'Germany CPI inflation' (measured live
     2026-08-21). The full-bundle sweep tagged it - and every other
     single-country prefix - so no untagged national source outruns the
@@ -959,7 +959,7 @@ def test_country_tag_sweep_examples() -> None:
 def test_all_country_prefixes_cover_live_operations() -> None:
     """Both directions of drift are loud: every map entry matches at least
     one bundled operation (no phantom tags), and the measured single-country
-    prefixes from the MCP-12 sweep are all present."""
+    prefixes from the single-country sweep are all present."""
     from sugra_api_mcp.catalog.aliases import SOURCE_COUNTRY_PREFIXES
     from sugra_api_mcp.catalog.loader import load_catalog
 
@@ -975,7 +975,7 @@ def test_all_country_prefixes_cover_live_operations() -> None:
 
 
 def test_market_parameterized_cot_stays_untagged() -> None:
-    """agy MCP-12: cot_index_traders takes a free market parameter over
+    """cot_index_traders takes a free market parameter over
     CFTC futures including globally-relevant commodities - the same class
     as its six sibling clusters the sweep refuted. No cot_ prefix may
     carry a country tag."""

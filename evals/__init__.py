@@ -1,1 +1,1 @@
-"""Eval harness for the hosted MCP agent surface (MCP-2.4). Not packaged, not CI-run."""
+"""Eval harness for the hosted MCP agent surface. Not packaged, not CI-run."""

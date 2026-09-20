@@ -26,33 +26,33 @@ Custom dimensions captured per MCP tool invocation:
                            Free-text upstream messages never reach the span.
                            A tool that raised is "exception"; a cancelled call
                            is "deadline_exceeded" or "cancelled".
-    mcp.busy.scope       - server_busy failures only (MCP-26.1.1): the bound
+    mcp.busy.scope       - server_busy failures only: the bound
                            that refused the call, one of tool_calls /
                            caller_tool_calls / search / caller_search; any
                            other value is dropped
-    mcp.caller.*         - MCP-26.1.3, how the call arrived, read from the
+    mcp.caller.*         - how the call arrived, read from the
                            request that carried it and its session: transport,
                            auth (api_key / oauth / none / local), host, ua_class
                            and origin (HTTP only), client and client_version
                            (the clientInfo name as a class, and its version, as
                            the session's most recent initialize asserted them:
                            any re-initialize of the session replaces both).
-                           Stage B (MCP-26.1.3.1) adds session (16 hex of the
+                           A later stage adds session (16 hex of the
                            SHA-256 of Mcp-Session-Id, never the id) and net
                            (IPv4 /24, IPv6 /48, loopback or private; only when
                            the ASGI peer equals X-Real-IP, never a raw address).
                            Each value is a fixed class, a digest, a prefix or a
                            plain dotted version, never header, clientInfo or
                            address text. A call no HTTP request carried is
-                           transport and auth local. MCP-26.1.4 adds platform
+                           transport and auth local. A later stage adds platform
                            for OAuth only: the APP-verified connector class
                            (openai, anthropic, cursor, google, xai, custom).
                            Missing or unknown is omitted, never guessed
-    enduser.pseudo.id    - MCP-26.1.3.1, the Azure user_Id column: the same
+    enduser.pseudo.id    - the Azure user_Id column: the same
                            name admission uses (http: plus 16 hex of SHA-256
                            of the resolved API key, http:anonymous, or local).
                            Never the key
-    enduser.id           - MCP-26.1.3.1, the Azure user_AuthenticatedId column:
+    enduser.id           - the Azure user_AuthenticatedId column:
                            the numeric OAuth user id as a decimal string, OAuth
                            callers only. Absent for a sugra_ key
     mcp.duration_ms      - integer ms wall-clock from before-call to
@@ -113,13 +113,13 @@ class DispatchBudget:
 
     On a CancelledError the wrapper asks this whether the budget OWNS the
     cancellation. Attribution comes from the timeout's own state, never from
-    a clock: a clock comparison misfiles in both directions (codex r1) - an
+    a clock: a clock comparison misfiles in both directions - an
     external cancel that lands after the deadline but before the timer ran
     reads as the budget, and a coarse loop clock (the loop runs a timer up to
     one clock resolution EARLY, 15.6 ms on Windows) fires the budget before
     loop.time() reaches the deadline, which reads as the caller. Set and read
     inside one dispatch on one task, so it cannot inherit across calls the
-    way the MCP-17 stamp did.
+    way the ambient stamp did.
     """
 
     timeout: asyncio.Timeout
@@ -133,7 +133,7 @@ class DispatchBudget:
         raise TimeoutError. One more outstanding request means an external
         cancel landed in the same loop turn; the CancelledError then reaches
         the caller instead of the envelope, so the span says cancelled too
-        (codex r2). expired() alone proves the timer fired, not that it owns
+        expired() alone proves the timer fired, not that it owns
         what is propagating.
         """
         if not self.timeout.expired():
@@ -155,7 +155,7 @@ def _cancellation_code() -> str:
 # HTTP failures from the Sugra API. SugraClient keeps the API's own text at
 # result["error"] for the CALLER (a bad symbol says which, a quota refusal
 # names the plan) and sets result["status_code"] from the response. That text
-# can never pass the allowlist, so before MCP-19 every such failure was
+# can never pass the allowlist, so every such failure used to be
 # `unknown_error` - 66% of all failures over 90 days, with a caller's 429
 # quota, a bad-symbol 404 and a 503 upstream outage indistinguishable. The
 # span now names the failure from this fixed table keyed on the STATUS, an
@@ -230,12 +230,12 @@ _KNOWN_ERROR_CODES: frozenset[str] = frozenset({
     "upstream_transport_error",
     # Gateway safety net for unexpected exceptions inside call_endpoint.
     "tool_execution_failed",
-    # MCP-10: the end-to-end per-call budget fired and the call was
-    # cancelled server-side (audit P1-4). MCP-19.1: this is what the SPAN
+    # The end-to-end per-call budget fired and the call was
+    # cancelled server-side. This is what the SPAN
     # says too - the budget cancels the task with a CancelledError, which
     # `except Exception` never saw, so the span used to end with no verdict.
     "deadline_exceeded",
-    # MCP-19.1: a cancellation that is not the budget - the client went away
+    # A cancellation that is not the budget - the client went away
     # or the session shut down mid-call.
     "cancelled",
     # Agent Context Layer plane: infra-level credential rejected (hosted-only
@@ -248,15 +248,15 @@ _KNOWN_ERROR_CODES: frozenset[str] = frozenset({
     # stdio without SUGRA_API_KEY (server.py _KeylessClient): every network
     # tool returns this instead of dialling out.
     "missing_api_key",
-    # MCP-26.1: a search query over the search bounds, refused before any
+    # A search query over the search bounds, refused before any
     # scoring (catalog/search.py query_limit_error).
     "query_too_long",
-    # MCP-26.1: a tool call refused at the in-flight cap (server.py), or a
+    # A tool call refused at the in-flight cap (server.py), or a
     # search refused because the search queue is full (tools/gateway.py).
     "server_busy",
 }) | frozenset(_HTTP_STATUS_ERROR_CODES.values()) | frozenset(_HTTP_CLASS_ERROR_CODES.values())
 # Identity map so a str subclass that equals an allowlisted code attaches the
-# interned constant, never the caller's object (MCP-26.1.2).
+# interned constant, never the caller's object.
 _KNOWN_ERROR_CODE_OF: dict[str, str] = {code: code for code in _KNOWN_ERROR_CODES}
 
 
@@ -280,7 +280,7 @@ def _error_code_of(result: dict[str, Any]) -> str:
     return _http_status_error_code(result.get("status_code")) or "unknown_error"
 
 
-# MCP-26.1.1: the bound that refused a server_busy call, exactly as
+# The bound that refused a server_busy call, exactly as
 # errors.server_busy_error names it. Two of the four are one caller's share
 # (the name current_caller returns: http:<digest> of one key, http:anonymous
 # for every unauthenticated HTTP request together, or local for everything
@@ -320,7 +320,7 @@ def _payload_scope(result: Any) -> object:
 class CallerFacts:
     """Raw facts about a tool call's caller, as server.current_caller_facts reads them.
 
-    MCP-26.1.3. transport and auth are set by our own code. caller is the
+    transport and auth are set by our own code. caller is the
     admission name from current_caller (already a digest). user_id is the
     numeric OAuth sub, or None. Every other field is whatever the client sent
     (header, clientInfo text, ASGI peer, or None), and none of it reaches a
@@ -351,7 +351,7 @@ _CALLER_HOSTS: frozenset[str] = frozenset({"app.sugra.ai", "mcp.sugra.ai"})
 _LOOPBACK_HOSTS: frozenset[str] = frozenset({"localhost", "127.0.0.1", "[::1]"})
 _CALLER_TEXT_MAX = 500
 
-# The API's inbound-client classes (usage_clients.py, APP-15.7), same patterns in
+# The API's inbound-client classes (usage_clients.py), same patterns in
 # the same order, so an MCP span and the API usage mix name a client alike.
 # Order is load-bearing: our own consoles first, named agents before Mozilla.
 _UA_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -578,12 +578,12 @@ def _dispatch_caller_attrs() -> dict[str, str]:
 def record_refused_call(tool_name: str, error_code: str, scope: object = None) -> None:
     """Leave a failure span for a registered tool call refused before dispatch.
 
-    MCP-26.1: a call refused at the in-flight cap never reaches its tool, so the
+    A call refused at the in-flight cap never reaches its tool, so the
     tool's own span never starts and the refusal would be invisible. The caller
     passes only a name it found registered, the code must be allowlisted, and
-    nothing from the call's arguments is attached. MCP-26.1.1: the refusal's
+    nothing from the call's arguments is attached. The refusal's
     scope rides along as `mcp.busy.scope` when the code is server_busy and the
-    scope is one of the fixed names. MCP-26.1.3: so do the caller attributes of
+    scope is one of the fixed names. So do the caller attributes of
     the request that carried the refused call.
     """
     if _TRACER is None or error_code not in _KNOWN_ERROR_CODES:
@@ -799,7 +799,7 @@ def trace_mcp_tool(
 
             try:
                 _safe_attr(span, "mcp.tool.name", tool_name)
-                # MCP-26.1.3: how the call arrived, read before the tool runs so
+                # How the call arrived, read before the tool runs so
                 # every exit (success, failure, exception, cancellation) carries it.
                 for key, value in _dispatch_caller_attrs().items():
                     _safe_attr(span, key, value)
@@ -819,7 +819,7 @@ def trace_mcp_tool(
                     # the task, and the clause below never saw it, so the span
                     # ended through `finally` with only the tool name - the one
                     # failure that fires when the API is slowest was invisible
-                    # to every failure query (MCP-19.1). Stamp the verdict and
+                    # to every failure query. Stamp the verdict and
                     # re-raise unchanged so the cancellation still propagates.
                     _safe_attr(span, "mcp.success", False)
                     _safe_attr(span, "mcp.error.code", _cancellation_code())

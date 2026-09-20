@@ -1,4 +1,4 @@
-"""Tests for the hosted-only Agent Context Layer tools (MCP-2.3, v0.8.0).
+"""Tests for the hosted-only Agent Context Layer tools (v0.8.0).
 
 Covers the three layers Codex plan-review flagged as risky:
 

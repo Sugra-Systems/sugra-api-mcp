@@ -110,10 +110,10 @@ _TIMESERIES_METRICS: tuple[str, ...] = get_args(MetricName)
 # recipe (the get_snapshot docstring lists the same seven; a test keeps the
 # two in step) and "timeseries.<metric>@<n>" for a series. The value is
 # attached to a span only for a name in this set: the extractor IS the
-# privacy allowlist for its dimensions, and since MCP-19 a partial envelope
+# privacy allowlist for its dimensions, and a partial envelope
 # (an error note beside data) is a success that reaches it, so the value must
 # be bounded to a known SET, not just a shape - a shape check alone still
-# passed "user_ssn_123456789@1" (codex r2). The first cut of this set named
+# passed "user_ssn_123456789@1". The first cut of this set named
 # only the snapshot recipes and would have dropped timeseries.price@1, the
 # majority of the dimension's live volume (verification pass): a dimension
 # is bounded to its LIVE distinct values, never to one producer's format. A
@@ -184,7 +184,7 @@ def _map_plane_error(result: Any) -> Any:
 def _agent_result_attrs(result: Any) -> dict[str, Any]:
     """Span attributes from RESPONSE envelope metadata only (privacy-by-design).
 
-    Extracts the bounded, non-identifying fields the MCP-2.3 card names:
+    Extracts the bounded, non-identifying fields the agent layer names:
     recipe_version, units (billing rate_limit_cost), downstream_calls, status
     class, stale flag. Request values (query, entity ids) NEVER reach spans.
     """

@@ -35,7 +35,7 @@ Two different counters. Do not equate them.
 - Repository: https://github.com/Sugra-Systems/sugra-api-mcp
 - Canonical HTTP URL: `https://mcp.sugra.ai/mcp` (API-key Bearer)
 - Permanent alias: `https://app.sugra.ai/mcp` (API-key Bearer or OAuth)
-- OAuth resource / JWT audience: `https://app.sugra.ai/mcp` on BOTH hosts until dual-resource OAuth (board MCP-4.3, Parked)
+- OAuth resource / JWT audience: `https://app.sugra.ai/mcp` on BOTH hosts until dual-resource OAuth lands
 - Protocol: Model Context Protocol, revision 2025-11-25
 - MCP Registry name: ai.sugra/api-mcp
 - Free tier: 50 requests/day

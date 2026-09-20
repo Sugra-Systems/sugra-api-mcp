@@ -778,7 +778,7 @@ def test_catalog_builder_fails_on_duplicate_operation_id() -> None:
 
 
 def test_toolset_map_covers_previously_uncategorized_tags() -> None:
-    """MCP-4.8: 21 OpenAPI tags had no TAG_TOOLSET_MAP entry, so 507 of
+    """21 OpenAPI tags once had no TAG_TOOLSET_MAP entry, so 507 of
     1525 endpoints fell into the catch-all core toolset - invisible to
     list_toolsets navigation. Every one of those tags must now resolve."""
     from sugra_api_mcp.catalog.toolsets import toolset_for_tags
@@ -820,7 +820,7 @@ def test_every_tag_map_target_is_a_known_toolset() -> None:
 
 
 def test_bundled_catalog_core_is_no_longer_a_catch_all() -> None:
-    """Before MCP-4.8 the bundled catalog carried 507 core endpoints; after
+    """The bundled catalog once carried 507 core endpoints; after
     mapping the uncovered tags only the deliberate core surfaces remain
     (27 endpoints at build time - bound leaves headroom for API growth)."""
     catalog = load_catalog()

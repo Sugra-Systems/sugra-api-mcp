@@ -600,7 +600,7 @@ async def test_fetch_data_passes_dict_body_through(monkeypatch) -> None:
     assert result["data"] == {"ok": True}
 
 
-# The body schema both gateway tools advertise (MCP-24.2). The object and null
+# The body schema both gateway tools advertise. The object and null
 # branches are what the published listing already describes; the array branch
 # types its items as objects, because the one catalog operation that takes a
 # top-level array body (post_openfigi_mapping) takes an array of objects.
@@ -615,7 +615,7 @@ async def test_gateway_body_tool_schemas_accept_arrays(monkeypatch) -> None:
     """The regression lived in FastMCP validation, before tool code ran:
     the generated input schema for `body` must allow object AND array on
     both gateway tools. The array branch types its items as objects: an
-    untyped `items: {}` advertised any JSON value as a body item (MCP-24.2)."""
+    untyped `items: {}` advertised any JSON value as a body item."""
     monkeypatch.setenv("SUGRA_API_KEY", "dummy")
     from sugra_api_mcp.server import mcp
 
@@ -634,7 +634,7 @@ async def test_gateway_body_tool_schemas_accept_arrays(monkeypatch) -> None:
         ), f"{name} body is no longer object | array of objects | null: {body_schema}"
 
 
-# ---- MCP-24.2: the typed array branch holds at the protocol, not only in the schema ----
+# ---- The typed array branch holds at the protocol, not only in the schema ----
 
 _GATEWAY_BODY_TOOLS = ("call_endpoint", "fetch_data")
 
@@ -756,7 +756,7 @@ async def test_object_and_null_bodies_keep_the_published_contract_over_the_proto
     assert _payload(absent)[missing] == ["body"]
 
 
-# ---- MCP-19: the call_endpoint span behind fetch_data names its operation ----
+# ---- The call_endpoint span behind fetch_data names its operation ----
 
 
 class _CaptureSpan:

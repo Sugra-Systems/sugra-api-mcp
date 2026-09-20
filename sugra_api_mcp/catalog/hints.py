@@ -59,7 +59,7 @@ _SLOW_FAMILIES = frozenset({"comtrade", "gfw", "gleif", "network", "wits", "wto"
 # budget in the API), but flood (GloFAS heavy per-request compute), climate
 # (CMIP6), and nws (api.weather.gov live) carry a 30s client budget and can
 # approach the gateway timeout. Verified against prod-sugra-ai-API/helpers
-# client _TIMEOUTs (flood/climate/noaa_nws = 30s). BUG-3.2: flood was labeled
+# client _TIMEOUTs (flood/climate/noaa_nws = 30s). Flood was once labeled
 # "fast", so an agent fired parallel calls with a short budget and hit 502s on
 # cold cells. A family-level slow would over-tag the fast weather paths, so this
 # is a per-path list. Re-verify the backing client _TIMEOUT before adding a path.

@@ -1,4 +1,4 @@
-"""Agent-driven golden-query eval over the hosted MCP (MCP-2.4).
+"""Agent-driven golden-query eval over the hosted MCP.
 
 Each M0 golden query is answered by a REAL agent (Anthropic tool runner) whose
 only capabilities are the 11 hosted MCP tools, connected over streamable HTTP.

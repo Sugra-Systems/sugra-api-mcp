@@ -23,7 +23,7 @@ ALIASES: dict[str, list[str]] = {
     "treasury yield": ["treasury rates", "bond yield"],
     "ip geolocation": ["network atlas", "ip address", "asn"],
     "available data sources": ["list sources", "source catalog"],
-    # MCP-9: screening-metadata intent - the sources manifest, not a screen call.
+    # Screening-metadata intent - the sources manifest, not a screen call.
     "corpus coverage": ["sources manifest", "screening sources", "source lists"],
     "screening coverage": ["sources manifest", "screening sources"],
     "data sources": ["list sources", "source families"],
@@ -132,7 +132,7 @@ _NON_TICKER_WORDS: frozenset[str] = frozenset({
     "PTR", "NTP", "ICMP", "SNMP", "TOR", "WHOIS", "RPKI", "ROA", "IANA",
     "ICANN", "IETF", "APNIC", "ARIN", "LIR", "RIR", "DDOS", "LAN", "WAN",
     "MTU", "TTL",
-    # Intergovernmental and statistical organizations (board MCP-4.9 field
+    # Intergovernmental and statistical organizations (field
     # find: "IMF reserves" ranked quotes_symbol_* top-3 because IMF passed
     # the ticker regex - every org acronym below leaked the same way). These
     # dominate data-catalog queries; none is an active major US listing worth
@@ -145,8 +145,8 @@ _NON_TICKER_WORDS: frozenset[str] = frozenset({
     "ENTSO", "AEMO", "NESO", "NEM",
 })
 
-# MCP-9 (audit P1-3): the ticker gate is INVERTED. The old default-allow
-# blacklist was patched three times (IXP 2026-06-07, IMF/org acronyms MCP-4.9,
+# The ticker gate is INVERTED. The old default-allow
+# blacklist was patched three times (IXP 2026-06-07, IMF/org acronyms,
 # ENTSO/grid ENERGY-1.1.1.5) - a guard patched three times is the wrong guard.
 # Now a ticker-shaped token counts as a ticker ONLY when the query carries
 # equity-context vocabulary, OR the token is on this short high-liquidity
@@ -168,7 +168,7 @@ _TICKER_WHITELIST: frozenset[str] = frozenset({
     "SPY", "QQQ", "IWM", "DIA", "VTI", "VOO",
 })
 
-# National-source geography (MCP-9): operation_id prefix -> ISO2 country of
+# National-source geography: operation_id prefix -> ISO2 country of
 # the NATIONAL source. Used by search to demote a national source when the
 # query names a DIFFERENT country - the audit's 'Georgia CPI' returned the UK
 # ons_cpi top-1. Global/multi-country sources are deliberately absent (never
@@ -194,7 +194,7 @@ SOURCE_COUNTRY_PREFIXES: dict[str, str] = {
     "fred_": "US", "fed_": "US", "worldbank_bls_": "US", "bea_": "US",
     "census_": "US",
     "ine_": "ES",
-    # MCP-12: single-country prefixes swept from the FULL bundle (600
+    # Single-country prefixes swept from the FULL bundle (600
     # untagged clusters judged + adversarially verified per proposal;
     # 28 refutations kept global/parameterized sources untagged).
     "insee_": "FR", "transport_road_": "FR",
@@ -224,12 +224,12 @@ SOURCE_COUNTRY_PREFIXES: dict[str, str] = {
 # entry must match at least one bundled operation, so a source rename or
 # removal fails loudly instead of silently disarming the geography penalty.
 
-# Query-side country vocabulary: comprehensive generated module (codex/agy
+# Query-side country vocabulary: comprehensive generated module
 # review: a closed 30-entry list recreated silent substitution for every
 # omitted country - Netherlands CPI still returned the UK ons_cpi).
 from ._countries import COUNTRY_QUERY_TERMS  # noqa: E402 - documented above
 
-# codex review: country/US-state homonyms. The sovereign reading of an
+# Country/US-state homonyms. The sovereign reading of an
 # ambiguous name is DROPPED when the query carries explicit US-state cues -
 # 'Georgia census states' must not penalize the US census namespace.
 _AMBIGUOUS_US_STATE_COUNTRIES: dict[str, str] = {"georgia": "GE"}
@@ -239,13 +239,13 @@ _US_STATE_CUES: tuple[str, ...] = (
     "state", "states", "census", "county", "counties", "acs", "atlanta",
 )
 
-# codex review: compact queries use bare ISO2 codes ('NL CPI inflation').
+# Compact queries use bare ISO2 codes ('NL CPI inflation').
 # Uppercase-only in the RAW query, and codes colliding with English words or
 # US postal abbreviations are excluded - with US itself kept (it IS the
 # country the US-macro path expects).
 _ISO2_QUERY_RE = re.compile(r"\b[A-Z]{2}\b")
 
-# US postal codes that are ALSO valid ISO2 countries (agy r3 + codex r3):
+# US postal codes that are ALSO valid ISO2 countries:
 # resolved by surrounding intent in detect_query_countries - macro vocabulary
 # keeps the country reading, a US-state cue (or no cue) keeps the postal one.
 
@@ -267,11 +267,11 @@ def detect_query_countries(query: str) -> set[str]:
     class (English words, US postal codes, acronyms). Sovereign readings of
     country/US-state homonym NAMES are likewise dropped under state cues.
     """
-    # codex r3: overlapping matches resolve longest-phrase-first -
+    # Overlapping matches resolve longest-phrase-first -
     # 'American Samoa' must be AS alone, not AS+US ('american')+WS ('samoa'),
     # or the US component defeats the wrong-country guard entirely.
     matched = _match_vocabulary(query, tuple(COUNTRY_QUERY_TERMS))
-    # codex confirm: suppression is OCCURRENCE-aware - a component term dies
+    # Suppression is OCCURRENCE-aware - a component term dies
     # only where every one of its spans lies inside a longer match ('American
     # Samoa and American government' keeps the separate US reading).
     tokens = _WORD_TOKEN_RE.findall(query.lower())
@@ -299,7 +299,7 @@ def detect_query_countries(query: str) -> set[str]:
         if term_alive:
             kept.append(term)
     found = {COUNTRY_QUERY_TERMS[term] for term in kept}
-    # grok confirmation (terminal simplification): NO enumerated collision
+    # NO enumerated collision
     # sets - every bare uppercase ISO2 code resolves through the SAME rule:
     # macro vocabulary present and no US-state cue. Hand-enumerated gated
     # sets leaked a new collision every round (AS, MP, AI, TV, HR...);
@@ -407,7 +407,7 @@ def matching_aliases(query: str) -> dict[str, list[str]]:
 def detect_tickers(query: str) -> list[str]:
     """Return likely stock ticker tokens (e.g. AAPL, MSFT, BRK.A) found in the raw query.
 
-    MCP-9 inverted gate: a 2-5 uppercase token is a ticker ONLY when the query
+    Inverted gate: a 2-5 uppercase token is a ticker ONLY when the query
     carries equity-context vocabulary (price, stock, dividend, ...) or the
     token is on the short high-liquidity whitelist (AAPL, SPY, ...). The
     _NON_TICKER_WORDS hard list (CPI, USD, IMF, ...) always wins. So "AI
@@ -418,16 +418,16 @@ def detect_tickers(query: str) -> list[str]:
     if not matches:
         return []
 
-    # MCP-9 inverted gate: equity context (or the high-liquidity whitelist)
+    # Inverted gate: equity context (or the high-liquidity whitelist)
     # ADMITS a ticker-shaped token; the hard NEVER list still wins over both.
     # The old default-allow blacklist misread FRED, AIS, RF, MMSI, IMF and
     # every future acronym as equities until someone patched the list again.
     has_equity_context = query_has_equity_context(query)
-    # Sole-substantive-token rule (codex review): a bare 'PLTR' (optionally
+    # Sole-substantive-token rule: a bare 'PLTR' (optionally
     # with temporal filler) is a quote lookup - there is no other intent the
     # query could carry. Acronym safety is preserved: multi-token queries
     # ('search FRED series for gold') still require context or whitelist.
-    # codex r3: judge sole-ness on what REMAINS after removing the ticker
+    # Judge sole-ness on what REMAINS after removing the ticker
     # match itself - the word tokenizer splits dotted class shares (HEI.A)
     # into two tokens and wrongly disqualified them.
     remainder = query
