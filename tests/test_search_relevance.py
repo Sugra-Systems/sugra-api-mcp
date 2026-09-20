@@ -69,7 +69,7 @@ from sugra_api_mcp.catalog.search import search_catalog
         ("NAT traversal test", []),
         ("IP stock price", ["IP"]),
         ("NAT dividend history", ["NAT"]),
-        # Codex S3 review: equity vocabulary must match whole tokens, not
+        # Equity vocabulary must match whole tokens, not
         # substrings - "Stockholm" satisfied "stock" and re-admitted IP as a
         # ticker; "stockpile" did the same for NAT.
         ("IP address geolocation Stockholm", []),
@@ -235,7 +235,7 @@ NAMESPACE_TOP_1_CASES = [
     ("FED interest rate", ("fed_rates", "fed_policy")),
     ("Federal Reserve policy rate", ("fed_rates", "fed_policy")),
     ("EUR USD exchange rate", ("forex_", "frankfurter_", "exchangerate_")),
-    # ENERGY-1.1.1.5: ENTSO-E / EU grid discovery after A44 day-ahead prices.
+    # ENTSO-E / EU grid discovery after A44 day-ahead prices.
     # Exact top-1 where possible - startswith("energy_grid") would also match
     # energy_grid_fuel_mix, so price/load queries require exact energy_grid.
     ("ENTSO-E day-ahead electricity price", ("energy_grid",)),
@@ -252,7 +252,7 @@ def test_search_top_1_lands_in_correct_namespace(
     results = search_catalog(catalog, query, limit=5)
     assert results, f"search returned no results for {query!r}"
     actual = results[0]["operation_id"]
-    # ENERGY-1.1.1.5: energy_* ids must match exactly - startswith("energy_grid")
+    # energy_* ids must match exactly - startswith("energy_grid")
     # also accepts energy_grid_fuel_mix. Other cases keep prefix matching.
     if any(p.startswith("energy_") for p in allowed_prefixes):
         ok = actual in allowed_prefixes
@@ -366,7 +366,7 @@ def test_network_dominance_suppresses_unknown_ticker_shaped_token(catalog) -> No
 
 
 def test_network_dominance_survives_equity_substring_false_positives(catalog) -> None:
-    """Codex S3 review: 'Stockholm' must not satisfy the 'stock' equity
+    """'Stockholm' must not satisfy the 'stock' equity
     override (substring match) and 'internet exchange' must not satisfy
     'exchange' - either would re-enable the ticker boost on a clearly
     network-domain query carrying a ticker-shaped token.
@@ -599,7 +599,7 @@ def test_imf_reserves_lands_in_the_imf_namespace(catalog) -> None:
 
 
 # ---- Versioned semantic eval set ---------------------------------------------
-# The six audit scenarios with semantic top-1 oracles plus acronym negatives.
+# The six evaluation scenarios with semantic top-1 oracles plus acronym negatives.
 # PASS is stricter than "technically callable": right domain, right geography,
 # right data type, never a deprecated route above its available replacement.
 
@@ -674,7 +674,7 @@ def test_audit_eval_acronyms_are_not_tickers(query) -> None:
     assert detect_tickers(query) == []
 
 
-# ---- Review findings pinned -------------------------------------------------
+# ---- Regression pins: tickers, countries and route coverage -----------------
 
 @pytest.mark.parametrize("query,expected", [
     ("PLTR", ["PLTR"]),               # sole substantive token = quote lookup
@@ -743,7 +743,7 @@ def test_empty_toolset_gets_no_intent_boost() -> None:
     assert not any(w.startswith("toolset-intent") for w in why), why
 
 
-# ---- Further review pins ----------------------------------------------------
+# ---- Regression pins: country and code disambiguation -----------------------
 
 def test_georgia_us_state_cues_suppress_the_country_reading(catalog) -> None:
     """'Georgia census states' is a US-state query - the sovereign

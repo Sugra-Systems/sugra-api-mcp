@@ -32,7 +32,7 @@ def test_load_bundled_catalog_has_endpoints() -> None:
 
 
 def test_bundled_catalog_energy_covers_entsoe_grid_surface() -> None:
-    """ENERGY-1.1.1.5: EU bidding-zone grid routes must be in the energy toolset
+    """EU bidding-zone grid routes must be in the energy toolset
     with ENTSO-E-aware descriptions so agents can discover day-ahead prices."""
     catalog = load_catalog()
     required = {

@@ -128,8 +128,7 @@ def test_tool_list_order_is_pinned(monkeypatch):
 def test_hosted_tool_count_with_internal_token():
     """Hosted surface = classic tools + agent tools. Runs in a SUBPROCESS so
     the global mcp singleton in this test process is never mutated - the
-    classic tests above assert exactly EXPECTED_TOOL_COUNT on it (Codex
-    plan-review P1)."""
+    classic tests above assert exactly EXPECTED_TOOL_COUNT on it."""
     import subprocess
     import sys
 

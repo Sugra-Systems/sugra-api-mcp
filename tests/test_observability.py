@@ -861,7 +861,7 @@ def test_partial_success_envelope_with_data_is_a_success(monkeypatch) -> None:
     BESIDE "data" is a partial-degradation success - the tool protocol reports
     it as a success and shapes it, so the span must not count it as a failure
     (it counted as `unknown_error` before, inflating the very bucket the named
-    measures)."""
+    error codes exist to drain)."""
     tracer = _install_fake_tracer(monkeypatch)
 
     @observability.trace_mcp_tool("call_endpoint")

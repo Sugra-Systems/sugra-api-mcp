@@ -68,7 +68,7 @@ def load_config(*, require_api_key: bool = True) -> Config:
         timeout=float(os.environ.get("SUGRA_TIMEOUT", "30")),
         # End-to-end budget for ONE tool call, wrapped
         # around dispatch in SugraFastMCP.call_tool. Must sit BELOW common
-        # client read timeouts (the audit harness cut at ~45s while the
+        # client read timeouts (a measured client cut at ~45s while the
         # gateway kept working to its 60s outbound budget, so the typed
         # timeout envelope never reached the agent).
         tool_deadline=_positive_seconds("SUGRA_TOOL_DEADLINE", "40"),

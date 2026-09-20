@@ -28,7 +28,7 @@ ALIASES: dict[str, list[str]] = {
     "screening coverage": ["sources manifest", "screening sources"],
     "data sources": ["list sources", "source families"],
     "news": ["latest news", "headlines"],
-    # ENERGY-1.1.1.5: EU bidding-zone / day-ahead discovery after ENTSO-E A44
+    # EU bidding-zone / day-ahead discovery after ENTSO-E A44
     # live prices (2026-07-21). Without these, agent queries for European
     # electricity prices ranked commodities/OWID energy bulk over energy_grid.
     "day ahead electricity price": [
@@ -140,14 +140,14 @@ _NON_TICKER_WORDS: frozenset[str] = frozenset({
     "IMF", "BIS", "OECD", "WTO", "WHO", "UN", "ILO", "FAO", "OPEC", "NATO",
     "EIA", "BLS", "BEA", "CBO", "GAO", "ONS", "EIB", "EBRD", "ADB", "IFC",
     "WB",
-    # Energy / grid (ENERGY-1.1.1.5): ENTSO-E and regional grid codes are not
+    # Energy / grid: ENTSO-E and regional grid codes are not
     # equity tickers; keep them out of quotes_symbol_* boosts.
     "ENTSO", "AEMO", "NESO", "NEM",
 })
 
 # The ticker gate is INVERTED. The old default-allow
 # blacklist was patched three times (IXP 2026-06-07, IMF/org acronyms,
-# ENTSO/grid ENERGY-1.1.1.5) - a guard patched three times is the wrong guard.
+# ENTSO/grid) - a guard patched three times is the wrong guard.
 # Now a ticker-shaped token counts as a ticker ONLY when the query carries
 # equity-context vocabulary, OR the token is on this short high-liquidity
 # whitelist where a bare mention almost always means the instrument. The
@@ -170,7 +170,7 @@ _TICKER_WHITELIST: frozenset[str] = frozenset({
 
 # National-source geography: operation_id prefix -> ISO2 country of
 # the NATIONAL source. Used by search to demote a national source when the
-# query names a DIFFERENT country - the audit's 'Georgia CPI' returned the UK
+# query names a DIFFERENT country - a 'Georgia CPI' query returned the UK
 # ons_cpi top-1. Global/multi-country sources are deliberately absent (never
 # demoted). Curated, like the central-bank prefix map above.
 SOURCE_COUNTRY_PREFIXES: dict[str, str] = {
@@ -224,9 +224,9 @@ SOURCE_COUNTRY_PREFIXES: dict[str, str] = {
 # entry must match at least one bundled operation, so a source rename or
 # removal fails loudly instead of silently disarming the geography penalty.
 
-# Query-side country vocabulary: comprehensive generated module
-# review: a closed 30-entry list recreated silent substitution for every
-# omitted country - Netherlands CPI still returned the UK ons_cpi).
+# Query-side country vocabulary: a comprehensive generated module, because
+# a closed 30-entry list recreated silent substitution for every omitted
+# country - Netherlands CPI still returned the UK ons_cpi.
 from ._countries import COUNTRY_QUERY_TERMS  # noqa: E402 - documented above
 
 # Country/US-state homonyms. The sovereign reading of an
@@ -320,7 +320,7 @@ def detect_query_countries(query: str) -> set[str]:
 # Strong-signal tokens that indicate an equity query when present near an
 # otherwise-ambiguous ticker. Kept narrow on purpose; expanding too far would
 # re-introduce the false positives that motivated the exclusion list.
-# Bare "exchange" was dropped (Codex S3 review): it collides with "internet
+# Bare "exchange" was dropped: it collides with "internet
 # exchange" and "exchange rate" - the phrase form below keeps the equity case.
 # Temporal/filler words that do not change a bare-ticker quote lookup.
 _BARE_TICKER_FILLER: frozenset[str] = frozenset({
@@ -450,7 +450,7 @@ def detect_tickers(query: str) -> list[str]:
 def query_has_equity_context(query: str) -> bool:
     """True when the query carries explicit equity vocabulary (stock, price, ...).
 
-    Token-bounded (Codex S3 review): "Stockholm" must not satisfy "stock" -
+    Token-bounded: "Stockholm" must not satisfy "stock" -
     a substring match here re-admitted IP/NAT as tickers and disabled the
     network-domain suppression for clearly network queries. Public because
     search uses it as an override: explicit equity wording keeps the ticker

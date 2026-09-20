@@ -185,7 +185,7 @@ class Authenticator:
         # PyJWKClient does SYNCHRONOUS network I/O; on the event loop it
         # stalled every request in the process (including raw sugra_ keys)
         # whenever the key cache was cold. A DEDICATED executor keeps the
-        # offload from competing with the default pool (fleet review rule).
+        # offload from competing with the default pool.
         self._jwks_executor = ThreadPoolExecutor(
             max_workers=2, thread_name_prefix="jwks")
         # Flood protection. Admission to the executor is

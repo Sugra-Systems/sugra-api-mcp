@@ -1,6 +1,6 @@
 """The auth layer must not serialize the process.
 
-The audit observed a fast endpoint held for 120.4s and the NEXT search taking
+A load measurement saw a fast endpoint held for 120.4s and the NEXT search taking
 107.5s. Three code-visible mechanisms could produce that: one Authenticator-wide
 lock held ACROSS an internal HTTP call, synchronous JWKS network I/O executed on
 the event loop, and an uncached activity validation paying an internal

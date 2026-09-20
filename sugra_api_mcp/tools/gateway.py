@@ -108,7 +108,7 @@ def _resolve_path(path: str, params: dict[str, Any]) -> str:
 
 
 def _group_violation(endpoint, params: dict[str, Any]) -> str | None:
-    """Group-contract verdict BEFORE any HTTP call (audit P1-8 MCP half).
+    """Group-contract verdict BEFORE any HTTP call.
 
     Returns "uncovered" when NO declared group is fully covered, and
     "multiple" when the endpoint declares its groups mutually exclusive

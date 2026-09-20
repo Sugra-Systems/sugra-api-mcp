@@ -180,10 +180,6 @@ class SugraFastMCP(FastMCP):
         # read timeout and the typed envelope never reached the agent; the
         # asyncio scope also CANCELS the outbound request instead of letting
         # it complete server-side after the caller has given up.
-        # The budget is END-TO-END - auth already consumed part
-        # of it. The middleware stamps the request start; what remains (with
-        # a small floor so a slow-auth call still gets a real attempt) is the
-        # tool budget. Stdio transport has no middleware stamp - full budget.
         # The budget is the tool's own, and auth is bounded separately.
         #
         # This used to subtract the auth leg, read from a ContextVar stamped by

@@ -1,6 +1,6 @@
 """One end-to-end budget bounds every tool call.
 
-The audit saw deliveries at 90-100s and a 45s client cut with no typed envelope:
+Deliveries were measured at 90-100s against a 45s client cut with no typed envelope:
 the outbound httpx timeout bounded only its own leg, and nothing cancelled the
 server-side work when the caller had long given up. The deadline wraps dispatch
 in SugraFastMCP.call_tool, so what is asserted here - over a real in-memory MCP
@@ -207,7 +207,7 @@ async def test_fast_call_is_untouched_by_the_deadline(monkeypatch) -> None:
 
 
 async def test_next_call_after_a_deadline_is_not_delayed(monkeypatch) -> None:
-    """The audit's wedge signature: a timed-out call held the NEXT command
+    """The wedge signature: a timed-out call held the NEXT command
     for 107.5s. After a deadline fires, an immediately following fast call
     must complete at normal latency."""
     monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "0.4")
