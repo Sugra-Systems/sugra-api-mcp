@@ -59,8 +59,8 @@ def shared_ssl_context() -> ssl.SSLContext:
     is a different set of trust anchors. The anchors here stay exactly the
     ones an unconfigured httpx client would use.
 
-    Trust material is therefore read ONCE per process: a CA rotation or an
-    env change on a running host takes effect on restart.
+    The context is built once per process, so those two environment variables
+    are read once, at construction.
 
     ONE THING DOES write to the shared object. Before every TLS connect,
     httpcore calls `ssl_context.set_alpn_protocols(...)` on it (httpcore 1.0.9,
