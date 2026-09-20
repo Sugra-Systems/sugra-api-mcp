@@ -12,7 +12,7 @@ Public-repo rules (load-bearing):
   author this: a bot push does not trigger workflows, so Test would never
   run on the PR.
 - The PR body must not close a board card. This is a catalog bump, not the
-  continuity mechanism (MCP-15.3).
+  continuity mechanism.
 
 Requires env MCP_CATALOG_TOKEN (fine-grained PAT: contents + pull requests
 on sugra-api-mcp). GITHUB_TOKEN is refused.

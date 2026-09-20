@@ -63,12 +63,12 @@ class Endpoint(BaseModel):
     # time); {} for endpoints without a JSON body. Lets describe_endpoint
     # show the exact body shape instead of clients guessing keys.
     request_body_schema: dict[str, Any] = Field(default_factory=dict)
-    # MCP-9 (audit P1-3): the spec's deprecated flag, carried into the bundle
+    # The spec's deprecated flag, carried into the bundle
     # so search can penalize deprecated routes; replaced_by names the live
     # replacement operation when one exists (v1 path re-published under v2).
     deprecated: bool = False
     replaced_by: str | None = None
-    # MCP-11 (audit P1-8 MCP half): conditionally-required parameter groups
+    # Conditionally-required parameter groups
     # from the spec's x-sugra-required-groups extension - at least one group
     # must be fully covered before the gateway dispatches.
     required_groups: tuple[tuple[str, ...], ...] = ()

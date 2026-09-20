@@ -1,11 +1,11 @@
-"""MCP-10 (audit P1-4/P1-5): the auth layer must not serialize the process.
+"""The auth layer must not serialize the process.
 
-The audit observed a fast endpoint held for 120.4s and the NEXT search taking
+A load measurement saw a fast endpoint held for 120.4s and the NEXT search taking
 107.5s. Three code-visible mechanisms could produce that: one Authenticator-wide
 lock held ACROSS an internal HTTP call, synchronous JWKS network I/O executed on
 the event loop, and an uncached activity validation paying an internal
 round-trip on every tool call. Each is pinned here with a timing or call-count
-assertion that fails on the pre-MCP-10 implementation.
+assertion that fails on the implementation that preceded it.
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ def _authenticator(delay: float = 0.0) -> tuple[Authenticator, _FakeHttp]:
 async def test_cold_cache_lookups_do_not_serialize_across_users() -> None:
     """Two DIFFERENT users' cold-cache key lookups must run concurrently.
 
-    Pre-MCP-10 a single Authenticator-wide lock was held across the internal
+    Before this change a single Authenticator-wide lock was held across the internal
     HTTP call, so N users paid N sequential round-trips."""
     auth, _ = _authenticator(delay=0.3)
     started = time.monotonic()
@@ -95,7 +95,7 @@ async def test_same_user_lookups_single_flight() -> None:
 async def test_stalled_jwks_does_not_block_the_raw_key_path() -> None:
     """A cold/stalled JWKS fetch must not stall unrelated requests.
 
-    Pre-MCP-10 the PyJWKClient network fetch ran synchronously ON the event
+    Before this change the PyJWKClient network fetch ran synchronously ON the event
     loop, so every request in the process - including plain sugra_ API keys
     that need no JWT at all - waited behind it."""
     auth, _ = _authenticator()
@@ -152,7 +152,7 @@ async def test_activity_validation_failure_is_never_cached() -> None:
 
 
 async def test_malformed_bearer_never_reaches_the_executor() -> None:
-    """codex r2: parse-level garbage must fail on the loop, not occupy a
+    """Parse-level garbage must fail on the loop, not occupy a
     JWKS executor slot."""
     auth, _ = _authenticator()
     submitted = []
@@ -164,7 +164,7 @@ async def test_malformed_bearer_never_reaches_the_executor() -> None:
 
 
 async def test_jwks_failure_puts_the_jwt_path_on_cooldown() -> None:
-    """agy r2: a failing JWKS endpoint must not be hammered per request."""
+    """A failing JWKS endpoint must not be hammered per request."""
     import sugra_api_mcp.auth as auth_mod
 
     auth, _ = _authenticator()
@@ -176,7 +176,7 @@ async def test_jwks_failure_puts_the_jwt_path_on_cooldown() -> None:
 
 
 async def test_access_cache_is_hard_bounded() -> None:
-    """agy r2: pruning expired entries cannot shrink a cache of LIVE jtis -
+    """Pruning expired entries cannot shrink a cache of LIVE jtis -
     the cap must hold regardless."""
     import sugra_api_mcp.auth as auth_mod
 
@@ -188,7 +188,7 @@ async def test_access_cache_is_hard_bounded() -> None:
 
 
 async def test_user_locks_clean_themselves() -> None:
-    """codex r3: reference-counted entries - no sweep to race the release
+    """Reference-counted entries - no sweep to race the release
     window, and nothing left behind after the last user leaves."""
     auth, _ = _authenticator()
     for uid in range(64):
@@ -207,7 +207,7 @@ _FAKE_JWT = ".".join([
 
 
 async def test_kid_path_network_failure_arms_the_cooldown() -> None:
-    """agy r3: an unreachable JWKS on the STANDARD kid path must classify as
+    """An unreachable JWKS on the STANDARD kid path must classify as
     503 and arm the cooldown - not read as an invalid token."""
     import jwt.exceptions as jexc
 
@@ -260,7 +260,7 @@ _FAKE_JWT_WITH_KID = ".".join([
 
 
 async def test_resolve_names_how_the_bearer_authenticated() -> None:
-    """MCP-26.1.3: the real resolve marks a validated JWT oauth and a sugra_ key api_key.
+    """The real resolve marks a validated JWT oauth and a sugra_ key api_key.
 
     Spans name the door from this method, so the OAuth path has to set it
     itself; a fake resolver elsewhere cannot prove that it does."""

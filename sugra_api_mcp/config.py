@@ -22,7 +22,7 @@ DEFAULT_ALLOWED_ORIGINS: tuple[str, ...] = (
     "https://app.cursor.sh",
 )
 
-# MCP-24.1: the opt-in switch for the MCP Apps price-chart widget, and the
+# The opt-in switch for the MCP Apps price-chart widget, and the
 # only values that turn it on (compared after strip + lower).
 UI_WIDGETS_ENV = "SUGRA_MCP_UI_WIDGETS"
 _TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
@@ -66,9 +66,9 @@ def load_config(*, require_api_key: bool = True) -> Config:
         api_base=os.environ.get("SUGRA_API_BASE", "https://sugra.ai").rstrip("/"),
         api_key=api_key,
         timeout=float(os.environ.get("SUGRA_TIMEOUT", "30")),
-        # MCP-10 (audit P1-4): end-to-end budget for ONE tool call, wrapped
+        # End-to-end budget for ONE tool call, wrapped
         # around dispatch in SugraFastMCP.call_tool. Must sit BELOW common
-        # client read timeouts (the audit harness cut at ~45s while the
+        # client read timeouts (a measured client cut at ~45s while the
         # gateway kept working to its 60s outbound budget, so the typed
         # timeout envelope never reached the agent).
         tool_deadline=_positive_seconds("SUGRA_TOOL_DEADLINE", "40"),
@@ -85,7 +85,7 @@ CLIENT_TIMEOUT_FLOOR_SECONDS = 60.0
 def validate_startup_budgets() -> None:
     """Refuse a configuration whose server-side path can outlive the client.
 
-    MCP-17 (codex F4/F5). The tool budget bounds DISPATCH, and auth is bounded
+    The tool budget bounds DISPATCH, and auth is bounded
     separately by AuthMiddleware, so the server-side worst case is the SUM of
     the two, reached only on a cold auth. That sum is what has to stay under
     the client's own cut, or the typed timeout envelope never arrives and the
@@ -114,7 +114,7 @@ def validate_startup_budgets() -> None:
 def _positive_seconds(var: str, default: str) -> float:
     """Parse a seconds budget, refusing values that cannot bound anything.
 
-    MCP-17 (codex F2): the budget went straight to asyncio.timeout. Zero
+    The budget used to go straight to asyncio.timeout. Zero
     cancelled every call the instant it started and a negative value did the
     same, both silently - the operator saw tools that "always time out" with
     no hint that the configuration was the cause.
@@ -163,7 +163,7 @@ def load_allowed_origins() -> list[str]:
 def ui_widgets_enabled() -> bool:
     """Whether the MCP Apps price-chart widget is served at all.
 
-    MCP-24.1. On only when SUGRA_MCP_UI_WIDGETS is 1, true, yes or on, in any
+    On only when SUGRA_MCP_UI_WIDGETS is 1, true, yes or on, in any
     case and with surrounding whitespace ignored. Unset, empty and every other
     value mean off. Off is the default because the widget is not ready for an
     app-directory review, and a directory scan of the server must find no UI:

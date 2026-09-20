@@ -7,7 +7,7 @@ from typing import Any
 from .models import Catalog, Endpoint, EndpointParameter
 from .toolsets import toolset_for_tags
 
-# MCP-9 (codex review): the v1->v2 rewrite alone resolved only 2 of 9
+# The v1->v2 rewrite alone resolved only 2 of 9
 # deprecated twins. Family renames are enumerated - each rewrite is tried in
 # order and the first that lands on a live operation wins. Deprecated ops with
 # genuinely no single successor are allowlisted for the bundle test.
@@ -178,7 +178,7 @@ def build_catalog_from_openapi(
                 )
             )
 
-    # MCP-9: resolve replaced_by for deprecated operations. The platform's
+    # Resolve replaced_by for deprecated operations. The platform's
     # deprecation pattern is a v1 path re-published under /v2/ with the same
     # trailing path; when exactly that live twin exists, name it so search can
     # keep the deprecated route strictly below its replacement.

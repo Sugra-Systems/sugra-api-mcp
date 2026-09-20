@@ -19,7 +19,7 @@ from ..errors import is_error_payload, server_busy_error
 from ..observability import trace_mcp_tool
 from ..server import current_caller, get_client, mcp, read_only
 
-# MCP-26.1: catalog search is pure CPU work, so it runs on one worker thread
+# Catalog search is pure CPU work, so it runs on one worker thread
 # instead of the event loop that serves every session. Two bounds admit a search
 # to that worker: SEARCH_MAX_PENDING searches running or queued in total, and
 # SEARCH_MAX_PENDING_PER_CALLER of them for any one caller (server.current_caller),
@@ -108,7 +108,7 @@ def _resolve_path(path: str, params: dict[str, Any]) -> str:
 
 
 def _group_violation(endpoint, params: dict[str, Any]) -> str | None:
-    """Group-contract verdict BEFORE any HTTP call (audit P1-8 MCP half).
+    """Group-contract verdict BEFORE any HTTP call.
 
     Returns "uncovered" when NO declared group is fully covered, and
     "multiple" when the endpoint declares its groups mutually exclusive
@@ -125,7 +125,7 @@ def _group_violation(endpoint, params: dict[str, Any]) -> str | None:
         # Exclusivity judges ACTIVE groups (any member supplied), not just
         # complete ones: a complete group mixed with a stray member of a
         # competing group is still a mixed-mode request the upstream will
-        # reject (codex r2).
+        # reject.
         active = sum(1 for group in groups if any(name in params for name in group))
         if active > 1:
             return "multiple"
@@ -384,7 +384,7 @@ async def call_endpoint(
             }
             # One diagnostic carries EVERYTHING the next call needs: hiding
             # the group constraint here would force a second failing round
-            # trip (codex r3).
+            # trip.
             if endpoint.required_groups:
                 payload["required_groups"] = [list(g) for g in endpoint.required_groups]
                 payload["groups_hint"] = (

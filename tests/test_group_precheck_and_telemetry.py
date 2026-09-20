@@ -1,4 +1,4 @@
-"""MCP-11: MCP halves of shipped audit items.
+"""Group precheck and telemetry.
 
 1. x-sugra-required-groups carried into the bundle and pre-validated in
    the gateway with a typed error BEFORE any HTTP call (the API half
@@ -167,7 +167,7 @@ def test_limit_field_descriptions_document_scope():
     import sugra_api_mcp.tools.gateway as gw
     from sugra_api_mcp.catalog.response import _RECORD_LIST_KEYS
 
-    # MCP-22: the descriptions name every key that qualifies as the record
+    # The descriptions name every key that qualifies as the record
     # list inside data, in the allowlist's sorted order, so the published
     # text cannot drift from the code.
     allowlist = ", ".join(sorted(_RECORD_LIST_KEYS))
@@ -201,7 +201,7 @@ def test_resolve_entity_docstring_mentions_new_statuses():
 
 @pytest.mark.anyio
 async def test_mutually_exclusive_groups_reject_multiple(monkeypatch):
-    """codex r1: exclusivity is ENFORCED, not just recorded - completing
+    """Exclusivity is ENFORCED, not just recorded - completing
     more than one exclusive group refuses before any HTTP call."""
     import sugra_api_mcp.tools.gateway as gw
 
@@ -255,7 +255,7 @@ async def test_non_exclusive_multiple_groups_dispatch(monkeypatch):
 
 @pytest.mark.anyio
 async def test_fetch_data_group_precheck(monkeypatch):
-    """agy r1: fetch_data carries the same precheck as call_endpoint."""
+    """fetch_data carries the same precheck as call_endpoint."""
     import sugra_api_mcp.tools.gateway as gw
 
     ep = _endpoint(required_groups=[["latitude", "longitude"], ["city"]])
@@ -284,7 +284,7 @@ async def test_fetch_data_group_precheck(monkeypatch):
 
 @pytest.mark.anyio
 async def test_exclusive_mixed_mode_partial_member_rejected(monkeypatch):
-    """codex r2: a complete group plus a stray member of a competing
+    """A complete group plus a stray member of a competing
     exclusive group is mixed-mode - refused before HTTP."""
     import sugra_api_mcp.tools.gateway as gw
 
@@ -313,7 +313,7 @@ async def test_exclusive_mixed_mode_partial_member_rejected(monkeypatch):
 
 @pytest.mark.anyio
 async def test_one_diagnostic_carries_flat_and_group_requirements(monkeypatch):
-    """codex r3: an empty call against an endpoint with BOTH a plain
+    """An empty call against an endpoint with BOTH a plain
     required parameter and required groups reports everything at once."""
     import sugra_api_mcp.tools.gateway as gw
 
@@ -342,7 +342,7 @@ async def test_one_diagnostic_carries_flat_and_group_requirements(monkeypatch):
 
 @pytest.mark.anyio
 async def test_fetch_data_one_diagnostic_carries_both(monkeypatch):
-    """codex r4: fetch_data reports flat missing AND groups in one shot."""
+    """fetch_data reports flat missing AND groups in one shot."""
     import sugra_api_mcp.tools.gateway as gw
 
     ep = _endpoint(
@@ -371,7 +371,7 @@ async def test_fetch_data_one_diagnostic_carries_both(monkeypatch):
 
 
 def test_search_results_advertise_required_groups():
-    """codex r5: discovery must not present group-constrained endpoints
+    """Discovery must not present group-constrained endpoints
     as input-free."""
     from sugra_api_mcp.catalog.models import Catalog
     from sugra_api_mcp.catalog.search import search_catalog

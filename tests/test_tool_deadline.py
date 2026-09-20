@@ -1,6 +1,6 @@
-"""MCP-10 (audit P1-4): one end-to-end budget bounds every tool call.
+"""One end-to-end budget bounds every tool call.
 
-The audit saw deliveries at 90-100s and a 45s client cut with no typed envelope:
+Deliveries were measured at 90-100s against a 45s client cut with no typed envelope:
 the outbound httpx timeout bounded only its own leg, and nothing cancelled the
 server-side work when the caller had long given up. The deadline wraps dispatch
 in SugraFastMCP.call_tool, so what is asserted here - over a real in-memory MCP
@@ -92,7 +92,7 @@ class _CaptureTracer:
 
 
 async def test_the_deadline_leaves_a_verdict_on_the_span(monkeypatch) -> None:
-    """MCP-19.1, over a real in-memory session: the budget's cancellation used
+    """Over a real in-memory session: the budget's cancellation used
     to end the tool's span with no mcp.success and no code (CancelledError is
     a BaseException the wrapper never caught), so the one failure that fires
     when the API is slowest was invisible to every failure query. The client
@@ -157,7 +157,7 @@ async def test_the_dispatch_budget_is_restored_after_every_outcome(
     success, a returned error, a RAISED exception, a budget timeout and an
     external cancel, the ContextVar holds exactly the value it held before -
     a seeded prior value, by identity, so a reset replaced by set(None) or a
-    reset skipped on the exception path fails here (codex r1, r2)."""
+    reset skipped on the exception path fails here."""
     import contextvars
 
     from sugra_api_mcp import observability
@@ -207,7 +207,7 @@ async def test_fast_call_is_untouched_by_the_deadline(monkeypatch) -> None:
 
 
 async def test_next_call_after_a_deadline_is_not_delayed(monkeypatch) -> None:
-    """The audit's wedge signature: a timed-out call held the NEXT command
+    """The wedge signature: a timed-out call held the NEXT command
     for 107.5s. After a deadline fires, an immediately following fast call
     must complete at normal latency."""
     monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "0.4")
@@ -238,7 +238,7 @@ async def test_next_call_after_a_deadline_is_not_delayed(monkeypatch) -> None:
 
 
 async def test_the_configured_budget_is_what_wraps_dispatch(monkeypatch) -> None:
-    """MCP-17: an ambient stamp never shortens the tool's budget.
+    """An ambient stamp never shortens the tool's budget.
 
     This replaces test_total_budget_is_never_exceeded_by_the_floor, which
     stamped 5s into the past against a 1.0s budget and asserted the
@@ -248,7 +248,7 @@ async def test_the_configured_budget_is_what_wraps_dispatch(monkeypatch) -> None
     visible here belongs to the request that OPENED the session and never to
     this call.
 
-    codex F3: assert the ARGUMENT handed to asyncio.timeout, not the wall
+    Assert the ARGUMENT handed to asyncio.timeout, not the wall
     clock. The measured-elapsed assertion it replaces was satisfied by a
     reintroduced floor - max(0.75, total - elapsed) passed it - because its
     bound was wider than the value it meant to pin.
@@ -263,7 +263,7 @@ async def test_the_configured_budget_is_what_wraps_dispatch(monkeypatch) -> None
         captured.append(delay)
         return real_timeout(delay)
 
-    # codex round 2: the budget must sit BELOW any floor a regression could
+    # The budget must sit BELOW any floor a regression could
     # introduce, or the capture cannot see it. A 7s capture passed happily
     # while asyncio.timeout(max(0.75, deadline)) was in place; 0.25s does not.
     monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "0.25")
@@ -285,7 +285,7 @@ async def test_the_configured_budget_is_what_wraps_dispatch(monkeypatch) -> None
 
 
 async def test_a_long_lived_session_still_dispatches_tools(monkeypatch) -> None:
-    """MCP-17: a session older than the budget must still call tools.
+    """A session older than the budget must still call tools.
 
     The streamable-HTTP session loop is started with task_group.start() from
     inside the request that creates the session, so it INHERITS that request's
@@ -318,7 +318,7 @@ async def test_a_long_lived_session_still_dispatches_tools(monkeypatch) -> None:
 
 
 def test_a_budget_that_cannot_bound_anything_is_refused(monkeypatch) -> None:
-    """MCP-17 (codex F2): a nonpositive budget must not reach asyncio.timeout.
+    """A nonpositive budget must not reach asyncio.timeout.
 
     Zero and negative values parsed fine and went straight through, cancelling
     every call the instant it started. The operator saw tools that "always
@@ -337,7 +337,7 @@ def test_a_budget_that_cannot_bound_anything_is_refused(monkeypatch) -> None:
 
 
 def test_startup_refuses_a_budget_that_cannot_bound_anything(monkeypatch) -> None:
-    """MCP-17 (codex F5): the refusal must happen where an operator sees it.
+    """The refusal must happen where an operator sees it.
 
     The guard lived in load_config, but no startup path called load_config, so
     SUGRA_TOOL_DEADLINE=0 started cleanly, answered /health with 200, and first
@@ -360,7 +360,7 @@ def test_startup_refuses_a_budget_that_cannot_bound_anything(monkeypatch) -> Non
 
 
 def test_startup_refuses_a_budget_the_client_would_outlive(monkeypatch) -> None:
-    """MCP-17 (codex F4): the tool budget and the auth budget are sequential.
+    """The tool budget and the auth budget are sequential.
 
     Dispatch is bounded by SUGRA_TOOL_DEADLINE and auth by its own slice, so
     the server-side worst case is their SUM, reached on a cold auth. If that

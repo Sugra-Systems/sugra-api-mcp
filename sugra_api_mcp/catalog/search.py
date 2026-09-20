@@ -64,7 +64,7 @@ _QUERY_STOPWORDS: frozenset[str] = frozenset({
 ALIAS_PHRASE_BOOST = 10
 TICKER_MARKETS_TOOLSET_BOOST = 12
 TICKER_QUOTES_SYMBOL_BOOST = 25
-# Symbol-aware relevance (board MCP-4.9): when the raw query carries a
+# Symbol-aware relevance: when the raw query carries a
 # ticker-like token (MSFT, AAPL - detect_tickers is conservative on purpose),
 # endpoints that actually TAKE a symbol input must outrank market-wide ones.
 # Without this, "MSFT earnings" ranked market_calendar_earnings (params
@@ -85,7 +85,7 @@ CRYPTO_NAMESPACE_BOOST = 18
 # inflation" because non-US endpoints out-ranked fred_series_series_id.
 US_MACRO_FRED_BOOST = 30
 US_MACRO_FED_BOOST = 20
-# MCP-9 (audit P1-3) ranking mechanisms:
+# Ranking mechanisms:
 # - COVERAGE: matching MORE DISTINCT query terms must beat one token repeated
 #   across prose fields ('address' x4 in a crypto endpoint outranked the
 #   geocoding endpoint that matched 'geocode' + 'address').
@@ -150,7 +150,7 @@ _SYMBOL_PARAM_NAMES = frozenset({"symbol", "ticker"})
 
 
 def _symbol_input_kind(endpoint: Endpoint) -> str | None:
-    """Classify how an endpoint accepts a symbol-like input (MCP-4.9).
+    """Classify how an endpoint accepts a symbol-like input.
 
     Returns "path" when the path contains a {symbol}/{ticker} segment (the
     endpoint is a per-symbol resource), "param" when a required parameter is
@@ -171,7 +171,7 @@ class _EndpointProfile:
     Scoring asks, for every query term and every endpoint, whether the term is a
     token of a field. Re-tokenizing the field text for each question made a
     three-word query cost about 400 ms and let one long query hold the event
-    loop for minutes (MCP-26.1). A set answers the same question:
+    loop for minutes. A set answers the same question:
     ``term in _tokens(field)`` is exactly ``term in set(_tokens(field))``, and
     the normalized text is exactly what ``_phrase_has`` builds.
     """
@@ -356,17 +356,17 @@ def _score(
                 and term not in alias_consumed):
             matched_query_terms.add(term)
 
-    # MCP-9 coverage: breadth of DISTINCT query-term matches beats depth of
+    # Coverage: breadth of DISTINCT query-term matches beats depth of
     # one term repeated across prose fields.
     if len(matched_query_terms) >= 2:
         score += COVERAGE_BONUS_PER_TERM * len(matched_query_terms)
         why.append(f"coverage:{len(matched_query_terms)}")
 
-    # MCP-9 toolset intent: a query term that IS the toolset name (or its
+    # Toolset intent: a query term that IS the toolset name (or its
     # stem: 'geocode' -> 'geocoding') pins the domain. Except when the term
     # only appears inside a proper-name compound ('federal FUNDS rate' names
     # an interest rate, not the funds toolset).
-    # agy review: an EMPTY toolset made startswith('') true for every term
+    # An EMPTY toolset made startswith('') true for every term
     # and handed the intent boost to toolset-less endpoints on any query.
     toolset_lower = endpoint.toolset.lower()
     for term in query_terms if len(toolset_lower) >= 4 else ():
@@ -379,7 +379,7 @@ def _score(
             why.append(f"toolset-intent:{term}")
             break
 
-    # MCP-9 geography: the query names a country; a NATIONAL source of a
+    # Geography: the query names a country; a NATIONAL source of a
     # different country is a silent substitution, never a top answer.
     if query_countries:
         for prefix, country in SOURCE_COUNTRY_PREFIXES.items():
@@ -389,7 +389,7 @@ def _score(
                     why.append(f"geo-mismatch:{country}")
                 break
 
-    # MCP-9 deprecation: never above the live replacement.
+    # Deprecation: never above the live replacement.
     if endpoint.deprecated and endpoint.replaced_by:
         score -= DEPRECATED_REPLACED_PENALTY
         why.append(f"deprecated->{endpoint.replaced_by}")
@@ -422,7 +422,7 @@ def known_sources(catalog: Catalog) -> set[str]:
     return values
 
 
-# MCP-26.1: the bounds a query must fit before any work is done on it. Agent
+# The bounds a query must fit before any work is done on it. Agent
 # queries name an instrument, series, place or task in a few words; even the
 # long NVDA question in the stopword note above is 16 tokens. A query past
 # either bound is refused, never truncated, so no result is ever computed from
@@ -520,7 +520,7 @@ def search_catalog(
         and not query_has_equity_context(query)
     )
 
-    # Symbol-aware gate (MCP-4.9): a ticker-like token in the RAW query means
+    # Symbol-aware gate: a ticker-like token in the RAW query means
     # the user asks about one instrument, so endpoints that take a symbol
     # input get the symbol-input boost. Crypto context and network dominance
     # suppress it exactly like the quotes_symbol boost. The phrase-based
@@ -543,7 +543,7 @@ def search_catalog(
     boost_crypto = has_crypto_context
     boost_us_macro = detect_us_macro_query(query)
     query_countries = detect_query_countries(query)
-    # codex final: geography resolves BEFORE the US-macro heuristic - the
+    # Geography resolves BEFORE the US-macro heuristic - the
     # word 'American' inside 'American Samoa' read as US context and the +30
     # FRED boost out-muscled the wrong-country penalty. An explicitly named
     # non-US geography suppresses the US-macro boost outright.
@@ -569,7 +569,7 @@ def search_catalog(
     for compound in _PROPER_NAME_COMPOUNDS:
         if f" {compound} " in normalized_query:
             consumed.update(compound.split())
-    # Country tokens are NOT consumed (agy review): geography grants no
+    # Country tokens are NOT consumed: geography grants no
     # positive boost, so consuming them would strip the CORRECT national
     # source of the coverage credit for the country the user typed.
     coverage_excluded = frozenset(consumed)
@@ -598,13 +598,13 @@ def search_catalog(
         if score > 0:
             scored.append((score, endpoint, why))
 
-    # MCP-9 structural guarantee: a deprecated route never outranks its live
+    # Structural guarantee: a deprecated route never outranks its live
     # replacement, whatever the token luck (a query built from the legacy
     # summary text otherwise always wins textually). Clamp strictly below.
     by_id = {endpoint.operation_id: score for score, endpoint, _ in scored}
     for i, (score, endpoint, why) in enumerate(scored):
         if endpoint.deprecated and endpoint.replaced_by:
-            # agy review: a replacement matching NOTHING (absent from scored)
+            # A replacement matching NOTHING (absent from scored)
             # must not leave the deprecated route standing on its legacy
             # text - default 0 clamps it out of the results entirely; the
             # why-pointer to the successor still ships on any surviving entry.

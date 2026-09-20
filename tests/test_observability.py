@@ -348,7 +348,7 @@ def test_transport_error_codes_pass_the_allowlist(monkeypatch, code: str) -> Non
 
 
 def test_result_attrs_extractor_emits_extra_dimensions(monkeypatch) -> None:
-    """MCP-2.3: the optional result_attrs extractor enriches SUCCESS spans
+    """The optional result_attrs extractor enriches SUCCESS spans
     with envelope-metadata dimensions (recipe_version / units / ...). The
     extractor owns the privacy allowlist; the wrapper just applies its output.
     """
@@ -658,13 +658,13 @@ def test_setup_preserves_operator_otel_service_name_override(monkeypatch) -> Non
     assert captured["OTEL_SERVICE_NAME"] == "sugra-mcp-staging"
 
 
-# ---- MCP-19: an HTTP failure is named by its STATUS, never by the API's text ----
+# ---- An HTTP failure is named by its STATUS, never by the API's text ----
 
 
 # Attribute names a span may carry on each path. A privacy assertion that only
 # scans STRING values for ONE sentinel let a mutation attach the whole error
 # text under a new key as a list, and another attach the url under a key no
-# sentinel was seeded in - both survived every test (codex r1). Pinning the
+# sentinel was seeded in - both survived every test. Pinning the
 # name set kills both; the sentinels below then guard the values.
 _BASE_ATTRS = frozenset({"mcp.tool.name", "mcp.success", "mcp.duration_ms"})
 _FAILURE_ATTRS = _BASE_ATTRS | {"mcp.error.code"}
@@ -672,7 +672,7 @@ _FAILURE_ATTRS = _BASE_ATTRS | {"mcp.error.code"}
 # The one scalar type each attribute may carry. Checked with `type(value) is`
 # so a bool never passes as an int and a list never passes as a string: a
 # mutation wrapping the tool name in a list on one status survived the name
-# set and the sentinel scan alone (codex r2).
+# set and the sentinel scan alone.
 _ATTR_TYPES: dict[str, type] = {
     "mcp.tool.name": str,
     "mcp.success": bool,
@@ -825,7 +825,7 @@ def test_allowlisted_code_wins_over_the_status_beside_it(monkeypatch) -> None:
 
 
 def test_a_str_subclass_error_code_reaches_the_span_as_str(monkeypatch) -> None:
-    """MCP-26.1.2: an allowlisted str subclass is stored as an exact str."""
+    """An allowlisted str subclass is stored as an exact str."""
     class _Code(str):
         pass
 
@@ -860,8 +860,8 @@ def test_partial_success_envelope_with_data_is_a_success(monkeypatch) -> None:
     """One definition of failure (errors.is_error_payload): an "error" note
     BESIDE "data" is a partial-degradation success - the tool protocol reports
     it as a success and shapes it, so the span must not count it as a failure
-    (it counted as `unknown_error` before, inflating the very bucket MCP-19
-    measures)."""
+    (it counted as `unknown_error` before, inflating the very bucket the named
+    error codes exist to drain)."""
     tracer = _install_fake_tracer(monkeypatch)
 
     @observability.trace_mcp_tool("call_endpoint")
@@ -912,7 +912,7 @@ def test_entity_and_keyless_codes_pass_the_allowlist(monkeypatch, code: str) -> 
     _assert_span_is_clean(span, _FAILURE_ATTRS, "free text stays out of spans")
 
 
-# ---- MCP-19 (codex r1 S2): a partial envelope now reaches the agent extractor ----
+# ---- A partial envelope now reaches the agent extractor ----
 
 
 _AGENT_SUCCESS_ATTRS = _BASE_ATTRS | {
@@ -928,7 +928,7 @@ _AGENT_SUCCESS_ATTRS = _BASE_ATTRS | {
     "recipe_version",
     [
         "user@example.com token=abc123",  # not the shape at all
-        "user_ssn_123456789@1",  # the shape, but not a known recipe (codex r2)
+        "user_ssn_123456789@1",  # the shape, but not a known recipe
         "token_abc123@1",
     ],
 )
@@ -1082,7 +1082,7 @@ def test_get_timeseries_envelope_keeps_its_recipe_version_on_the_span(monkeypatc
     _assert_span_is_clean(span, _AGENT_SUCCESS_ATTRS)
 
 
-# ---- MCP-19.1: a cancelled call leaves a verdict on its span ----
+# ---- A cancelled call leaves a verdict on its span ----
 
 
 async def _dispatch(coro_factory, timeout_s: float | None, sink: list | None = None):
@@ -1142,7 +1142,7 @@ def test_the_budget_is_recognised_even_when_the_loop_clock_is_coarse(monkeypatch
     on Windows), so the budget can fire while loop.time() still reads before
     the deadline. Attribution therefore asks the timeout whether it fired and
     never compares clocks - a comparison filed this budget cancel as
-    `cancelled` (codex r1)."""
+    `cancelled`."""
     tracer = _install_fake_tracer(monkeypatch)
 
     @observability.trace_mcp_tool("get_timeseries")
@@ -1190,7 +1190,7 @@ def test_an_external_cancel_after_the_deadline_passed_is_still_cancelled(monkeyp
     """The loop is blocked past the published deadline, so the budget's timer
     is due but has NOT run; then an external cancel lands first. The clock
     says the deadline is past, the timeout says it never fired - and the
-    timeout is right. A clock comparison filed this on the budget (codex r1)."""
+    timeout is right. A clock comparison filed this on the budget."""
     tracer = _install_fake_tracer(monkeypatch)
 
     @observability.trace_mcp_tool("resolve_entity")
@@ -1217,7 +1217,7 @@ async def _compete(dispatch_factory) -> tuple:
     external cancel is queued with call_soon and the budget's timer is
     rescheduled to now, so in the NEXT turn the cancel runs first, then the
     timer, and only then the task resumes - carrying two cancellation
-    requests and an expired budget (codex r1 on MCP-19.1.1: the earlier
+    requests and an expired budget (the earlier
     time.sleep arrangement failed under a 50 ms wakeup delay)."""
     sink: list = []
     dispatch = asyncio.create_task(dispatch_factory(sink))
@@ -1238,7 +1238,7 @@ def test_a_competing_external_cancel_in_the_same_loop_turn_is_cancelled(monkeypa
     cancellation requests, and asyncio.Timeout then hands the CancelledError
     to the caller instead of raising TimeoutError. The span follows the same
     ownership rule the timeout applies and says cancelled - expired() alone
-    proves the timer fired, not that it owns what propagates (codex r2)."""
+    proves the timer fired, not that it owns what propagates."""
     tracer = _install_fake_tracer(monkeypatch)
     seen: list = []
 
@@ -1261,14 +1261,14 @@ def test_cancellation_codes_are_allowlisted(code: str) -> None:
     assert code in observability._KNOWN_ERROR_CODES
 
 
-# ---- MCP-19.1.1: the cancellation that leaves the wrapper is the one that entered it ----
+# ---- The cancellation that leaves the wrapper is the one that entered it ----
 
 
 class _Seen:
     """The CancelledError as delivered INSIDE the tool: the object, a SNAPSHOT
     of its args taken at that instant (so a later in-place change of the
-    object's args cannot satisfy a comparison against itself, codex r1 on
-    MCP-19.1.1), and the task's cancellation count at that instant."""
+    object's args cannot satisfy a comparison against itself),
+    and the task's cancellation count at that instant."""
 
     def __init__(self, exc: BaseException) -> None:
         self.exc = exc
@@ -1301,8 +1301,8 @@ def test_the_re_raised_cancellation_is_the_same_object_with_its_reason(monkeypat
     """The wrapper promises to re-raise UNCHANGED. A bare `raise` keeps the
     exception object, so the reason handed to Task.cancel() reaches whoever
     awaits the task; `raise asyncio.CancelledError()` in its place passed
-    every earlier test while replacing it with an empty one (codex r3 on
-    MCP-19.1)."""
+    every earlier test while replacing it with an empty one.
+    """
     tracer = _install_fake_tracer(monkeypatch)
     seen: list = []
 
@@ -1399,7 +1399,7 @@ def test_an_anyio_cancel_scope_behaves_the_same_through_the_wrapper(monkeypatch,
         assert tracer.spans == []
 
 
-# ---- MCP-26.1.1: the bound that refused a server_busy call reaches the span ----
+# ---- The bound that refused a server_busy call reaches the span ----
 
 
 _SCOPE_NAMES = ("tool_calls", "caller_tool_calls", "search", "caller_search")
@@ -1511,7 +1511,7 @@ class _ScopeLookupRaises(dict):
 
 def test_a_payload_whose_scope_lookup_raises_still_reaches_the_caller(monkeypatch) -> None:
     """Reading the scope is telemetry, so it must never turn a returned payload
-    into a raised exception (codex r1)."""
+    into a raised exception."""
     tracer = _install_fake_tracer(monkeypatch)
     payload = _ScopeLookupRaises(error="server_busy", scope="search", limit=8)
 
@@ -1610,7 +1610,7 @@ class _NotEqualRaises(str):
 
 
 def test_an_error_value_with_its_own_comparison_cannot_raise_into_the_result(monkeypatch) -> None:
-    """MCP-26.1.2: the interned allowlisted str is what later comparisons see, so
+    """The interned allowlisted str is what later comparisons see, so
     a subclass that raises on != cannot explode into the tool result or drop
     mcp.busy.scope."""
     tracer = _install_fake_tracer(monkeypatch)
@@ -1647,7 +1647,7 @@ def test_a_scope_never_carries_over_to_a_later_span(monkeypatch) -> None:
     ]
 
 
-# ---- MCP-26.1.3: how the call arrived, as fixed classes only ----
+# ---- How the call arrived, as fixed classes only ----
 
 
 _CALLER_ATTRS = frozenset({
@@ -1665,7 +1665,7 @@ _CALLER_ATTRS = frozenset({
 _IDENTITY_ATTRS = frozenset({"enduser.pseudo.id", "enduser.id"})
 _CALLER_SPAN_ATTRS = _CALLER_ATTRS | _IDENTITY_ATTRS
 
-# The API's inbound-client classes (usage_clients.py, APP-15.7).
+# The API's inbound-client classes (usage_clients.py).
 _CLASS_VOCABULARY = frozenset({
     "chatgpt", "claude", "grok", "cursor", "openbb", "python", "curl", "node", "browser", "mcp", "playground", "other",
 })
@@ -1992,7 +1992,7 @@ def _pattern_table(patterns: tuple[tuple[str, re.Pattern[str]], ...]) -> list[tu
 
 def test_the_client_tables_are_pinned_alternative_by_alternative() -> None:
     """One sample per class let an alternative, a case flag or the order change unseen.
-    The User-Agent table is the API's usage_clients table (APP-15.7): change both together."""
+    The User-Agent table is the API's usage_clients table: change both together."""
     assert _pattern_table(observability._UA_PATTERNS) == [
         ("playground", r"sugra-playground", True),
         ("mcp", r"sugra-api-mcp", True),

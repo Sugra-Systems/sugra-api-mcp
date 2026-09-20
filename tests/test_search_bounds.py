@@ -1,4 +1,4 @@
-"""MCP-26.1: a catalog search can no longer hold the event loop.
+"""A catalog search can no longer hold the event loop.
 
 Before this change a three-word query took about 400 ms on the workstation, and
 a 20,000-character query of distinct words held the only event loop for 133 s.
@@ -647,7 +647,7 @@ async def test_a_refused_call_leaves_a_span_for_registered_tools_only(monkeypatc
     ids=["tool_calls", "caller_tool_calls", "search", "caller_search", "fetch_data-search", "fetch_data-caller_search"],
 )
 async def test_every_bound_names_itself_on_the_refusal_span(monkeypatch, tool, arguments, module, bound, scope) -> None:
-    """MCP-26.1.1: each bound, driven through a real tool call, leaves exactly one
+    """Each bound, driven through a real tool call, leaves exactly one
     span, and its mcp.busy.scope is the scope the refusal payload carries."""
     tracer = _CaptureTracer()
     monkeypatch.setattr(observability, "_TRACER", tracer)
@@ -710,7 +710,7 @@ def test_the_new_error_codes_reach_telemetry() -> None:
 
 
 def test_an_allowlisted_str_subclass_is_not_attached() -> None:
-    """MCP-26.1.2: the span gets the interned allowlisted str, not the caller's object."""
+    """The span gets the interned allowlisted str, not the caller's object."""
     class _Code(str):
         pass
 

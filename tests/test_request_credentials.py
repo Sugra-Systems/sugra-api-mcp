@@ -239,7 +239,7 @@ def _session_attr(session_id: str) -> str:
 
 
 async def test_every_tool_span_names_how_its_own_request_arrived(upstream, monkeypatch) -> None:
-    """MCP-26.1.3: on one session, each tools/call span carries the auth method,
+    """On one session, each tools/call span carries the auth method,
     host, User-Agent class and Origin of the request that carried that call, and
     the client class the session's most recent initialize asserted. That one is
     client-reported: any request that re-initializes the session can change it."""
@@ -346,7 +346,7 @@ class _Gate:
 
 @pytest.mark.parametrize("one_session", [False, True], ids=["two-sessions", "one-session"])
 async def test_concurrent_calls_each_carry_their_own_request(monkeypatch, one_session: bool) -> None:
-    """MCP-26.1.3 (review): two calls at once, on two sessions or on one, with every auth
+    """Two calls at once, on two sessions or on one, with every auth
     write landing before either dispatch and both upstream calls overlapping, still give
     each span the caller facts of its own request, so no last-writer state, process-wide
     or per session, can stand in."""
@@ -501,7 +501,7 @@ async def test_an_unauthenticated_tool_call_is_refused_before_any_span(monkeypat
 
 
 async def test_an_http_call_with_no_principal_is_auth_none(monkeypatch) -> None:
-    """codex r2: where the streamable HTTP app runs without AuthMiddleware (an embedding
+    """Where the streamable HTTP app runs without AuthMiddleware (an embedding
     that mounts it bare), a tool call has a request but no principal, so its span says
     auth none, with that request's own host, never api_key."""
     monkeypatch.setattr(server.mcp, "_session_manager", None)
@@ -547,7 +547,7 @@ async def test_an_http_call_with_no_principal_is_auth_none(monkeypatch) -> None:
 
 
 async def test_a_call_no_http_request_carried_is_local_whatever_it_inherited(monkeypatch) -> None:
-    """MCP-26.1.3 (codex r1): a stdio or in-process client carries no HTTP request,
+    """A stdio or in-process client carries no HTTP request,
     so its span says transport and auth local even when the task inherited the
     HTTP transport marker, and carries no host, User-Agent or origin."""
     tracer = _CaptureTracer()

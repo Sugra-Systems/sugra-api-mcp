@@ -87,7 +87,7 @@ def test_non_api_path_does_not_crash() -> None:
 
 
 def test_slow_weather_paths_are_slow() -> None:
-    """BUG-3.2: the weather family is mixed. flood (GloFAS heavy per-request
+    """The weather family is mixed. flood (GloFAS heavy per-request
     compute), climate (CMIP6), and nws (api.weather.gov live) carry a 30s
     client budget in the API and can approach the gateway timeout. Labeling
     them "fast" made an agent fire parallel calls with a short budget and hit

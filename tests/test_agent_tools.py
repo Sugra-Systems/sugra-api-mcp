@@ -1,6 +1,6 @@
-"""Tests for the hosted-only Agent Context Layer tools (MCP-2.3, v0.8.0).
+"""Tests for the hosted-only Agent Context Layer tools (v0.8.0).
 
-Covers the three layers Codex plan-review flagged as risky:
+Covers the three layers where this surface is risky:
 
 1. Registration gate - transport-aware + env-gated, never mutating the global
    ``mcp`` singleton in tests (a fresh FastMCP instance is passed explicitly).
@@ -108,9 +108,9 @@ def test_stdio_surface_does_not_include_agent_tools_even_with_token():
     """A stdio process with SUGRA_AGENT_INTERNAL_TOKEN leaked into its env
     must STILL not expose the agent tools - registration is invoked only from
     the streamable-http branch of __main__, never as an import side effect.
-    Runs in a SUBPROCESS with the token SET before the import (Codex code
-    review P2: an in-process check on a token-less interpreter cannot catch a
-    regression where import-time registration sneaks back in)."""
+    Runs in a SUBPROCESS with the token SET before the import: an in-process
+    check on a token-less interpreter cannot catch a regression where
+    import-time registration sneaks back in."""
     import subprocess
     import sys
     from pathlib import Path

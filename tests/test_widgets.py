@@ -6,7 +6,7 @@ self-contained HTML (no external loads), copy lint, bridge method names, and
 the 32KB size budget. Visual host rendering is validated separately once a
 host with the io.modelcontextprotocol/ui extension is available.
 
-MCP-24.1: the widget is opt-in behind SUGRA_MCP_UI_WIDGETS and off by default.
+The widget is opt-in behind SUGRA_MCP_UI_WIDGETS and off by default.
 The default is pinned on the global server of this test process and in a
 fresh subprocess with the flag removed. The flag-on surface is pinned in a
 fresh subprocess (the global server registers once per process, so flipping

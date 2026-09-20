@@ -1,4 +1,4 @@
-# Evals - hosted MCP agent surface (MCP-2.4)
+# Evals - hosted MCP agent surface
 
 Two on-demand harnesses against the LIVE hosted MCP (`app.sugra.ai/mcp`).
 Neither runs in CI: they need the live API, secrets, and (for the golden eval)

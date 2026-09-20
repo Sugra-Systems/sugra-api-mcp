@@ -288,7 +288,7 @@ async def test_the_request_id_key_is_absent_when_the_header_is_not_sent() -> Non
     assert "request_id" not in result
 
 
-# ---- MCP-19: a redirect is an HTTP failure with a status, not an empty string ----
+# ---- A redirect is an HTTP failure with a status, not an empty string ----
 
 
 async def test_http_3xx_is_a_structured_http_error() -> None:

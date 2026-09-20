@@ -12,7 +12,7 @@ DOMAINS_URI = "sugra://catalog/domains"
 SOURCES_URI = "sugra://catalog/sources"
 ATTRIBUTION_URI = "sugra://attribution"
 
-# The default surface. The MCP Apps ui:// widget is opt-in (MCP-24.1,
+# The default surface. The MCP Apps ui:// widget is opt-in (
 # SUGRA_MCP_UI_WIDGETS) and off by default, so it is not part of this set;
 # tests/test_widgets.py pins both states.
 EXPECTED_URIS = {DOMAINS_URI, SOURCES_URI, ATTRIBUTION_URI, *SKILL_URIS}

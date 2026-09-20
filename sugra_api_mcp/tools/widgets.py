@@ -41,7 +41,7 @@ specification/draft/apps.mdx:
   template below is therefore fully self-contained: inline CSS, vanilla JS,
   hand-rolled inline SVG chart, zero external requests.
 
-Opt-in (MCP-24.1). The widget is not ready for an app-directory review, so by
+Opt-in. The widget is not ready for an app-directory review, so by
 default none of it is served: the template resource is not registered (absent
 from resources/list, unreadable) and no tool carries ``_meta.ui``. A truthy
 ``SUGRA_MCP_UI_WIDGETS`` (config.ui_widgets_enabled) turns both on together,
@@ -174,7 +174,7 @@ PRICE_CHART_TEMPLATE = """<!doctype html>
 
   window.addEventListener("message", function (event) {
     // Only the embedding host may talk to this app: reject messages whose
-    // source is not the parent window (codex review: prevents init and
+    // source is not the parent window (prevents init and
     // tool-result spoofing from sibling or injected frames). The parent
     // origin is host-specific and unknown at build time, so the SOURCE
     // identity check is the reliable gate.

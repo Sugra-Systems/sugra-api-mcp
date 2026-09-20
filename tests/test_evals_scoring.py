@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from evals.scoring import GATEWAY_TOOLS, KNOWN_TOOLS, aggregate, load_manifest, selection_ok
 
-EXPECTED_QUERY_COUNT = 31  # M0 set minus deferred B8, plus D6/D7 entity_sources discoverability (MCP-3.1)
+EXPECTED_QUERY_COUNT = 31  # M0 set minus deferred B8, plus D6/D7 entity_sources discoverability
 
 
 def test_manifest_ids_unique_and_complete():
