@@ -73,8 +73,8 @@ def shared_ssl_context() -> ssl.SSLContext:
     ALPN offer between connects; give that client its own context instead.
     A test pins the condition.
 
-    Built on first use, not at import, so a process that opens no connection
-    never builds one.
+    Built on first use, not at import, so a process that never constructs a
+    client on the default transport never builds one at all.
 
     `lru_cache` would not do here. Its miss path is not atomic, so two threads
     arriving first can each run the factory and each keep a DIFFERENT context,
