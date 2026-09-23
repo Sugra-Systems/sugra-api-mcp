@@ -16,9 +16,9 @@ from typing import Any
 # satisfied by ANY of these (the agent may search first, then call).
 GATEWAY_TOOLS = frozenset({"search_endpoints", "describe_endpoint", "call_endpoint", "fetch_data"})
 
-# Every tool name a manifest entry may reference (11 hosted tools + alias).
+# Every tool name a manifest entry may reference (12 hosted tools + alias).
 KNOWN_TOOLS = GATEWAY_TOOLS | {
-    "list_toolsets", "list_sources",
+    "list_toolsets", "list_sources", "list_plans",
     "sugra_entity_screen", "sugra_entity_lookup",
     "resolve_entity", "get_snapshot", "get_timeseries",
     "gateway",

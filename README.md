@@ -69,7 +69,7 @@ Every tool result carries structured metadata - source attribution, freshness, a
 
 ```mermaid
 flowchart LR
-    A["AI agent<br/>(ChatGPT, Claude, Gemini, xAI, IDEs)"] --> B["Sugra MCP<br/>hosted: 11 tools / local: 8 tools"]
+    A["AI agent<br/>(ChatGPT, Claude, Gemini, xAI, IDEs)"] --> B["Sugra MCP<br/>hosted: 12 tools / local: 9 tools"]
     B --> C["Sugra API<br/>1,500+ endpoints, 36 data domains"]
     C --> D["160+ primary sources<br/>markets, economics, government,<br/>news, climate, maritime"]
 ```
@@ -143,7 +143,7 @@ No install. Point your client at the hosted Streamable HTTP endpoint:
 https://app.sugra.ai/mcp
 ```
 
-- 11 tools: the eight gateway tools plus three composed agent tools (`resolve_entity`, `get_snapshot`, `get_timeseries`)
+- 12 tools: the nine gateway tools plus three composed agent tools (`resolve_entity`, `get_snapshot`, `get_timeseries`)
 - OAuth sign-in through the claude.ai and ChatGPT connector UIs, or `Authorization: Bearer sugra_xxx_...` with an API key
 - In claude.ai: Settings -> Connectors -> Add custom connector
 - In ChatGPT: Settings -> Connectors -> Add MCP server
@@ -156,7 +156,7 @@ Runs on your machine over stdio (or self-hosted HTTP) with an API key:
 pip install sugra-api-mcp
 ```
 
-- Eight gateway tools
+- Nine gateway tools
 - stdio for desktop clients and IDEs, Streamable HTTP for self-hosting
 - Authenticates with `SUGRA_API_KEY`
 
@@ -259,7 +259,7 @@ gemini mcp add --scope user --transport http \
 
 Run `gemini mcp list` to check the connection, then enter `/mcp` in an
 interactive session to inspect the available tools. A local stdio connection
-shows the eight gateway tools in [Tool reference](#tool-reference); the hosted
+shows the nine gateway tools in [Tool reference](#tool-reference); the hosted
 endpoint also shows the three [hosted-only agent tools](#hosted-only-agent-tools-appsugraaimcp).
 If a local server does not connect from a new directory, review and trust that
 workspace with `gemini trust` before retrying.
@@ -291,7 +291,7 @@ In ChatGPT: Settings -> Connectors -> Add MCP server.
 
 ## Tool reference
 
-The local package exposes eight gateway tools. The hosted endpoint adds three composed analysis tools on top (see Hosted MCP above). The package exposes exactly eight tools:
+The local package exposes nine gateway tools. The hosted endpoint adds three composed analysis tools on top (see Hosted MCP above). The package exposes exactly nine tools:
 
 | Tool | Purpose |
 |---|---|
@@ -303,6 +303,7 @@ The local package exposes eight gateway tools. The hosted endpoint adds three co
 | `list_sources` | Show bundled catalog source metadata. |
 | `sugra_entity_screen` | Screen a name against sanctions and watchlists (Sugra Entity). |
 | `sugra_entity_lookup` | Composed entity lookup by identifier - `anchor` is `lei` or `vat`, plus the identifier `value`; returns registry identity + screening (Sugra Entity). |
+| `list_plans` | List the paid plans (Dev and Pro, monthly or annual) with prices in USD, daily request limits and a checkout link for each. Purchases through these links do not auto-renew. Bundled data: no network call, no API key. |
 
 `call_endpoint` and `fetch_data` both support response shaping with `limit`, `fields`, and `include_raw`. Shaping works on enveloped (`{"data": ...}`) and envelope-less payloads alike; `fields` entries may use dotted paths into nested objects (`geo.city`), and `meta.shaped` reports what was actually applied (`fields_applied` / `fields_unmatched`, `limit_applied`, `records_path`) rather than echoing the request. `limit` and `fields` work on the records list: the envelope `data` list, a bare top-level array, or the one list inside an object `data` when exactly one of `data`, `entries`, `events`, `history`, `items`, `observations`, `points`, `records`, `results`, `rows`, `series`, `timeseries` holds a list (for example `data.items` on the latest news, `data.observations` on a FRED series). Keys beside that list, such as `total` and `count`, stay as sent, and lists nested inside records are never truncated. A `fields` entry that names a key of `data` itself projects that object instead, and a projection that matches nothing leaves the payload whole. `meta.shaped.limit_applied` says whether the bound took effect, and `meta.shaped.records_path` names the list used (`data`, `data.<key>`, or null when no records list was used). A top-level JSON array (or scalar) is always wrapped as `{"data": ...}` so the MCP result stays an object; otherwise FastMCP output validation reports the successful call as an error and drops the rows.
 
@@ -314,7 +315,7 @@ The local package exposes eight gateway tools. The hosted endpoint adds three co
 
 ### Hosted-only agent tools (app.sugra.ai/mcp)
 
-The hosted MCP endpoint at `https://app.sugra.ai/mcp` serves the same eight tools PLUS three composed agent tools that are not available on stdio or self-hosted installs:
+The hosted MCP endpoint at `https://app.sugra.ai/mcp` serves the same nine tools PLUS three composed agent tools that are not available on stdio or self-hosted installs:
 
 | Tool | Purpose |
 |---|---|
@@ -322,7 +323,7 @@ The hosted MCP endpoint at `https://app.sugra.ai/mcp` serves the same eight tool
 | `get_snapshot` | Entity plus a named recipe to one composed current view with freshness, provenance, coverage, and billing blocks. Composed calls charge a fixed recipe cost (1-2 requests) from the daily quota. |
 | `get_timeseries` | Entity plus metric (`price`, `macro_series`, `etf_flows`, `etf_monthly_flows`) to a bounded series with an explicit downsampling flag. `etf_flows` estimates at filing cadence; `etf_monthly_flows` is the fund's own NPORT-P monthly creations and redemptions. |
 
-These three tools wrap an internal composed plane that requires an infrastructure credential available only on the hosted deployment. The tool code ships inside the package, but it is registered only by the hosted HTTP entry point and only when that credential is present - `pip install sugra-api-mcp` (stdio and self-hosted HTTP) always exposes the classic eight-tool gateway. Hosted-only examples in any documentation are labeled as such. For compliance entity lookups (LEI / VAT, sanctions screening) use `sugra_entity_lookup` and `sugra_entity_screen`, which work on every transport.
+These three tools wrap an internal composed plane that requires an infrastructure credential available only on the hosted deployment. The tool code ships inside the package, but it is registered only by the hosted HTTP entry point and only when that credential is present - `pip install sugra-api-mcp` (stdio and self-hosted HTTP) always exposes only the nine gateway tools. Hosted-only examples in any documentation are labeled as such. For compliance entity lookups (LEI / VAT, sanctions screening) use `sugra_entity_lookup` and `sugra_entity_screen`, which work on every transport.
 
 ## CLI
 
@@ -350,7 +351,7 @@ directory sandboxes (for example Glama Try in Browser). Set only this:
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `SUGRA_API_KEY` | For API calls | - | Your Sugra API key (`sugra_...`). Get a free key at [app.sugra.ai/settings/billing](https://app.sugra.ai/settings/billing) (Free tier: 50 req/day). Not needed to start the server: catalog tools (`search_endpoints`, `describe_endpoint`, `list_toolsets`, `list_sources`) work without it; API-calling tools return a structured `missing_api_key` error until it is set. In HTTP mode with a client Bearer token this is only a fallback. |
+| `SUGRA_API_KEY` | For API calls | - | Your Sugra API key (`sugra_...`). Get a free key at [app.sugra.ai/settings/billing](https://app.sugra.ai/settings/billing) (Free tier: 50 req/day). Not needed to start the server: catalog tools (`search_endpoints`, `describe_endpoint`, `list_toolsets`, `list_sources`) and `list_plans` work without it; API-calling tools return a structured `missing_api_key` error until it is set. In HTTP mode with a client Bearer token this is only a fallback. |
 
 Optional overrides (leave unset unless you need them):
 

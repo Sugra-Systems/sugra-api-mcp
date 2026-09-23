@@ -2,7 +2,7 @@
 
 Official Model Context Protocol server for the Sugra API.
 Connector between LLM agents and world data through a bundled endpoint catalog
-and eight gateway tools.
+and nine gateway tools.
 
 See https://github.com/Sugra-Systems/sugra-api-mcp for usage.
 """

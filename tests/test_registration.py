@@ -10,7 +10,7 @@ def test_tools_register(monkeypatch):
     from sugra_api_mcp import tools  # noqa: F401
     from sugra_api_mcp.server import mcp
     tool_list = asyncio.run(mcp.list_tools())
-    assert len(tool_list) == 8
+    assert len(tool_list) == 9
     names = {t.name for t in tool_list}
     expected = {
         "fetch_data",
@@ -21,6 +21,7 @@ def test_tools_register(monkeypatch):
         "list_sources",
         "sugra_entity_screen",
         "sugra_entity_lookup",
+        "list_plans",
     }
     assert names == expected, f"Mismatch: missing={expected - names}, extra={names - expected}"
 
