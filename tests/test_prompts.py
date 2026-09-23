@@ -38,6 +38,7 @@ PACKAGE_TOOL_NAMES = (
     "list_sources",
     "sugra_entity_screen",
     "sugra_entity_lookup",
+    "list_plans",
 )
 
 # Hosted-only tools are absent from the pip-installed package, so prompt text

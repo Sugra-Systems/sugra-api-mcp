@@ -1,11 +1,11 @@
 ---
 name: cross-domain-briefing
-description: Compose one briefing from two or three Sugra domains using only the eight gateway tools. Use when a question spans maritime, weather, macro, markets, or government and a single prompt recipe is not enough.
+description: Compose one briefing from two or three Sugra domains using only the nine gateway tools. Use when a question spans maritime, weather, macro, markets, or government and a single prompt recipe is not enough.
 ---
 
 # Cross-domain briefing
 
-Stay on the eight gateway tools so this works on stdio and hosted alike. Do not reach for hosted-only names.
+Stay on the nine gateway tools so this works on stdio and hosted alike. Do not reach for hosted-only names.
 
 ## Pattern
 

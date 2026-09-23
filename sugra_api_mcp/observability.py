@@ -7,8 +7,8 @@ False and ``@trace_mcp_tool`` becomes a transparent pass-through.
 
 Custom dimensions captured per MCP tool invocation:
     mcp.tool.name        - the traced tool's registered name: the six gateway
-                           tools (tools/gateway.py), sugra_entity_screen and
-                           sugra_entity_lookup, and on the hosted server
+                           tools (tools/gateway.py), sugra_entity_screen,
+                           sugra_entity_lookup and list_plans, and on the hosted server
                            resolve_entity, get_snapshot and get_timeseries
     mcp.operation_id     - the operation_id kwarg, ONLY if it matches a
                            catalog-known operation_id (allowlist). Arbitrary

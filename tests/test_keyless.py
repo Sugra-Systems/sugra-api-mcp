@@ -27,7 +27,7 @@ from sugra_api_mcp.tools import entities, gateway
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURE = Path(__file__).parent / "fixtures" / "openapi_minimal.json"
 
-EXPECTED_TOOL_COUNT = 8
+EXPECTED_TOOL_COUNT = 9
 EXPECTED_PROMPT_COUNT = 6
 # The default surface: the opt-in ui:// widget is off, and
 # _keyless_env removes SUGRA_MCP_UI_WIDGETS so the runner's env cannot add it.
