@@ -55,7 +55,7 @@ SKILL_SPECS: tuple[tuple[str, str, str, str], ...] = (
         "Cross-domain briefing",
         (
             "Compose one briefing from two or three Sugra domains using only "
-            "the nine gateway tools."
+            "the eight gateway tools."
         ),
     ),
 )
@@ -140,7 +140,7 @@ def skill_hosted_vs_gateway() -> str:
     title="Cross-domain briefing",
     description=(
         "Compose one briefing from two or three Sugra domains using only "
-        "the nine gateway tools."
+        "the eight gateway tools."
     ),
     mime_type="text/markdown",
 )

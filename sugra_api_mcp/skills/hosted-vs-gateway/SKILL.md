@@ -23,6 +23,6 @@ Hosted adds three composed tools that wrap an internal plane and register only o
 
 Do not call those three on a stdio or self-hosted session. Do not document them in stdio-only examples. For LEI/VAT identity and sanctions screening, use `sugra_entity_lookup` and `sugra_entity_screen` on every transport.
 
-MCP prompts shipped in the package name only the nine. Skills `explore-catalog`, `envelope-attribution`, `auth-limits`, and `cross-domain-briefing` are written for the nine so they work as a Claude/Codex drop-in next to the PyPI package.
+MCP prompts shipped in the package name only the first eight. Skills `explore-catalog`, `envelope-attribution`, `auth-limits`, and `cross-domain-briefing` are written for the first eight so they work as a Claude/Codex drop-in next to the PyPI package.
 
 `app.sugra.ai/mcp` remains a permanent alias of the hosted server.

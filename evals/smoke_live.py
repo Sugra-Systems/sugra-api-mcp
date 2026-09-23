@@ -67,9 +67,9 @@ async def s2_tool_count(session) -> None:
     tools = await session.list_tools()
     names = sorted(t.name for t in tools.tools)
     ok = len(names) == EXPECTED_HOSTED_TOOL_COUNT and {
-        "resolve_entity", "get_snapshot", "get_timeseries"
+        "resolve_entity", "get_snapshot", "get_timeseries", "list_plans"
     }.issubset(set(names))
-    record(f"S2 tools/list == {EXPECTED_HOSTED_TOOL_COUNT} incl agent tools", ok, f"got {len(names)}: {names}")
+    record(f"S2 tools/list == {EXPECTED_HOSTED_TOOL_COUNT} incl agent tools and list_plans", ok, f"got {len(names)}: {names}")
 
 
 async def s3_weighted_cost(session) -> None:

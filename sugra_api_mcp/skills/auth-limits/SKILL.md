@@ -7,7 +7,7 @@ description: Authenticate to Sugra API MCP and stay inside the daily request quo
 
 ## Credentials
 
-- stdio: set `SUGRA_API_KEY` (`sugra_...` from https://app.sugra.ai/settings/billing) in the server process. Catalog tools (`search_endpoints`, `describe_endpoint`, `list_toolsets`, `list_sources`) and `list_plans` work without it. `call_endpoint`, `fetch_data`, and the entity tools return a structured `missing_api_key` error until it is set.
+- stdio: set `SUGRA_API_KEY` (`sugra_...` from https://app.sugra.ai/settings/billing) in the server process. Catalog tools (`search_endpoints`, `describe_endpoint`, `list_toolsets`, `list_sources`) work without it. `call_endpoint`, `fetch_data`, and the entity tools return a structured `missing_api_key` error until it is set.
 - Streamable HTTP (hosted `https://app.sugra.ai/mcp` or self-hosted): the MCP client sends `Authorization: Bearer`. That is a raw API key or an OAuth JWT (audience `https://app.sugra.ai/mcp`, scope `sugra:read`). Discovery (`initialize`, `tools/list`, `resources/list`, `prompts/list`, `ping`) is public. `tools/call` and `resources/read` return 401 `missing_bearer_token` without Bearer. `SUGRA_API_KEY` on the HTTP process is only a downstream fallback, not a substitute for the client's Bearer.
 - Downstream API calls use `x-api-key`. Do not log the key or put it in a skill file, commit, or chat.
 
@@ -20,8 +20,6 @@ Every plan sees every endpoint. Gating is volume, not surface.
 | Free | 50 |
 | Dev | 5,000 |
 | Pro | 50,000 |
-
-For more daily requests, `list_plans` returns the paid plans with prices and a checkout link for each; give the link to the human, who signs in and pays.
 
 Some bulk endpoints cost more than 1 request; `describe_endpoint` `agent_hints.bulk_cost` warns before the call.
 

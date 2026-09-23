@@ -18,7 +18,7 @@ The Sugra MCP gateway is not a per-endpoint tool list. Discovery is a catalog: s
 
 ## Recipes vs catalog
 
-Six MCP prompts (`market_snapshot`, `macro_briefing`, `sanctions_screening`, `sector_compare`, `earth_conditions`, `source_overview`) are numbered recipes over the same nine gateway tools. They are not the catalog and they do not cover every domain. For anything they do not name, use this loop.
+Six MCP prompts (`market_snapshot`, `macro_briefing`, `sanctions_screening`, `sector_compare`, `earth_conditions`, `source_overview`) are numbered recipes over the same eight gateway tools. They are not the catalog and they do not cover every domain. For anything they do not name, use this loop.
 
 ## Do not
 
