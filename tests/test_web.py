@@ -14,10 +14,10 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from sugra_api_mcp import __version__, web
+from sugra_api_mcp import __version__, skills_index, web
 from sugra_api_mcp.auth import PUBLIC_GET_PATHS, Authenticator, AuthMiddleware
 from sugra_api_mcp.config import AuthConfig
-from sugra_api_mcp.web import health, landing
+from sugra_api_mcp.web import health, landing, skills_routes
 
 
 @pytest.fixture
@@ -32,6 +32,7 @@ def client() -> TestClient:
             Route("/mcp", mcp_ok, methods=["GET", "POST"]),
             Route("/", landing, methods=["GET"]),
             Route("/health", health, methods=["GET"]),
+            *skills_routes(),
         ]
     )
     config = AuthConfig(
@@ -215,6 +216,19 @@ def test_tabs_point_at_the_public_listings_before_the_commands(client: TestClien
     )
 
 
+def test_tabs_without_a_plugin_install_skills_from_the_index(client: TestClient) -> None:
+    text = client.get("/").text
+    parser = _parse_landing(client)
+    for ident in ("gemini", "cursor", "vscode", "other"):
+        assert parser.pre_text[f"cmd-{ident}-skills"] == "npx skills add https://mcp.sugra.ai"
+        panel = _panel(text, ident)
+        # The skills step comes after the server step, never before it.
+        assert panel.index("Skills (optional)") > panel.index("<pre")
+    # Tabs with a plugin of their own keep it; the index is for everyone else.
+    for ident in ("claude", "chatgpt", "claude-code", "codex", "grok"):
+        assert "npx skills add" not in _panel(text, ident), ident
+
+
 def test_highlighted_blocks_copy_as_the_plain_source(client: TestClient) -> None:
     # Copy takes the block's text, so the syntax spans must add nothing to it.
     parser = _parse_landing(client)
@@ -316,8 +330,59 @@ def test_public_initialize_still_passes(client: TestClient) -> None:
     assert resp.status_code == 200
 
 
-def test_allowlist_is_exactly_root_and_health() -> None:
-    assert frozenset({"/", "/health"}) == PUBLIC_GET_PATHS
+def test_allowlist_is_root_health_and_the_listed_skill_files() -> None:
+    assert frozenset({"/", "/health"}) | skills_index.PUBLIC_PATHS == PUBLIC_GET_PATHS
+    extra = PUBLIC_GET_PATHS - {"/", "/health"}
+    assert skills_index.INDEX_PATH in extra
+    # Exact file paths only: no directory, no pattern, nothing outside the index.
+    assert all(path.startswith("/.well-known/skills/") for path in extra)
+    assert not any(path.endswith("/") or "*" in path or ".." in path for path in extra)
+    listed = {
+        f"/.well-known/skills/{skill['name']}/{name}"
+        for skill in skills_index.INDEX["skills"]
+        for name in skill["files"]
+    }
+    assert extra == listed | {skills_index.INDEX_PATH}
+
+
+def test_skills_index_is_served_unauthenticated(client: TestClient) -> None:
+    resp = client.get("/.well-known/skills/index.json")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/json"
+    assert resp.headers["cache-control"] == "public, max-age=300"
+    body = resp.json()
+    assert body == skills_index.INDEX
+    # The skills CLI reads a body WITH $schema as a different format.
+    assert "$schema" not in body
+    assert client.head("/.well-known/skills/index.json").status_code == 200
+
+
+def test_every_listed_skill_file_redirects_to_the_pinned_commit(client: TestClient) -> None:
+    source = skills_index.SOURCE
+    raw = f"https://raw.githubusercontent.com/{source['repo']}/{source['commit']}/{source['path']}/"
+    for skill in skills_index.INDEX["skills"]:
+        for name in skill["files"]:
+            path = f"/.well-known/skills/{skill['name']}/{name}"
+            resp = client.get(path, follow_redirects=False)
+            assert resp.status_code == 302, path
+            assert resp.headers["location"] == f"{raw}{skill['name']}/{name}", path
+            assert resp.headers["cache-control"] == "public, max-age=300", path
+
+
+def test_unlisted_skills_paths_stay_behind_auth(client: TestClient) -> None:
+    for path in (
+        "/.well-known/skills/",
+        "/.well-known/skills/index.json/",
+        "/.well-known/skills/connect/",
+        "/.well-known/skills/connect/unlisted.md",
+        "/.well-known/skills/Connect/SKILL.md",
+        "/.well-known/skills/connect/SKILL.md/",
+        "/.well-known/agent-skills/index.json",
+    ):
+        resp = client.get(path, follow_redirects=False)
+        assert resp.status_code == 401, path
+    resp = client.post("/.well-known/skills/index.json")
+    assert resp.status_code == 401
 
 
 def test_slash_variants_stay_behind_auth(client: TestClient) -> None:
@@ -383,7 +448,10 @@ def test_real_http_app_route_registration() -> None:
     app = mcp.streamable_http_app()
     app.router.routes.append(Route("/", landing, methods=["GET"]))
     app.router.routes.append(Route("/health", health, methods=["GET"]))
+    app.router.routes.extend(skills_routes())
     paths = [getattr(r, "path", None) for r in app.router.routes]
-    # /mcp stays FIRST (appended routes cannot shadow it); both new routes present.
+    # /mcp stays FIRST (appended routes cannot shadow it); every new route present.
     assert paths.index("/mcp") < paths.index("/")
     assert paths.index("/mcp") < paths.index("/health")
+    for public in PUBLIC_GET_PATHS - {"/", "/health"}:
+        assert paths.index("/mcp") < paths.index(public), public

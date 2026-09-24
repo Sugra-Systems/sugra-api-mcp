@@ -31,6 +31,7 @@ from starlette.types import ASGIApp
 from .client import shared_ssl_context
 from .config import AuthConfig
 from .server import api_key_ctx
+from .skills_index import PUBLIC_PATHS as SKILLS_PUBLIC_PATHS
 
 logger = logging.getLogger("sugra_mcp.auth")
 
@@ -133,11 +134,11 @@ def _is_public_tool_call(message: object) -> bool:
 
 
 # Unauthenticated GET/HEAD surface of the hosted app: the human landing page on
-# the host root and the liveness probe. STRICT exact-path allowlist (no slash
-# normalization: /health/ and // variants deliberately stay behind auth and
-# 401 rather than redirect). Handlers live in sugra_api_mcp.web; the two lists
-# must stay in sync.
-PUBLIC_GET_PATHS = frozenset({"/", "/health"})
+# the host root, the liveness probe, and the skills index with the exact file
+# paths it lists. STRICT exact-path allowlist (no slash normalization: /health/
+# and // variants deliberately stay behind auth and 401 rather than redirect).
+# Handlers live in sugra_api_mcp.web; the two lists must stay in sync.
+PUBLIC_GET_PATHS = frozenset({"/", "/health"}) | SKILLS_PUBLIC_PATHS
 
 
 class AuthError(Exception):
