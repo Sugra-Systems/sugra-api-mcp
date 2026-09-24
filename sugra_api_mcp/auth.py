@@ -99,16 +99,25 @@ PUBLIC_MCP_METHODS = frozenset(
 PUBLIC_TOOL_NAMES = frozenset({"buy_plan"})
 
 
-def _is_public_mcp_message(message: object) -> bool:
-    """Whether one JSON-RPC message may be served without a Bearer token."""
+def _is_public_discovery_message(message: object) -> bool:
+    """Whether one JSON-RPC message is a discovery method served without a token."""
     if not isinstance(message, dict):
         return False
     method = message.get("method")
-    if not isinstance(method, str):
+    return isinstance(method, str) and method in PUBLIC_MCP_METHODS
+
+
+def _is_public_tool_call(message: object) -> bool:
+    """Whether a lone JSON-RPC request is a tools/call served without a token.
+
+    It must be a request, not a notification: its id is a string or an
+    integer. Batches never qualify (see _is_public_mcp_request), so one
+    request without a token starts at most one outbound purchase call.
+    """
+    if not isinstance(message, dict) or message.get("method") != "tools/call":
         return False
-    if method in PUBLIC_MCP_METHODS:
-        return True
-    if method != "tools/call":
+    request_id = message.get("id")
+    if isinstance(request_id, bool) or not isinstance(request_id, (str, int)):
         return False
     params = message.get("params")
     name = params.get("name") if isinstance(params, dict) else None
@@ -562,10 +571,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return False
 
         if isinstance(payload, dict):
-            return _is_public_mcp_message(payload)
+            return _is_public_discovery_message(payload) or _is_public_tool_call(payload)
 
         if isinstance(payload, list) and 0 < len(payload) <= MAX_PUBLIC_MCP_BATCH_ITEMS:
-            return all(_is_public_mcp_message(item) for item in payload)
+            return all(_is_public_discovery_message(item) for item in payload)
 
         return False
 

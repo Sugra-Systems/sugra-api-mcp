@@ -691,10 +691,31 @@ def test_auth_middleware_allows_buy_plan_without_bearer(auth_config):
 
     async def echo_tool(request):
         payload = await request.json()
-        names = [item["params"]["name"] for item in payload] if isinstance(payload, list) else [payload["params"]["name"]]
-        return JSONResponse({"tools": names})
+        return JSONResponse({"tool": payload["params"]["name"]})
 
     app = Starlette(routes=[Route("/mcp", echo_tool, methods=["POST"])])
+    app.add_middleware(AuthMiddleware, authenticator=Authenticator(auth_config))
+    for request_id in (1, 0, "abc"):
+        call = {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": "tools/call",
+            "params": {"name": "buy_plan", "arguments": {}},
+        }
+
+        response = TestClient(app).post("/mcp", json=call)
+
+        assert response.status_code == 200, request_id
+        assert response.json() == {"tool": "buy_plan"}
+
+
+def test_auth_middleware_refuses_buy_plan_in_a_batch_without_bearer(auth_config):
+    """One request without a token may start one purchase call, never a fan-out."""
+
+    async def ok(_request):
+        return JSONResponse({"ok": True})
+
+    app = Starlette(routes=[Route("/mcp", ok, methods=["POST"])])
     app.add_middleware(AuthMiddleware, authenticator=Authenticator(auth_config))
     call = {
         "jsonrpc": "2.0",
@@ -703,12 +724,47 @@ def test_auth_middleware_allows_buy_plan_without_bearer(auth_config):
         "params": {"name": "buy_plan", "arguments": {}},
     }
 
-    single = TestClient(app).post("/mcp", json=call)
-    batch = TestClient(app).post("/mcp", json=[call, {**call, "id": 2}])
+    alone = TestClient(app).post("/mcp", json=[call])
+    fan_out = TestClient(app).post("/mcp", json=[{**call, "id": n} for n in range(16)])
+    with_discovery = TestClient(app).post(
+        "/mcp", json=[{"jsonrpc": "2.0", "id": 0, "method": "tools/list", "params": {}}, call]
+    )
 
-    assert single.status_code == 200
-    assert single.json() == {"tools": ["buy_plan"]}
-    assert batch.status_code == 200
+    assert alone.status_code == 401
+    assert fan_out.status_code == 401
+    assert with_discovery.status_code == 401
+
+
+@pytest.mark.parametrize("request_id", ["absent", None, True, 1.5, [1], {"n": 1}])
+def test_auth_middleware_refuses_buy_plan_without_a_request_id(auth_config, request_id):
+    """A notification (no id) or an id that is not a string or integer is refused."""
+
+    async def ok(_request):
+        return JSONResponse({"ok": True})
+
+    app = Starlette(routes=[Route("/mcp", ok, methods=["POST"])])
+    app.add_middleware(AuthMiddleware, authenticator=Authenticator(auth_config))
+    call = {"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "buy_plan", "arguments": {}}}
+    if request_id != "absent":
+        call["id"] = request_id
+
+    response = TestClient(app).post("/mcp", json=call)
+
+    assert response.status_code == 401
+
+
+def test_auth_middleware_refuses_a_method_that_is_not_a_string(auth_config):
+    async def ok(_request):
+        return JSONResponse({"ok": True})
+
+    app = Starlette(routes=[Route("/mcp", ok, methods=["POST"])])
+    app.add_middleware(AuthMiddleware, authenticator=Authenticator(auth_config))
+
+    single = TestClient(app).post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": ["tools/list"]})
+    batch = TestClient(app).post("/mcp", json=[{"jsonrpc": "2.0", "id": 1, "method": {"a": 1}}])
+
+    assert single.status_code == 401
+    assert batch.status_code == 401
 
 
 @pytest.mark.parametrize(

@@ -7,7 +7,8 @@ SUGRA_TEST_API_KEY):
 
 Checks (design doc section 8 smoke set, adapted to what is OBSERVABLE live):
   S1  unauthenticated tools/call -> 401 (tools/list stays public by design:
-      MCP discovery allowlist in auth.py; the card pins the CALL boundary)
+      MCP discovery allowlist in auth.py; the card pins the CALL boundary).
+      buy_plan is the one tool callable without a key, so S1 calls another.
   S2  tools/list == EXPECTED_HOSTED_TOOL_COUNT (13)
   S3  weighted cost: two sequential company_snapshot calls decrement
       billing.remaining by the recipe cost (2) each - billing is computed in

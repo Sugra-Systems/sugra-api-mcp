@@ -44,6 +44,11 @@ RECEIPT_META_KEY = "org.paymentauth/receipt"
 PAYMENT_REQUIRED = -32042
 PAYMENT_VERIFICATION_FAILED = -32043
 
+# failure.reason and failure.detail of a -32043 when the endpoint's problem
+# names neither.
+FAILURE_REASON_FALLBACK = "verification-failed"
+FAILURE_DETAIL_FALLBACK = "The purchase endpoint refused the payment credential."
+
 # Below the tool's dispatch budget, so a slow endpoint gets this tool's own
 # answer rather than the generic deadline error.
 PURCHASE_TIMEOUT_SECONDS = 25.0
@@ -107,10 +112,12 @@ def _b64url(raw: bytes) -> str:
 
 
 def _b64url_decode(value: str) -> bytes | None:
-    if not value or not re.fullmatch(r"[A-Za-z0-9_-]+", value):
+    """Decode base64url with or without its "=" padding; None when it is not base64url."""
+    unpadded = value.rstrip("=")
+    if len(value) - len(unpadded) > 2 or not re.fullmatch(r"[A-Za-z0-9_-]+", unpadded):
         return None
     try:
-        return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+        return base64.urlsafe_b64decode(unpadded + "=" * (-len(unpadded) % 4))
     except (binascii.Error, ValueError):
         return None
 
@@ -211,23 +218,49 @@ def _credential_from_meta() -> dict[str, Any] | None:
     except LookupError:
         return None
     meta = getattr(context, "meta", None)
-    extras = getattr(meta, "model_extra", None) or {}
+    if meta is None:
+        return None
+    if isinstance(meta, dict):
+        extras: dict[str, Any] = meta
+    else:
+        extras = dict(getattr(meta, "model_extra", None) or {})
+        if CREDENTIAL_META_KEY not in extras and hasattr(meta, CREDENTIAL_META_KEY):
+            extras[CREDENTIAL_META_KEY] = getattr(meta, CREDENTIAL_META_KEY)
     if CREDENTIAL_META_KEY not in extras:
         return None
     credential = extras[CREDENTIAL_META_KEY]
+    _validate_credential(credential)
+    return credential
+
+
+def _validate_credential(credential: Any) -> None:
+    """Refuse, as -32602, a credential that is not the transport's shape.
+
+    Checked before any request, so a malformed credential never reaches the
+    purchase endpoint.
+    """
     if not isinstance(credential, dict):
         raise _invalid_credential(f"{CREDENTIAL_META_KEY} must be an object.")
     challenge = credential.get("challenge")
     if not isinstance(challenge, dict):
         raise _invalid_credential("Missing required field: challenge.")
-    challenge_id = challenge.get("id")
-    if not isinstance(challenge_id, str) or not challenge_id:
-        raise _invalid_credential("Missing required field: challenge.id.")
+    for name in _REQUIRED_CHALLENGE_FIELDS:
+        if name == "request":
+            continue
+        value = challenge.get(name)
+        if not isinstance(value, str) or not value:
+            raise _invalid_credential(f"Missing required field: challenge.{name}.")
+    if not isinstance(challenge.get("request"), dict):
+        raise _invalid_credential("challenge.request must be an object.")
+    for name in ("expires", "digest", "description", "header"):
+        if name in challenge and not isinstance(challenge[name], str):
+            raise _invalid_credential(f"challenge.{name} must be a string.")
+    if "opaque" in challenge and not isinstance(challenge["opaque"], (str, dict)):
+        raise _invalid_credential("challenge.opaque must be a string or an object.")
     if not isinstance(credential.get("payload"), dict):
         raise _invalid_credential("Missing required field: payload.")
-    if not isinstance(challenge.get("request"), (dict, str)):
-        raise _invalid_credential("challenge.request must be an object.")
-    return credential
+    if "source" in credential and not isinstance(credential["source"], str):
+        raise _invalid_credential("source must be a string.")
 
 
 def encode_credential(credential: dict[str, Any]) -> tuple[str, str]:
@@ -245,9 +278,10 @@ def encode_credential(credential: dict[str, Any]) -> tuple[str, str]:
     if isinstance(credential.get("source"), str):
         wire["source"] = credential["source"]
     encoded = _b64url(json.dumps(wire, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
+    header = challenge.get("header")
     field = (
         "Payment-Authorization"
-        if challenge.get("header") == "Payment-Authorization"
+        if isinstance(header, str) and header.lower() == "payment-authorization"
         else "Authorization"
     )
     return field, f"Payment {encoded}"
@@ -277,13 +311,33 @@ def _problem_code(problem: dict[str, Any]) -> str | None:
 
 
 def _receipt(response: httpx.Response, credential: dict[str, Any]) -> dict[str, Any] | None:
+    """The Payment-Receipt as the transport's receipt object, or None when it is unusable.
+
+    Unusable: absent, not base64url JSON, missing status, method or timestamp,
+    or naming another challenge than the one paid.
+    """
     header = response.headers.get("payment-receipt")
     decoded = _decode_json_param(header.strip()) if header else None
     if not isinstance(decoded, dict):
         return None
+    if any(not isinstance(decoded.get(name), str) for name in ("status", "method", "timestamp")):
+        return None
+    challenge_id = credential["challenge"]["id"]
+    if decoded.get("challengeId", challenge_id) != challenge_id:
+        return None
     receipt = dict(decoded)
-    receipt.setdefault("challengeId", credential["challenge"]["id"])
+    receipt["challengeId"] = challenge_id
     return receipt
+
+
+# Said in the result when a paid call returns a key without a usable receipt.
+# The key is still returned: the payment went through and the key was issued,
+# and withholding it would leave the buyer charged with nothing to show.
+RECEIPT_MISSING_NOTE = (
+    "The purchase succeeded and the key above is valid, but the purchase "
+    "endpoint sent no usable payment receipt. Keep this result as the record "
+    "of the purchase; do not pay again."
+)
 
 
 def _success(response: httpx.Response, credential: dict[str, Any] | None) -> Any:
@@ -300,6 +354,8 @@ def _success(response: httpx.Response, credential: dict[str, Any] | None) -> Any
             ),
         }
     receipt = _receipt(response, credential) if credential is not None else None
+    if credential is not None and receipt is None:
+        body = {**body, "receipt_missing": True, "receipt_note": RECEIPT_MISSING_NOTE}
     payload: dict[str, Any] = {
         "content": [TextContent(type="text", text=json.dumps(body, indent=2))],
         "structuredContent": body,
@@ -314,29 +370,30 @@ def _payment_error(
 ) -> dict[str, Any]:
     """Raise the 402 as -32042 (no credential) or -32043 (a refused one).
 
-    Returns a tool error only when the 402 carries no usable challenge.
+    A refused credential always raises -32043 with failure.reason and
+    failure.detail set, with an empty challenges list when none parses. Only an
+    unpaid call whose 402 carries no usable challenge returns a tool error:
+    there is nothing to pay.
     """
     problem = _problem(response)
     challenges = parse_payment_challenges(response.headers.get_list("www-authenticate"))
-    if not challenges:
-        return {
-            "error": "purchase_failed",
-            "status_code": response.status_code,
-            "message": "The purchase endpoint asked for payment without a usable challenge.",
-            **({"problem": _problem_fields(problem)} if problem else {}),
-        }
     data: dict[str, Any] = {"httpStatus": 402, "challenges": challenges}
     if problem:
         data["problem"] = _problem_fields(problem)
     if credential is None:
+        if not challenges:
+            return {
+                "error": "purchase_failed",
+                "status_code": response.status_code,
+                "message": "The purchase endpoint asked for payment without a usable challenge.",
+                **({"problem": _problem_fields(problem)} if problem else {}),
+            }
         raise PaymentError(PAYMENT_REQUIRED, "Payment Required", data)
-    failure: dict[str, Any] = {}
-    reason = _problem_code(problem)
-    if reason:
-        failure["reason"] = reason
-    if isinstance(problem.get("detail"), str):
-        failure["detail"] = problem["detail"]
-    data["failure"] = failure
+    detail = problem.get("detail")
+    data["failure"] = {
+        "reason": _problem_code(problem) or FAILURE_REASON_FALLBACK,
+        "detail": detail if isinstance(detail, str) and detail else FAILURE_DETAIL_FALLBACK,
+    }
     raise PaymentError(PAYMENT_VERIFICATION_FAILED, "Payment Verification Failed", data)
 
 
@@ -385,7 +442,7 @@ def _http_client() -> httpx.AsyncClient:
 
 BUY_TOOL_ANNOTATIONS = ToolAnnotations(
     readOnlyHint=False,
-    destructiveHint=False,
+    destructiveHint=True,
     idempotentHint=False,
     openWorldHint=True,
     title="Buy a plan",
@@ -411,7 +468,7 @@ async def buy_plan(
         bool,
         Field(description=f"Must be true: accepts the Terms of Service at {TERMS_URL}."),
     ],
-) -> dict[str, Any]:
+) -> Annotated[CallToolResult, dict[str, Any]]:
     """Buy a Sugra API plan and receive a new API key, paid by the agent.
 
     Payment uses the Payment HTTP authentication scheme with Stripe. The first

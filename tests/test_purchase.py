@@ -102,6 +102,14 @@ class FakePurchaseEndpoint:
         self.account_exists = False
         self.status_override: int | None = None
         self.issued = 0
+        # How a declined payment is answered: "problem" (a full problem and a
+        # fresh challenge), "no-problem" (a fresh challenge, empty body) or
+        # "bare" (no challenge, no body).
+        self.decline = "problem"
+        # The Payment-Receipt of a paid call: "unpadded", "padded", "absent",
+        # "garbage", "incomplete" (no timestamp) or "other-challenge".
+        self.receipt = "unpadded"
+        self.sent_receipt: str | None = None
 
     def challenge_header(self, body: bytes) -> str:
         self.issued += 1
@@ -160,8 +168,30 @@ class FakePurchaseEndpoint:
         ):
             return self._payment_required(body, "invalid-challenge", "The challenge was not issued for this request.")
         if credential["payload"].get("spt") != GOOD_SPT:
+            if self.decline == "bare":
+                return httpx.Response(402)
+            if self.decline == "no-problem":
+                return httpx.Response(402, headers={"WWW-Authenticate": self.challenge_header(body)})
             return self._payment_required(body, "verification-failed", "The payment was not accepted: declined.")
-        receipt = {"method": "stripe", "reference": PAYMENT_INTENT, "status": "success", "timestamp": "2026-09-24T10:00:00Z"}
+        receipt: dict[str, Any] = {
+            "method": "stripe", "reference": PAYMENT_INTENT, "status": "success", "timestamp": "2026-09-24T10:00:00Z",
+        }
+        if self.receipt == "incomplete":
+            del receipt["timestamp"]
+        if self.receipt == "padded":
+            receipt["pad"] = "x"  # the plain receipt encodes to a multiple of four, without padding
+        if self.receipt == "other-challenge":
+            receipt["challengeId"] = "another-challenge"
+        encoded = base64.urlsafe_b64encode(json.dumps(receipt, separators=(",", ":")).encode()).decode()
+        headers = {
+            "unpadded": {"Payment-Receipt": encoded.rstrip("=")},
+            "padded": {"Payment-Receipt": encoded},
+            "absent": {},
+            "garbage": {"Payment-Receipt": "not base64url!"},
+            "incomplete": {"Payment-Receipt": encoded},
+            "other-challenge": {"Payment-Receipt": encoded},
+        }[self.receipt]
+        self.sent_receipt = headers.get("Payment-Receipt")
         return httpx.Response(
             200,
             json={
@@ -176,7 +206,7 @@ class FakePurchaseEndpoint:
                 "account": "A Sugra account was created for this email.",
                 "usage": "Send the key as the x-api-key header to https://sugra.ai.",
             },
-            headers={"Payment-Receipt": _b64url(json.dumps(receipt, separators=(",", ":")).encode())},
+            headers=headers,
         )
 
 
@@ -404,20 +434,141 @@ async def test_existing_account_is_a_tool_error_with_the_checkout_link(endpoint,
     await _with_client(monkeypatch, scenario)
 
 
+WELL_FORMED_CHALLENGE = {
+    "id": "abc", "realm": REALM, "method": "stripe", "intent": "charge",
+    "request": json.loads(REQUEST_JSON),
+}
+
+
+def _with(challenge_change: dict[str, Any] | None = None, drop: str | None = None, **credential_change: Any) -> dict[str, Any]:
+    challenge = {**WELL_FORMED_CHALLENGE, **(challenge_change or {})}
+    if drop is not None:
+        challenge.pop(drop)
+    return {"challenge": challenge, "payload": {"spt": GOOD_SPT}, **credential_change}
+
+
+MALFORMED_CREDENTIALS = [
+    "not-an-object",
+    {"payload": {"spt": GOOD_SPT}},
+    {"challenge": WELL_FORMED_CHALLENGE},
+    {"challenge": WELL_FORMED_CHALLENGE, "payload": "spt"},
+    _with(drop="id"),
+    _with(drop="realm"),
+    _with(drop="method"),
+    _with(drop="intent"),
+    _with(drop="request"),
+    _with({"id": ""}),
+    _with({"realm": 7}),
+    _with({"method": None}),
+    _with({"intent": ["charge"]}),
+    _with({"request": REQUEST_B64}),
+    _with({"expires": 123}),
+    _with({"digest": {"a": 1}}),
+    _with({"opaque": 5}),
+    _with({"header": True}),
+    _with(source=3),
+]
+
+
 async def test_malformed_credential_is_invalid_params(endpoint, monkeypatch) -> None:
     async def scenario(mcp: McpClient) -> None:
-        for bad in (
-            "not-an-object",
-            {"payload": {"spt": GOOD_SPT}},
-            {"challenge": {"realm": REALM}, "payload": {"spt": GOOD_SPT}},
-            {"challenge": {"id": "abc", "request": {}}},
-        ):
+        for bad in MALFORMED_CREDENTIALS:
             message = await mcp.call(ARGUMENTS, meta={purchase.CREDENTIAL_META_KEY: bad})
             assert message["error"]["code"] == -32602, bad
             assert message["error"]["data"]["detail"]
 
     await _with_client(monkeypatch, scenario)
     assert endpoint.requests == []
+
+
+def test_well_formed_credential_passes_validation() -> None:
+    purchase._validate_credential(_with())
+    purchase._validate_credential(_with({"opaque": {"plan": "dev"}, "expires": EXPIRES}, source="did:x"))
+
+
+def test_credential_is_read_from_a_dict_meta_and_a_model_meta() -> None:
+    """The request's _meta may reach the tool as a model or as a plain dict."""
+    from types import SimpleNamespace
+
+    from mcp.server.lowlevel.server import request_ctx
+    from mcp.types import RequestParams
+
+    credential = _with()
+    for meta in (
+        {purchase.CREDENTIAL_META_KEY: credential},
+        RequestParams.Meta.model_validate({purchase.CREDENTIAL_META_KEY: credential}),
+        SimpleNamespace(model_extra={purchase.CREDENTIAL_META_KEY: credential}),
+        SimpleNamespace(model_extra=None, **{purchase.CREDENTIAL_META_KEY: credential}),
+    ):
+        reset = request_ctx.set(SimpleNamespace(meta=meta))
+        try:
+            assert purchase._credential_from_meta() == credential, type(meta)
+        finally:
+            request_ctx.reset(reset)
+    reset = request_ctx.set(SimpleNamespace(meta={purchase.CREDENTIAL_META_KEY: "bad"}))
+    try:
+        with pytest.raises(purchase.PaymentError) as refused:
+            purchase._credential_from_meta()
+        assert refused.value.error.code == -32602
+    finally:
+        request_ctx.reset(reset)
+    for meta in (None, {}, RequestParams.Meta()):
+        reset = request_ctx.set(SimpleNamespace(meta=meta))
+        try:
+            assert purchase._credential_from_meta() is None
+        finally:
+            request_ctx.reset(reset)
+
+
+@pytest.mark.parametrize("decline", ["no-problem", "bare"])
+async def test_a_refused_credential_always_answers_verification_failed(endpoint, monkeypatch, decline) -> None:
+    """-32043 with failure.reason and failure.detail even when the 402 names
+    neither, and with an empty challenges list when it carries none."""
+
+    async def scenario(mcp: McpClient) -> None:
+        challenge = (await mcp.call(ARGUMENTS))["error"]["data"]["challenges"][0]
+        endpoint.decline = decline
+        error = (await mcp.call(ARGUMENTS, meta=_credential(challenge, spt="spt_declined")))["error"]
+        assert error["code"] == -32043
+        assert error["data"]["httpStatus"] == 402
+        assert error["data"]["failure"] == {
+            "reason": purchase.FAILURE_REASON_FALLBACK,
+            "detail": purchase.FAILURE_DETAIL_FALLBACK,
+        }
+        assert len(error["data"]["challenges"]) == (1 if decline == "no-problem" else 0)
+
+    await _with_client(monkeypatch, scenario)
+
+
+async def test_a_padded_receipt_is_read(endpoint, monkeypatch) -> None:
+    endpoint.receipt = "padded"
+
+    async def scenario(mcp: McpClient) -> None:
+        challenge = (await mcp.call(ARGUMENTS))["error"]["data"]["challenges"][0]
+        result = (await mcp.call(ARGUMENTS, meta=_credential(challenge)))["result"]
+        assert result["_meta"][purchase.RECEIPT_META_KEY]["reference"] == PAYMENT_INTENT
+        assert "receipt_missing" not in result["structuredContent"]
+
+    await _with_client(monkeypatch, scenario)
+    assert endpoint.sent_receipt.endswith("=")
+
+
+@pytest.mark.parametrize("receipt", ["absent", "garbage", "incomplete", "other-challenge"])
+async def test_a_paid_call_without_a_usable_receipt_keeps_the_key(endpoint, monkeypatch, receipt) -> None:
+    """The money moved and the key was issued: never drop the key, flag the receipt."""
+    endpoint.receipt = receipt
+
+    async def scenario(mcp: McpClient) -> None:
+        challenge = (await mcp.call(ARGUMENTS))["error"]["data"]["challenges"][0]
+        result = (await mcp.call(ARGUMENTS, meta=_credential(challenge)))["result"]
+        assert result["isError"] is False
+        payload = result["structuredContent"]
+        assert payload["api_key"] == ISSUED_KEY
+        assert payload["receipt_missing"] is True
+        assert payload["receipt_note"] == purchase.RECEIPT_MISSING_NOTE
+        assert purchase.RECEIPT_META_KEY not in (result.get("_meta") or {})
+
+    await _with_client(monkeypatch, scenario)
 
 
 async def test_other_answers_pass_the_problem_through(endpoint, monkeypatch) -> None:
@@ -521,6 +672,37 @@ def test_credential_encoding_restores_the_wire_request() -> None:
     selected = {**challenge, "header": "Payment-Authorization"}
     field, _ = purchase.encode_credential({"challenge": selected, "payload": {}})
     assert field == "Payment-Authorization"
+    lower = {**challenge, "header": "payment-authorization"}
+    field, _ = purchase.encode_credential({"challenge": lower, "payload": {}})
+    assert field == "Payment-Authorization"
+    other = {**challenge, "header": "X-Payment"}
+    field, _ = purchase.encode_credential({"challenge": other, "payload": {}})
+    assert field == "Authorization"
+
+
+def test_base64url_decode_accepts_padded_and_unpadded_values() -> None:
+    for raw in (b"a", b"ab", b"abc", b"abcd", b'{"amount":"1"}'):
+        padded = base64.urlsafe_b64encode(raw).decode()
+        assert purchase._b64url_decode(padded) == raw
+        assert purchase._b64url_decode(padded.rstrip("=")) == raw
+    assert purchase._b64url_decode("YQ===") is None
+    assert purchase._b64url_decode("===") is None
+    assert purchase._b64url_decode("Y=Q") is None
+    assert purchase._b64url_decode("a+b/") is None
+
+
+def test_challenge_parser_accepts_a_padded_request() -> None:
+    request = base64.urlsafe_b64encode(b'{"amount":"1"}').decode()
+    assert request.endswith("=")
+    header = f'Payment id="one", realm="r", method="stripe", intent="charge", request="{request}"'
+    [challenge] = purchase.parse_payment_challenges([header])
+    assert challenge["request"] == {"amount": "1"}
+
+
+def test_buy_plan_is_annotated_as_destructive() -> None:
+    [tool] = [tool for tool in asyncio.run(server.mcp.list_tools()) if tool.name == "buy_plan"]
+    assert tool.annotations.destructiveHint is True
+    assert tool.annotations.readOnlyHint is False
 
 
 def test_buy_plan_is_listed_after_list_plans() -> None:
