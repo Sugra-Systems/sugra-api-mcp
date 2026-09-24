@@ -123,8 +123,16 @@ def _b64url_decode(value: str) -> bytes | None:
 
 
 def _jcs(value: Any) -> str:
-    """JSON canonical form (RFC 8785) for strings, integers, lists and objects."""
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    """The purchase endpoint's canonical JSON for a challenge's request or opaque.
+
+    Not RFC 8785: object keys sorted by code point, compact separators, UTF-8
+    unescaped except U+2028 and U+2029, which the endpoint's encoder escapes.
+    That reproduces the endpoint's own bytes for what it issues (objects with
+    ASCII keys, strings and lists of strings, no numbers), which is what the
+    challenge id binds. Floats and empty objects are outside that shape.
+    """
+    text = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return text.replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
 
 
 def _skip(pattern: re.Pattern[str], text: str, pos: int) -> int:
@@ -466,7 +474,7 @@ async def buy_plan(
     ],
     accept_terms: Annotated[
         bool,
-        Field(description=f"Must be true: accepts the Terms of Service at {TERMS_URL}."),
+        Field(strict=True, description=f"Must be true: accepts the Terms of Service at {TERMS_URL}."),
     ],
 ) -> Annotated[CallToolResult, dict[str, Any]]:
     """Buy a Sugra API plan and receive a new API key, paid by the agent.

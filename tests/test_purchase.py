@@ -635,6 +635,75 @@ async def test_refused_before_any_request(endpoint, monkeypatch, arguments, code
     assert endpoint.requests == []
 
 
+@pytest.mark.parametrize("value", [1, 0, "true", "yes", "1", None])
+async def test_accept_terms_takes_only_a_json_true(endpoint, monkeypatch, value) -> None:
+    """Values that coerce to a boolean do not accept the terms."""
+
+    async def scenario(mcp: McpClient) -> None:
+        result = (await mcp.call({**ARGUMENTS, "accept_terms": value}))["result"]
+        assert result["isError"] is True
+        assert "api_key" not in json.dumps(result)
+
+    await _with_client(monkeypatch, scenario)
+    assert endpoint.requests == []
+
+
+def test_accept_terms_is_a_plain_boolean_in_the_input_schema() -> None:
+    [tool] = [tool for tool in asyncio.run(server.mcp.list_tools()) if tool.name == "buy_plan"]
+    schema = tool.inputSchema["properties"]["accept_terms"]
+    assert schema["type"] == "boolean"
+    assert set(schema) <= {"type", "title", "description"}
+
+
+# The purchase endpoint's own encoder output (its canonicalB64url, run under
+# PHP on these objects), so the tool re-encodes a challenge's request to the
+# exact string the challenge id binds. Insertion order is scrambled on purpose.
+ENDPOINT_ENCODINGS = [
+    (
+        {
+            "methodDetails": {"paymentMethodTypes": ["card", "link"], "networkId": "profile_test_network"},
+            "description": "Sugra API Dev plan, 1 month, one-time, no renewal",
+            "currency": "usd",
+            "amount": "2500",
+        },
+        "eyJhbW91bnQiOiIyNTAwIiwiY3VycmVuY3kiOiJ1c2QiLCJkZXNjcmlwdGlvbiI6IlN1Z3JhIEFQSSBEZXYgcGxhbiwgMSBtb250"
+        "aCwgb25lLXRpbWUsIG5vIHJlbmV3YWwiLCJtZXRob2REZXRhaWxzIjp7Im5ldHdvcmtJZCI6InByb2ZpbGVfdGVzdF9uZXR3b3Jr"
+        "IiwicGF5bWVudE1ldGhvZFR5cGVzIjpbImNhcmQiLCJsaW5rIl19fQ",
+    ),
+    (
+        {
+            "currency": "usd",
+            "amount": "49900",
+            "methodDetails": {"networkId": "profile_test_network", "paymentMethodTypes": ["card", "link"]},
+            "description": "Sugra API Pro plan, 1 year, one-time, no renewal",
+        },
+        "eyJhbW91bnQiOiI0OTkwMCIsImN1cnJlbmN5IjoidXNkIiwiZGVzY3JpcHRpb24iOiJTdWdyYSBBUEkgUHJvIHBsYW4sIDEgeWVh"
+        "ciwgb25lLXRpbWUsIG5vIHJlbmV3YWwiLCJtZXRob2REZXRhaWxzIjp7Im5ldHdvcmtJZCI6InByb2ZpbGVfdGVzdF9uZXR3b3Jr"
+        "IiwicGF5bWVudE1ldGhvZFR5cGVzIjpbImNhcmQiLCJsaW5rIl19fQ",
+    ),
+    (
+        {
+            "description": "a/b \u00e9 \u4e2d \U0001f600 \u2028\u2029 \"q\" \\ \t\n\x01\x7f <&>'",
+            "amount": "1",
+            "Z": "upper sorts before lower",
+            "methodDetails": {"paymentMethodTypes": ["card"], "networkId": "n"},
+        },
+        "eyJaIjoidXBwZXIgc29ydHMgYmVmb3JlIGxvd2VyIiwiYW1vdW50IjoiMSIsImRlc2NyaXB0aW9uIjoiYS9iIMOpIOS4rSDwn5iA"
+        "IFx1MjAyOFx1MjAyOSBcInFcIiBcXCBcdFxuXHUwMDAxfyA8Jj4nIiwibWV0aG9kRGV0YWlscyI6eyJuZXR3b3JrSWQiOiJuIiwi"
+        "cGF5bWVudE1ldGhvZFR5cGVzIjpbImNhcmQiXX19",
+    ),
+]
+
+
+@pytest.mark.parametrize(("request_object", "expected"), ENDPOINT_ENCODINGS)
+def test_request_reencoding_matches_the_endpoint_byte_for_byte(request_object, expected) -> None:
+    assert purchase._b64url(purchase._jcs(request_object).encode("utf-8")) == expected
+    credential = {"challenge": {"id": "x", "request": request_object}, "payload": {}}
+    _, value = purchase.encode_credential(credential)
+    wire = json.loads(_b64url_decode(value.removeprefix("Payment ")))
+    assert wire["challenge"]["request"] == expected
+
+
 def test_request_body_is_canonical_and_stable() -> None:
     body = purchase.request_body("buyer@example.com", True)
     assert body == b'{"accept_terms":true,"email":"buyer@example.com"}'
