@@ -55,7 +55,7 @@ def test_landing_serves_html_unauthenticated(client: TestClient) -> None:
 
 
 class _LandingParser(HTMLParser):
-    """Collects the install tabs, the copy targets and the copyable blocks."""
+    """Collects the install tabs, the copy targets, the copyable blocks and the links."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -64,8 +64,12 @@ class _LandingParser(HTMLParser):
         self.pre_ids: list[str] = []
         self.copy_targets: list[str] = []
         self.pre_text: dict[str, str] = {}
+        self.links: list[tuple[str, str]] = []
+        self.icons: list[dict[str, str | None]] = []
         self._label = False
         self._pre: str | None = None
+        self._href: str | None = None
+        self._link_text = ""
 
     def handle_starttag(self, tag, attrs):
         attr = dict(attrs)
@@ -79,18 +83,28 @@ class _LandingParser(HTMLParser):
             self.pre_text[attr["id"]] = ""
         elif tag == "button" and "data-copy" in attr:
             self.copy_targets.append(attr["data-copy"])
+        elif tag == "a":
+            self._href = attr.get("href")
+            self._link_text = ""
+        elif tag == "link" and "icon" in (attr.get("rel") or ""):
+            self.icons.append(attr)
 
     def handle_endtag(self, tag):
         if tag == "label":
             self._label = False
         elif tag == "pre":
             self._pre = None
+        elif tag == "a" and self._href is not None:
+            self.links.append((self._link_text.strip(), self._href))
+            self._href = None
 
     def handle_data(self, data):
         if self._label:
             self.tab_labels.append(data)
         if self._pre is not None:
             self.pre_text[self._pre] += data
+        if self._href is not None:
+            self._link_text += data
 
 
 def _parse_landing(client: TestClient) -> _LandingParser:
@@ -130,6 +144,80 @@ def test_landing_never_writes_a_key_or_the_alias_host(client: TestClient) -> Non
     for body in servers:
         assert "https://mcp.sugra.ai/mcp" in body
         assert "SUGRA_API_KEY" in body
+    # No copyable block carries a placeholder the user would have to edit.
+    for body in parser.pre_text.values():
+        assert "<your" not in body
+        if "Authorization" in body:
+            assert "SUGRA_API_KEY" in body or "${input:sugra-api-key}" in body
+
+
+def test_header_commands_are_spelled_for_their_shell(client: TestClient) -> None:
+    # The shell expands the variable before the CLI sees it: PowerShell reads a
+    # bare $SUGRA_API_KEY as an unset PowerShell variable and sends an empty key.
+    parser = _parse_landing(client)
+    endpoint = "https://mcp.sugra.ai/mcp"
+    for ident, add in (
+        ("claude-code", "claude mcp add --transport http sugra"),
+        ("grok", "grok mcp add --transport http sugra"),
+        ("gemini", "gemini mcp add --transport http sugra"),
+    ):
+        assert parser.pre_text[f"cmd-{ident}"] == (
+            f'{add} {endpoint} --header "Authorization: Bearer $SUGRA_API_KEY"'
+        )
+        assert parser.pre_text[f"cmd-{ident}-powershell"] == (
+            f'{add} {endpoint} --header "Authorization: Bearer $env:SUGRA_API_KEY"'
+        )
+    assert parser.pre_text["cmd-codex"] == (
+        f"codex mcp add sugra --url {endpoint} --bearer-token-env-var SUGRA_API_KEY"
+    )
+
+
+def test_highlighted_blocks_copy_as_the_plain_source(client: TestClient) -> None:
+    # Copy takes the block's text, so the syntax spans must add nothing to it.
+    parser = _parse_landing(client)
+    assert json.loads(parser.pre_text["cfg-cursor"]) == {
+        "mcpServers": {"sugra": web.CURSOR_CONFIG}
+    }
+    vscode = json.loads(parser.pre_text["cfg-vscode"])
+    assert vscode["inputs"][0]["password"] is True
+    assert vscode["servers"]["sugra"]["headers"] == {
+        "Authorization": "Bearer ${input:sugra-api-key}"
+    }
+    assert parser.pre_text["cmd-grok-skills"] == (
+        "grok plugin install Sugra-Systems/sugra-api-skills#plugins/sugra-api"
+    )
+    assert parser.pre_text["cfg-url"] == "https://mcp.sugra.ai/mcp"
+
+
+def test_code_blocks_use_the_console_palette(client: TestClient) -> None:
+    text = client.get("/").text
+    for rule in (
+        "background: #0F1115", "background: #171B22", "border: 1px solid #30363D",
+        "color: #D7DAE0", ".b { color: #86EF8A; }", ".s { color: #F6B94A; }",
+        ".v { color: #D879F0; }", ".k { color: #38BDF8; }",
+        ".o { color: #FB7185; }", ".p { color: #CBD5E1; }",
+    ):
+        assert rule in text
+    assert '<span class="b">claude</span>' in text
+    assert '<span class="v">$env:SUGRA_API_KEY</span>' in text
+    assert '<span class="k">"password"</span><span class="p">:</span>' in text
+    assert '<span class="o">true</span>' in text
+    assert '<span class="v">${env:SUGRA_API_KEY}</span>' in text
+
+
+def test_landing_carries_the_standard_chrome(client: TestClient) -> None:
+    parser = _parse_landing(client)
+    rels = {icon["rel"]: icon["href"] for icon in parser.icons}
+    assert rels["icon"] and rels["apple-touch-icon"]
+    assert any((icon["href"] or "").startswith("data:image/svg+xml,") for icon in parser.icons)
+    links = dict(parser.links)
+    assert links["Get API key"].startswith("https://app.sugra.ai/register")
+    assert links["Sign in"].startswith("https://app.sugra.ai/login")
+    assert links["Privacy"] == "https://sugra.systems/privacy-policy"
+    docs = [href for label, href in parser.links if label == "Docs"]
+    assert len(docs) == 2
+    assert set(docs) == {"https://docs.sugra.ai"}
+    assert "decisions that matter." in client.get("/").text
 
 
 def test_cursor_install_link_carries_the_env_reference_not_a_key() -> None:
