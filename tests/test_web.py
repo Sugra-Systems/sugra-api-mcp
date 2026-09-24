@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from html.parser import HTMLParser
 from urllib.parse import unquote
 
@@ -169,6 +170,48 @@ def test_header_commands_are_spelled_for_their_shell(client: TestClient) -> None
         )
     assert parser.pre_text["cmd-codex"] == (
         f"codex mcp add sugra --url {endpoint} --bearer-token-env-var SUGRA_API_KEY"
+    )
+
+
+def _panel(text: str, ident: str) -> str:
+    match = re.search(rf'<section class="panel" id="p-{ident}"[^>]*>(.*?)</section>', text, re.S)
+    assert match, ident
+    return match.group(1)
+
+
+def test_tabs_point_at_the_public_listings_before_the_commands(client: TestClient) -> None:
+    text = client.get("/").text
+    claude, openai = 'href="https://url.sugra.ai/claude"', 'href="https://url.sugra.ai/openai"'
+    skills = 'href="https://chatgpt.com/plugins/plugins_6aa4f7db79848191a81e4048990545ef"'
+
+    claude_code = _panel(text, "claude-code")
+    assert claude_code.index(claude) < claude_code.index('id="cmd-claude-code"')
+    assert "<code>/mcp</code>" in claude_code
+    assert skills not in claude_code
+
+    codex = _panel(text, "codex")
+    assert codex.index(openai) < codex.index('id="cmd-codex"')
+    assert codex.index('id="cmd-codex"') < codex.index(skills)
+    assert codex.index(skills) < codex.index('id="cmd-codex-skills"')
+
+    chatgpt = _panel(text, "chatgpt")
+    assert chatgpt.index(openai) < chatgpt.index(skills)
+    assert "<pre" not in chatgpt
+
+    # Tabs with no public listing for them keep only their commands.
+    for ident in ("grok", "gemini", "cursor", "vscode", "other"):
+        panel = _panel(text, ident)
+        for listing in (claude, openai, skills):
+            assert listing not in panel, (ident, listing)
+
+    parser = _parse_landing(client)
+    assert parser.pre_text["cmd-claude-code-skills"] == (
+        "claude plugin marketplace add Sugra-Systems/sugra-api-skills\n"
+        "claude plugin install sugra-api@sugra-api-skills"
+    )
+    assert parser.pre_text["cmd-codex-skills"] == (
+        "codex plugin marketplace add Sugra-Systems/sugra-api-skills\n"
+        "codex plugin add sugra-api@sugra-api-skills"
     )
 
 
