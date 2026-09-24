@@ -97,4 +97,4 @@ def source_overview(domain: str) -> str:
 3. Run search_endpoints with query "{domain}" (add the toolset filter when one matches) to sample concrete endpoints, then describe_endpoint on the most relevant hits.
 4. Frame the sources by tier and name them openly: sovereign (for example FRED, BLS, ECB, NOAA, USGS), intergovernmental (for example IMF, GDACS, EUMETSAT), and academic or nonprofit programs.
 5. Summarize the {domain} coverage: what data exists, typical parameters, and three to five example operation_ids to call next.
-6. Note that the catalog spans 1,500+ endpoints across 160+ primary sources, all reachable through call_endpoint or fetch_data."""
+6. Note that the catalog spans 1,600+ endpoints across 160+ primary sources, all reachable through call_endpoint or fetch_data."""

@@ -43,6 +43,10 @@ def test_landing_serves_html_unauthenticated(client: TestClient) -> None:
     assert resp.headers["content-type"].startswith("text/html")
     assert "https://mcp.sugra.ai/mcp" in resp.text
     assert "Sugra API MCP" in resp.text
+    assert '<a href="https://url.sugra.ai/claude"' in resp.text
+    assert '<a href="https://url.sugra.ai/openai"' in resp.text
+    assert "Add to Claude" in resp.text
+    assert "Add to ChatGPT" in resp.text
 
 
 def test_health_serves_json_unauthenticated(client: TestClient) -> None:
