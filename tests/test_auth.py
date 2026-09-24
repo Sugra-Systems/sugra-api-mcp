@@ -686,6 +686,62 @@ def test_auth_middleware_rejects_mixed_unauthenticated_batches(auth_config):
     assert response.status_code == 401
 
 
+def test_auth_middleware_allows_buy_plan_without_bearer(auth_config):
+    """Buying a plan is how a caller without a key gets one."""
+
+    async def echo_tool(request):
+        payload = await request.json()
+        names = [item["params"]["name"] for item in payload] if isinstance(payload, list) else [payload["params"]["name"]]
+        return JSONResponse({"tools": names})
+
+    app = Starlette(routes=[Route("/mcp", echo_tool, methods=["POST"])])
+    app.add_middleware(AuthMiddleware, authenticator=Authenticator(auth_config))
+    call = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": "buy_plan", "arguments": {}},
+    }
+
+    single = TestClient(app).post("/mcp", json=call)
+    batch = TestClient(app).post("/mcp", json=[call, {**call, "id": 2}])
+
+    assert single.status_code == 200
+    assert single.json() == {"tools": ["buy_plan"]}
+    assert batch.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"name": "call_endpoint", "arguments": {}},
+        {"name": "Buy_Plan", "arguments": {}},
+        {"name": ["buy_plan"], "arguments": {}},
+        {"arguments": {"name": "buy_plan"}},
+        "buy_plan",
+    ],
+)
+def test_auth_middleware_keeps_other_tool_calls_behind_bearer(auth_config, params):
+    async def ok(_request):
+        return JSONResponse({"ok": True})
+
+    app = Starlette(routes=[Route("/mcp", ok, methods=["POST"])])
+    app.add_middleware(AuthMiddleware, authenticator=Authenticator(auth_config))
+    buy = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": "buy_plan", "arguments": {}},
+    }
+    other = {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": params}
+
+    alone = TestClient(app).post("/mcp", json=other)
+    mixed = TestClient(app).post("/mcp", json=[buy, other])
+
+    assert alone.status_code == 401
+    assert mixed.status_code == 401
+
+
 def test_auth_middleware_rejects_oversized_public_discovery_body(auth_config):
     async def ok(_request):
         return JSONResponse({"ok": True})
