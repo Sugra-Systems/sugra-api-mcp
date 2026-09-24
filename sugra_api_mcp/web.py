@@ -28,6 +28,11 @@ _LANDING_HTML = """<!doctype html>
   img { width: 72px; height: 72px; }
   h1 { font-size: 1.6rem; margin: 1rem 0 0.4rem; font-weight: 600; }
   p { color: #9AA3B2; line-height: 1.55; margin: 0.4rem 0 1.4rem; }
+  .add { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.8rem;
+         margin: 0 0 1.4rem; }
+  .add a { background: #F5A623; color: #0B0F1A; font-weight: 600;
+           text-decoration: none; border-radius: 8px; padding: 0.6rem 1.2rem; }
+  .add a:hover { opacity: 0.9; }
   code { display: inline-block; background: #141A2A; border: 1px solid #232B3E;
          border-radius: 8px; padding: 0.55rem 1rem; font-size: 0.95rem;
          color: #F5A623; }
@@ -42,12 +47,17 @@ _LANDING_HTML = """<!doctype html>
 <main>
   <img src="https://app.sugra.ai/images/brand/sugra-app-icon.svg" alt="sugra.ai">
   <h1>Sugra API MCP</h1>
-  <p>Connector between LLM agents and world data. 1,500+ endpoints aggregating
+  <p>Connector between LLM agents and world data. 1,600+ endpoints aggregating
   160+ primary sources across 36 data domains, served over the Model Context
   Protocol.</p>
+  <div class="add">
+    <a href="https://url.sugra.ai/claude"
+       title="Sugra API in Anthropic's Connectors Directory">Add to Claude</a>
+    <a href="https://url.sugra.ai/openai"
+       title="Sugra API in the OpenAI Plugins Directory">Add to ChatGPT</a>
+  </div>
   <code>https://mcp.sugra.ai/mcp</code>
-  <p>Add this URL as a remote MCP server in ChatGPT, Claude, or any
-  MCP-enabled client.</p>
+  <p>Or add this URL as a remote MCP server in any MCP-enabled client.</p>
   <nav>
     <a href="https://github.com/Sugra-Systems/sugra-api-mcp">GitHub</a>
     <a href="https://pypi.org/project/sugra-api-mcp/">PyPI</a>

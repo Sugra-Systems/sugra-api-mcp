@@ -30,16 +30,22 @@ pre-gateway curated surface and never shipped in this package after v0.4.0.
 
 Two different counters. Do not equate them.
 
-- Live `GET https://sugra.ai/stats` (2026-09-09): 1,641 endpoints, 190 sources, 36 categories. Public copy: "1,500+" / "160+" / 36 domains.
+- Live `GET https://sugra.ai/stats` (2026-09-24): 1,670 endpoints, 195 sources, 36 categories. Public copy: "1,600+" / "160+" / 36 domains.
 - Bundled MCP catalog (built_at 2026-09-13T22:08:58Z): 1,626 GET/POST operations from live OpenAPI (spec_sha256 e5fc92479214...). Version 0.11.0 is the first cut with this bundle and the official skill pack; the wheel publishes when the owner pushes tag v0.11.0.
 
 ## Fixed facts
 
 - Package: sugra-api-mcp on PyPI (MIT), Python 3.11+, current version 0.12.0
 - Repository: https://github.com/Sugra-Systems/sugra-api-mcp
-- Canonical HTTP URL: `https://mcp.sugra.ai/mcp` (API-key Bearer)
+- Canonical HTTP URL: `https://mcp.sugra.ai/mcp` (API-key Bearer or OAuth)
 - Permanent alias: `https://app.sugra.ai/mcp` (API-key Bearer or OAuth)
 - OAuth resource / JWT audience: `https://app.sugra.ai/mcp` on BOTH hosts until dual-resource OAuth lands
 - Protocol: Model Context Protocol, revision 2025-11-25
 - MCP Registry name: ai.sugra/api-mcp
 - Free tier: 50 requests/day
+
+## Directory listings
+
+- Anthropic's Connectors Directory: "Sugra API", https://claude.ai/directory/sugra-api (short link https://url.sugra.ai/claude), added September 2026. One catalog for Claude on the web, desktop and mobile, Claude Code and Cowork. Connector URL `https://mcp.sugra.ai/mcp`, OAuth sign-in. It is a Community listing: never describe it as verified, approved, endorsed or certified by Anthropic, or as a partnership.
+- Official OpenAI Plugins Directory: "Sugra API", https://url.sugra.ai/openai, available in ChatGPT and Codex since July 2026.
+- Install buttons on every surface read "Add to Claude" (https://url.sugra.ai/claude) and "Add to ChatGPT" (https://url.sugra.ai/openai).
