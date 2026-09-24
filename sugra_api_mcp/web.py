@@ -605,7 +605,7 @@ _LANDING_HTML = f"""<!doctype html>
   @media (max-width: 30rem) {{
     .wrap, main {{ padding-left: 1rem; padding-right: 1rem; }}
     .panel {{ padding: 0.9rem; }}
-    .code pre {{ font-size: 0.78rem; padding: 14px; }}
+    .code pre {{ font-size: 0.78rem; }}
   }}
   {_tabs_css()}
 </style>
