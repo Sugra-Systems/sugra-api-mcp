@@ -46,7 +46,7 @@ Two different counters. Do not equate them.
 
 ## Directory listings
 
-- Anthropic's Connectors Directory: "Sugra API", https://claude.ai/directory/sugra-api (short link https://url.sugra.ai/claude), added September 2026. One catalog for Claude on the web, desktop and mobile, Claude Code and Cowork. Connector URL `https://mcp.sugra.ai/mcp`, OAuth sign-in. It is a Community listing: never describe it as verified, approved, endorsed or certified by Anthropic, or as a partnership.
+- Anthropic's Connectors Directory: "Sugra API", https://claude.ai/directory/sugra-api (short link https://url.sugra.ai/claude), added September 2026. One catalog for Claude on the web, desktop and mobile, Claude Code and Cowork. It connects to the canonical HTTP URL above, with OAuth sign-in. It is a Community listing: never describe it as verified, approved, endorsed or certified by Anthropic, or as a partnership.
 - Official OpenAI Plugins Directory: "Sugra API", https://url.sugra.ai/openai, available in ChatGPT and Codex since July 2026.
 - Install buttons on every surface read "Add to Claude" (https://url.sugra.ai/claude) and "Add to ChatGPT" (https://url.sugra.ai/openai).
-- Prose links to the hosted server point at the landing page https://mcp.sugra.ai. The connector URL `https://mcp.sugra.ai/mcp` appears only where a person or a client pastes it: config snippets, a code block for adding a custom connector, `server.json`. New text never names `https://app.sugra.ai/mcp`.
+- Prose links to the hosted server point at the landing page https://mcp.sugra.ai. The connector URL (the canonical HTTP URL above) appears only where a person or a client pastes it: config snippets, a code block for adding a custom connector, `server.json`. New text never names the permanent alias. Links to the directories read "Add to Claude" and "Add to ChatGPT" and use the two short links.

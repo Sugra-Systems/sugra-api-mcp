@@ -141,8 +141,8 @@ Every answer carries source attribution and freshness metadata, so agents cite i
 
 No install. In Claude, ChatGPT and Codex, add Sugra API from a directory:
 
-- **Claude** (web, desktop, mobile, Claude Code and Cowork): open [Sugra API in Anthropic's Connectors Directory](https://url.sugra.ai/claude), connect it and sign in with your Sugra account. In claude.ai the directory is under [Customize > Connectors](https://claude.ai/customize/connectors). Claude Code signed in with a claude.ai account picks the connector up automatically; `/mcp` lists it.
-- **ChatGPT and Codex**: install [Sugra API from the OpenAI Plugins Directory](https://url.sugra.ai/openai).
+- **Claude** (web, desktop, mobile, Claude Code and Cowork): [Add to Claude](https://url.sugra.ai/claude) opens Sugra API in Anthropic's Connectors Directory; connect it and sign in with your Sugra account. In claude.ai the directory is under [Customize > Connectors](https://claude.ai/customize/connectors). Claude Code signed in with a claude.ai account picks the connector up automatically; `/mcp` lists it.
+- **ChatGPT and Codex**: [Add to ChatGPT](https://url.sugra.ai/openai) opens Sugra API in the OpenAI Plugins Directory.
 
 Any other MCP client, or a manual setup, points at the hosted Streamable HTTP endpoint:
 
@@ -150,7 +150,7 @@ Any other MCP client, or a manual setup, points at the hosted Streamable HTTP en
 https://mcp.sugra.ai/mcp
 ```
 
-- The nine gateway tools plus the composed agent tools `resolve_entity`, `get_snapshot` and `get_timeseries`
+- The gateway tools plus the composed agent tools `resolve_entity`, `get_snapshot` and `get_timeseries`
 - OAuth sign-in through the Claude and ChatGPT connector flows, or `Authorization: Bearer sugra_xxx_...` with an API key
 - As a custom connector in claude.ai: Customize -> Connectors -> Add custom connector
 - In ChatGPT: Settings -> Connectors -> Add MCP server
@@ -217,7 +217,7 @@ Restart Claude Desktop. Sugra tools appear in the tools menu.
 
 ### Claude Code (Anthropic CLI)
 
-Signed in to Claude Code with a claude.ai account? Connect [Sugra API from the Connectors Directory](https://url.sugra.ai/claude) in claude.ai and it appears in `/mcp` without any local install. To run the local package instead:
+Signed in to Claude Code with a claude.ai account? [Add to Claude](https://url.sugra.ai/claude) connects Sugra API from the Connectors Directory in claude.ai, and it appears in `/mcp` without any local install. To run the local package instead:
 
 ```bash
 claude mcp add sugra -- sugra-api-mcp
@@ -285,11 +285,11 @@ Each of these has an MCP settings file (typically `mcp.json` or equivalent) with
 
 ### ChatGPT
 
-Install [Sugra API from the OpenAI Plugins Directory](https://url.sugra.ai/openai), or add the hosted HTTP endpoint (below) as an MCP connector, since ChatGPT does not launch local stdio processes.
+[Add to ChatGPT](https://url.sugra.ai/openai) installs Sugra API from the OpenAI Plugins Directory. Or add the hosted HTTP endpoint (below) as an MCP connector, since ChatGPT does not launch local stdio processes.
 
 ### HTTP (claude.ai, ChatGPT, remote agents)
 
-In claude.ai, connect [Sugra API from Anthropic's Connectors Directory](https://url.sugra.ai/claude); in ChatGPT, install it from the [OpenAI Plugins Directory](https://url.sugra.ai/openai). For a manual setup or any other Streamable HTTP MCP client, use the hosted endpoint:
+In claude.ai, [Add to Claude](https://url.sugra.ai/claude) connects Sugra API from Anthropic's Connectors Directory; in ChatGPT, [Add to ChatGPT](https://url.sugra.ai/openai) installs it from the OpenAI Plugins Directory. For a manual setup or any other Streamable HTTP MCP client, use the hosted endpoint:
 
 ```
 https://mcp.sugra.ai/mcp
