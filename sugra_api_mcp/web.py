@@ -238,9 +238,10 @@ _TABS: list[tuple[str, str, str]] = [
     (
         "chatgpt",
         "ChatGPT",
-        "<p>The Sugra API MCP server is listed in the OpenAI Plugins Directory.</p>"
+        "<p>The Sugra API MCP server is listed in OpenAI's Plugins Directory"
+        " for ChatGPT and Codex.</p>"
         '<a href="https://url.sugra.ai/openai" class="btn"'
-        ' title="The Sugra API MCP server in the OpenAI Plugins Directory">'
+        " title=\"The Sugra API MCP server in OpenAI's Plugins Directory\">"
         "Add to ChatGPT</a>",
     ),
     (
