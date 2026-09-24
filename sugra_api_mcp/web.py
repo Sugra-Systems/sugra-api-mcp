@@ -7,7 +7,8 @@ behind AuthMiddleware. The auth-side allowlist lives in
 sugra_api_mcp.auth.PUBLIC_GET_PATHS - the two lists must stay in sync.
 
 The landing carries the standard Sugra header and footer and one install tab
-per client. Every copyable command or config names the API key only through
+per client. A tab whose client has a public listing points there first, and
+the commands follow for everyone else. Every copyable command or config names the API key only through
 the SUGRA_API_KEY environment variable (or, in VS Code, an input prompt),
 spelled for the shell that runs it; the Other tab describes the header in
 prose. A key is never written into anything on this page.
@@ -31,6 +32,11 @@ ENDPOINT = "https://mcp.sugra.ai/mcp"
 SKILLS_REPO = "Sugra-Systems/sugra-api-skills"
 DOCS_URL = "https://docs.sugra.ai"
 REGISTER_URL = "https://app.sugra.ai/register"
+
+# Public listings come first on every tab that has one; GitHub is the fallback.
+CLAUDE_LISTING = "https://url.sugra.ai/claude"
+OPENAI_LISTING = "https://url.sugra.ai/openai"
+OPENAI_SKILLS_LISTING = "https://chatgpt.com/plugins/plugins_6aa4f7db79848191a81e4048990545ef"
 
 # Cursor resolves ${env:NAME} in url and headers when it starts the server.
 CURSOR_CONFIG = {
@@ -200,6 +206,8 @@ _SKILLS_NOTE = (
     "Sugra endpoints.</p>"
 )
 
+_OPENAI_SKILLS_LINK = f'<a href="{OPENAI_SKILLS_LISTING}">Sugra API Skills</a>'
+
 
 def _header_server(ident: str, add: str) -> str:
     """The server step for a CLI that takes the key as a --header value.
@@ -231,7 +239,7 @@ _TABS: list[tuple[str, str, str]] = [
         "claude",
         "Claude",
         "<p>The Sugra API MCP server is listed in Anthropic's Connectors Directory.</p>"
-        '<a href="https://url.sugra.ai/claude" class="btn"'
+        f'<a href="{CLAUDE_LISTING}" class="btn"'
         " title=\"The Sugra API MCP server in Anthropic's Connectors Directory\">"
         "Add to Claude</a>",
     ),
@@ -240,14 +248,20 @@ _TABS: list[tuple[str, str, str]] = [
         "ChatGPT",
         "<p>The Sugra API MCP server is listed in OpenAI's Plugins Directory"
         " for ChatGPT and Codex.</p>"
-        '<a href="https://url.sugra.ai/openai" class="btn"'
+        f'<a href="{OPENAI_LISTING}" class="btn"'
         " title=\"The Sugra API MCP server in OpenAI's Plugins Directory\">"
-        "Add to ChatGPT</a>",
+        "Add to ChatGPT</a>"
+        + _step("Skills (optional)")
+        + f"<p>{_OPENAI_SKILLS_LINK} are listed in OpenAI's Plugins Directory too.</p>"
+        + _SKILLS_NOTE,
     ),
     (
         "claude-code",
         "Claude Code",
-        _header_server("claude-code", "claude mcp add --transport http sugra")
+        "<p>Signed in to Claude Code with a claude.ai account? "
+        f'<a href="{CLAUDE_LISTING}">Add the Sugra API MCP server in Claude</a> and it '
+        "appears in <code>/mcp</code> on its own. Otherwise, add it with your API key.</p>"
+        + _header_server("claude-code", "claude mcp add --transport http sugra")
         + _step("Skills (optional)")
         + _terminal(
             "cmd-claude-code-skills",
@@ -259,13 +273,18 @@ _TABS: list[tuple[str, str, str]] = [
     (
         "codex",
         "Codex",
-        _step("Server")
+        "<p>In the Codex app, install the Sugra API MCP server from "
+        f'<a href="{OPENAI_LISTING}">OpenAI\'s Plugins Directory</a>. '
+        "In the Codex CLI, add it with your API key.</p>"
+        + _step("Server")
         + _terminal(
             "cmd-codex",
             f"codex mcp add sugra --url {ENDPOINT} --bearer-token-env-var SUGRA_API_KEY",
         )
         + _KEY_NOTE
         + _step("Skills (optional)")
+        + f"<p>In the Codex app, install {_OPENAI_SKILLS_LINK} from OpenAI's Plugins"
+        " Directory. In the Codex CLI, add them from GitHub.</p>"
         + _terminal(
             "cmd-codex-skills",
             f"codex plugin marketplace add {SKILLS_REPO}\n"
@@ -573,8 +592,8 @@ _LANDING_HTML = f"""<!doctype html>
            font: inherit; cursor: pointer; }}
   .copy:hover {{ border-color: #718096; }}
   .js .copy {{ display: inline-block; }}
-  .note a, .links a {{ color: #F5A623; text-decoration: none; }}
-  .note a:hover, .links a:hover {{ text-decoration: underline; }}
+  .panel p a, .links a {{ color: #F5A623; text-decoration: none; }}
+  .panel p a:hover, .links a:hover {{ text-decoration: underline; }}
   code {{ font-family: 'DM Mono', ui-monospace, monospace; color: #EDF0F4; }}
   .links {{ margin-top: 2rem; text-align: center; }}
   .links a {{ margin: 0 0.7rem; font-size: 0.95rem; }}
