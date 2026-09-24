@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import base64
+import json
+from html.parser import HTMLParser
+from urllib.parse import unquote
+
 import pytest
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from sugra_api_mcp import __version__
+from sugra_api_mcp import __version__, web
 from sugra_api_mcp.auth import PUBLIC_GET_PATHS, Authenticator, AuthMiddleware
 from sugra_api_mcp.config import AuthConfig
 from sugra_api_mcp.web import health, landing
@@ -47,6 +52,95 @@ def test_landing_serves_html_unauthenticated(client: TestClient) -> None:
     assert '<a href="https://url.sugra.ai/openai"' in resp.text
     assert "Add to Claude" in resp.text
     assert "Add to ChatGPT" in resp.text
+
+
+class _LandingParser(HTMLParser):
+    """Collects the install tabs, the copy targets and the copyable blocks."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.tab_labels: list[str] = []
+        self.radios: list[dict[str, str | None]] = []
+        self.pre_ids: list[str] = []
+        self.copy_targets: list[str] = []
+        self.pre_text: dict[str, str] = {}
+        self._label = False
+        self._pre: str | None = None
+
+    def handle_starttag(self, tag, attrs):
+        attr = dict(attrs)
+        if tag == "input" and attr.get("type") == "radio":
+            self.radios.append(attr)
+        elif tag == "label":
+            self._label = True
+        elif tag == "pre":
+            self._pre = attr["id"]
+            self.pre_ids.append(attr["id"])
+            self.pre_text[attr["id"]] = ""
+        elif tag == "button" and "data-copy" in attr:
+            self.copy_targets.append(attr["data-copy"])
+
+    def handle_endtag(self, tag):
+        if tag == "label":
+            self._label = False
+        elif tag == "pre":
+            self._pre = None
+
+    def handle_data(self, data):
+        if self._label:
+            self.tab_labels.append(data)
+        if self._pre is not None:
+            self.pre_text[self._pre] += data
+
+
+def _parse_landing(client: TestClient) -> _LandingParser:
+    parser = _LandingParser()
+    parser.feed(client.get("/").text)
+    return parser
+
+
+def test_landing_has_one_tab_per_client_with_the_first_open(client: TestClient) -> None:
+    parser = _parse_landing(client)
+    assert parser.tab_labels == [
+        "Claude", "ChatGPT", "Claude Code", "Codex", "Grok",
+        "Gemini CLI", "Cursor", "VS Code", "Other",
+    ]
+    checked = [radio["id"] for radio in parser.radios if "checked" in radio]
+    assert checked == ["t-claude"]
+
+
+def test_every_copy_button_targets_its_own_block(client: TestClient) -> None:
+    parser = _parse_landing(client)
+    assert parser.pre_ids
+    assert len(set(parser.pre_ids)) == len(parser.pre_ids)
+    assert parser.copy_targets == parser.pre_ids
+
+
+def test_landing_never_writes_a_key_or_the_alias_host(client: TestClient) -> None:
+    text = client.get("/").text
+    assert "sugra_" not in text.replace("sugra_api_mcp", "")
+    assert "app.sugra.ai/mcp" not in text
+    assert "—" not in text
+    parser = _parse_landing(client)
+    commands = {
+        ident: body for ident, body in parser.pre_text.items() if ident.startswith("cmd-")
+    }
+    servers = [body for ident, body in commands.items() if not ident.endswith("-skills")]
+    assert servers
+    for body in servers:
+        assert "https://mcp.sugra.ai/mcp" in body
+        assert "SUGRA_API_KEY" in body
+
+
+def test_cursor_install_link_carries_the_env_reference_not_a_key() -> None:
+    link = web.CURSOR_INSTALL_LINK
+    prefix = "cursor://anysphere.cursor-deeplink/mcp/install?name=sugra&config="
+    assert link.startswith(prefix)
+    config = json.loads(base64.b64decode(unquote(link[len(prefix):])))
+    assert config == {
+        "url": "https://mcp.sugra.ai/mcp",
+        "headers": {"Authorization": "Bearer ${env:SUGRA_API_KEY}"},
+    }
 
 
 def test_health_serves_json_unauthenticated(client: TestClient) -> None:
