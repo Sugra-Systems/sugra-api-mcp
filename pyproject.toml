@@ -39,7 +39,9 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Information Analysis",
 ]
 dependencies = [
-    "mcp>=1.23.0,<2",
+    # 1.25.0 is the first release that answers a tool's -32042 error as a
+    # JSON-RPC error instead of a tool result (buy_plan payment challenges).
+    "mcp>=1.25.0,<2",
     "httpx>=0.27",
     "pydantic>=2.9",
 ]

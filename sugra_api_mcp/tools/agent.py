@@ -325,7 +325,7 @@ def register_agent_tools(instance: Any | None = None) -> bool:
     Called from the streamable-http branch of ``__main__`` only (transport
     gate). Refuses without a non-empty ``SUGRA_AGENT_INTERNAL_TOKEN`` (env
     gate): the tools could only ever 403, so a misconfigured hosted deployment
-    keeps the 9-tool package surface and logs a loud warning instead.
+    keeps the 10-tool package surface and logs a loud warning instead.
 
     Idempotent for the global instance; explicit ``instance`` arguments (tests)
     are never latched and never touch the global.

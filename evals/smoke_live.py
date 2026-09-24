@@ -8,7 +8,7 @@ SUGRA_TEST_API_KEY):
 Checks (design doc section 8 smoke set, adapted to what is OBSERVABLE live):
   S1  unauthenticated tools/call -> 401 (tools/list stays public by design:
       MCP discovery allowlist in auth.py; the card pins the CALL boundary)
-  S2  tools/list == EXPECTED_HOSTED_TOOL_COUNT (12)
+  S2  tools/list == EXPECTED_HOSTED_TOOL_COUNT (13)
   S3  weighted cost: two sequential company_snapshot calls decrement
       billing.remaining by the recipe cost (2) each - billing is computed in
       the route BEFORE the payload cache, so a cache hit still charges
@@ -37,7 +37,7 @@ import httpx
 
 from evals.live_client import DEFAULT_URL, open_session, require_key, result_json
 
-EXPECTED_HOSTED_TOOL_COUNT = 12
+EXPECTED_HOSTED_TOOL_COUNT = 13
 COMPANY_SNAPSHOT_COST = 2
 
 CHECKS: list[tuple[str, bool, str]] = []

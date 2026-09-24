@@ -7,6 +7,7 @@ from . import (
     gateway,  # noqa: F401
     plans,  # noqa: F401
     prompts,  # noqa: F401
+    purchase,  # noqa: F401
     resources,  # noqa: F401
     skills,  # noqa: F401
     widgets,  # noqa: F401

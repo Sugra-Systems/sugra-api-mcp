@@ -1,7 +1,7 @@
 """Agent-driven golden-query eval over the hosted MCP.
 
 Each M0 golden query is answered by a REAL agent (Anthropic tool runner) whose
-only capabilities are the 12 hosted MCP tools, connected over streamable HTTP.
+only capabilities are the 13 hosted MCP tools, connected over streamable HTTP.
 The harness records which tools the agent called (selection scoring is
 deterministic code, evals/scoring.py) and LLM-judges answer relevance on a
 0-2 rubric. Output: a JSON result file + a markdown scorecard under

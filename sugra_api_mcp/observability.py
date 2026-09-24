@@ -8,7 +8,7 @@ False and ``@trace_mcp_tool`` becomes a transparent pass-through.
 Custom dimensions captured per MCP tool invocation:
     mcp.tool.name        - the traced tool's registered name: the six gateway
                            tools (tools/gateway.py), sugra_entity_screen,
-                           sugra_entity_lookup and list_plans, and on the hosted server
+                           sugra_entity_lookup, list_plans and buy_plan, and on the hosted server
                            resolve_entity, get_snapshot and get_timeseries
     mcp.operation_id     - the operation_id kwarg, ONLY if it matches a
                            catalog-known operation_id (allowlist). Arbitrary
@@ -254,6 +254,14 @@ _KNOWN_ERROR_CODES: frozenset[str] = frozenset({
     # A tool call refused at the in-flight cap (server.py), or a
     # search refused because the search queue is full (tools/gateway.py).
     "server_busy",
+    # buy_plan (tools/purchase.py): refused before any request, an email that
+    # already has an account, and a purchase endpoint that is off, unreachable
+    # or answered something else.
+    "terms_not_accepted",
+    "invalid_email",
+    "account_exists",
+    "purchase_unavailable",
+    "purchase_failed",
 }) | frozenset(_HTTP_STATUS_ERROR_CODES.values()) | frozenset(_HTTP_CLASS_ERROR_CODES.values())
 # Identity map so a str subclass that equals an allowlisted code attaches the
 # interned constant, never the caller's object.

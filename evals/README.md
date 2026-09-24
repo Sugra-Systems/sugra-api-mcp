@@ -25,7 +25,7 @@ python -m evals.smoke_live
 ```
 
 Seven checks: unauthenticated tools/call 401 (tools/list is public discovery
-by design), tools/list == 12, weighted cost decrements
+by design, and buy_plan is the one tool callable without a key), tools/list == 13, weighted cost decrements
 quota by the recipe cost, max_points bounded + honest downsampled flag, META
 ambiguity contract (ranked candidates, no silent pick), garbage-resolve clean
 not-found, freshness-block honesty. Exit 0 = green. Required-fail -> 502 /
@@ -41,7 +41,7 @@ python -m evals.agent_eval --ids C5,E2
 
 Every M0 golden query (executable manifest: `golden_queries.json`; canonical
 prose table is maintained internally) is answered by a real
-agent whose only capabilities are the 12 hosted tools. Tool-selection accuracy
+agent whose only capabilities are the 13 hosted tools. Tool-selection accuracy
 is scored deterministically against the manifest's expected route; answer
 relevance is LLM-judged 0-2. Results land in `evals/results/` as JSON + a
 markdown scorecard.

@@ -912,6 +912,25 @@ def test_entity_and_keyless_codes_pass_the_allowlist(monkeypatch, code: str) -> 
     _assert_span_is_clean(span, _FAILURE_ATTRS, "free text stays out of spans")
 
 
+@pytest.mark.parametrize(
+    "code",
+    ["terms_not_accepted", "invalid_email", "account_exists", "purchase_unavailable", "purchase_failed"],
+)
+def test_buy_plan_codes_pass_the_allowlist(monkeypatch, code: str) -> None:
+    """The refusals buy_plan returns as tool errors are named on the span."""
+    tracer = _install_fake_tracer(monkeypatch)
+
+    @observability.trace_mcp_tool("buy_plan")
+    async def fake_buy() -> dict:
+        return {"error": code, "message": "free text stays out of spans", "checkout_url": "https://x"}
+
+    asyncio.run(fake_buy())
+
+    span = tracer.spans[0]
+    assert span.attributes["mcp.error.code"] == code
+    _assert_span_is_clean(span, _FAILURE_ATTRS, "free text stays out of spans", "https://x")
+
+
 # ---- A partial envelope now reaches the agent extractor ----
 
 
