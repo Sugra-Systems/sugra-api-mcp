@@ -139,10 +139,10 @@ Every answer carries source attribution and freshness metadata, so agents cite i
 
 ## Hosted MCP (recommended)
 
-No install. In Claude, ChatGPT and Codex, add Sugra API from a directory:
+No install. In Claude, ChatGPT and Codex, add the Sugra API MCP server from a directory:
 
-- **Claude** (web, desktop, mobile, Claude Code and Cowork): [Add to Claude](https://url.sugra.ai/claude) opens Sugra API in Anthropic's Connectors Directory; connect it and sign in with your Sugra account. In claude.ai the directory is under [Customize > Connectors](https://claude.ai/customize/connectors). Claude Code signed in with a claude.ai account picks the connector up automatically; `/mcp` lists it.
-- **ChatGPT and Codex**: [Add to ChatGPT](https://url.sugra.ai/openai) opens Sugra API in the OpenAI Plugins Directory.
+- **Claude** (web, desktop, mobile, Claude Code and Cowork): [Add to Claude](https://url.sugra.ai/claude) opens the Sugra API MCP server in Anthropic's Connectors Directory; connect it and sign in with your Sugra account. In claude.ai the directory is under [Customize > Connectors](https://claude.ai/customize/connectors). Claude Code signed in with a claude.ai account picks the connector up automatically; `/mcp` lists it.
+- **ChatGPT and Codex**: [Add to ChatGPT](https://url.sugra.ai/openai) opens the Sugra API MCP server in the OpenAI Plugins Directory.
 
 Any other MCP client, or a manual setup, points at the hosted Streamable HTTP endpoint:
 
@@ -155,7 +155,7 @@ https://mcp.sugra.ai/mcp
 - As a custom connector in claude.ai: Customize -> Connectors -> Add custom connector
 - In ChatGPT: Settings -> Connectors -> Add MCP server
 
-Already added Sugra to Claude as a custom connector? That connection keeps working and shows under "Custom". Connecting Sugra API from the directory as well gives you two connections, so remove the custom one first, then connect from the directory.
+Already added Sugra to Claude as a custom connector? That connection keeps working and shows under "Custom". Connecting the Sugra API MCP server from the directory as well gives you two connections, so remove the custom one first, then connect from the directory.
 
 ## Local package
 
@@ -217,7 +217,7 @@ Restart Claude Desktop. Sugra tools appear in the tools menu.
 
 ### Claude Code (Anthropic CLI)
 
-Signed in to Claude Code with a claude.ai account? [Add to Claude](https://url.sugra.ai/claude) connects Sugra API from the Connectors Directory in claude.ai, and it appears in `/mcp` without any local install. To run the local package instead:
+Signed in to Claude Code with a claude.ai account? [Add to Claude](https://url.sugra.ai/claude) connects the Sugra API MCP server from the Connectors Directory in claude.ai, and it appears in `/mcp` without any local install. To run the local package instead:
 
 ```bash
 claude mcp add sugra -- sugra-api-mcp
@@ -285,11 +285,11 @@ Each of these has an MCP settings file (typically `mcp.json` or equivalent) with
 
 ### ChatGPT
 
-[Add to ChatGPT](https://url.sugra.ai/openai) installs Sugra API from the OpenAI Plugins Directory. Or add the hosted HTTP endpoint (below) as an MCP connector, since ChatGPT does not launch local stdio processes.
+[Add to ChatGPT](https://url.sugra.ai/openai) installs the Sugra API MCP server from the OpenAI Plugins Directory. Or add the hosted HTTP endpoint (below) as an MCP connector, since ChatGPT does not launch local stdio processes.
 
 ### HTTP (claude.ai, ChatGPT, remote agents)
 
-In claude.ai, [Add to Claude](https://url.sugra.ai/claude) connects Sugra API from Anthropic's Connectors Directory; in ChatGPT, [Add to ChatGPT](https://url.sugra.ai/openai) installs it from the OpenAI Plugins Directory. For a manual setup or any other Streamable HTTP MCP client, use the hosted endpoint:
+In claude.ai, [Add to Claude](https://url.sugra.ai/claude) connects the Sugra API MCP server from Anthropic's Connectors Directory; in ChatGPT, [Add to ChatGPT](https://url.sugra.ai/openai) installs it from the OpenAI Plugins Directory. For a manual setup or any other Streamable HTTP MCP client, use the hosted endpoint:
 
 ```
 https://mcp.sugra.ai/mcp

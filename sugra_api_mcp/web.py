@@ -52,9 +52,9 @@ _LANDING_HTML = """<!doctype html>
   Protocol.</p>
   <div class="add">
     <a href="https://url.sugra.ai/claude"
-       title="Sugra API in Anthropic's Connectors Directory">Add to Claude</a>
+       title="The Sugra API MCP server in Anthropic's Connectors Directory">Add to Claude</a>
     <a href="https://url.sugra.ai/openai"
-       title="Sugra API in the OpenAI Plugins Directory">Add to ChatGPT</a>
+       title="The Sugra API MCP server in the OpenAI Plugins Directory">Add to ChatGPT</a>
   </div>
   <code>https://mcp.sugra.ai/mcp</code>
   <p>Or add this URL as a remote MCP server in any MCP-enabled client.</p>
