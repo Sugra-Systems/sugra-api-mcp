@@ -230,16 +230,18 @@ _TABS: list[tuple[str, str, str]] = [
     (
         "claude",
         "Claude",
-        "<p>Sugra API is listed in Anthropic's Connectors Directory.</p>"
+        "<p>The Sugra API MCP server is listed in Anthropic's Connectors Directory.</p>"
         '<a href="https://url.sugra.ai/claude" class="btn"'
-        " title=\"Sugra API in Anthropic's Connectors Directory\">Add to Claude</a>",
+        " title=\"The Sugra API MCP server in Anthropic's Connectors Directory\">"
+        "Add to Claude</a>",
     ),
     (
         "chatgpt",
         "ChatGPT",
-        "<p>Sugra API is listed in the OpenAI Plugins Directory.</p>"
+        "<p>The Sugra API MCP server is listed in the OpenAI Plugins Directory.</p>"
         '<a href="https://url.sugra.ai/openai" class="btn"'
-        ' title="Sugra API in the OpenAI Plugins Directory">Add to ChatGPT</a>',
+        ' title="The Sugra API MCP server in the OpenAI Plugins Directory">'
+        "Add to ChatGPT</a>",
     ),
     (
         "claude-code",
