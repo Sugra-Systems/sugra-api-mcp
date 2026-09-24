@@ -155,7 +155,7 @@ https://mcp.sugra.ai/mcp
 - As a custom connector in claude.ai: Customize -> Connectors -> Add custom connector
 - In ChatGPT: Settings -> Connectors -> Add MCP server
 
-Already added Sugra to Claude as a custom connector? That connection keeps working and shows under "Custom". Connecting the MCP server from the directory as well gives you two connections, so remove the custom one first, then connect from the directory.
+Already added Sugra to Claude as a custom connector? That connection keeps working and shows under "Custom". Connecting the Sugra API MCP server from the directory as well gives you two connections, so remove the custom one first, then connect from the directory.
 
 ## Local package
 
