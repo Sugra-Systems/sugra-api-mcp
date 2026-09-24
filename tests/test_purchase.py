@@ -45,7 +45,7 @@ REQUEST_JSON = (
 )
 OPAQUE_JSON = '{"cadence":"monthly","plan":"dev"}'
 GOOD_SPT = "spt_good_token"
-API_KEY = "sugra_new_key_for_test"
+ISSUED_KEY = "sugra_new_key_for_test"
 PAYMENT_INTENT = "pi_test_123"
 CHECKOUT = "https://app.sugra.ai/subscribe/dev/monthly?channel=agent"
 
@@ -165,7 +165,7 @@ class FakePurchaseEndpoint:
         return httpx.Response(
             200,
             json={
-                "api_key": API_KEY,
+                "api_key": ISSUED_KEY,
                 "plan": "dev",
                 "daily_limit": 5000,
                 "cadence": "monthly",
@@ -277,9 +277,9 @@ async def test_paid_call_returns_the_key_and_the_receipt(endpoint, monkeypatch) 
         message = await mcp.call(ARGUMENTS, meta=_credential(challenge))
         result = message["result"]
         assert result["isError"] is False
-        assert result["structuredContent"]["api_key"] == API_KEY
+        assert result["structuredContent"]["api_key"] == ISSUED_KEY
         assert result["structuredContent"]["renews"] is False
-        assert json.loads(result["content"][0]["text"])["api_key"] == API_KEY
+        assert json.loads(result["content"][0]["text"])["api_key"] == ISSUED_KEY
         receipt = result["_meta"][purchase.RECEIPT_META_KEY]
         assert receipt == {
             "method": "stripe",
@@ -338,7 +338,7 @@ async def test_spans_carry_no_key_credential_or_email(endpoint, monkeypatch) -> 
     assert [s.get("mcp.success") for s in spans] == [False, True]
     assert spans[0]["mcp.exception.type"] == "PaymentError"
     text = repr([s.attributes for s in tracer.spans])
-    for secret in (API_KEY, GOOD_SPT, "buyer@example.com", REQUEST_B64, PAYMENT_INTENT):
+    for secret in (ISSUED_KEY, GOOD_SPT, "buyer@example.com", REQUEST_B64, PAYMENT_INTENT):
         assert secret not in text
 
 
@@ -347,7 +347,7 @@ async def test_body_bytes_ignore_email_case_and_whitespace(endpoint, monkeypatch
         challenge = (await mcp.call(ARGUMENTS))["error"]["data"]["challenges"][0]
         shouted = {**ARGUMENTS, "email": "  Buyer@Example.COM "}
         message = await mcp.call(shouted, meta=_credential(challenge))
-        assert message["result"]["structuredContent"]["api_key"] == API_KEY
+        assert message["result"]["structuredContent"]["api_key"] == ISSUED_KEY
 
     await _with_client(monkeypatch, scenario)
     first, second = endpoint.requests
@@ -371,7 +371,7 @@ async def test_refused_payment_answers_verification_failed_with_a_fresh_challeng
         assert fresh["request"] == json.loads(REQUEST_JSON)
         # The retry with the fresh challenge goes through.
         retry = await mcp.call(ARGUMENTS, meta=_credential(fresh))
-        assert retry["result"]["structuredContent"]["api_key"] == API_KEY
+        assert retry["result"]["structuredContent"]["api_key"] == ISSUED_KEY
 
     await _with_client(monkeypatch, scenario)
     assert endpoint.issued == 2

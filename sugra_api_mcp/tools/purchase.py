@@ -152,10 +152,10 @@ def parse_payment_challenges(header_values: list[str]) -> list[dict[str, Any]]:
         pos = 0
         while True:
             pos = _skip(_SEPARATORS, text, pos)
-            token = _TOKEN.match(text, pos)
-            if token is None:
+            name_match = _TOKEN.match(text, pos)
+            if name_match is None:
                 break
-            after = _skip(_OWS, text, token.end())
+            after = _skip(_OWS, text, name_match.end())
             if after < len(text) and text[after] == "=":
                 value_start = _skip(_OWS, text, after + 1)
                 quoted = _QUOTED.match(text, value_start)
@@ -173,13 +173,13 @@ def parse_payment_challenges(header_values: list[str]) -> list[dict[str, Any]]:
                         pos += 1
                     continue
                 if current is not None:
-                    current.setdefault(token.group(0).lower(), value)
+                    current.setdefault(name_match.group(0).lower(), value)
                 continue
             # A token not followed by "=" is the scheme of the next challenge.
             if current is not None:
                 challenges.append(current)
-            current = {} if token.group(0).lower() == "payment" else None
-            pos = token.end()
+            current = {} if name_match.group(0).lower() == "payment" else None
+            pos = name_match.end()
         if current is not None:
             challenges.append(current)
 
