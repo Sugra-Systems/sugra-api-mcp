@@ -1,0 +1,66 @@
+{
+  "source": {
+    "repo": "Sugra-Systems/sugra-api-skills",
+    "commit": "0b125fc60dae89d3af9b2f0b430f5e3e79f83b41",
+    "path": "plugins/sugra-api/skills"
+  },
+  "skills": [
+    {
+      "name": "auth-and-quota",
+      "description": "Authenticate to Sugra over HTTPS and MCP and stay inside the daily quota. Use when setting up a client or when a call returns 401, 403, missing_api_key, missing_bearer_token, or 429.",
+      "files": [
+        "SKILL.md",
+        "agents/openai.yaml"
+      ]
+    },
+    {
+      "name": "connect",
+      "description": "Attach a client to Sugra over HTTPS or MCP. Use when setting up Claude Desktop, Claude Code, ChatGPT, claude.ai, Cursor, VS Code, Gemini CLI, Grok, OpenBB, a custom HTTP agent, or self-hosted MCP.",
+      "files": [
+        "SKILL.md",
+        "agents/openai.yaml",
+        "references/clients.md"
+      ]
+    },
+    {
+      "name": "cross-domain-briefing",
+      "description": "Compose one briefing from two or three Sugra directions over HTTPS or MCP. Use when a question spans Finance, Macro, Entity, Net Atlas, News, Earth, or Research and one operation is not enough.",
+      "files": [
+        "SKILL.md",
+        "agents/openai.yaml"
+      ]
+    },
+    {
+      "name": "discover-and-call",
+      "description": "Find the right Sugra operation and call it over HTTPS or MCP. Use when the path or operation_id is unknown, before guessing parameters, or after a catalog miss. Confirm details on https://docs.sugra.ai. Do not invent routes.",
+      "files": [
+        "SKILL.md",
+        "agents/openai.yaml"
+      ]
+    },
+    {
+      "name": "envelope-and-attribution",
+      "description": "Parse Sugra API payloads over HTTPS or MCP, keep source attribution, and tell observation time from request time. Use when reading a response, citing a figure, or shaping a large payload.",
+      "files": [
+        "SKILL.md",
+        "agents/openai.yaml"
+      ]
+    },
+    {
+      "name": "live-docs",
+      "description": "Find current Sugra documentation. Use when an endpoint, parameter, count, or version might be stale. Canonical docs are https://docs.sugra.ai (search and Ask AI). Also OpenAPI, /sources, /stats, the blog, and MCP tools/list.",
+      "files": [
+        "SKILL.md",
+        "agents/openai.yaml"
+      ]
+    },
+    {
+      "name": "using-sugra-api",
+      "description": "Work with the Sugra API over HTTPS and MCP. Use when the task needs Sugra data, a key, product directions (Finance, Macro, Entity, Net Atlas, News, Earth, Research), or which skill to load next.",
+      "files": [
+        "SKILL.md",
+        "agents/openai.yaml"
+      ]
+    }
+  ]
+}

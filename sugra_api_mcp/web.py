@@ -1,8 +1,9 @@
-"""Public web surface for the hosted HTTP transport: landing page and health.
+"""Public web surface for the hosted HTTP transport: landing page, health, skills.
 
-Two unauthenticated GET routes registered ONLY by the HTTP entry point
-(stdio installs never serve them): a minimal human-facing landing on the
-host root and a liveness probe on /health. Everything else on the app stays
+Unauthenticated GET routes registered ONLY by the HTTP entry point (stdio
+installs never serve them): a minimal human-facing landing on the host root,
+a liveness probe on /health, and the skills index with one exact route per
+listed file (sugra_api_mcp.skills_index). Everything else on the app stays
 behind AuthMiddleware. The auth-side allowlist lives in
 sugra_api_mcp.auth.PUBLIC_GET_PATHS - the two lists must stay in sync.
 
@@ -24,11 +25,13 @@ from datetime import date
 from urllib.parse import quote
 
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
+from starlette.routing import Route
 
-from . import __version__
+from . import __version__, skills_index
 
-ENDPOINT = "https://mcp.sugra.ai/mcp"
+SITE = "https://mcp.sugra.ai"
+ENDPOINT = f"{SITE}/mcp"
 SKILLS_REPO = "Sugra-Systems/sugra-api-skills"
 DOCS_URL = "https://docs.sugra.ai"
 REGISTER_URL = "https://app.sugra.ai/register"
@@ -209,6 +212,15 @@ _SKILLS_NOTE = (
 _OPENAI_SKILLS_LINK = f'<a href="{OPENAI_SKILLS_LISTING}">Sugra API Skills</a>'
 
 
+def _npx_skills(ident: str) -> str:
+    """The skills step for a client with no plugin of its own: the skills CLI and our index."""
+    return (
+        _step("Skills (optional)")
+        + _terminal(f"cmd-{ident}-skills", f"npx skills add {SITE}")
+        + _SKILLS_NOTE
+    )
+
+
 def _header_server(ident: str, add: str) -> str:
     """The server step for a CLI that takes the key as a --header value.
 
@@ -303,7 +315,7 @@ _TABS: list[tuple[str, str, str]] = [
     (
         "gemini",
         "Gemini CLI",
-        _header_server("gemini", "gemini mcp add --transport http sugra"),
+        _header_server("gemini", "gemini mcp add --transport http sugra") + _npx_skills("gemini"),
     ),
     (
         "cursor",
@@ -311,14 +323,16 @@ _TABS: list[tuple[str, str, str]] = [
         f'<a href="{CURSOR_INSTALL_LINK}" class="btn">Add to Cursor</a>'
         + _KEY_NOTE
         + _step("Or add to <code>~/.cursor/mcp.json</code>")
-        + _json_block("cfg-cursor", _CURSOR_JSON),
+        + _json_block("cfg-cursor", _CURSOR_JSON)
+        + _npx_skills("cursor"),
     ),
     (
         "vscode",
         "VS Code",
         _step("Add to <code>.vscode/mcp.json</code>")
         + _json_block("cfg-vscode", _VSCODE_JSON)
-        + '<p class="note">VS Code asks for the key when the server starts.</p>',
+        + '<p class="note">VS Code asks for the key when the server starts.</p>'
+        + _npx_skills("vscode"),
     ),
     (
         "other",
@@ -328,7 +342,8 @@ _TABS: list[tuple[str, str, str]] = [
         + _code("cfg-url", "URL", "plain", _span("s", ENDPOINT))
         + '<p class="note">Send the key in the <code>Authorization</code> header as '
         "<code>Bearer</code> followed by the key, from wherever your client keeps "
-        f"secrets. {_GET_KEY}</p>",
+        f"secrets. {_GET_KEY}</p>"
+        + _npx_skills("other"),
     ),
 ]
 
@@ -674,3 +689,25 @@ async def health(_request: Request) -> JSONResponse:
     return JSONResponse(
         {"status": "ok", "service": "sugra-api-mcp", "version": __version__}
     )
+
+
+_SKILLS_CACHE = {"Cache-Control": "public, max-age=300"}
+
+
+async def skills_index_json(_request: Request) -> JSONResponse:
+    return JSONResponse(skills_index.INDEX, headers=_SKILLS_CACHE)
+
+
+async def skill_file(request: Request) -> RedirectResponse:
+    # Registered only on the exact paths in FILE_TARGETS, so the lookup always hits.
+    # 302, not 301: the pinned commit moves when the skills are rebuilt.
+    return RedirectResponse(
+        skills_index.FILE_TARGETS[request.url.path], status_code=302, headers=_SKILLS_CACHE
+    )
+
+
+def skills_routes() -> list[Route]:
+    """The index route plus one exact route per listed skill file."""
+    return [Route(skills_index.INDEX_PATH, skills_index_json, methods=["GET"])] + [
+        Route(path, skill_file, methods=["GET"]) for path in skills_index.FILE_TARGETS
+    ]
