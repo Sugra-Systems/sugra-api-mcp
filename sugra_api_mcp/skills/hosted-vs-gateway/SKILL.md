@@ -9,11 +9,11 @@ Two transports, one catalog.
 
 | Transport | Tools | How the client authenticates |
 |---|---|---|
-| Local package stdio | 9 | `SUGRA_API_KEY` in the server process |
-| Self-hosted Streamable HTTP | 9 | Client `Authorization: Bearer`; server `SUGRA_API_KEY` is only a downstream fallback |
-| Hosted `https://app.sugra.ai/mcp` (canonical `https://mcp.sugra.ai/mcp`) | 12 | Client Bearer API key or OAuth |
+| Local package stdio | 10 | `SUGRA_API_KEY` in the server process |
+| Self-hosted Streamable HTTP | 10 | Client `Authorization: Bearer`; server `SUGRA_API_KEY` is only a downstream fallback |
+| Hosted `https://app.sugra.ai/mcp` (canonical `https://mcp.sugra.ai/mcp`) | 13 | Client Bearer API key or OAuth |
 
-The nine gateway tools on every transport: `fetch_data`, `search_endpoints`, `describe_endpoint`, `call_endpoint`, `list_toolsets`, `list_sources`, `sugra_entity_screen`, `sugra_entity_lookup`, `list_plans`.
+The ten gateway tools on every transport: `fetch_data`, `search_endpoints`, `describe_endpoint`, `call_endpoint`, `list_toolsets`, `list_sources`, `sugra_entity_screen`, `sugra_entity_lookup`, `list_plans`, `buy_plan`. `buy_plan` needs no key on any transport: it is how an agent buys a plan and gets its first one.
 
 Hosted adds three composed tools that wrap an internal plane and register only on the hosted entry point:
 

@@ -94,6 +94,44 @@ PUBLIC_MCP_METHODS = frozenset(
     }
 )
 
+# Tools a caller without a key may call: buying a plan is how an agent gets
+# its first key. Every other tools/call needs a Bearer token.
+PUBLIC_TOOL_NAMES = frozenset({"buy_plan"})
+
+
+def _is_public_discovery_message(message: object) -> bool:
+    """Whether one JSON-RPC message is a discovery method served without a token."""
+    if not isinstance(message, dict):
+        return False
+    method = message.get("method")
+    return isinstance(method, str) and method in PUBLIC_MCP_METHODS
+
+
+def _is_public_tool_call(message: object) -> bool:
+    """Whether a lone JSON-RPC request is a tools/call served without a token.
+
+    It must be a well-formed JSON-RPC 2.0 request, not a notification: its id
+    is a string or an integer, params is an object, and arguments and _meta
+    are objects when present. Batches never qualify (see
+    _is_public_mcp_request), so one request without a token starts at most
+    one outbound purchase call.
+    """
+    if not isinstance(message, dict) or message.get("method") != "tools/call":
+        return False
+    if message.get("jsonrpc") != "2.0":
+        return False
+    request_id = message.get("id")
+    if isinstance(request_id, bool) or not isinstance(request_id, (str, int)):
+        return False
+    params = message.get("params")
+    if not isinstance(params, dict):
+        return False
+    if any(name in params and not isinstance(params[name], dict) for name in ("arguments", "_meta")):
+        return False
+    name = params.get("name")
+    return isinstance(name, str) and name in PUBLIC_TOOL_NAMES
+
+
 # Unauthenticated GET/HEAD surface of the hosted app: the human landing page on
 # the host root and the liveness probe. STRICT exact-path allowlist (no slash
 # normalization: /health/ and // variants deliberately stay behind auth and
@@ -541,17 +579,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return False
 
         if isinstance(payload, dict):
-            method = payload.get("method")
-            return isinstance(method, str) and method in PUBLIC_MCP_METHODS
+            return _is_public_discovery_message(payload) or _is_public_tool_call(payload)
 
         if isinstance(payload, list) and 0 < len(payload) <= MAX_PUBLIC_MCP_BATCH_ITEMS:
-            for item in payload:
-                if not isinstance(item, dict):
-                    return False
-                method = item.get("method")
-                if not isinstance(method, str) or method not in PUBLIC_MCP_METHODS:
-                    return False
-            return True
+            return all(_is_public_discovery_message(item) for item in payload)
 
         return False
 

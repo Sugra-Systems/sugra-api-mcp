@@ -9,12 +9,18 @@ every release and update the snapshot date below.
 
 | Transport | Tools | Names |
 |---|---|---|
-| stdio / self-hosted HTTP (`pip install sugra-api-mcp`) | 9 | fetch_data, search_endpoints, describe_endpoint, call_endpoint, list_toolsets, list_sources, sugra_entity_screen, sugra_entity_lookup, list_plans |
-| Hosted (`https://mcp.sugra.ai/mcp` and `https://app.sugra.ai/mcp`) | 12 | the 9 above plus resolve_entity, get_snapshot, get_timeseries |
+| stdio / self-hosted HTTP (`pip install sugra-api-mcp`) | 10 | fetch_data, search_endpoints, describe_endpoint, call_endpoint, list_toolsets, list_sources, sugra_entity_screen, sugra_entity_lookup, list_plans, buy_plan |
+| Hosted (`https://mcp.sugra.ai/mcp` and `https://app.sugra.ai/mcp`) | 13 | the 10 above plus resolve_entity, get_snapshot, get_timeseries |
 
 `list_plans` returns the paid plans (Dev and Pro, monthly or annual) with
 their prices, daily request limits and a checkout link each. It is bundled
 data: no network call and no API key.
+
+`buy_plan` buys a Dev or Pro plan for a new account and returns its API key.
+The agent pays through the Payment HTTP authentication scheme (HTTP 402) with
+Stripe: the first call answers JSON-RPC error -32042 with the challenge, the
+second carries the credential in `_meta` and gets the key and a receipt. It
+needs no API key, on the hosted server too. Purchases do not auto-renew.
 
 The three hosted-only tools wrap an internal composed plane and register only
 on the hosted deployment. Never claim 6 tools or 27 tools anywhere. 27 was the
@@ -22,7 +28,7 @@ pre-gateway curated surface and never shipped in this package after v0.4.0.
 
 ## Prompts and resources (every transport)
 
-- Prompts (6): market_snapshot, macro_briefing, sanctions_screening, sector_compare, earth_conditions, source_overview. Prompt text names only the 8 gateway tools other than list_plans, never hosted-only agent tools.
+- Prompts (6): market_snapshot, macro_briefing, sanctions_screening, sector_compare, earth_conditions, source_overview. Prompt text names only the 8 gateway tools other than list_plans and buy_plan, never hosted-only agent tools.
 - Resources (8 by default): sugra://catalog/domains, sugra://catalog/sources, sugra://attribution, and five official skills under sugra://skills/ (explore-catalog, envelope-attribution, auth-limits, hosted-vs-gateway, cross-domain-briefing). Each skill is also a SKILL.md file under sugra_api_mcp/skills/. This git repo is the Claude Code and Grok plugin marketplace for those files (plugin name `sugra-api`). Codex and Cursor copy the same folders. ChatGPT stays MCP connector only.
 - Price-chart widget (opt-in, off by default): ui://sugra/price-chart.html, the SEP-1865 template declared on call_endpoint through `_meta.ui`, is served only when the process starts with `SUGRA_MCP_UI_WIDGETS` set to 1, true, yes or on. Off, the template is neither listed in resources/list nor declared on any tool. On, it is a ninth resource and call_endpoint declares it.
 

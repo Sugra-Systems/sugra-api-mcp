@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "ai.sugra/api-mcp",
   "title": "Sugra API",
-  "description": "Gateway between LLM agents and world data through nine tools and a bundled endpoint catalog.",
+  "description": "Gateway between LLM agents and world data through ten tools and a bundled endpoint catalog.",
   "repository": {
     "url": "https://github.com/Sugra-Systems/sugra-api-mcp",
     "source": "github"

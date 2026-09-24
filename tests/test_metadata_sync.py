@@ -14,7 +14,7 @@ from pathlib import Path
 import sugra_api_mcp
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-EXPECTED_TOOL_COUNT = 9
+EXPECTED_TOOL_COUNT = 10
 # Hosted surface = classic tools + 3 Agent Context Layer tools (resolve_entity
 # / get_snapshot / get_timeseries), registered only by the streamable-http
 # branch of __main__ when SUGRA_AGENT_INTERNAL_TOKEN is present.
@@ -29,10 +29,11 @@ NUMBER_WORDS = {
     7: "seven",
     8: "eight",
     9: "nine",
+    10: "ten",
 }
 
 # Registration order: tools/__init__ imports entities first, then gateway,
-# then plans;
+# then plans, then purchase;
 # the SDK ToolManager stores tools in an insertion-ordered dict, so
 # list_tools() returns exactly this order on every call.
 EXPECTED_TOOL_NAME_ORDER = [
@@ -45,6 +46,7 @@ EXPECTED_TOOL_NAME_ORDER = [
     "fetch_data",
     "list_sources",
     "list_plans",
+    "buy_plan",
 ]
 
 

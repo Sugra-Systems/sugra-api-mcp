@@ -10,8 +10,8 @@ is provider-agnostic - swap the LLM client and keep the MCP wiring.
 
 ## What you get
 
-The hosted Sugra MCP server at `https://app.sugra.ai/mcp` exposes twelve tools:
-nine gateway tools plus three composed agent tools.
+The hosted Sugra MCP server at `https://app.sugra.ai/mcp` exposes thirteen tools:
+ten gateway tools plus three composed agent tools.
 
 | Tool | What it does |
 |------|--------------|
@@ -24,12 +24,13 @@ nine gateway tools plus three composed agent tools.
 | `sugra_entity_screen` | Screen a person or organization name for a sanctions screening signal |
 | `sugra_entity_lookup` | Resolve an entity by LEI or VAT id into a composed KYB view |
 | `list_plans` | List the paid plans with prices, daily limits and checkout links |
+| `buy_plan` | Buy a plan for a new account and get its API key, paid by the agent (HTTP 402) |
 | `resolve_entity` | Resolve free text to a canonical market or macro entity |
 | `get_snapshot` | Composed current view of an entity via a named recipe |
 | `get_timeseries` | Bounded timeseries for an entity: price, macro series, or ETF flows |
 
 The last three are composed agent tools and register on the hosted endpoint
-only; a self-hosted `sugra-api-mcp` install serves the nine gateway tools.
+only; a self-hosted `sugra-api-mcp` install serves the ten gateway tools.
 
 Sugra toolsets cover Sugra Finance, Sugra Economics, Sugra News, Sugra Crypto,
 Sugra Forex, Sugra Weather, and more - all behind one gateway.
@@ -74,7 +75,7 @@ Captured run (the model's wording varies; data values change as new data arrives
 ```
 > python agent.py "What is the current US federal funds rate?"
 
-Connected to the Sugra MCP. 12 tools available.
+Connected to the Sugra MCP. 13 tools available.
 [tool] fetch_data {"query": "US federal funds rate", "params": {"series_id": "FEDFUNDS"}}
 
 The current US federal funds rate is 3.64 percent (Federal Funds Effective Rate),
