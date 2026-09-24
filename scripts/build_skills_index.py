@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import urllib.request
 from collections.abc import Callable, Iterable
@@ -35,9 +34,6 @@ _SHA = re.compile(r"^[0-9a-f]{40}$")
 
 def _get(url: str) -> bytes:
     request = urllib.request.Request(url, headers={"User-Agent": "sugra-api-mcp-build"})
-    token = os.environ.get("GITHUB_TOKEN")
-    if token and url.startswith("https://api.github.com/"):
-        request.add_header("Authorization", f"Bearer {token}")
     with urllib.request.urlopen(request, timeout=60) as response:
         return response.read()
 
