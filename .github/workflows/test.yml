@@ -79,8 +79,28 @@ jobs:
     concurrency:
       group: mcp-deploy-production
       cancel-in-progress: false
+    # The deploy key lives in Azure Key Vault, not in a repository secret. Only
+    # jobs in the `production` environment (main only) can log in, and the
+    # identity they get can read that one secret and nothing else.
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+      - name: Fetch the deploy key
+        env:
+          KEY_VAULT: ${{ secrets.AZURE_KEY_VAULT }}
+        run: |
+          umask 077
+          az keyvault secret show --vault-name "$KEY_VAULT" --name app-vm-mcp-deploy-key --query value -o tsv > "$RUNNER_TEMP/deploy_key"
+          test -s "$RUNNER_TEMP/deploy_key"
       - name: Pre-deploy privilege probe
         # The deploy needs passwordless sudo on the target host. Probe it FIRST,
         # so a host-side permission problem fails here with a clear message
@@ -89,7 +109,7 @@ jobs:
         with:
           host: ${{ secrets.APP_VM_HOST }}
           username: ${{ secrets.APP_VM_USER }}
-          key: ${{ secrets.APP_VM_SSH_KEY }}
+          key_path: ${{ runner.temp }}/deploy_key
           script: |
             if ! sudo -n true 2>/dev/null; then
               echo "FAIL: passwordless sudo is unavailable on the deploy host. Restore it through the platform's management channel, then re-run this workflow. Deploys go through CI only."
@@ -101,10 +121,13 @@ jobs:
         with:
           host: ${{ secrets.APP_VM_HOST }}
           username: ${{ secrets.APP_VM_USER }}
-          key: ${{ secrets.APP_VM_SSH_KEY }}
+          key_path: ${{ runner.temp }}/deploy_key
           script: |
             set -e
             sudo /usr/local/bin/sugra-mcp-deploy
+      - name: Remove the deploy key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/deploy_key"
       - name: Post-deploy smoke (hosted MCP on app.sugra.ai)
         run: |
           for i in 1 2 3 4 5 6; do
