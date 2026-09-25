@@ -99,7 +99,7 @@ jobs:
           KEY_VAULT: ${{ secrets.AZURE_KEY_VAULT }}
         run: |
           umask 077
-          az keyvault secret show --vault-name "$KEY_VAULT" --name app-vm-mcp-deploy-key --query value -o tsv > "$RUNNER_TEMP/deploy_key"
+          az keyvault secret download --vault-name "$KEY_VAULT" --name app-vm-mcp-deploy-key --file "$RUNNER_TEMP/deploy_key"
           test -s "$RUNNER_TEMP/deploy_key"
       - name: Pre-deploy privilege probe
         # The deploy needs passwordless sudo on the target host. Probe it FIRST,
