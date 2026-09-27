@@ -6,10 +6,14 @@ name: Catalog parity
 # stale-catalog condition this gate exists to catch can persist indefinitely
 # while every check stays green.
 #
-# On DRIFT this job opens or updates a single resync PR (branch ci/catalog-resync,
-# author Arman Obosyan via MCP_CATALOG_TOKEN) and then still fails. The red run
-# is the alarm; the PR is the landing path. test.yml on pull_request stays a
-# fail-on-drift gate and does not open PRs.
+# On DRIFT the `resync` job opens or updates a single resync PR (branch
+# ci/catalog-resync, author Arman Obosyan via the catalog token) and then still
+# fails. The red run is the alarm; the PR is the landing path. test.yml on
+# pull_request stays a fail-on-drift gate and does not open PRs.
+#
+# The catalog token lives in Azure Key Vault. Only the `resync` job can read it:
+# it runs only on drift and only from main, in the `catalog` environment, and
+# the identity it logs in as can read that one secret and nothing else.
 on:
   # Preferred trigger: the API repository announces that its OpenAPI document
   # changed. This is the only signal that arrives exactly when drift is created,
@@ -34,14 +38,11 @@ permissions:
 jobs:
   parity:
     runs-on: ubuntu-latest
+    outputs:
+      drift: ${{ steps.parity.outcome == 'failure' }}
     steps:
       - uses: actions/checkout@v4
         with:
-          # History for branching ci/catalog-resync from origin/main. Credentials
-          # stay off: this repo is public, and the resync push must use
-          # MCP_CATALOG_TOKEN (GITHUB_TOKEN would commit as github-actions[bot]
-          # and that PR would not trigger Test).
-          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
@@ -54,14 +55,65 @@ jobs:
         id: parity
         continue-on-error: true
         run: python scripts/check_catalog_parity.py
-      - name: Open or update a catalog resync PR
-        if: steps.parity.outcome == 'failure'
-        env:
-          MCP_CATALOG_TOKEN: ${{ secrets.MCP_CATALOG_TOKEN }}
-          GH_TOKEN: ${{ secrets.MCP_CATALOG_TOKEN }}
-        run: python scripts/open_catalog_resync.py
-      - name: Fail the job on drift
-        if: steps.parity.outcome == 'failure'
+      # On main the `resync` job carries the failure, after it has opened the PR.
+      - name: Fail the job on drift outside main
+        if: steps.parity.outcome == 'failure' && github.ref != 'refs/heads/main'
         run: |
-          echo "Catalog drifted from the live spec. A resync PR is opened or updated on ci/catalog-resync when MCP_CATALOG_TOKEN is set."
+          echo "Catalog drifted from the live spec. A resync PR is opened only from main."
+          exit 1
+
+  resync:
+    needs: parity
+    if: needs.parity.outputs.drift == 'true' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # The `catalog` environment admits main only. Its OIDC subject is the one
+    # the catalog identity trusts, and that identity can read the catalog token
+    # and nothing else.
+    environment: catalog
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # History for branching ci/catalog-resync from origin/main. Credentials
+          # stay off: this repo is public, and the resync push must use the
+          # catalog token (GITHUB_TOKEN would commit as github-actions[bot] and
+          # that PR would not trigger Test).
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,http]"
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+      - name: Fetch the catalog token
+        env:
+          KEY_VAULT: ${{ secrets.AZURE_KEY_VAULT }}
+        run: |
+          set -euo pipefail
+          umask 077
+          f="$RUNNER_TEMP/catalog_token"
+          az keyvault secret download --vault-name "$KEY_VAULT" --name mcp-catalog-token --file "$f" --encoding utf-8
+          test -s "$f"
+          echo "::add-mask::$(cat "$f")"
+          az logout
+      - name: Open or update a catalog resync PR
+        run: |
+          token="$(cat "$RUNNER_TEMP/catalog_token")"
+          MCP_CATALOG_TOKEN="$token" GH_TOKEN="$token" python scripts/open_catalog_resync.py
+      - name: Remove the token file
+        if: always()
+        run: rm -f "$RUNNER_TEMP/catalog_token"
+      - name: Fail the job on drift
+        run: |
+          echo "Catalog drifted from the live spec. The resync PR on ci/catalog-resync is opened or updated."
           exit 1
