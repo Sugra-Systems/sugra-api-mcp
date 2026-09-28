@@ -124,7 +124,7 @@ async def test_complete_group_dispatches(monkeypatch):
     seen = {}
 
     class _FakeClient:
-        async def get(self, path, params=None):
+        async def get(self, path, params=None, **_kwargs):
             seen["path"] = path
             seen["params"] = params
             return {"data": {"temp": 21.5}}
@@ -243,7 +243,7 @@ async def test_non_exclusive_multiple_groups_dispatch(monkeypatch):
     monkeypatch.setattr(gw, "load_catalog", lambda: _FakeCatalog())
 
     class _FakeClient:
-        async def get(self, path, params=None):
+        async def get(self, path, params=None, **_kwargs):
             return {"data": {"ok": True}}
 
     monkeypatch.setattr(gw, "get_client", lambda: _FakeClient())

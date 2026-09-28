@@ -312,3 +312,74 @@ async def test_http_3xx_is_a_structured_http_error() -> None:
     assert result["status_code"] == 307
     assert result["url"] == "https://api.test/api/v1/kalshi/events"
     assert isinstance(result["elapsed_ms"], int)
+
+
+# ---- size enforcement stays the default for every non-gateway caller ----
+#
+# gateway.call_endpoint is the ONE caller that shapes its own response
+# (a fields/limit projection) after getting it back from the client, so it
+# is the one caller that needs to measure size AFTER that projection rather
+# than on the client's raw body. Every other caller - the agent-plane tools
+# (resolve_entity, get_snapshot, get_timeseries) and the entity lookup/screen
+# tools - calls client.get/post directly and never shapes anything
+# afterward: for them the raw body IS the whole response, so the cap has to
+# apply right here, by default, exactly as it did before gateway's own
+# opt-out was introduced.
+
+
+async def test_default_get_still_enforces_the_size_cap_on_a_non_gateway_call() -> None:
+    """A plain client.get with no explicit enforce_size (what every
+    non-gateway caller does) must still refuse a body with nothing to
+    shrink, not pass it through whole."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": {"blob": "x" * 200_000}, "meta": {}}, request=request)
+
+    client = _client(handler)
+    try:
+        result = await client.get("/api/v1/some/big/payload")
+    finally:
+        await client.aclose()
+
+    assert result.get("error") == "response_too_large"
+    assert "estimated_tokens" in result
+
+
+async def test_default_post_cuts_a_large_list_body_not_passing_it_through() -> None:
+    """Same backstop over client.post (what the agent-plane tools and the
+    entity screen/lookup tools call), over a shape the gate CAN shrink."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = {
+            "data": [{"id": i, "name": f"item_{i}", "desc": "x" * 100} for i in range(2000)],
+            "meta": {"source": "test"},
+        }
+        return httpx.Response(200, json=body, request=request)
+
+    client = _client(handler)
+    try:
+        result = await client.post("/api/v1/some/big/list", json={})
+    finally:
+        await client.aclose()
+
+    assert "error" not in result
+    assert len(result["data"]) < 2000
+    assert "truncated" in result["meta"]
+
+
+async def test_enforce_size_false_opts_out_per_call_not_client_wide() -> None:
+    """gateway.call_endpoint passes enforce_size=False so it can measure
+    AFTER its own fields/limit projection - confirm the opt-out is a
+    per-call keyword, not a client-wide switch that would also silence the
+    backstop for every other caller."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": {"blob": "x" * 200_000}, "meta": {}}, request=request)
+
+    client = _client(handler)
+    try:
+        raw = await client.get("/api/v1/some/big/payload", enforce_size=False)
+    finally:
+        await client.aclose()
+
+    assert raw == {"data": {"blob": "x" * 200_000}, "meta": {}}

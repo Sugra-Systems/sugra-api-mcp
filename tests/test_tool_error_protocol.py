@@ -38,10 +38,10 @@ class _Client:
     def __init__(self, payload: Any) -> None:
         self._payload = payload
 
-    async def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+    async def get(self, path: str, params: dict[str, Any] | None = None, **_kwargs: Any) -> Any:
         return self._payload
 
-    async def post(self, path: str, json: dict[str, Any] | None = None) -> Any:
+    async def post(self, path: str, json: dict[str, Any] | None = None, **_kwargs: Any) -> Any:
         return self._payload
 
     async def request(self, method: str, path: str, **kwargs: Any) -> Any:

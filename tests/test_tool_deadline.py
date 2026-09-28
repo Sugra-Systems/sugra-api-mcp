@@ -30,7 +30,7 @@ def anyio_backend():
 
 
 class _StallingClient:
-    async def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+    async def get(self, path: str, params: dict[str, Any] | None = None, **_kwargs: Any) -> Any:
         await asyncio.sleep(5.0)
         return {"data": []}
 
@@ -120,7 +120,7 @@ async def test_the_deadline_leaves_a_verdict_on_the_span(monkeypatch) -> None:
 
 
 class _ErrorClient:
-    async def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+    async def get(self, path: str, params: dict[str, Any] | None = None, **_kwargs: Any) -> Any:
         return {"error": "HTTP 404", "status_code": 404, "url": path, "elapsed_ms": 1}
 
     async def request(self, method: str, path: str, **kwargs: Any) -> Any:
@@ -128,7 +128,7 @@ class _ErrorClient:
 
 
 class _FastClient:
-    async def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+    async def get(self, path: str, params: dict[str, Any] | None = None, **_kwargs: Any) -> Any:
         return {"data": [{"symbol": "AAPL"}], "meta": {}}
 
     async def request(self, method: str, path: str, **kwargs: Any) -> Any:
@@ -192,7 +192,7 @@ async def test_fast_call_is_untouched_by_the_deadline(monkeypatch) -> None:
     monkeypatch.setenv("SUGRA_TOOL_DEADLINE", "5")
 
     class _Fast:
-        async def get(self, path, params=None):
+        async def get(self, path, params=None, **_kwargs):
             return {"data": [{"symbol": "AAPL"}]}
 
         async def request(self, method, path, **kwargs):
@@ -214,7 +214,7 @@ async def test_next_call_after_a_deadline_is_not_delayed(monkeypatch) -> None:
     stall = _StallingClient()
 
     class _Fast:
-        async def get(self, path, params=None):
+        async def get(self, path, params=None, **_kwargs):
             return {"data": [{"ok": True}]}
 
         async def request(self, method, path, **kwargs):

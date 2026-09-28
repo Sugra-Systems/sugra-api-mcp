@@ -431,9 +431,11 @@ async def call_endpoint(
 
         client = get_client()
         if endpoint.method == "GET":
-            payload = await client.get(path, params=query_params)
+            payload = await client.get(path, params=query_params, enforce_size=False)
         elif endpoint.method == "POST":
-            payload = await client.request(endpoint.method, path, params=query_params, json=body)
+            payload = await client.request(
+                endpoint.method, path, params=query_params, json=body, enforce_size=False
+            )
         else:
             return {
                 "error": "unsupported_method",
