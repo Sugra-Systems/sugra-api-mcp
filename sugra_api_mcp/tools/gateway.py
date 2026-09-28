@@ -445,13 +445,20 @@ async def call_endpoint(
 
         if is_error_payload(payload):
             # Structured error contract from SugraClient (transport failure
-            # or HTTP 4xx/5xx). Return it untouched: shaping an error dict
-            # would only decorate it with misleading meta while the agent
-            # needs the raw {error, reason, elapsed_ms}. The "no data key"
-            # guard mirrors entities._is_error: a success envelope always
-            # carries data, so a hypothetical 200 partial payload with both
-            # keys still gets shaped normally.
-            return payload
+            # or HTTP 4xx/5xx). Shaping it would decorate it with misleading
+            # meta while the agent needs the raw {error, reason, elapsed_ms},
+            # so it is returned otherwise untouched - but still bounded: both
+            # calls above pass enforce_size=False so call_endpoint alone
+            # measures after its own fields/limit projection, and an error
+            # envelope is never projected, so nothing else ever measures it.
+            # Without this, a 200 answer recognized as an error (no `data`
+            # key) with an oversized error or detail string went out whole.
+            # _enforce_size_limit is a no-op below the cap, so a normal-sized
+            # error dict comes back byte-identical. The "no data key" guard
+            # mirrors entities._is_error: a success envelope always carries
+            # data, so a hypothetical 200 partial payload with both keys
+            # still gets shaped normally.
+            return _enforce_size_limit(payload, path)
 
         shaped = shape_response(payload, limit=limit, fields=fields, include_raw=include_raw)
         # Size is enforced HERE, after fields/limit projection, not on the

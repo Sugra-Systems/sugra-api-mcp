@@ -508,6 +508,56 @@ async def test_call_endpoint_shapes_success_payload_containing_error_key(monkeyp
     assert result["meta"]["shaped"]["limit"] == 1
 
 
+class OversizedErrorClient:
+    """A 200 answer recognized as an error envelope (no `data` key) whose
+    own error text alone exceeds MAX_RESPONSE_CHARS - the shape that went
+    out whole once `is_error_payload` returned before the only enforcement
+    call_endpoint had left standing (its own, post-shape, enforce_size=False
+    opt-out on the success path) ever ran."""
+
+    ERROR: ClassVar[dict[str, Any]] = {
+        "error": "upstream_error",
+        "reason": "x" * 200_000,
+        "status_code": 500,
+        "url": "https://sugra.ai/api/v1/quotes/AAPL/price",
+        "elapsed_ms": 12,
+    }
+
+    async def get(self, path, params=None, **_kwargs):
+        return dict(self.ERROR)
+
+    async def request(self, method, path, params=None, json=None, **_kwargs):
+        return dict(self.ERROR)
+
+
+async def test_oversized_error_envelope_through_get_branch_is_bounded(monkeypatch) -> None:
+    """quotes_symbol_price is a GET operation - exercises client.get."""
+    from sugra_api_mcp.client import MAX_RESPONSE_CHARS
+
+    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
+    monkeypatch.setattr(gateway, "get_client", lambda: OversizedErrorClient())
+
+    result = await gateway.call_endpoint("quotes_symbol_price", params={"symbol": "AAPL"})
+
+    assert len(json.dumps(result)) <= MAX_RESPONSE_CHARS
+    assert result.get("error") is not None
+
+
+async def test_oversized_error_envelope_through_request_branch_is_bounded(monkeypatch) -> None:
+    """openfigi_map is a POST operation - exercises client.request."""
+    from sugra_api_mcp.client import MAX_RESPONSE_CHARS
+
+    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
+    monkeypatch.setattr(gateway, "get_client", lambda: OversizedErrorClient())
+
+    result = await gateway.call_endpoint(
+        "openfigi_map", body={"jobs": [{"idType": "TICKER", "idValue": "AAPL"}]}
+    )
+
+    assert len(json.dumps(result)) <= MAX_RESPONSE_CHARS
+    assert result.get("error") is not None
+
+
 async def test_fetch_data_propagates_structured_error(monkeypatch) -> None:
     """fetch_data delegates to call_endpoint: the structured error contract
     must survive the combined search+call round trip too."""

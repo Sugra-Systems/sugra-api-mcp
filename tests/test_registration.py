@@ -243,3 +243,90 @@ def test_size_limit_error_message_agrees_with_the_char_gate_it_enforces():
     assert str(MAX_RESPONSE_CHARS) in result["message"]
     assert result["estimated_tokens"] < 25_000  # the actual defect: under the directory
     assert result["estimated_tokens"] > MAX_RESPONSE_CHARS // 4  # ceiling, over OUR cap
+
+
+def test_size_limit_top_level_single_oversized_item_is_cut_to_empty_not_forced_through():
+    """The old cutter floored `kept` at 1, so a single item bigger than the
+    entire cap was still retained and shipped over MAX_RESPONSE_CHARS. It
+    must now be cut to zero rows, with an accurate marker, instead."""
+    import json
+
+    from sugra_api_mcp.client import MAX_RESPONSE_CHARS, _enforce_size_limit
+
+    payload = {"data": [{"blob": "x" * (MAX_RESPONSE_CHARS * 2)}], "meta": {}}
+    result = _enforce_size_limit(payload, "test://url")
+
+    assert len(json.dumps(result)) <= MAX_RESPONSE_CHARS
+    assert "error" not in result
+    assert result["meta"]["truncated"]["kept_count"] == 0
+    assert result["meta"]["truncated"]["original_count"] == 1
+
+
+def test_size_limit_nested_cutter_accounts_for_marker_overhead_beyond_the_reserve():
+    """The old cutter measured the trimmed payload BEFORE adding
+    meta.truncated and never re-checked after. A field name long enough to
+    make that marker bigger than the fixed 500-char reserve used to leave
+    the final payload over the cap regardless."""
+    import json
+
+    from sugra_api_mcp.client import MAX_RESPONSE_CHARS, _enforce_size_limit
+
+    huge_key = "k" * 5000
+    payload = {
+        "data": {huge_key: [{"v": i, "pad": "x" * 40} for i in range(3000)]},
+        "meta": {},
+    }
+    assert len(json.dumps(payload)) > MAX_RESPONSE_CHARS
+
+    result = _enforce_size_limit(payload, "test://url")
+
+    assert len(json.dumps(result)) <= MAX_RESPONSE_CHARS
+
+
+def test_size_error_names_exhausted_lists_not_missing_ones_when_a_list_existed():
+    """A list that WAS shrunk to nothing, with a huge fixed sibling still
+    over the cap on its own, must not be reported as "no list field was
+    found" - that list existed and was exhausted, which misdirects a retry
+    into hunting for a list that was never the problem."""
+    import json
+
+    from sugra_api_mcp.client import MAX_RESPONSE_CHARS, _enforce_size_limit
+
+    payload = {
+        "data": {
+            "small_list": [{"i": i} for i in range(5)],
+            "big_sibling": "y" * (MAX_RESPONSE_CHARS * 2),
+        },
+        "meta": {},
+    }
+    assert len(json.dumps(payload)) > MAX_RESPONSE_CHARS
+
+    result = _enforce_size_limit(payload, "test://url")
+
+    assert result["error"] == "response_too_large"
+    assert "no list field was found" not in result["message"]
+    assert "shrunk to nothing" in result["message"]
+
+
+def test_truncated_reason_names_the_gateway_cap_not_the_token_ceiling():
+    """Both truncation shapes used to keep the same token-ceiling reason
+    this change corrects for outright rejections - contradictory for a
+    response whose estimate is under 25000 tokens. Both must name the
+    gateway's own size cap instead."""
+    from sugra_api_mcp.client import _enforce_size_limit
+
+    top_level = _enforce_size_limit(
+        {
+            "data": [{"id": i, "name": f"item_{i}", "desc": "x" * 100} for i in range(2000)],
+            "meta": {"source": "test"},
+        },
+        "test://url",
+    )
+    nested = _enforce_size_limit(_forecast_payload(16))
+
+    assert "error" not in top_level
+    assert "error" not in nested
+    assert top_level["meta"]["truncated"]["reason"] != "exceeds_mcp_25k_token_limit"
+    assert nested["meta"]["truncated"]["reason"] != "exceeds_mcp_25k_token_limit"
+    assert "25k" not in top_level["meta"]["truncated"]["reason"]
+    assert "25k" not in nested["meta"]["truncated"]["reason"]

@@ -128,82 +128,141 @@ def _retry_after(response: httpx.Response) -> int | str | None:
     return raw
 
 
-def _cut_top_level_list(payload: dict[str, Any], payload_str: str) -> dict[str, Any]:
-    """`data` is itself the oversized list - the common envelope shape."""
+_TRUNCATED_REASON = "gateway_response_size_cap"  # names OUR cap, never the directory's token ceiling
+
+
+def _cut_top_level_list(payload: dict[str, Any], payload_str: str) -> dict[str, Any] | None:
+    """`data` is itself the oversized list - the common envelope shape.
+
+    Builds the COMPLETE candidate, `meta.truncated` marker included, and
+    measures its exact serialized length before accepting it - the old
+    version measured an empty shell, estimated a count from that, and never
+    re-checked the real result, so a single item bigger than the whole cap
+    was still kept (`kept` was floored at 1) and shipped over the limit.
+    Returns None when even an EMPTY list still does not fit (the fixed
+    envelope plus the marker are themselves too large), so the caller falls
+    back to the structured size error instead of shipping a payload that
+    is still over MAX_RESPONSE_CHARS.
+    """
     data_list = payload["data"]
-    empty_shell = {**payload, "data": []}
-    shell_size = len(json.dumps(empty_shell))
-    budget = MAX_RESPONSE_CHARS - shell_size - 500  # room for the notice
+
+    def candidate(kept: int) -> dict[str, Any]:
+        trimmed = {**payload, "data": data_list[:kept]}
+        meta = dict(trimmed.get("meta") or {})
+        meta["truncated"] = {
+            "reason": _TRUNCATED_REASON,
+            "original_count": len(data_list),
+            "kept_count": kept,
+            "retry_hint": "Add filters (country, date range, limit) to reduce response size.",
+        }
+        trimmed["meta"] = meta
+        return trimmed
+
+    shell_size = len(json.dumps(candidate(0)))
+    if shell_size > MAX_RESPONSE_CHARS:
+        return None
+
+    budget = MAX_RESPONSE_CHARS - shell_size
     avg_item = max(1, (len(payload_str) - shell_size) // len(data_list))
-    kept = max(1, min(len(data_list), budget // avg_item))
-    truncated = {**payload, "data": data_list[:kept]}
-    meta = dict(truncated.get("meta") or {})
-    meta["truncated"] = {
-        "reason": "exceeds_mcp_25k_token_limit",
-        "original_count": len(data_list),
-        "kept_count": kept,
-        "retry_hint": "Add filters (country, date range, limit) to reduce response size.",
-    }
-    truncated["meta"] = meta
-    return truncated
+    kept = max(0, min(len(data_list), budget // avg_item))
+    result = candidate(kept)
+    # The average-size estimate above can still overshoot when items vary in
+    # size - back off one item at a time against the EXACT candidate (marker
+    # included) until it truly fits. Bounded by kept, which the estimate
+    # already put close to the real answer.
+    while kept > 0 and len(json.dumps(result)) > MAX_RESPONSE_CHARS:
+        kept -= 1
+        result = candidate(kept)
+    return result if len(json.dumps(result)) <= MAX_RESPONSE_CHARS else None
 
 
 def _cut_record_lists(payload: dict[str, Any], data: dict[str, Any]) -> dict[str, Any] | None:
     """Shrink record lists nested one level inside `data` (a weather
     forecast's `hourly` / `daily`, for example) until the whole payload
     fits, largest list first. Returns None when `data` carries no list to
-    shrink, so the caller can fall back to the structured error.
+    shrink, OR when every list was shrunk to nothing and the payload STILL
+    does not fit - either way the caller falls back to the structured
+    error, distinguishing the two causes itself.
 
     Each shrunk key gets its own `original_count` / `kept_count` note. A
     sibling list left completely untouched is named in the retry hint, so a
     caller that only ever wanted the untouched block (e.g. `fields=["daily"]`
     on a forecast whose `hourly` block is what does not fit) learns the one
     request that would have avoided the cut entirely.
+
+    The candidate built at every step, including the fine-tune loop below,
+    carries its real `meta.truncated` marker: a dynamic field name can make
+    that marker larger than any fixed reserve set aside for it while
+    estimating, so the only correct check is the exact serialized length of
+    the complete candidate, re-measured after every reduction.
     """
     list_keys = [key for key, value in data.items() if isinstance(value, list) and value]
     if not list_keys:
         return None
     list_keys.sort(key=lambda key: len(json.dumps(data[key])), reverse=True)
 
-    trimmed = deepcopy(payload)
-    trimmed_data = trimmed["data"]
-    notes: dict[str, dict[str, int]] = {}
+    kept_counts = {key: len(data[key]) for key in list_keys}
+
+    def build() -> dict[str, Any]:
+        trimmed = deepcopy(payload)
+        trimmed_data = trimmed["data"]
+        notes: dict[str, dict[str, int]] = {}
+        for key in list_keys:
+            original = data[key]
+            kept = kept_counts[key]
+            trimmed_data[key] = original[:kept]
+            if kept < len(original):
+                notes[key] = {"original_count": len(original), "kept_count": kept}
+        meta = dict(trimmed.get("meta") or {})
+        if notes:
+            hint = (
+                "Add filters (fewer days, a shorter date range, or narrower "
+                "fields) to reduce response size."
+            )
+            for key in notes:
+                untouched = [k for k in list_keys if k not in notes]
+                if untouched:
+                    hint = (
+                        f"Request fields={untouched!r} to get the untouched "
+                        f"block(s) without the {key} cut."
+                    )
+                break
+            meta["truncated"] = {
+                "reason": _TRUNCATED_REASON,
+                "fields": notes,
+                "retry_hint": hint,
+            }
+        trimmed["meta"] = meta
+        return trimmed
 
     for key in list_keys:
-        if len(json.dumps(trimmed)) <= MAX_RESPONSE_CHARS:
-            break
-        items = trimmed_data[key]
-        shell = {**trimmed, "data": {**trimmed_data, key: []}}
+        if len(json.dumps(build())) <= MAX_RESPONSE_CHARS:
+            return build()
+        items = data[key]
+        shell = deepcopy(payload)
+        shell["data"] = {**data, key: []}
         shell_size = len(json.dumps(shell))
-        budget = max(0, MAX_RESPONSE_CHARS - shell_size - 500)  # room for the notice
+        # A rough estimate to jump close - refined exactly below, so a wrong
+        # guess here only costs a few extra iterations, never correctness.
+        budget = max(0, MAX_RESPONSE_CHARS - shell_size - 500)
         avg_item = max(1, (len(json.dumps(items)) - 2) // len(items))
-        kept = max(0, min(len(items), budget // avg_item))
-        trimmed_data[key] = items[:kept]
-        notes[key] = {"original_count": len(items), "kept_count": kept}
+        kept_counts[key] = max(0, min(len(items), budget // avg_item))
+        while kept_counts[key] > 0 and len(json.dumps(build())) > MAX_RESPONSE_CHARS:
+            kept_counts[key] -= 1
 
-    if len(json.dumps(trimmed)) > MAX_RESPONSE_CHARS:
-        return None  # could not cut enough - caller falls back to the structured error
-
-    hint = "Add filters (fewer days, a shorter date range, or narrower fields) to reduce response size."
-    for key, note in notes.items():
-        if note["kept_count"] < note["original_count"]:
-            untouched = [k for k in list_keys if k != key and k not in notes]
-            if untouched:
-                hint = f"Request fields={untouched!r} to get the untouched block(s) without the {key} cut."
-            break
-
-    meta = dict(trimmed.get("meta") or {})
-    meta["truncated"] = {
-        "reason": "exceeds_mcp_25k_token_limit",
-        "fields": notes,
-        "retry_hint": hint,
-    }
-    trimmed["meta"] = meta
-    return trimmed
+    result = build()
+    return result if len(json.dumps(result)) <= MAX_RESPONSE_CHARS else None
 
 
-def _size_error(payload_str: str, url: str | None) -> dict[str, Any]:
-    """No list was found anywhere to shrink - the structured fallback.
+def _size_error(payload_str: str, url: str | None, *, exhausted: bool = False) -> dict[str, Any]:
+    """Nothing more can be cut - the structured fallback.
+
+    `exhausted` tells the two causes apart: no list field existed anywhere
+    to shrink, or every list field WAS shrunk to nothing and the surrounding
+    fixed data is still over the cap on its own. Reporting the wrong one
+    misdirects a retry - a caller told "no list field was found" would keep
+    hunting for one that was never there to find, having exhausted the real
+    one already.
 
     States the gateway's OWN char cap and its token estimate together with
     the directory ceiling it is kept under, rather than naming only the
@@ -214,13 +273,18 @@ def _size_error(payload_str: str, url: str | None) -> dict[str, Any]:
     rejected against a stated "25000 token limit".
     """
     tokens = len(payload_str) // 4
+    cause = (
+        "every list field was shrunk to nothing and the payload is still over the cap"
+        if exhausted
+        else "no list field was found to shrink"
+    )
     return {
         "error": "response_too_large",
         "message": (
             f"Response is {len(payload_str)} chars (approx {tokens} tokens), over this "
             f"gateway's {MAX_RESPONSE_CHARS}-char cap (approx {MAX_RESPONSE_CHARS // 4} tokens, "
-            "kept under the MCP directory's 25000-token ceiling) and could not be cut - no "
-            "list field was found to shrink. Retry with narrower filters or a smaller request."
+            f"kept under the MCP directory's 25000-token ceiling) and could not be cut - {cause}. "
+            "Retry with narrower filters or a smaller request."
         ),
         "estimated_tokens": tokens,
         "url": url,
@@ -236,19 +300,27 @@ def _enforce_size_limit(payload: Any, url: str | None = None) -> Any:
     before the projection instead of after it. A payload with a list to
     shrink is CUT with an explicit `meta.truncated` marker the model can
     read - never rejected wholesale while a workable projection was
-    available, and never passed through whole over the cap.
+    available, and never passed through whole over the cap. Every cutter
+    below guarantees the returned payload actually fits: it measures the
+    complete candidate, marker included, and falls back to the structured
+    error itself when nothing it tries fits either.
     """
     payload_str = json.dumps(payload)
     if len(payload_str) <= MAX_RESPONSE_CHARS:
         return payload
 
     if isinstance(payload, dict) and isinstance(payload.get("data"), list) and payload["data"]:
-        return _cut_top_level_list(payload, payload_str)
+        cut = _cut_top_level_list(payload, payload_str)
+        if cut is not None:
+            return cut
+        return _size_error(payload_str, url, exhausted=True)
 
     if isinstance(payload, dict) and isinstance(payload.get("data"), dict):
+        had_list = any(isinstance(value, list) and value for value in payload["data"].values())
         cut = _cut_record_lists(payload, payload["data"])
         if cut is not None:
             return cut
+        return _size_error(payload_str, url, exhausted=had_list)
 
     # Unknown shape - nothing to shrink - return a structured error the agent can act on
     return _size_error(payload_str, url)
