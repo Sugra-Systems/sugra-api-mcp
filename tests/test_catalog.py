@@ -425,6 +425,55 @@ def test_response_shaping_sibling_series_with_a_scalar_sibling_stays_unshaped() 
     assert block["records_path"] is None
 
 
+def test_response_shaping_sibling_series_without_limit_stays_whole() -> None:
+    """No limit requested: every sub-series comes back whole, and no
+    shaping is reported."""
+    payload = _sibling_series_envelope("monthly_change")
+
+    shaped = shape_response(payload)
+
+    assert shaped["data"] == payload["data"]
+    assert "shaped" not in shaped["meta"]
+
+
+def test_response_shaping_sibling_with_a_second_list_stays_unshaped() -> None:
+    """A sibling carrying another list beside ``observations`` is not a
+    plain sub-series: nothing is cut, in that sibling or any other."""
+    payload = {
+        "data": {
+            "annual_change": {"observations": [1, 2, 3, 4], "revisions": [5, 6, 7]},
+            "index": {"observations": [1, 2, 3, 4]},
+        },
+        "meta": {},
+    }
+
+    shaped = shape_response(payload, limit=2)
+
+    assert shaped["data"] == payload["data"]
+    block = shaped["meta"]["shaped"]
+    assert block["limit_applied"] is False
+    assert block["records_path"] is None
+
+
+def test_response_shaping_siblings_with_other_list_names_stay_unshaped() -> None:
+    """Objects that each hold one list under any name other than
+    ``observations`` are left exactly as sent."""
+    payload = {
+        "data": {
+            "north": {"region": "N", "stations": ["a", "b", "c"]},
+            "south": {"region": "S", "stations": ["d", "e", "f"]},
+        },
+        "meta": {},
+    }
+
+    shaped = shape_response(payload, limit=1)
+
+    assert shaped["data"] == payload["data"]
+    block = shaped["meta"]["shaped"]
+    assert block["limit_applied"] is False
+    assert block["records_path"] is None
+
+
 def test_response_shaping_limit_bounds_records_inside_data() -> None:
     """Live 2026-09-12: news_latest with limit=2 returned all 50 items and
     limit_applied false, because the records sit in data.items."""
