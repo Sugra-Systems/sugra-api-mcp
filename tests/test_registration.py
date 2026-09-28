@@ -468,3 +468,65 @@ def test_size_error_caps_a_huge_url_not_shipped_whole():
 
     assert result["error"] == "response_too_large"
     assert len(result["url"]) <= _MAX_ERROR_FIELD_CHARS
+
+
+def test_nested_cutter_with_many_sibling_lists_stays_cheap():
+    """Picking the single largest list among thousands of small siblings
+    must not itself cost one full serialization per sibling - the greedy
+    multi-list version cost one full re-serialization per key per step,
+    making it O(k^2) in the sibling count. Only the final binary-search
+    fit checks on the ONE chosen list are real serializations; every
+    sibling stays completely untouched."""
+    import json as real_json
+
+    from sugra_api_mcp import client as client_module
+    from sugra_api_mcp.client import MAX_RESPONSE_CHARS
+
+    target_records = _adversarial_records()
+    data = {f"sibling_{i}": [{"i": i}] for i in range(2000)}
+    data["target"] = target_records
+    payload = {"data": data, "meta": {"source": "test"}}
+    assert len(real_json.dumps(payload)) > MAX_RESPONSE_CHARS
+
+    counter = _CountingJson(real_json)
+    original = client_module.json
+    client_module.json = counter
+    try:
+        result = client_module._enforce_size_limit(payload, "test://url")
+    finally:
+        client_module.json = original
+
+    assert len(real_json.dumps(result)) <= MAX_RESPONSE_CHARS
+    assert "error" not in result
+    truncated = result["meta"]["truncated"]
+    assert "target" in truncated["fields"]
+    assert truncated["fields"]["target"]["kept_count"] < len(target_records)
+    for i in range(2000):
+        assert len(result["data"][f"sibling_{i}"]) == 1  # every sibling untouched
+    assert counter.calls < 100
+
+
+def test_size_error_names_the_list_fields_present_when_the_cut_list_is_exhausted():
+    """The one-cutter design cuts exactly the single largest list; when
+    even emptying it does not fit, the fallback must name which list
+    field(s) existed in data rather than the old generic "shrunk to
+    nothing" text alone, so a caller who lost the cut list can still ask
+    by name for whichever other block it actually needed."""
+    import json
+
+    from sugra_api_mcp.client import MAX_RESPONSE_CHARS, _enforce_size_limit
+
+    payload = {
+        "data": {
+            "small_list": [{"i": i} for i in range(5)],
+            "big_sibling": "y" * (MAX_RESPONSE_CHARS * 2),
+        },
+        "meta": {},
+    }
+    assert len(json.dumps(payload)) > MAX_RESPONSE_CHARS
+
+    result = _enforce_size_limit(payload, "test://url")
+
+    assert result["error"] == "response_too_large"
+    assert "small_list" in result["message"]
+    assert "no list field was found" not in result["message"]

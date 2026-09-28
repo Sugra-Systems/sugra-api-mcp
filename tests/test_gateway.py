@@ -501,6 +501,38 @@ async def test_call_endpoint_catches_catalog_load_failure(monkeypatch) -> None:
     assert result["exception_type"] == "ValueError"
 
 
+async def test_call_endpoint_exception_envelope_caps_a_huge_operation_id(monkeypatch) -> None:
+    """The safety net's own envelope carries operation_id straight from
+    the caller, verbatim - as capable of being oversized as any upstream
+    field, and unlike `reason` it was never cut at all."""
+    from sugra_api_mcp.client import MAX_RESPONSE_CHARS
+
+    def broken_catalog():
+        raise ValueError("corrupt bundled catalog")
+
+    monkeypatch.setattr(gateway, "load_catalog", broken_catalog)
+
+    result = await gateway.call_endpoint("x" * 200_000, params={"symbol": "AAPL"})
+
+    assert result["error"] == "tool_execution_failed"
+    assert len(json.dumps(result)) <= MAX_RESPONSE_CHARS
+    assert isinstance(result["elapsed_ms"], int)
+
+
+async def test_call_endpoint_unknown_operation_id_caps_a_huge_operation_id(monkeypatch) -> None:
+    """unknown_operation_id echoes operation_id straight back, unbounded -
+    this one never even reached the safety net's except clause, so it
+    needed its own cap."""
+    from sugra_api_mcp.client import MAX_RESPONSE_CHARS
+
+    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
+
+    result = await gateway.call_endpoint("x" * 200_000)
+
+    assert result["error"] == "unknown_operation_id"
+    assert len(json.dumps(result)) <= MAX_RESPONSE_CHARS
+
+
 async def test_fetch_data_catches_search_path_failure(monkeypatch) -> None:
     """fetch_data's search/selection path sits in the same safety net."""
     monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
