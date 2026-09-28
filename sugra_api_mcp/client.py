@@ -40,7 +40,6 @@ import json
 import ssl
 import threading
 import time
-from copy import deepcopy
 from typing import Any
 
 import httpx
@@ -130,19 +129,40 @@ def _retry_after(response: httpx.Response) -> int | str | None:
 
 _TRUNCATED_REASON = "gateway_response_size_cap"  # names OUR cap, never the directory's token ceiling
 
+# A field that rides on every error and size-error envelope regardless of the
+# main payload's own cap - the upstream `error` text, the gateway's `url` -
+# gets its OWN small ceiling. These envelopes carry no list to cut, so the
+# only way to keep them bounded is to bound the offending field itself.
+_MAX_ERROR_FIELD_CHARS = 2_000
 
-def _cut_top_level_list(payload: dict[str, Any], payload_str: str) -> dict[str, Any] | None:
+
+def _capped(value: Any, limit: int = _MAX_ERROR_FIELD_CHARS) -> Any:
+    """`value` unchanged when it is already small, its str() form cut to
+    `limit` chars otherwise.
+
+    A value that fits keeps its original type - a short int or dict `error`
+    field is not stringified just because it passed through here. Only an
+    oversized value pays the cost of becoming (a cut) text, which is the
+    only shape that can be bounded at all.
+    """
+    if isinstance(value, str):
+        return value if len(value) <= limit else value[:limit]
+    text = str(value)
+    return value if len(text) <= limit else text[:limit]
+
+
+def _cut_top_level_list(payload: dict[str, Any]) -> dict[str, Any] | None:
     """`data` is itself the oversized list - the common envelope shape.
 
-    Builds the COMPLETE candidate, `meta.truncated` marker included, and
-    measures its exact serialized length before accepting it - the old
-    version measured an empty shell, estimated a count from that, and never
-    re-checked the real result, so a single item bigger than the whole cap
-    was still kept (`kept` was floored at 1) and shipped over the limit.
-    Returns None when even an EMPTY list still does not fit (the fixed
-    envelope plus the marker are themselves too large), so the caller falls
-    back to the structured size error instead of shipping a payload that
-    is still over MAX_RESPONSE_CHARS.
+    Binary-searches the largest `kept` count whose COMPLETE candidate
+    (`meta.truncated` marker included) fits, rather than estimating from an
+    empty shell and walking down one item at a time: serialized size is
+    monotonic in `kept`, so the exact answer costs O(log n) full
+    serializations instead of O(n) of them. Returns None when even an EMPTY
+    list still does not fit (the fixed envelope plus the marker are
+    themselves too large), so the caller falls back to the structured size
+    error instead of shipping a payload that is still over
+    MAX_RESPONSE_CHARS.
     """
     data_list = payload["data"]
 
@@ -158,22 +178,20 @@ def _cut_top_level_list(payload: dict[str, Any], payload_str: str) -> dict[str, 
         trimmed["meta"] = meta
         return trimmed
 
-    shell_size = len(json.dumps(candidate(0)))
-    if shell_size > MAX_RESPONSE_CHARS:
+    def fits(kept: int) -> bool:
+        return len(json.dumps(candidate(kept))) <= MAX_RESPONSE_CHARS
+
+    if not fits(0):
         return None
 
-    budget = MAX_RESPONSE_CHARS - shell_size
-    avg_item = max(1, (len(payload_str) - shell_size) // len(data_list))
-    kept = max(0, min(len(data_list), budget // avg_item))
-    result = candidate(kept)
-    # The average-size estimate above can still overshoot when items vary in
-    # size - back off one item at a time against the EXACT candidate (marker
-    # included) until it truly fits. Bounded by kept, which the estimate
-    # already put close to the real answer.
-    while kept > 0 and len(json.dumps(result)) > MAX_RESPONSE_CHARS:
-        kept -= 1
-        result = candidate(kept)
-    return result if len(json.dumps(result)) <= MAX_RESPONSE_CHARS else None
+    low, high = 0, len(data_list)
+    while low < high:
+        mid = (low + high + 1) // 2
+        if fits(mid):
+            low = mid
+        else:
+            high = mid - 1
+    return candidate(low)
 
 
 def _cut_record_lists(payload: dict[str, Any], data: dict[str, Any]) -> dict[str, Any] | None:
@@ -190,11 +208,14 @@ def _cut_record_lists(payload: dict[str, Any], data: dict[str, Any]) -> dict[str
     on a forecast whose `hourly` block is what does not fit) learns the one
     request that would have avoided the cut entirely.
 
-    The candidate built at every step, including the fine-tune loop below,
-    carries its real `meta.truncated` marker: a dynamic field name can make
-    that marker larger than any fixed reserve set aside for it while
-    estimating, so the only correct check is the exact serialized length of
-    the complete candidate, re-measured after every reduction.
+    Every candidate is built from SHALLOW copies (a new payload dict, a new
+    data dict, list slices, a new meta dict) - never `deepcopy`, which walks
+    and duplicates every nested record on every single measurement. Each key
+    is reduced by binary search against the exact serialized size of the
+    complete candidate (`meta.truncated` marker included), holding every
+    other key's current count fixed: size is monotonic in any one key's
+    count with the rest held still, so this finds the largest fit in O(log n)
+    per key rather than O(n).
     """
     list_keys = [key for key, value in data.items() if isinstance(value, list) and value]
     if not list_keys:
@@ -204,8 +225,7 @@ def _cut_record_lists(payload: dict[str, Any], data: dict[str, Any]) -> dict[str
     kept_counts = {key: len(data[key]) for key in list_keys}
 
     def build() -> dict[str, Any]:
-        trimmed = deepcopy(payload)
-        trimmed_data = trimmed["data"]
+        trimmed_data = dict(data)
         notes: dict[str, dict[str, int]] = {}
         for key in list_keys:
             original = data[key]
@@ -213,6 +233,7 @@ def _cut_record_lists(payload: dict[str, Any], data: dict[str, Any]) -> dict[str
             trimmed_data[key] = original[:kept]
             if kept < len(original):
                 notes[key] = {"original_count": len(original), "kept_count": kept}
+        trimmed = {**payload, "data": trimmed_data}
         meta = dict(trimmed.get("meta") or {})
         if notes:
             hint = (
@@ -235,20 +256,28 @@ def _cut_record_lists(payload: dict[str, Any], data: dict[str, Any]) -> dict[str
         trimmed["meta"] = meta
         return trimmed
 
+    def fits() -> bool:
+        return len(json.dumps(build())) <= MAX_RESPONSE_CHARS
+
     for key in list_keys:
-        if len(json.dumps(build())) <= MAX_RESPONSE_CHARS:
+        if fits():
             return build()
-        items = data[key]
-        shell = deepcopy(payload)
-        shell["data"] = {**data, key: []}
-        shell_size = len(json.dumps(shell))
-        # A rough estimate to jump close - refined exactly below, so a wrong
-        # guess here only costs a few extra iterations, never correctness.
-        budget = max(0, MAX_RESPONSE_CHARS - shell_size - 500)
-        avg_item = max(1, (len(json.dumps(items)) - 2) // len(items))
-        kept_counts[key] = max(0, min(len(items), budget // avg_item))
-        while kept_counts[key] > 0 and len(json.dumps(build())) > MAX_RESPONSE_CHARS:
-            kept_counts[key] -= 1
+        high = kept_counts[key]
+        kept_counts[key] = 0
+        if not fits():
+            # Emptying this key alone is not enough - leave it at zero (the
+            # most this key can contribute) and let a later key, or the
+            # combination, close the remaining gap.
+            continue
+        low = 0
+        while low < high:
+            mid = (low + high + 1) // 2
+            kept_counts[key] = mid
+            if fits():
+                low = mid
+            else:
+                high = mid - 1
+        kept_counts[key] = low
 
     result = build()
     return result if len(json.dumps(result)) <= MAX_RESPONSE_CHARS else None
@@ -271,6 +300,11 @@ def _size_error(payload_str: str, url: str | None, *, exhausted: bool = False) -
     and a message that names only the directory number then reads as
     self-contradictory - a real-world estimate near 21 659 tokens was once
     rejected against a stated "25000 token limit".
+
+    `url` rides in unbounded from every caller of `_enforce_size_limit`,
+    including one built from a raw upstream request - it gets the same
+    field-level cap as an oversized error string, for the same reason: this
+    whole function exists to keep the envelope itself under the cap.
     """
     tokens = len(payload_str) // 4
     cause = (
@@ -287,7 +321,7 @@ def _size_error(payload_str: str, url: str | None, *, exhausted: bool = False) -
             "Retry with narrower filters or a smaller request."
         ),
         "estimated_tokens": tokens,
-        "url": url,
+        "url": _capped(url) if url is not None else url,
     }
 
 
@@ -310,7 +344,7 @@ def _enforce_size_limit(payload: Any, url: str | None = None) -> Any:
         return payload
 
     if isinstance(payload, dict) and isinstance(payload.get("data"), list) and payload["data"]:
-        cut = _cut_top_level_list(payload, payload_str)
+        cut = _cut_top_level_list(payload)
         if cut is not None:
             return cut
         return _size_error(payload_str, url, exhausted=True)
@@ -475,10 +509,15 @@ class SugraClient:
         # status and no url, which telemetry could only file as unknown.
         if response.status_code >= 300:
             error = payload.get("error") if isinstance(payload, dict) else str(payload)
+            error = error if error else f"HTTP {response.status_code}"
+            # Bounded HERE: this branch returns before _enforce_size_limit
+            # ever runs, so an oversized upstream `error` (or a pathological
+            # `url`) is the one way an envelope could still ship over the
+            # cap. A normal-size value keeps its own type unchanged.
             result: dict[str, Any] = {
-                "error": error or f"HTTP {response.status_code}",
+                "error": _capped(error),
                 "status_code": response.status_code,
-                "url": str(response.request.url),
+                "url": _capped(str(response.request.url)),
                 "elapsed_ms": elapsed_ms,
             }
             retry_after = _retry_after(response)

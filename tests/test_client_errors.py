@@ -231,6 +231,32 @@ async def test_retry_after_http_date_header_passes_through_raw() -> None:
     assert result["retry_after"] == http_date
 
 
+# ---- an oversized error/url field is capped, not shipped whole ----
+
+
+async def test_http_5xx_with_a_huge_error_field_is_capped_not_shipped_whole() -> None:
+    """The non-2xx branch returned before any size bound, so a huge
+    upstream `error` field passed through whole to every default caller -
+    the same unbounded-envelope problem the size gate exists to prevent,
+    reached through a different field."""
+    import json
+
+    from sugra_api_mcp.client import _MAX_ERROR_FIELD_CHARS, MAX_RESPONSE_CHARS
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"error": "y" * 200_000}, request=request)
+
+    client = _client(handler)
+    try:
+        result = await client.get("/api/v1/quotes/AAPL/price")
+    finally:
+        await client.aclose()
+
+    assert len(json.dumps(result)) <= MAX_RESPONSE_CHARS
+    assert result["status_code"] == 500
+    assert len(result["error"]) <= _MAX_ERROR_FIELD_CHARS
+
+
 # ---- success path stays pristine ----
 
 

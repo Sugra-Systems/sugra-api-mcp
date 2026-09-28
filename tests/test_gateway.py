@@ -458,6 +458,33 @@ async def test_call_endpoint_catches_unexpected_exception(monkeypatch) -> None:
     assert isinstance(result["elapsed_ms"], int)
 
 
+class HugeRaisingClient:
+    """Mimics an unexpected non-httpx failure whose message is itself huge -
+    the safety net's own `str(exc)[:300]` cut is the only thing standing
+    between this and an unbounded envelope."""
+
+    async def get(self, path, params=None, **_kwargs):
+        raise RuntimeError("z" * 200_000)
+
+    async def request(self, method, path, params=None, json=None, **_kwargs):
+        raise RuntimeError("z" * 200_000)
+
+
+async def test_call_endpoint_exception_message_of_any_size_stays_under_the_cap(monkeypatch) -> None:
+    """Lock test: the except Exception branch already cuts `reason` to 300
+    chars before this change and needs no code change here - this only
+    confirms that guarantee holds."""
+    from sugra_api_mcp.client import MAX_RESPONSE_CHARS
+
+    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
+    monkeypatch.setattr(gateway, "get_client", lambda: HugeRaisingClient())
+
+    result = await gateway.call_endpoint("quotes_symbol_price", params={"symbol": "AAPL"})
+
+    assert result["error"] == "tool_execution_failed"
+    assert len(json.dumps(result)) <= MAX_RESPONSE_CHARS
+
+
 async def test_call_endpoint_catches_catalog_load_failure(monkeypatch) -> None:
     """The safety net covers the WHOLE tool body: a failure in catalog load
     or parameter resolution (before the HTTP call) must also return the

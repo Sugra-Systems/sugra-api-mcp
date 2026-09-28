@@ -330,3 +330,141 @@ def test_truncated_reason_names_the_gateway_cap_not_the_token_ceiling():
     assert nested["meta"]["truncated"]["reason"] != "exceeds_mcp_25k_token_limit"
     assert "25k" not in top_level["meta"]["truncated"]["reason"]
     assert "25k" not in nested["meta"]["truncated"]["reason"]
+
+
+class _CountingJson:
+    """Wraps the real json module, counting only `.dumps` calls, so a test
+    can bound how many full re-serializations a cutter performs without
+    reimplementing every other json entry point it might touch."""
+
+    def __init__(self, real):
+        self._real = real
+        self.calls = 0
+
+    def dumps(self, *args, **kwargs):
+        self.calls += 1
+        return self._real.dumps(*args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+def _adversarial_records() -> list[dict]:
+    """One leading record heavy enough on its own to dominate the budget,
+    followed by thousands of tiny ones - the shape that turned a one-item-
+    at-a-time backoff into thousands of full re-serializations."""
+    return [{"blob": "x" * 80_000}] + [{"i": i} for i in range(10_000)]
+
+
+def test_top_level_cutter_binary_searches_instead_of_scanning_every_item():
+    """The old cutter backed off one item at a time, re-serializing the
+    whole candidate on every step - thousands of calls for this shape.
+    Binary search must land on the same largest-fitting count in a small,
+    bounded number of exact measurements."""
+    import json as real_json
+
+    from sugra_api_mcp import client as client_module
+    from sugra_api_mcp.client import MAX_RESPONSE_CHARS
+
+    records = _adversarial_records()
+    payload = {"data": records, "meta": {"source": "test"}}
+
+    def reference_candidate(kept: int) -> dict:
+        trimmed = {**payload, "data": records[:kept]}
+        meta = dict(trimmed.get("meta") or {})
+        meta["truncated"] = {
+            "reason": "gateway_response_size_cap",
+            "original_count": len(records),
+            "kept_count": kept,
+            "retry_hint": "Add filters (country, date range, limit) to reduce response size.",
+        }
+        trimmed["meta"] = meta
+        return trimmed
+
+    # Brute-force reference: size is monotonic in kept (every added record
+    # only adds chars), so the first failure marks the ceiling.
+    best = 0
+    for kept in range(len(records) + 1):
+        if len(real_json.dumps(reference_candidate(kept))) <= MAX_RESPONSE_CHARS:
+            best = kept
+        else:
+            break
+
+    counter = _CountingJson(real_json)
+    original = client_module.json
+    client_module.json = counter
+    try:
+        result = client_module._enforce_size_limit(payload, "test://url")
+    finally:
+        client_module.json = original
+
+    assert len(real_json.dumps(result)) <= MAX_RESPONSE_CHARS
+    assert "error" not in result
+    assert result["meta"]["truncated"]["kept_count"] == best
+    assert counter.calls < 100
+
+
+def test_nested_cutter_binary_searches_instead_of_scanning_every_item():
+    """Same adversarial shape, one level down inside `data` - the shape
+    _cut_record_lists shrinks. The old version deep-copied the whole
+    payload on every measurement on top of the linear backoff; binary
+    search over shallow copies must land on the same answer cheaply."""
+    import json as real_json
+
+    from sugra_api_mcp import client as client_module
+    from sugra_api_mcp.client import MAX_RESPONSE_CHARS
+
+    records = _adversarial_records()
+    data = {"records": records}
+    payload = {"data": data, "meta": {"source": "test"}}
+
+    def reference_build(kept: int) -> dict:
+        trimmed_data = dict(data)
+        trimmed_data["records"] = records[:kept]
+        trimmed = {**payload, "data": trimmed_data}
+        meta = dict(trimmed.get("meta") or {})
+        if kept < len(records):
+            meta["truncated"] = {
+                "reason": "gateway_response_size_cap",
+                "fields": {"records": {"original_count": len(records), "kept_count": kept}},
+                "retry_hint": (
+                    "Add filters (fewer days, a shorter date range, or narrower "
+                    "fields) to reduce response size."
+                ),
+            }
+        trimmed["meta"] = meta
+        return trimmed
+
+    best = 0
+    for kept in range(len(records) + 1):
+        if len(real_json.dumps(reference_build(kept))) <= MAX_RESPONSE_CHARS:
+            best = kept
+        else:
+            break
+
+    counter = _CountingJson(real_json)
+    original = client_module.json
+    client_module.json = counter
+    try:
+        result = client_module._enforce_size_limit(payload, "test://url")
+    finally:
+        client_module.json = original
+
+    assert len(real_json.dumps(result)) <= MAX_RESPONSE_CHARS
+    assert "error" not in result
+    assert result["meta"]["truncated"]["fields"]["records"]["kept_count"] == best
+    assert counter.calls < 100
+
+
+def test_size_error_caps_a_huge_url_not_shipped_whole():
+    """`_size_error` carried the raw url unbounded - the one field this
+    whole gate exists to bound can itself blow the cap when the caller
+    hands in a pathological url."""
+    from sugra_api_mcp.client import _MAX_ERROR_FIELD_CHARS, _enforce_size_limit
+
+    huge_url = "https://example.test/" + "a" * 100_000
+    payload = {"data": {"blob": "x" * 200_000}, "meta": {}}
+    result = _enforce_size_limit(payload, huge_url)
+
+    assert result["error"] == "response_too_large"
+    assert len(result["url"]) <= _MAX_ERROR_FIELD_CHARS
