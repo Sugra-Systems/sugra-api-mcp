@@ -7,9 +7,8 @@ SUGRA_TEST_API_KEY):
 
 Checks (design doc section 8 smoke set, adapted to what is OBSERVABLE live):
   S1  unauthenticated tools/call -> 401 (tools/list stays public by design:
-      MCP discovery allowlist in auth.py; the card pins the CALL boundary).
-      buy_plan is the one tool callable without a key, so S1 calls another.
-  S2  tools/list == EXPECTED_HOSTED_TOOL_COUNT (13)
+      MCP discovery allowlist in auth.py; the card pins the CALL boundary)
+  S2  tools/list == EXPECTED_HOSTED_TOOL_COUNT (11)
   S3  weighted cost: two sequential company_snapshot calls decrement
       billing.remaining by the recipe cost (2) each - billing is computed in
       the route BEFORE the payload cache, so a cache hit still charges
@@ -38,7 +37,7 @@ import httpx
 
 from evals.live_client import DEFAULT_URL, open_session, require_key, result_json
 
-EXPECTED_HOSTED_TOOL_COUNT = 13
+EXPECTED_HOSTED_TOOL_COUNT = 11
 COMPANY_SNAPSHOT_COST = 2
 
 CHECKS: list[tuple[str, bool, str]] = []
@@ -68,9 +67,9 @@ async def s2_tool_count(session) -> None:
     tools = await session.list_tools()
     names = sorted(t.name for t in tools.tools)
     ok = len(names) == EXPECTED_HOSTED_TOOL_COUNT and {
-        "resolve_entity", "get_snapshot", "get_timeseries", "list_plans"
+        "resolve_entity", "get_snapshot", "get_timeseries"
     }.issubset(set(names))
-    record(f"S2 tools/list == {EXPECTED_HOSTED_TOOL_COUNT} incl agent tools and list_plans", ok, f"got {len(names)}: {names}")
+    record(f"S2 tools/list == {EXPECTED_HOSTED_TOOL_COUNT} incl agent tools", ok, f"got {len(names)}: {names}")
 
 
 async def s3_weighted_cost(session) -> None:
