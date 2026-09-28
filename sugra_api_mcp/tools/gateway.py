@@ -15,7 +15,7 @@ from ..catalog.loader import load_catalog
 from ..catalog.response import shape_response
 from ..catalog.search import known_sources, known_toolsets, query_limit_error, search_catalog
 from ..catalog.toolsets import ordered_toolsets
-from ..client import _cap_envelope, _enforce_size_limit
+from ..client import _enforce_size_limit
 from ..errors import is_error_payload, server_busy_error
 from ..observability import trace_mcp_tool
 from ..server import current_caller, get_client, mcp, read_only
@@ -373,7 +373,7 @@ async def call_endpoint(
         try:
             endpoint = catalog.get(operation_id)
         except KeyError:
-            return _cap_envelope({"error": "unknown_operation_id", "operation_id": operation_id})
+            return {"error": "unknown_operation_id", "operation_id": operation_id}
 
         clean_params = {key: value for key, value in (params or {}).items() if value is not None}
         missing = _missing_required(endpoint, clean_params, body)
@@ -392,10 +392,10 @@ async def call_endpoint(
                     "also supply every parameter of "
                     + ("EXACTLY one group" if endpoint.groups_mutually_exclusive
                        else "at least one group"))
-            return _cap_envelope(payload)
+            return payload
         violation = _group_violation(endpoint, clean_params)
         if violation:
-            return _cap_envelope({
+            return {
                 "error": "missing_required_parameter_groups",
                 "operation_id": operation_id,
                 "groups": [list(group) for group in endpoint.required_groups],
@@ -404,7 +404,7 @@ async def call_endpoint(
                          else "supply every parameter of at least one group"
                          + (" (groups are mutually exclusive)"
                             if endpoint.groups_mutually_exclusive else "")),
-            })
+            }
 
         path_param_names = {
             parameter.name for parameter in endpoint.parameters if parameter.location == "path"
@@ -417,11 +417,11 @@ async def call_endpoint(
             {key: value for key, value in clean_params.items() if key in path_param_names},
         )
         if "{" in path:
-            return _cap_envelope({
+            return {
                 "error": "unresolved_path_parameters",
                 "operation_id": operation_id,
                 "path": path,
-            })
+            }
 
         query_params = {
             key: value
@@ -437,50 +437,39 @@ async def call_endpoint(
                 endpoint.method, path, params=query_params, json=body, enforce_size=False
             )
         else:
-            return _cap_envelope({
+            return {
                 "error": "unsupported_method",
                 "operation_id": operation_id,
                 "method": endpoint.method,
-            })
+            }
 
+        # The client above measured nothing (enforce_size=False): here is
+        # where the raw body is measured, AFTER any fields/limit projection
+        # this call applies, never before it - a request that projects a
+        # large envelope down to a small field must not be rejected for the
+        # size of the body it never returns. Applied on every return path,
+        # including the structured-error one below, for parity with the
+        # client's own unconditional enforcement on every other caller.
         if is_error_payload(payload):
             # Structured error contract from SugraClient (transport failure
-            # or HTTP 4xx/5xx). Shaping it would decorate it with misleading
-            # meta while the agent needs the raw {error, reason, elapsed_ms},
-            # so it is returned otherwise untouched - but still bounded: both
-            # calls above pass enforce_size=False so call_endpoint alone
-            # measures after its own fields/limit projection, and an error
-            # envelope is never projected, so nothing else ever measures it.
-            # Without this, a 200 answer recognized as an error (no `data`
-            # key) with an oversized error or detail string went out whole.
-            # _enforce_size_limit is a no-op below the cap, so a normal-sized
-            # error dict comes back byte-identical. The "no data key" guard
-            # mirrors entities._is_error: a success envelope always carries
-            # data, so a hypothetical 200 partial payload with both keys
-            # still gets shaped normally.
+            # or HTTP 4xx/5xx). Return it untouched apart from the same size
+            # cap: shaping an error dict would only decorate it with
+            # misleading meta while the agent needs the raw {error, reason,
+            # elapsed_ms}. The "no data key" guard mirrors entities._is_error:
+            # a success envelope always carries data, so a hypothetical 200
+            # partial payload with both keys still gets shaped normally.
             return _enforce_size_limit(payload, path)
 
         shaped = shape_response(payload, limit=limit, fields=fields, include_raw=include_raw)
-        # Size is enforced HERE, after fields/limit projection, not on the
-        # raw upstream payload the client returned above: a
-        # weather forecast's raw hourly+daily body can be well over the cap
-        # while `fields=["daily"]` alone fits easily, and measuring before
-        # projection rejected it outright even though the projected shape
-        # never came close to the limit.
         return _enforce_size_limit(shaped, path)
     except Exception as exc:
-        # The 300-char cut on `reason` already bounds this specific field
-        # (visible right here, in this diff hunk, not somewhere else in the
-        # file); `_cap_envelope` is the same ONE bound every other error
-        # exit in this module goes through, applied here too so this
-        # envelope is never the one exception to the rule.
-        return _cap_envelope({
+        return {
             "error": "tool_execution_failed",
             "operation_id": operation_id,
             "exception_type": type(exc).__name__,
             "reason": str(exc)[:300].strip() or type(exc).__name__,
             "elapsed_ms": int((time.perf_counter() - start) * 1000),
-        })
+        }
 
 
 def toolsets_payload() -> dict[str, Any]:
@@ -718,12 +707,12 @@ async def fetch_data(
             include_raw=include_raw,
         )
     except Exception as exc:
-        return _cap_envelope({
+        return {
             "error": "tool_execution_failed",
             "exception_type": type(exc).__name__,
             "reason": str(exc)[:300].strip() or type(exc).__name__,
             "elapsed_ms": int((time.perf_counter() - start) * 1000),
-        })
+        }
 
 
 def sources_payload() -> dict[str, Any]:

@@ -1,16 +1,13 @@
 """Async HTTP client for the Sugra API, with size-limit enforcement on by
 default.
 
-Carries `MAX_RESPONSE_CHARS` and the `_enforce_size_limit` helper. Every
-call enforces it on the raw upstream body by default - this is the backstop
-every caller gets for free, including the ones that never shape their own
-response (the agent-plane tools, the entity lookup/screen tools). A caller
-that DOES shape its own response after the fact (gateway.call_endpoint,
-which applies a `fields` / `limit` projection) passes `enforce_size=False`
-and calls `_enforce_size_limit` itself once the projection has run: enforcing
-on the raw body there rejected a request that would have fit easily once
-projected (a weather forecast narrowed to `fields=["daily"]` still measured,
-and rejected, its full unprojected hourly+daily body).
+Every call enforces `MAX_RESPONSE_CHARS` on the raw upstream body by
+default - the backstop every caller gets for free, including the ones
+that never shape their own response afterward. A caller that DOES shape
+its own response after the fact (gateway.call_endpoint, which applies a
+`fields` / `limit` projection) passes `enforce_size=False` and runs
+`_enforce_size_limit` itself once the projection has run, so the raw,
+unprojected body is never what gets measured for it.
 
 Error contract: this client NEVER raises httpx exceptions to callers.
 Transport failures (timeout, refused connection, mid-stream disconnect)
@@ -127,252 +124,42 @@ def _retry_after(response: httpx.Response) -> int | str | None:
     return raw
 
 
-_TRUNCATED_REASON = "gateway_response_size_cap"  # names OUR cap, never the directory's token ceiling
-
-# A field that rides on every error and size-error envelope regardless of the
-# main payload's own cap - the upstream `error` text, the gateway's `url` -
-# gets its OWN small ceiling. These envelopes carry no list to cut, so the
-# only way to keep them bounded is to bound the offending field itself.
-_MAX_ERROR_FIELD_CHARS = 2_000
-
-
-def _capped(value: Any, limit: int = _MAX_ERROR_FIELD_CHARS) -> Any:
-    """`value` unchanged when it is already small, its str() form cut to
-    `limit` chars otherwise.
-
-    A value that fits keeps its original type - a short int or dict `error`
-    field is not stringified just because it passed through here. Only an
-    oversized value pays the cost of becoming (a cut) text, which is the
-    only shape that can be bounded at all.
-    """
-    if isinstance(value, str):
-        return value if len(value) <= limit else value[:limit]
-    text = str(value)
-    return value if len(text) <= limit else text[:limit]
-
-
-def _cap_envelope(envelope: dict[str, Any]) -> dict[str, Any]:
-    """The ONE bound every error envelope goes through, applied to EVERY
-    top-level field at once, rather than a per-field `_capped` call chosen
-    by hand at each call site - a `request_id` echoed from a response
-    header is exactly as capable of being oversized as an `error` or a
-    `url`, and a bound picked field by field is a bound some future field
-    is added without.
-    """
-    return {key: _capped(value) for key, value in envelope.items()}
-
-
-def _largest_fitting(fits: Any, count: int) -> int:
-    """Binary-search the largest `kept` in [0, count] for which `fits(kept)`
-    holds. Requires `fits(0)` to already hold, and `fits` to be monotonic:
-    once it fails for some `kept` it fails for every larger `kept` too -
-    true here because every candidate below is the same fixed envelope plus
-    a strict prefix of one list, so growing `kept` can only add characters,
-    never remove any.
-    """
-    low, high = 0, count
-    while low < high:
-        mid = (low + high + 1) // 2
-        if fits(mid):
-            low = mid
-        else:
-            high = mid - 1
-    return low
-
-
-def _cut_top_level_list(payload: dict[str, Any]) -> dict[str, Any] | None:
-    """`data` is itself the oversized list - the common envelope shape.
-
-    Binary-searches the largest `kept` count whose COMPLETE candidate
-    (`meta.truncated` marker included) fits: serialized size is monotonic
-    in `kept`, so the exact answer costs O(log n) full serializations.
-    Returns None when even an EMPTY list still does not fit (the fixed
-    envelope plus the marker are themselves too large), so the caller falls
-    back to the structured size error instead of shipping a payload that is
-    still over MAX_RESPONSE_CHARS.
-    """
-    data_list = payload["data"]
-
-    def candidate(kept: int) -> dict[str, Any]:
-        trimmed = {**payload, "data": data_list[:kept]}
-        meta = dict(trimmed.get("meta") or {})
-        meta["truncated"] = {
-            "reason": _TRUNCATED_REASON,
-            "original_count": len(data_list),
-            "kept_count": kept,
-            "retry_hint": "Add filters (country, date range, limit) to reduce response size.",
-        }
-        trimmed["meta"] = meta
-        return trimmed
-
-    def fits(kept: int) -> bool:
-        return len(json.dumps(candidate(kept))) <= MAX_RESPONSE_CHARS
-
-    if not fits(0):
-        return None
-    return candidate(_largest_fitting(fits, len(data_list)))
-
-
-def _cut_single_nested_list(payload: dict[str, Any], data: dict[str, Any]) -> dict[str, Any] | None:
-    """Cut exactly ONE list nested one level inside `data` (a weather
-    forecast's `hourly`, for example) to fit the whole payload: the single
-    largest list, picked once, by binary search against the exact
-    serialized size of the complete candidate. Returns None when `data`
-    carries no list to shrink, OR when the chosen list was shrunk to
-    nothing and the payload STILL does not fit.
-
-    A version that shrank several lists a little each - greedily, one key
-    at a time - can keep FEWER total records than shrinking the single
-    biggest list as far as it goes, costs one full re-serialization per key
-    per step on top of that, and is itself O(k^2) in the number of sibling
-    lists. Cutting one list, chosen once, needs one binary search and
-    shallow copies only.
-
-    The "largest" pick is by `len(str(...))`, NOT a real `json.dumps` per
-    candidate key: picking among many sibling lists must not itself cost
-    one full serialization per sibling, only an approximate ordering good
-    enough to choose which one to cut - the FIT check below is what has to
-    be exact, and it always is.
-
-    Every sibling list, and every other key, stays completely untouched;
-    the untouched lists are named in the retry hint, so a caller that only
-    ever wanted one of them (e.g. `fields=["daily"]` on a forecast whose
-    `hourly` block does not fit) learns the one request that would have
-    avoided the cut entirely.
-    """
-    list_keys = [key for key, value in data.items() if isinstance(value, list) and value]
-    if not list_keys:
-        return None
-    target = max(list_keys, key=lambda key: len(str(data[key])))
-    items = data[target]
-    untouched = sorted(key for key in list_keys if key != target)
-
-    def build(kept: int) -> dict[str, Any]:
-        trimmed_data = dict(data)
-        trimmed_data[target] = items[:kept]
-        trimmed = {**payload, "data": trimmed_data}
-        meta = dict(trimmed.get("meta") or {})
-        if kept < len(items):
-            hint = (
-                "Add filters (fewer days, a shorter date range, or narrower "
-                "fields) to reduce response size."
-            )
-            if untouched:
-                named = untouched[:10]
-                more = len(untouched) - len(named)
-                suffix = f" (and {more} more)" if more else ""
-                hint = (
-                    f"Request fields={named!r}{suffix} to get the untouched "
-                    f"block(s) without the {target} cut."
-                )
-            meta["truncated"] = {
-                "reason": _TRUNCATED_REASON,
-                "fields": {target: {"original_count": len(items), "kept_count": kept}},
-                "retry_hint": hint,
-            }
-        trimmed["meta"] = meta
-        return trimmed
-
-    def fits(kept: int) -> bool:
-        return len(json.dumps(build(kept))) <= MAX_RESPONSE_CHARS
-
-    if not fits(0):
-        return None
-    return build(_largest_fitting(fits, len(items)))
-
-
-def _size_error(
-    payload_str: str,
-    url: str | None,
-    *,
-    exhausted: bool = False,
-    list_fields: list[str] | None = None,
-) -> dict[str, Any]:
-    """Nothing more can be cut - the structured fallback.
-
-    `exhausted` tells the two causes apart: no list field existed anywhere
-    to shrink, or the one list field that WAS shrunk to nothing still
-    leaves the surrounding fixed data over the cap on its own. Reporting
-    the wrong one misdirects a retry - a caller told "no list field was
-    found" would keep hunting for one that was never there to find, having
-    exhausted the real one already. When `exhausted` names a dict `data`,
-    `list_fields` carries the list field names that WERE present (at most
-    10), so a caller who lost the cut list can still ask by name for
-    whichever OTHER block it actually needed.
-
-    States the gateway's OWN char cap and its token estimate together with
-    the directory ceiling it is kept under, rather than naming only the
-    25 000-token directory ceiling: a response can trip this gate (over
-    MAX_RESPONSE_CHARS chars) while still estimating under 25 000 tokens,
-    and a message that names only the directory number then reads as
-    self-contradictory - a real-world estimate near 21 659 tokens was once
-    rejected against a stated "25000 token limit".
-
-    Every field here goes through `_cap_envelope` before it ships: `url`
-    rides in unbounded from every caller of `_enforce_size_limit`, and this
-    whole function exists to keep the envelope itself under the cap.
-    """
-    tokens = len(payload_str) // 4
-    if exhausted and list_fields:
-        cause = (
-            "the list field was shrunk to nothing and the payload is still over the cap "
-            f"(list fields present: {', '.join(list_fields)}) - retry with a fields "
-            "projection naming only the block you need"
-        )
-    elif exhausted:
-        cause = "the list field was shrunk to nothing and the payload is still over the cap"
-    else:
-        cause = "no list field was found to shrink"
-    result = {
-        "error": "response_too_large",
-        "message": (
-            f"Response is {len(payload_str)} chars (approx {tokens} tokens), over this "
-            f"gateway's {MAX_RESPONSE_CHARS}-char cap (approx {MAX_RESPONSE_CHARS // 4} tokens, "
-            f"kept under the MCP directory's 25000-token ceiling) and could not be cut - {cause}. "
-            "Retry with narrower filters or a smaller request."
-        ),
-        "estimated_tokens": tokens,
-        "url": url,
-    }
-    return _cap_envelope(result)
-
-
-def _enforce_size_limit(payload: Any, url: str | None = None) -> Any:
-    """Trim or cut a payload to fit inside MAX_RESPONSE_CHARS.
-
-    Call this AFTER any caller-side `fields` / `limit` projection: measuring
-    the raw, unprojected payload rejected a `fields=["daily"]` weather
-    forecast that fit trivially once projected, because the size check ran
-    before the projection instead of after it. A payload with a list to
-    shrink is CUT with an explicit `meta.truncated` marker the model can
-    read - never rejected wholesale while a workable projection was
-    available, and never passed through whole over the cap. The one cutter
-    below guarantees the payload it returns actually fits: it measures the
-    complete candidate, marker included, and falls back to the structured
-    error itself when even an empty list does not fit either.
-    """
+def _enforce_size_limit(payload: Any, url: str) -> Any:
+    """Trim payload to fit MCP token limits. Returns possibly-modified dict."""
     payload_str = json.dumps(payload)
     if len(payload_str) <= MAX_RESPONSE_CHARS:
         return payload
 
-    if isinstance(payload, dict) and isinstance(payload.get("data"), list) and payload["data"]:
-        cut = _cut_top_level_list(payload)
-        if cut is not None:
-            return cut
-        return _size_error(payload_str, url, exhausted=True)
+    # Try to truncate a list inside `data` field (common envelope shape)
+    if isinstance(payload, dict) and isinstance(payload.get("data"), list):
+        data_list = payload["data"]
+        if data_list:
+            empty_shell = {**payload, "data": []}
+            shell_size = len(json.dumps(empty_shell))
+            budget = MAX_RESPONSE_CHARS - shell_size - 500  # room for notice
+            avg_item = max(1, (len(payload_str) - shell_size) // len(data_list))
+            kept = max(1, min(len(data_list), budget // avg_item))
+            truncated = {**payload, "data": data_list[:kept]}
+            meta = dict(truncated.get("meta") or {})
+            meta["truncated"] = {
+                "reason": "exceeds_mcp_25k_token_limit",
+                "original_count": len(data_list),
+                "kept_count": kept,
+                "retry_hint": "Add filters (country, date range, limit) to reduce response size.",
+            }
+            truncated["meta"] = meta
+            return truncated
 
-    if isinstance(payload, dict) and isinstance(payload.get("data"), dict):
-        data = payload["data"]
-        list_keys = sorted(key for key, value in data.items() if isinstance(value, list) and value)
-        cut = _cut_single_nested_list(payload, data)
-        if cut is not None:
-            return cut
-        return _size_error(
-            payload_str, url, exhausted=bool(list_keys), list_fields=list_keys[:10] or None
-        )
-
-    # Unknown shape - nothing to shrink - return a structured error the agent can act on
-    return _size_error(payload_str, url)
+    # Unknown shape - return a structured error the agent can act on
+    return {
+        "error": "response_too_large",
+        "message": (
+            f"Response exceeds MCP 25000 token limit (approx {len(payload_str) // 4} tokens). "
+            "Retry with narrower filters."
+        ),
+        "estimated_tokens": len(payload_str) // 4,
+        "url": url,
+    }
 
 
 class SugraClient:
@@ -524,9 +311,8 @@ class SugraClient:
         # status and no url, which telemetry could only file as unknown.
         if response.status_code >= 300:
             error = payload.get("error") if isinstance(payload, dict) else str(payload)
-            error = error if error else f"HTTP {response.status_code}"
             result: dict[str, Any] = {
-                "error": error,
+                "error": error or f"HTTP {response.status_code}",
                 "status_code": response.status_code,
                 "url": str(response.request.url),
                 "elapsed_ms": elapsed_ms,
@@ -540,20 +326,13 @@ class SugraClient:
             request_id = response.headers.get("X-Request-ID")
             if request_id:
                 result["request_id"] = str(request_id)
-            # Bounded HERE, on the whole envelope at once: this branch
-            # returns before _enforce_size_limit ever runs, so an oversized
-            # upstream `error`, a pathological `url`, or a request id echoed
-            # from a response header is each, on its own, the one way this
-            # envelope could still ship over the cap. A normal-size value
-            # keeps its own type unchanged.
-            return _cap_envelope(result)
-        # Enforced HERE by default - the backstop every caller gets for
-        # free, including the ones that never shape their own response
-        # (agent-plane tools, entity lookup/screen tools). A caller that
-        # DOES shape its own response after the fact (gateway.call_endpoint)
-        # passes enforce_size=False and calls _enforce_size_limit itself
-        # once its own `fields` / `limit` projection has run, so that the
-        # raw, unprojected body is never what gets measured for it.
+            return result
+        # Enforced HERE by default - the backstop every caller gets for free.
+        # A caller that shapes its own response after the fact
+        # (gateway.call_endpoint) passes enforce_size=False and calls
+        # _enforce_size_limit itself once its own `fields` / `limit`
+        # projection has run, so the raw, unprojected body is never what
+        # gets measured for it.
         if not enforce_size:
             return payload
         return _enforce_size_limit(payload, str(response.request.url))

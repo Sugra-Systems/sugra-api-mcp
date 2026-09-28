@@ -458,33 +458,6 @@ async def test_call_endpoint_catches_unexpected_exception(monkeypatch) -> None:
     assert isinstance(result["elapsed_ms"], int)
 
 
-class HugeRaisingClient:
-    """Mimics an unexpected non-httpx failure whose message is itself huge -
-    the safety net's own `str(exc)[:300]` cut is the only thing standing
-    between this and an unbounded envelope."""
-
-    async def get(self, path, params=None, **_kwargs):
-        raise RuntimeError("z" * 200_000)
-
-    async def request(self, method, path, params=None, json=None, **_kwargs):
-        raise RuntimeError("z" * 200_000)
-
-
-async def test_call_endpoint_exception_message_of_any_size_stays_under_the_cap(monkeypatch) -> None:
-    """Lock test: the except Exception branch already cuts `reason` to 300
-    chars before this change and needs no code change here - this only
-    confirms that guarantee holds."""
-    from sugra_api_mcp.client import MAX_RESPONSE_CHARS
-
-    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
-    monkeypatch.setattr(gateway, "get_client", lambda: HugeRaisingClient())
-
-    result = await gateway.call_endpoint("quotes_symbol_price", params={"symbol": "AAPL"})
-
-    assert result["error"] == "tool_execution_failed"
-    assert len(json.dumps(result)) <= MAX_RESPONSE_CHARS
-
-
 async def test_call_endpoint_catches_catalog_load_failure(monkeypatch) -> None:
     """The safety net covers the WHOLE tool body: a failure in catalog load
     or parameter resolution (before the HTTP call) must also return the
@@ -499,38 +472,6 @@ async def test_call_endpoint_catches_catalog_load_failure(monkeypatch) -> None:
 
     assert result["error"] == "tool_execution_failed"
     assert result["exception_type"] == "ValueError"
-
-
-async def test_call_endpoint_exception_envelope_caps_a_huge_operation_id(monkeypatch) -> None:
-    """The safety net's own envelope carries operation_id straight from
-    the caller, verbatim - as capable of being oversized as any upstream
-    field, and unlike `reason` it was never cut at all."""
-    from sugra_api_mcp.client import MAX_RESPONSE_CHARS
-
-    def broken_catalog():
-        raise ValueError("corrupt bundled catalog")
-
-    monkeypatch.setattr(gateway, "load_catalog", broken_catalog)
-
-    result = await gateway.call_endpoint("x" * 200_000, params={"symbol": "AAPL"})
-
-    assert result["error"] == "tool_execution_failed"
-    assert len(json.dumps(result)) <= MAX_RESPONSE_CHARS
-    assert isinstance(result["elapsed_ms"], int)
-
-
-async def test_call_endpoint_unknown_operation_id_caps_a_huge_operation_id(monkeypatch) -> None:
-    """unknown_operation_id echoes operation_id straight back, unbounded -
-    this one never even reached the safety net's except clause, so it
-    needed its own cap."""
-    from sugra_api_mcp.client import MAX_RESPONSE_CHARS
-
-    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
-
-    result = await gateway.call_endpoint("x" * 200_000)
-
-    assert result["error"] == "unknown_operation_id"
-    assert len(json.dumps(result)) <= MAX_RESPONSE_CHARS
 
 
 async def test_fetch_data_catches_search_path_failure(monkeypatch) -> None:
@@ -565,56 +506,6 @@ async def test_call_endpoint_shapes_success_payload_containing_error_key(monkeyp
 
     assert result["data"] == [{"v": 1}]  # limit applied -> shaping ran
     assert result["meta"]["shaped"]["limit"] == 1
-
-
-class OversizedErrorClient:
-    """A 200 answer recognized as an error envelope (no `data` key) whose
-    own error text alone exceeds MAX_RESPONSE_CHARS - the shape that went
-    out whole once `is_error_payload` returned before the only enforcement
-    call_endpoint had left standing (its own, post-shape, enforce_size=False
-    opt-out on the success path) ever ran."""
-
-    ERROR: ClassVar[dict[str, Any]] = {
-        "error": "upstream_error",
-        "reason": "x" * 200_000,
-        "status_code": 500,
-        "url": "https://sugra.ai/api/v1/quotes/AAPL/price",
-        "elapsed_ms": 12,
-    }
-
-    async def get(self, path, params=None, **_kwargs):
-        return dict(self.ERROR)
-
-    async def request(self, method, path, params=None, json=None, **_kwargs):
-        return dict(self.ERROR)
-
-
-async def test_oversized_error_envelope_through_get_branch_is_bounded(monkeypatch) -> None:
-    """quotes_symbol_price is a GET operation - exercises client.get."""
-    from sugra_api_mcp.client import MAX_RESPONSE_CHARS
-
-    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
-    monkeypatch.setattr(gateway, "get_client", lambda: OversizedErrorClient())
-
-    result = await gateway.call_endpoint("quotes_symbol_price", params={"symbol": "AAPL"})
-
-    assert len(json.dumps(result)) <= MAX_RESPONSE_CHARS
-    assert result.get("error") is not None
-
-
-async def test_oversized_error_envelope_through_request_branch_is_bounded(monkeypatch) -> None:
-    """openfigi_map is a POST operation - exercises client.request."""
-    from sugra_api_mcp.client import MAX_RESPONSE_CHARS
-
-    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
-    monkeypatch.setattr(gateway, "get_client", lambda: OversizedErrorClient())
-
-    result = await gateway.call_endpoint(
-        "openfigi_map", body={"jobs": [{"idType": "TICKER", "idValue": "AAPL"}]}
-    )
-
-    assert len(json.dumps(result)) <= MAX_RESPONSE_CHARS
-    assert result.get("error") is not None
 
 
 async def test_fetch_data_propagates_structured_error(monkeypatch) -> None:

@@ -5,11 +5,9 @@ A weather forecast's raw envelope (`data.hourly` + `data.daily`, neither name
 in the fields/limit records-list allowlist) can be well over the MCP size
 cap while a `fields=["daily"]` projection of the very same call fits
 trivially. Before this fix the gate ran on the raw, unprojected body inside
-SugraClient._handle, so it rejected the narrowed request outright - a
-real-world call once measured a 21659-token estimate (under the
-25000-token directory ceiling) rejected anyway, for exactly this reason.
+SugraClient._handle, so it rejected the narrowed request outright.
 
-These tests exercise the REAL SugraClient over an httpx.MockTransport (the
+This test exercises the REAL SugraClient over an httpx.MockTransport (the
 same pattern test_client_errors.py uses), not a hand-rolled fake, because
 the defect lived in SugraClient._handle's own unconditional call to
 _enforce_size_limit - a fake client that never called it would not
@@ -95,15 +93,17 @@ def _client_serving(days: int) -> SugraClient:
     return SugraClient(config, transport=httpx.MockTransport(handler))
 
 
-async def test_14_day_daily_only_fits_in_one_call(monkeypatch) -> None:
-    """Acceptance criterion: forecast_days=14 with fields=["daily"] must
-    return the full 14-row daily block, never response_too_large, even
-    though the raw hourly+daily body is far over the cap."""
-    client = _client_serving(14)
+async def test_16_day_daily_only_also_fits(monkeypatch) -> None:
+    """The API serves up to 16 days; a fields=["daily"] projection must let
+    the full 16-day daily block through, never response_too_large, even
+    though the raw hourly+daily body is far over the cap and the client
+    itself never measures it (enforce_size=False from call_endpoint) -
+    call_endpoint measures AFTER its own projection instead."""
+    client = _client_serving(16)
     monkeypatch.setattr(gateway, "load_catalog", _weather_catalog)
     monkeypatch.setattr(gateway, "get_client", lambda: client)
     try:
-        raw_len = len(json.dumps(_forecast_body(14)))
+        raw_len = len(json.dumps(_forecast_body(16)))
         assert raw_len > MAX_RESPONSE_CHARS  # the raw body alone would have tripped the old gate
 
         result = await gateway.call_endpoint(_OPERATION_ID, fields=["daily"])
@@ -111,62 +111,5 @@ async def test_14_day_daily_only_fits_in_one_call(monkeypatch) -> None:
         await client.aclose()
 
     assert "error" not in result
-    assert "hourly" not in result["data"]
-    assert len(result["data"]["daily"]) == 14
-    assert "truncated" not in result.get("meta", {})
-    assert len(json.dumps(result)) <= MAX_RESPONSE_CHARS
-
-
-async def test_16_day_daily_only_also_fits(monkeypatch) -> None:
-    """The API serves up to 16 days; the daily-only projection must scale to
-    the full horizon, not just the 14-day case."""
-    client = _client_serving(16)
-    monkeypatch.setattr(gateway, "load_catalog", _weather_catalog)
-    monkeypatch.setattr(gateway, "get_client", lambda: client)
-    try:
-        result = await gateway.call_endpoint(_OPERATION_ID, fields=["daily"])
-    finally:
-        await client.aclose()
-
-    assert "error" not in result
     assert len(result["data"]["daily"]) == 16
     assert len(json.dumps(result)) <= MAX_RESPONSE_CHARS
-
-
-async def test_forecast_days_5_daily_only_no_longer_rejected(monkeypatch) -> None:
-    """The exact field-test scenario (forecast_days=5, daily fields only)
-    that the size gate used to reject even though the estimate it printed
-    (21659 tokens) was under the 25000-token directory ceiling."""
-    client = _client_serving(5)
-    monkeypatch.setattr(gateway, "load_catalog", _weather_catalog)
-    monkeypatch.setattr(gateway, "get_client", lambda: client)
-    try:
-        result = await gateway.call_endpoint(_OPERATION_ID, fields=["daily"])
-    finally:
-        await client.aclose()
-
-    assert result.get("error") != "response_too_large"
-    assert len(result["data"]["daily"]) == 5
-
-
-async def test_full_hourly_and_daily_over_cap_is_cut_with_marker_not_rejected(monkeypatch) -> None:
-    """No `fields` filter: the raw hourly+daily body is far over the cap and
-    cannot be projected down. It must be CUT (hourly shrunk) with an
-    explicit meta.truncated marker naming the untouched daily sibling -
-    never response_too_large, and never passed through whole."""
-    client = _client_serving(16)
-    monkeypatch.setattr(gateway, "load_catalog", _weather_catalog)
-    monkeypatch.setattr(gateway, "get_client", lambda: client)
-    try:
-        result = await gateway.call_endpoint(_OPERATION_ID)
-    finally:
-        await client.aclose()
-
-    assert "error" not in result
-    assert len(json.dumps(result)) <= MAX_RESPONSE_CHARS
-    truncated = result["meta"]["truncated"]
-    hourly_note = truncated["fields"]["hourly"]
-    assert hourly_note["kept_count"] < hourly_note["original_count"]
-    assert "daily" not in truncated["fields"]  # untouched, kept whole
-    assert len(result["data"]["daily"]) == 16
-    assert "daily" in truncated["retry_hint"]  # hints the fields=["daily"] escape

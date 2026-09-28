@@ -231,60 +231,6 @@ async def test_retry_after_http_date_header_passes_through_raw() -> None:
     assert result["retry_after"] == http_date
 
 
-# ---- an oversized error/url field is capped, not shipped whole ----
-
-
-async def test_http_5xx_with_a_huge_error_field_is_capped_not_shipped_whole() -> None:
-    """The non-2xx branch returned before any size bound, so a huge
-    upstream `error` field passed through whole to every default caller -
-    the same unbounded-envelope problem the size gate exists to prevent,
-    reached through a different field."""
-    import json
-
-    from sugra_api_mcp.client import _MAX_ERROR_FIELD_CHARS, MAX_RESPONSE_CHARS
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(500, json={"error": "y" * 200_000}, request=request)
-
-    client = _client(handler)
-    try:
-        result = await client.get("/api/v1/quotes/AAPL/price")
-    finally:
-        await client.aclose()
-
-    assert len(json.dumps(result)) <= MAX_RESPONSE_CHARS
-    assert result["status_code"] == 500
-    assert len(result["error"]) <= _MAX_ERROR_FIELD_CHARS
-
-
-async def test_handle_caps_every_variable_field_including_a_huge_request_id() -> None:
-    """S1: request_id rides into this envelope straight from a response
-    header, exactly as unbounded as error or url - h11 rejects a header
-    block over 16 KiB on the wire, so this specific field is unreachable
-    through a real transport, but the guarantee has to hold by
-    construction, not by luck of the transport's own limit. Constructs
-    the httpx.Response directly rather than routing through
-    MockTransport, since _handle is a staticmethod that never needs one."""
-    import json
-
-    from sugra_api_mcp.client import MAX_RESPONSE_CHARS
-
-    request = httpx.Request("GET", "https://api.test/api/v1/quotes/AAPL/price")
-    response = httpx.Response(
-        500,
-        json={"error": "y" * 200_000},
-        request=request,
-        headers={"X-Request-ID": "z" * 200_000},
-    )
-
-    result = SugraClient._handle(response, elapsed_ms=12, enforce_size=True)
-
-    assert len(json.dumps(result)) <= MAX_RESPONSE_CHARS
-    assert result["status_code"] == 500
-    assert isinstance(result["elapsed_ms"], int)
-    assert result["elapsed_ms"] == 12
-
-
 # ---- success path stays pristine ----
 
 
