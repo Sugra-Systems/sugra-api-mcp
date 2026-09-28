@@ -15,6 +15,7 @@ from ..catalog.loader import load_catalog
 from ..catalog.response import shape_response
 from ..catalog.search import known_sources, known_toolsets, query_limit_error, search_catalog
 from ..catalog.toolsets import ordered_toolsets
+from ..client import _enforce_size_limit
 from ..errors import is_error_payload, server_busy_error
 from ..observability import trace_mcp_tool
 from ..server import current_caller, get_client, mcp, read_only
@@ -441,16 +442,23 @@ async def call_endpoint(
             }
 
         if is_error_payload(payload):
-            # Structured error contract from SugraClient (transport failure,
-            # HTTP 4xx/5xx, or size-limit refusal). Return it untouched:
-            # shaping an error dict would only decorate it with misleading
-            # meta while the agent needs the raw {error, reason, elapsed_ms}.
-            # The "no data key" guard mirrors entities._is_error: a success
-            # envelope always carries data, so a hypothetical 200 partial
-            # payload with both keys still gets shaped normally.
+            # Structured error contract from SugraClient (transport failure
+            # or HTTP 4xx/5xx). Return it untouched: shaping an error dict
+            # would only decorate it with misleading meta while the agent
+            # needs the raw {error, reason, elapsed_ms}. The "no data key"
+            # guard mirrors entities._is_error: a success envelope always
+            # carries data, so a hypothetical 200 partial payload with both
+            # keys still gets shaped normally.
             return payload
 
-        return shape_response(payload, limit=limit, fields=fields, include_raw=include_raw)
+        shaped = shape_response(payload, limit=limit, fields=fields, include_raw=include_raw)
+        # Size is enforced HERE, after fields/limit projection, not on the
+        # raw upstream payload the client returned above: a
+        # weather forecast's raw hourly+daily body can be well over the cap
+        # while `fields=["daily"]` alone fits easily, and measuring before
+        # projection rejected it outright even though the projected shape
+        # never came close to the limit.
+        return _enforce_size_limit(shaped, path)
     except Exception as exc:
         return {
             "error": "tool_execution_failed",

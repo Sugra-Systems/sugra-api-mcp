@@ -175,3 +175,71 @@ def test_size_limit_passthrough_small():
     payload = {"data": {"price": 75000}, "meta": {"source": "coingecko"}}
     result = _enforce_size_limit(payload, "test://url")
     assert result == payload
+
+
+def _forecast_row(i: int, *, daily: bool) -> dict:
+    key = "date" if daily else "time"
+    row = {key: f"2026-09-{28 + i:02d}" if daily else f"2026-09-{28 + i // 24:02d}T{i % 24:02d}:00"}
+    for name in ("temperature_2m", "apparent_temperature", "relative_humidity_2m",
+                 "precipitation", "wind_speed_10m", "wind_direction_10m", "uv_index",
+                 "cloud_cover", "visibility", "pressure_msl"):
+        row[name] = round(10.0 + i * 0.37, 2)
+    row["condition"] = "Partly cloudy"
+    return row
+
+
+def _forecast_payload(days: int) -> dict:
+    """A recorded-shape (not live) v2 weather forecast envelope: `data.hourly`
+    and `data.daily` are RECORD LISTS, neither name in the fields/limit
+    records-list allowlist - the shape this fix targets."""
+    return {
+        "data": {
+            "latitude": 35.68,
+            "longitude": 139.69,
+            "timezone": "Asia/Tokyo",
+            "hourly": [_forecast_row(i, daily=False) for i in range(days * 24)],
+            "daily": [_forecast_row(i, daily=True) for i in range(days)],
+        },
+        "meta": {"source": "openmeteo", "cached": False},
+    }
+
+
+def test_size_limit_cuts_nested_record_list_with_marker_naming_the_untouched_sibling():
+    """A dict `data` with a giant `hourly` list and a small, untouched
+    `daily` list must be CUT (hourly shrunk, marker attached) rather than
+    rejected wholesale, and the marker must point at the sibling that a
+    narrower request would have kept whole."""
+    import json
+
+    from sugra_api_mcp.client import MAX_RESPONSE_CHARS, _enforce_size_limit
+
+    payload = _forecast_payload(16)
+    assert len(json.dumps(payload)) > MAX_RESPONSE_CHARS
+
+    result = _enforce_size_limit(payload)
+
+    assert "error" not in result
+    assert len(json.dumps(result)) <= MAX_RESPONSE_CHARS
+    truncated = result["meta"]["truncated"]
+    assert truncated["fields"]["hourly"]["kept_count"] < truncated["fields"]["hourly"]["original_count"]
+    assert "daily" not in truncated["fields"]
+    assert len(result["data"]["daily"]) == 16  # untouched, whole
+    assert "daily" in truncated["retry_hint"]
+
+
+def test_size_limit_error_message_agrees_with_the_char_gate_it_enforces():
+    """The old message named only the 25000-token directory ceiling, so a
+    response that tripped the actual (char-based) gate while estimating
+    under 25000 tokens read as self-contradictory: a real-world call once
+    saw a 21659-token estimate rejected against a stated 25000 limit."""
+    from sugra_api_mcp.client import MAX_RESPONSE_CHARS, _enforce_size_limit
+
+    # Just over OUR char cap but still under the 25000-token directory
+    # ceiling in estimated tokens - the exact band the old message
+    # contradicted itself in.
+    payload = {"data": {"blob": "x" * 90_000}, "meta": {}}
+    result = _enforce_size_limit(payload)
+
+    assert str(MAX_RESPONSE_CHARS) in result["message"]
+    assert result["estimated_tokens"] < 25_000  # the actual defect: under the directory
+    assert result["estimated_tokens"] > MAX_RESPONSE_CHARS // 4  # ceiling, over OUR cap
