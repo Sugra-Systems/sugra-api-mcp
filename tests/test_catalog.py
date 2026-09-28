@@ -319,6 +319,161 @@ def _fred_series_envelope() -> dict:
     }
 
 
+def _sibling_series_envelope(second_key: str) -> dict:
+    """A CPI/IPVA-style envelope: three named sub-series, each carrying its
+    own ``observations`` list one level down instead of one list at the
+    top. ``second_key`` picks the second sibling's name so the same builder
+    covers both variants."""
+    return {
+        "data": {
+            "annual_change": {
+                "unit": "percent",
+                "observations": [
+                    {"period": "2026-01", "value": 3.1},
+                    {"period": "2026-02", "value": 3.0},
+                    {"period": "2026-03", "value": 2.9},
+                    {"period": "2026-04", "value": 2.8},
+                ],
+            },
+            second_key: {
+                "unit": "percent",
+                "observations": [
+                    {"period": "2026-01", "value": 0.4},
+                    {"period": "2026-02", "value": 0.2},
+                    {"period": "2026-03", "value": 0.1},
+                    {"period": "2026-04", "value": 0.3},
+                ],
+            },
+            "index": {
+                "unit": "index",
+                "observations": [
+                    {"period": "2026-01", "value": 118.2},
+                    {"period": "2026-02", "value": 118.4},
+                    {"period": "2026-03", "value": 118.5},
+                    {"period": "2026-04", "value": 118.8},
+                ],
+            },
+        },
+        "meta": {"source": "ine"},
+    }
+
+
+def test_response_shaping_bounds_cpi_like_sibling_series() -> None:
+    payload = _sibling_series_envelope("monthly_change")
+
+    shaped = shape_response(payload, limit=2)
+
+    assert shaped["data"]["annual_change"]["observations"] == [
+        {"period": "2026-01", "value": 3.1},
+        {"period": "2026-02", "value": 3.0},
+    ]
+    assert shaped["data"]["monthly_change"]["observations"] == [
+        {"period": "2026-01", "value": 0.4},
+        {"period": "2026-02", "value": 0.2},
+    ]
+    assert shaped["data"]["index"]["observations"] == [
+        {"period": "2026-01", "value": 118.2},
+        {"period": "2026-02", "value": 118.4},
+    ]
+    # Sibling metadata beside the list stays exactly as the API sent it.
+    assert shaped["data"]["annual_change"]["unit"] == "percent"
+    assert shaped["data"]["index"]["unit"] == "index"
+    block = shaped["meta"]["shaped"]
+    assert block["limit_applied"] is True
+    assert block["records_path"] == "data.*.observations"
+
+
+def test_response_shaping_bounds_ipva_like_sibling_series() -> None:
+    payload = _sibling_series_envelope("quarterly_change")
+
+    shaped = shape_response(payload, limit=2)
+
+    assert shaped["data"]["annual_change"]["observations"] == [
+        {"period": "2026-01", "value": 3.1},
+        {"period": "2026-02", "value": 3.0},
+    ]
+    assert shaped["data"]["quarterly_change"]["observations"] == [
+        {"period": "2026-01", "value": 0.4},
+        {"period": "2026-02", "value": 0.2},
+    ]
+    assert shaped["data"]["index"]["observations"] == [
+        {"period": "2026-01", "value": 118.2},
+        {"period": "2026-02", "value": 118.4},
+    ]
+    block = shaped["meta"]["shaped"]
+    assert block["limit_applied"] is True
+    assert block["records_path"] == "data.*.observations"
+
+
+def test_response_shaping_sibling_series_with_a_scalar_sibling_stays_unshaped() -> None:
+    """One sibling is a scalar, not a dict with its own observations list:
+    the shape is not recognised, so today's behaviour holds exactly (no
+    truncation, no records list named)."""
+    payload = {
+        "data": {
+            "annual_change": {"unit": "percent", "observations": [1, 2, 3, 4]},
+            "monthly_change": 0.4,
+        },
+        "meta": {},
+    }
+
+    shaped = shape_response(payload, limit=2)
+
+    assert shaped["data"] == payload["data"]
+    block = shaped["meta"]["shaped"]
+    assert block["limit_applied"] is False
+    assert block["records_path"] is None
+
+
+def test_response_shaping_sibling_series_without_limit_stays_whole() -> None:
+    """No limit requested: every sub-series comes back whole, and no
+    shaping is reported."""
+    payload = _sibling_series_envelope("monthly_change")
+
+    shaped = shape_response(payload)
+
+    assert shaped["data"] == payload["data"]
+    assert "shaped" not in shaped["meta"]
+
+
+def test_response_shaping_sibling_with_a_second_list_stays_unshaped() -> None:
+    """A sibling carrying another list beside ``observations`` is not a
+    plain sub-series: nothing is cut, in that sibling or any other."""
+    payload = {
+        "data": {
+            "annual_change": {"observations": [1, 2, 3, 4], "revisions": [5, 6, 7]},
+            "index": {"observations": [1, 2, 3, 4]},
+        },
+        "meta": {},
+    }
+
+    shaped = shape_response(payload, limit=2)
+
+    assert shaped["data"] == payload["data"]
+    block = shaped["meta"]["shaped"]
+    assert block["limit_applied"] is False
+    assert block["records_path"] is None
+
+
+def test_response_shaping_siblings_with_other_list_names_stay_unshaped() -> None:
+    """Objects that each hold one list under any name other than
+    ``observations`` are left exactly as sent."""
+    payload = {
+        "data": {
+            "north": {"region": "N", "stations": ["a", "b", "c"]},
+            "south": {"region": "S", "stations": ["d", "e", "f"]},
+        },
+        "meta": {},
+    }
+
+    shaped = shape_response(payload, limit=1)
+
+    assert shaped["data"] == payload["data"]
+    block = shaped["meta"]["shaped"]
+    assert block["limit_applied"] is False
+    assert block["records_path"] is None
+
+
 def test_response_shaping_limit_bounds_records_inside_data() -> None:
     """Live 2026-09-12: news_latest with limit=2 returned all 50 items and
     limit_applied false, because the records sit in data.items."""

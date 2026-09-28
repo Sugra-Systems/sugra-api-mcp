@@ -17,6 +17,13 @@ the single record list inside an object ``data`` (news_latest sends
 field names one of an object ``data``'s own keys, that object is projected
 instead, so single-record payloads such as a quote keep their behaviour.
 
+A third shape is sibling sub-series: an object ``data`` whose values are all
+dicts, each holding exactly one list under ``observations`` one level down
+(``data: {annual_change: {..., observations: [...]}, monthly_change: {...},
+index: {...}}``). ``limit`` bounds every sub-series independently instead of
+picking one; a payload that only partly matches (a scalar sibling, a sibling
+without an ``observations`` list) keeps today's behaviour exactly.
+
 Shaping never empties a response: when no requested field matches, the
 target is returned unprojected and every field is reported unmatched.
 
@@ -146,6 +153,60 @@ def _records_key(data: Any) -> str | None:
     return keys[0] if len(keys) == 1 else None
 
 
+def _nested_series_keys(data: Any) -> list[str] | None:
+    """Name the sibling sub-series inside an object ``data`` whose values are
+    all dicts, each holding exactly one list, under ``observations`` one
+    level down (three named sub-series each carrying its own observation
+    list, rather than one list at the top).
+
+    None when ``data`` is empty, carries a non-dict value, or any sub-dict's
+    lists are not exactly a single list named ``observations`` - any of
+    which keeps today's behaviour (no records list found).
+    """
+    if not isinstance(data, dict) or not data:
+        return None
+    keys: list[str] = []
+    for key, value in data.items():
+        if not isinstance(value, dict):
+            return None
+        list_keys = [sub_key for sub_key, sub_value in value.items() if isinstance(sub_value, list)]
+        if list_keys != ["observations"]:
+            return None
+        keys.append(key)
+    return keys
+
+
+def _shape_nested_series(
+    data: dict[str, Any],
+    nested_keys: list[str],
+    *,
+    limit: int | None,
+    fields: list[str] | None,
+    matched: set[str],
+) -> tuple[Any, bool, str | None]:
+    """Bound each sibling sub-series independently.
+
+    Each sub-series list is cut on its own, keeping the same end of the list
+    the single-list path keeps (``_apply_limit``). ``fields`` only matches
+    ``data``'s own keys here, same as any object without a records list, so
+    a field this shape does not understand never empties a sub-series.
+    """
+    shaped = dict(data)
+    limit_applied = False
+    if limit is not None:
+        for key in nested_keys:
+            sub_series = dict(shaped[key])
+            sub_series["observations"] = _apply_limit(sub_series["observations"], limit)
+            shaped[key] = sub_series
+        limit_applied = True
+    records_path = "data.*.observations" if limit_applied else None
+    if fields:
+        projected, own_match = _project_or_keep(shaped, fields, matched)
+        if own_match:
+            shaped = projected
+    return shaped, limit_applied, records_path
+
+
 def _apply_limit(value: Any, limit: int | None) -> Any:
     if limit is None:
         return value
@@ -175,6 +236,11 @@ def _shape_data(
 
     key = _records_key(data)
     if key is None:
+        nested_keys = _nested_series_keys(data)
+        if nested_keys is not None:
+            return _shape_nested_series(
+                data, nested_keys, limit=limit, fields=fields, matched=matched
+            )
         # Scalar data, or an object without a single record list: limit
         # never applies, and fields project the object's own keys or leave
         # it whole.
