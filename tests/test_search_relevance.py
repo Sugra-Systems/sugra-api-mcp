@@ -1064,6 +1064,88 @@ def test_country_param_boost_fires_only_when_query_names_a_country() -> None:
     assert score_with - score_without == COUNTRY_PARAM_BOOST
 
 
+def test_country_param_boost_needs_the_topic_when_the_query_has_one() -> None:
+    """'Portugal weather' asks about weather: a country-scoped endpoint that
+    matches nothing but the country must not earn the boost, or every such
+    endpoint becomes a candidate for every country query. One that matches
+    the topic still does."""
+    from sugra_api_mcp.catalog.models import Endpoint, EndpointParameter
+    from sugra_api_mcp.catalog.search import COUNTRY_PARAM_BOOST, _score
+
+    def endpoint(summary: str, description: str = "") -> Endpoint:
+        return Endpoint(
+            operation_id="generic_country_op", method="GET", path="/x",
+            summary=summary, description=description, toolset="macro",
+            parameters=[EndpointParameter(name="country", location="query", required=True)],
+        )
+
+    kwargs = dict(
+        boost_quotes_symbol=False, boost_markets_toolset=False,
+        boost_symbol_input=False, boost_forex=False, boost_crypto=False,
+        boost_us_macro=False, central_bank_prefixes=[], query_countries={"PT"},
+        country_terms=frozenset({"portugal"}),
+    )
+    off_topic_score, off_topic_why = _score(endpoint("Trade balance"), ["portugal", "weather"], {}, **kwargs)
+    assert "pattern:country->param" not in off_topic_why
+    assert off_topic_score == 0
+
+    on_topic_score, on_topic_why = _score(endpoint("Weather by country"), ["portugal", "weather"], {}, **kwargs)
+    assert "pattern:country->param" in on_topic_why
+    assert on_topic_score == 3 + COUNTRY_PARAM_BOOST
+
+    only_country_score, only_country_why = _score(endpoint("Trade balance"), ["portugal"], {}, **kwargs)
+    assert only_country_why == ["pattern:country->param"]
+    assert only_country_score == COUNTRY_PARAM_BOOST
+
+    # Naming the country is not the topic, whatever field names it.
+    _, names_country_why = _score(endpoint("Portugal trade balance"), ["portugal", "weather"], {}, **kwargs)
+    assert "pattern:country->param" not in names_country_why
+
+    # A topic match in the description alone is still a topic match.
+    described_score, described_why = _score(
+        endpoint("Trade balance", "Includes weather effects"), ["portugal", "weather"], {}, **kwargs)
+    assert "pattern:country->param" in described_why
+    assert described_score == 1 + COUNTRY_PARAM_BOOST
+
+
+@pytest.mark.parametrize("query", [
+    "Portugal weather", "Portugal GDP", "Sweden CPI", "Portuguese wine exports",
+    "United Kingdom unemployment", "PT inflation",
+])
+def test_a_country_plus_topic_query_surfaces_nothing_on_the_country_alone(catalog, query: str) -> None:
+    """Before the topic gate, each of these queries surfaced 80 to 100
+    country-scoped endpoints whose only reason was the country boost. Every
+    boosted result must now carry a reason for a word that is not the country
+    (the reasons before the boost in `why` are never cut by its cap)."""
+    from sugra_api_mcp.catalog.aliases import detect_query_countries
+    from sugra_api_mcp.catalog.search import _country_terms, _tokens
+
+    fields = ("operation_id", "tag_toolset", "summary", "path", "params", "keyword", "description")
+    country_words = _country_terms(query, _tokens(query), detect_query_countries(query))
+    assert country_words
+    results = search_catalog(catalog, query, limit=500)
+    assert results
+    for result in results:
+        if "pattern:country->param" not in result["why"]:
+            continue
+        topic_reasons = []
+        for reason in result["why"][:result["why"].index("pattern:country->param")]:
+            kind, _, term = reason.partition(":")
+            if kind == "alias" or (kind in fields and term not in country_words):
+                topic_reasons.append(reason)
+        assert topic_reasons, f"{query!r}: {result['operation_id']} boosted on the country alone: {result['why']}"
+
+
+def test_country_terms_are_the_whole_name_of_a_named_country() -> None:
+    from sugra_api_mcp.catalog.aliases import detect_query_countries
+    from sugra_api_mcp.catalog.search import _country_terms
+
+    query = "United Kingdom unemployment"
+    terms = ["united", "kingdom", "unemployment"]
+    assert _country_terms(query, terms, detect_query_countries(query)) == {"united", "kingdom"}
+    assert _country_terms("unemployment", ["unemployment"], set()) == frozenset()
+
+
 def test_endpoint_without_keywords_gets_no_keyword_boost() -> None:
     """An operation the API never annotated with x-sugra-keywords must score
     exactly as it did before keyword indexing existed - no keyword: reason

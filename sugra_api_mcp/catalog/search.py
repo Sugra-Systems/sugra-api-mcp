@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from ._countries import COUNTRY_QUERY_TERMS
 from .aliases import (
     CENTRAL_BANK_PREFIX_BOOSTS,
     SOURCE_COUNTRY_PREFIXES,
@@ -113,11 +114,32 @@ KEYWORD_FIELD_WEIGHT = 4
 # penalty above. Without this, a bare country name query ("Portugal") matched
 # nothing: no field in the catalog spells country names out, only the
 # parameter NAME "country" appears, and nothing in the query text touched it.
+# When the query has a topic besides the country ("Portugal weather"), only
+# an endpoint that matches the topic earns it - otherwise every
+# country-scoped endpoint would surface for every country query.
 COUNTRY_PARAM_BOOST = 6
 
 
 def _tokens(value: str) -> list[str]:
     return [token for token in TOKEN_RE.findall(value.lower()) if len(token) >= 2]
+
+
+def _country_terms(query: str, terms: list[str], query_countries: set[str]) -> frozenset[str]:
+    """Query terms that only name one of the countries the query names.
+
+    A name counts when the whole name phrase is in the query ('united kingdom'
+    for GB), so a word that merely belongs to some long country name stays
+    part of the topic. The rest of the query is its topic.
+    """
+    if not query_countries:
+        return frozenset()
+    normalized = f" {' '.join(_tokens(query))} "
+    naming = {code.lower() for code in query_countries}
+    for phrase, code in COUNTRY_QUERY_TERMS.items():
+        phrase_tokens = _tokens(phrase)
+        if code in query_countries and f" {' '.join(phrase_tokens)} " in normalized:
+            naming.update(phrase_tokens)
+    return frozenset(term for term in terms if term in naming)
 
 
 def _endpoint_text(endpoint: Endpoint) -> str:
@@ -255,17 +277,22 @@ def _score(
     central_bank_prefixes: list[str],
     query_countries: set[str],
     coverage_excluded: frozenset[str] = frozenset(),
+    country_terms: frozenset[str] = frozenset(),
 ) -> tuple[int, list[str]]:
     alias_terms = [term for terms in aliases.values() for term in terms]
     all_terms = [*query_terms, *_tokens(" ".join(alias_terms))]
     why: list[str] = []
     score = 0
     profile = _profile(endpoint)
+    # Whether the endpoint matched the query's topic - anything the query
+    # asks besides the country names it (see COUNTRY_PARAM_BOOST).
+    topic_hit = False
 
     alias_consumed: set[str] = set()
     for phrase, expansions in aliases.items():
         if any(_alias_matches_profile(profile, expansion) for expansion in expansions):
             score += ALIAS_PHRASE_BOOST
+            topic_hit = True
             why.append(f"alias:{phrase}")
             # The alias boost IS the phrase's contribution - its tokens must
             # not be re-paid through the coverage bonus (double-paying
@@ -370,6 +397,10 @@ def _score(
         if term in profile.description:
             score += 1
             why.append(f"description:{term}")
+            if term not in country_terms:
+                topic_hit = True
+        if hit and term not in country_terms:
+            topic_hit = True
         # Coverage counts STRONG-field hits only (a description-only match
         # is too weak), skips sub-3-letter noise ('is' matched a parameter and
         # re-ranked the NVDA prompt), and skips tokens a pattern detector
@@ -416,8 +447,11 @@ def _score(
         # A generic country-parameterized endpoint can answer for WHATEVER
         # country the query names (it is not fixed to one nation the way a
         # national source is), so it earns a positive boost rather than the
-        # mismatch penalty above.
-        if profile.takes_country_param:
+        # mismatch penalty above. A query that is only a country boosts every
+        # such endpoint; a query with a topic as well boosts only those that
+        # match the topic.
+        country_only = not aliases and all(term in country_terms for term in query_terms)
+        if profile.takes_country_param and (country_only or topic_hit):
             score += COUNTRY_PARAM_BOOST
             why.append("pattern:country->param")
 
@@ -601,10 +635,12 @@ def search_catalog(
     for compound in _PROPER_NAME_COMPOUNDS:
         if f" {compound} " in normalized_query:
             consumed.update(compound.split())
-    # Country tokens are NOT consumed: geography grants no
-    # positive boost, so consuming them would strip the CORRECT national
-    # source of the coverage credit for the country the user typed.
+    # Country tokens are NOT consumed: consuming them would strip the CORRECT
+    # national source of the coverage credit for the country the user typed.
+    # The country-param boost reads them separately, to tell a query that is
+    # only a country from one with a topic as well.
     coverage_excluded = frozenset(consumed)
+    country_terms = _country_terms(query, terms, query_countries)
 
     scored: list[tuple[int, Endpoint, list[str]]] = []
     for endpoint in catalog.endpoints:
@@ -626,6 +662,7 @@ def search_catalog(
             central_bank_prefixes=central_bank_prefixes,
             query_countries=query_countries,
             coverage_excluded=coverage_excluded,
+            country_terms=country_terms,
         )
         if score > 0:
             scored.append((score, endpoint, why))
