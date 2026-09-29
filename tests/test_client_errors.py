@@ -403,6 +403,11 @@ async def test_an_error_key_wins_over_detail() -> None:
 
     assert result["error"] == "Unauthorized"
 
+    for empty in ("", None):
+        result = await _answer(404, {"error": empty, "detail": "Unknown series XYZ"})
+
+        assert result["error"] == "HTTP 404", empty
+
 
 async def test_a_detail_that_is_not_a_sentence_keeps_the_status_text() -> None:
     for body in (

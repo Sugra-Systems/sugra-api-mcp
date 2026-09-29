@@ -372,7 +372,10 @@ class SugraClient:
         if response.status_code >= 300:
             error = payload.get("error") if isinstance(payload, dict) else str(payload)
             quota: dict[str, Any] = {}
-            detail = None if error else _detail_text(payload)
+            # An `error` key wins whatever its value, as it did before `detail`
+            # was read at all.
+            has_error_key = isinstance(payload, dict) and "error" in payload
+            detail = None if has_error_key else _detail_text(payload)
             if detail is not None:
                 if response.status_code == 429 and detail.startswith(_DAILY_LIMIT_PREFIX):
                     quota = _daily_limit_error(detail, response)
