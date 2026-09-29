@@ -28,8 +28,9 @@ without an ``observations`` list) keeps today's behaviour exactly.
 every record carries exactly one of the known date or period keys at its
 top level, all values share one format, and the whole list runs one way by
 them (ISO 8601 date-times by the moment they name, so differing UTC
-offsets compare correctly). An ascending list keeps its last N records, a descending one its first
-N. Anything else keeps the first N records, as limit always did. When a
+offsets compare correctly; other formats only when they carry no time of
+day). An ascending list keeps its last N records, a descending one its
+first N. Anything else keeps the first N records, as limit always did. When a
 limit was applied to a records list, ``meta.shaped`` reports ``order``
 (``asc``, ``desc`` or ``unknown``) and ``kept_end`` (``newest`` or
 ``first``), as maps keyed by sibling name for sibling sub-series.
@@ -168,11 +169,12 @@ _DATE_KEY_CANDIDATES = frozenset(
 
 _ASCII_DIGITS = frozenset("0123456789")
 
-# A shape (digits read as "#") that looks like it carries a numeric UTC
-# offset: a plus sign before a digit anywhere, or a minus sign before a
-# digit after a time of day or a space. Only consulted for values that do
-# not parse as ISO 8601, whose offsets cannot be read.
-_UNREAD_OFFSET_SHAPE = re.compile(r"\+#|(?:T#|#:#|\s#).*-#")
+# The shapes (digits read as "#") of a date or period with no time of day,
+# so no UTC offset: a year alone; a year and month, or year, month and day,
+# under one separator or none; a day of the year; a half-year (H or S),
+# quarter, month or week code. Only consulted for values that do not parse as
+# ISO 8601; text order is date order for these and for no other shape.
+_OFFSET_FREE_SHAPE = re.compile(r"####(?:([-/.]?)##(?:\1##)?|-?###|-?[HQS]#|-?[MW]##)?")
 
 ORDER_ASC = "asc"
 ORDER_DESC = "desc"
@@ -334,19 +336,20 @@ def _string_template(value: str) -> str:
 def _order_keys(keys: list[Any]) -> list[Any] | None:
     """The keys in a form whose natural order is date order, or None.
 
-    Numbers compare numerically (years, epoch seconds). Strings compare as
-    text only when every value has the same shape, with each ASCII digit
-    read as a placeholder and every other character kept literally, and that
-    shape starts with a four-digit year: then text order is date order.
-    Day-first and month-first dates, month names and ordinal codes such as
-    ``-1m`` fail one of the two tests. Any boolean, or numbers mixed with
-    strings, fails.
+    Numbers compare numerically (years, epoch seconds). Strings must all
+    have the same shape, with each ASCII digit read as a placeholder and
+    every other character kept literally, and that shape must start with a
+    four-digit year. Day-first and month-first dates, month names and
+    ordinal codes such as ``-1m`` fail here. Any boolean, or numbers mixed
+    with strings, fails.
 
-    Text order breaks where a UTC offset varies, so values that parse as
-    ISO 8601 date-times compare as the moments they name instead, and must
-    all parse and all carry an offset or all lack one. A value that does
-    not parse but has the look of an offset (see ``_UNREAD_OFFSET_SHAPE``)
-    fails the whole list.
+    Values that parse as ISO 8601 compare as the moments they name, so a
+    UTC offset that varies still orders correctly; they must all parse and
+    all carry an offset or all lack one. A value that does not parse
+    compares as text only when its shape is a date or period with no time
+    of day (``_OFFSET_FREE_SHAPE``), where text order is date order. Any
+    other shape could carry an offset that cannot be read, and fails the
+    whole list.
     """
     if all(_is_number(key) for key in keys):
         return keys
@@ -359,7 +362,7 @@ def _order_keys(keys: list[Any]) -> list[Any] | None:
         return None
     if _iso_moment(keys[0]) is not None:
         return _iso_moments(keys)
-    if _UNREAD_OFFSET_SHAPE.search(template):
+    if _OFFSET_FREE_SHAPE.fullmatch(template) is None:
         return None
     return keys
 

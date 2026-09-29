@@ -299,6 +299,45 @@ def test_offset_values_that_do_not_parse_mean_unknown() -> None:
     assert _block(shaped)["order"] == "unknown"
 
 
+def test_a_basic_time_negative_offset_after_any_separator_means_unknown() -> None:
+    """05:30 then 06:00 UTC ascends, text reads descending; nothing marks
+    ``-0500`` as an offset except the time of day before it."""
+    records = _series("time", ["2026-01-01X003000-0500 local", "2026-01-01X000000-0600 local"])
+
+    shaped = shape_response(_enveloped(records), limit=1)
+
+    assert shaped["data"] == records[:1]
+    assert _block(shaped)["order"] == "unknown"
+
+
+def test_a_time_of_day_that_does_not_parse_means_unknown_even_without_an_offset() -> None:
+    """Text order is only trusted for a date or period with no time of day."""
+    records = _series("time", ["2026-01-01 00:00:00 UTC", "2026-01-02 00:00:00 UTC"])
+
+    shaped = shape_response(_enveloped(records), limit=1)
+
+    assert shaped["data"] == records[:1]
+    assert _block(shaped)["order"] == "unknown"
+
+
+def test_dates_and_periods_that_do_not_parse_order_as_text() -> None:
+    for values in (
+        ["202411", "202412", "202501"],
+        ["2024/12/30", "2024/12/31", "2025/01/01"],
+        ["2024.12.30", "2024.12.31", "2025.01.01"],
+        ["2024-365", "2024-366", "2025-001"],
+        ["2024H1", "2024H2", "2025H1"],
+        ["2024-S1", "2024-S2", "2025-S1"],
+        ["2024Q4", "2025Q1", "2025Q2"],
+    ):
+        records = _series("period", values)
+
+        shaped = shape_response(_enveloped(records), limit=1)
+
+        assert shaped["data"] == records[2:], values
+        assert _block(shaped)["order"] == "asc", values
+
+
 def test_integer_years_ascending_and_descending() -> None:
     ascending = _series("year", [2022, 2023, 2024, 2025])
     descending = list(reversed(ascending))
