@@ -100,11 +100,23 @@ def test_call_and_fetch_limit_description_covers_sibling_series(tool_schemas):
     """The limit description must say what happens to sibling sub-series
     (each holding its own observations list), not just the single-list
     case, or an agent reading tools/list would think limit never applies
-    there."""
+    there. It must also say which end of the list limit keeps and name the
+    two meta.shaped keys that report it, and both copies must read the
+    same."""
+    descriptions = []
     for tool in ("call_endpoint", "fetch_data"):
         desc = tool_schemas[tool]["limit"].get("description", "")
+        descriptions.append(desc)
         assert "data.<key>.observations" in desc, f"{tool}.limit missing sibling-series case"
         assert "data.*.observations" in desc, f"{tool}.limit missing sibling-series records_path"
+        assert "fields there still names keys of data" in desc, (
+            f"{tool}.limit missing the fields rule for sibling sub-series"
+        )
+        assert "limit keeps the newest N records" in desc, f"{tool}.limit missing newest-end rule"
+        assert "else the first N" in desc, f"{tool}.limit missing first-N fallback"
+        assert "order (asc, desc or unknown)" in desc, f"{tool}.limit missing meta.shaped order"
+        assert "kept_end (newest or first)" in desc, f"{tool}.limit missing meta.shaped kept_end"
+    assert descriptions[0] == descriptions[1], "call_endpoint and fetch_data limit texts differ"
 
 
 def test_gateway_dynamic_params_carry_schema_guidance(tool_schemas):

@@ -315,11 +315,16 @@ async def call_endpoint(
                 "(for example data.items). When data has no such single list but "
                 "every one of its values is an object holding exactly one list "
                 "named observations, limit bounds each data.<key>.observations "
-                "list on its own (records_path data.*.observations). Otherwise, "
-                "no such list, or several, means the limit does not apply. Keys "
-                "beside the list such as total and count are not rewritten, and "
-                "lists nested inside records are never truncated. meta.shaped "
-                "reports limit_applied and records_path."
+                "list on its own (records_path data.*.observations); fields there "
+                "still names keys of data. Otherwise, no such list, or several, "
+                "means the limit does not apply. Keys beside the list such as "
+                "total and count are not rewritten, and lists nested inside "
+                "records are never truncated. limit keeps the newest N records "
+                "when every record carries one date or period key in one format "
+                "and the list runs one way by it, else the first N, and "
+                "meta.shaped reports limit_applied, records_path and, for a "
+                "bounded records list, order (asc, desc or unknown) and kept_end "
+                "(newest or first), as maps by name for sibling sub-series."
             ),
         ),
     ] = None,
@@ -544,11 +549,16 @@ async def fetch_data(
                 "(for example data.items). When data has no such single list but "
                 "every one of its values is an object holding exactly one list "
                 "named observations, limit bounds each data.<key>.observations "
-                "list on its own (records_path data.*.observations). Otherwise, "
-                "no such list, or several, means the limit does not apply. Keys "
-                "beside the list such as total and count are not rewritten, and "
-                "lists nested inside records are never truncated. meta.shaped "
-                "reports limit_applied and records_path."
+                "list on its own (records_path data.*.observations); fields there "
+                "still names keys of data. Otherwise, no such list, or several, "
+                "means the limit does not apply. Keys beside the list such as "
+                "total and count are not rewritten, and lists nested inside "
+                "records are never truncated. limit keeps the newest N records "
+                "when every record carries one date or period key in one format "
+                "and the list runs one way by it, else the first N, and "
+                "meta.shaped reports limit_applied, records_path and, for a "
+                "bounded records list, order (asc, desc or unknown) and kept_end "
+                "(newest or first), as maps by name for sibling sub-series."
             ),
         ),
     ] = None,
