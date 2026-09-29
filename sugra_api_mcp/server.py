@@ -439,7 +439,11 @@ class _KeylessClient:
     """
 
     async def get(
-        self, path: str, params: dict[str, Any] | None = None
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
+        *,
+        enforce_size: bool = True,
     ) -> dict[str, Any]:
         return missing_api_key_error()
 
@@ -448,6 +452,8 @@ class _KeylessClient:
         path: str,
         json: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        *,
+        enforce_size: bool = True,
     ) -> dict[str, Any]:
         return missing_api_key_error()
 
@@ -458,6 +464,8 @@ class _KeylessClient:
         params: dict[str, Any] | None = None,
         json: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        *,
+        enforce_size: bool = True,
     ) -> dict[str, Any]:
         return missing_api_key_error()
 

@@ -197,7 +197,9 @@ class FakeClient:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, dict[str, Any] | None]] = []
 
-    async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def get(
+        self, path: str, params: dict[str, Any] | None = None, **_kwargs: Any
+    ) -> dict[str, Any]:
         self.calls.append(("GET", path, params))
         return {"data": [{"symbol": "AAPL", "price": 200}], "meta": {}}
 

@@ -1,4 +1,13 @@
-"""Async HTTP client for the Sugra API with size-limit enforcement.
+"""Async HTTP client for the Sugra API, with size-limit enforcement on by
+default.
+
+Every call enforces `MAX_RESPONSE_CHARS` on the raw upstream body by
+default - the backstop every caller gets for free, including the ones
+that never shape their own response afterward. A caller that DOES shape
+its own response after the fact (gateway.call_endpoint, which applies a
+`fields` / `limit` projection) passes `enforce_size=False` and runs
+`_enforce_size_limit` itself once the projection has run, so the raw,
+unprojected body is never what gets measured for it.
 
 Error contract: this client NEVER raises httpx exceptions to callers.
 Transport failures (timeout, refused connection, mid-stream disconnect)
@@ -173,16 +182,26 @@ class SugraClient:
             **({} if transport is not None else {"verify": shared_ssl_context()}),
         )
 
-    async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        return await self.request("GET", path, params=params)
+    async def get(
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
+        *,
+        enforce_size: bool = True,
+    ) -> dict[str, Any]:
+        return await self.request("GET", path, params=params, enforce_size=enforce_size)
 
     async def post(
         self,
         path: str,
         json: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        *,
+        enforce_size: bool = True,
     ) -> dict[str, Any]:
-        return await self.request("POST", path, json=json, headers=headers)
+        return await self.request(
+            "POST", path, json=json, headers=headers, enforce_size=enforce_size
+        )
 
     async def request(
         self,
@@ -191,6 +210,8 @@ class SugraClient:
         params: dict[str, Any] | None = None,
         json: dict[str, Any] | list[Any] | None = None,
         headers: dict[str, str] | None = None,
+        *,
+        enforce_size: bool = True,
     ) -> dict[str, Any]:
         clean_params = {k: v for k, v in (params or {}).items() if v is not None}
         start = time.perf_counter()
@@ -241,7 +262,7 @@ class SugraClient:
                     "Retry once; if it persists, report the reason field."
                 ),
             )
-        return self._handle(response, elapsed_ms=_elapsed_ms(start))
+        return self._handle(response, elapsed_ms=_elapsed_ms(start), enforce_size=enforce_size)
 
     def _transport_error(
         self,
@@ -276,7 +297,9 @@ class SugraClient:
             return f"{self._config.api_base}{path}"
 
     @staticmethod
-    def _handle(response: httpx.Response, *, elapsed_ms: int) -> dict[str, Any]:
+    def _handle(
+        response: httpx.Response, *, elapsed_ms: int, enforce_size: bool = True
+    ) -> dict[str, Any]:
         try:
             payload = response.json()
         except ValueError:
@@ -304,6 +327,14 @@ class SugraClient:
             if request_id:
                 result["request_id"] = str(request_id)
             return result
+        # Enforced HERE by default - the backstop every caller gets for free.
+        # A caller that shapes its own response after the fact
+        # (gateway.call_endpoint) passes enforce_size=False and calls
+        # _enforce_size_limit itself once its own `fields` / `limit`
+        # projection has run, so the raw, unprojected body is never what
+        # gets measured for it.
+        if not enforce_size:
+            return payload
         return _enforce_size_limit(payload, str(response.request.url))
 
     async def aclose(self) -> None:
