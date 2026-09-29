@@ -34,6 +34,7 @@ retry strategy (field-test defect D2).
 from __future__ import annotations
 
 import json
+import re
 import ssl
 import threading
 import time
@@ -122,6 +123,65 @@ def _retry_after(response: httpx.Response) -> int | str | None:
     if raw.isascii() and raw.isdigit():
         return int(raw)
     return raw
+
+
+# When an account's daily quota is spent the API answers 429 with a
+# FastAPI `detail` that starts with this text, names the plan, and ends with
+# an upgrade link into the billing cabinet. That wording is written for a
+# developer's REST client. A model inside a chat app gets the same facts as
+# plain information instead: no upgrade wording and no link into billing,
+# only the public page that describes the plans.
+_DAILY_LIMIT_PREFIX = "Daily limit of "
+_PLAN_IN_DETAIL = re.compile(r"Current plan: ([A-Za-z0-9_-]+)\.")
+PLANS_PAGE_URL = "https://sugra.systems/api/pricing"
+
+# A `detail` forwarded to the model never sells: one that still asks for an
+# upgrade or links into the app is replaced by the bare status, which is
+# all this client forwarded before it read `detail` at all.
+_SALES_TEXT = re.compile(r"\bupgrade\b|app\.sugra\.ai", re.IGNORECASE)
+
+
+def _detail_text(payload: Any) -> str | None:
+    """The API's own explanation of a failure, or None.
+
+    FastAPI puts an HTTPException's text at `detail`. A validation failure
+    puts a list there instead, which is not a sentence and is left out.
+    """
+    if isinstance(payload, dict) and isinstance(payload.get("detail"), str):
+        return payload["detail"].strip() or None
+    return None
+
+
+def _positive_int_header(response: httpx.Response, name: str) -> int | None:
+    raw = str(response.headers.get(name, "")).strip()
+    if raw.isascii() and raw.isdigit() and int(raw) > 0:
+        return int(raw)
+    return None
+
+
+def _daily_limit_error(detail: str, response: httpx.Response) -> dict[str, Any]:
+    """The quota refusal, stated as information for a model to relay."""
+    limit = _positive_int_header(response, "X-RateLimit-Limit")
+    match = _PLAN_IN_DETAIL.search(detail)
+    plan = match.group(1) if match and match.group(1) != "unknown" else None
+    reached = "The daily request limit"
+    if limit is not None:
+        reached += f" of {limit}"
+    reached += " for this Sugra account"
+    if plan is not None:
+        reached += f" on the {plan} plan"
+    fields: dict[str, Any] = {
+        "error": (
+            f"{reached} has been reached. It resets at 00:00 UTC. "
+            f"Sugra plans and their daily limits are described at {PLANS_PAGE_URL}."
+        ),
+        "reason": "daily_limit_reached",
+    }
+    if limit is not None:
+        fields["daily_limit"] = limit
+    if plan is not None:
+        fields["plan"] = plan
+    return fields
 
 
 def _enforce_size_limit(payload: Any, url: str) -> Any:
@@ -311,11 +371,22 @@ class SugraClient:
         # status and no url, which telemetry could only file as unknown.
         if response.status_code >= 300:
             error = payload.get("error") if isinstance(payload, dict) else str(payload)
+            quota: dict[str, Any] = {}
+            # An `error` key wins whatever its value, as it did before `detail`
+            # was read at all.
+            has_error_key = isinstance(payload, dict) and "error" in payload
+            detail = None if has_error_key else _detail_text(payload)
+            if detail is not None:
+                if response.status_code == 429 and detail.startswith(_DAILY_LIMIT_PREFIX):
+                    quota = _daily_limit_error(detail, response)
+                elif not _SALES_TEXT.search(detail):
+                    error = detail
             result: dict[str, Any] = {
                 "error": error or f"HTTP {response.status_code}",
                 "status_code": response.status_code,
                 "url": str(response.request.url),
                 "elapsed_ms": elapsed_ms,
+                **quota,
             }
             retry_after = _retry_after(response)
             if retry_after is not None:

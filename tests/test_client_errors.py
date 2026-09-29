@@ -10,11 +10,13 @@ One test per failure class: timeout, connect error, mid-stream disconnect,
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
+from typing import Any
 
 import httpx
 
-from sugra_api_mcp.client import SugraClient
+from sugra_api_mcp.client import PLANS_PAGE_URL, SugraClient
 from sugra_api_mcp.config import Config
 
 _TRANSPORT_ERROR_KEYS = {"error", "reason", "status_code", "elapsed_ms", "url", "retry_hint"}
@@ -312,6 +314,120 @@ async def test_http_3xx_is_a_structured_http_error() -> None:
     assert result["status_code"] == 307
     assert result["url"] == "https://api.test/api/v1/kalshi/events"
     assert isinstance(result["elapsed_ms"], int)
+
+
+# ---- the API's own explanation reaches the caller, and never sells ----
+
+_QUOTA_DETAIL = (
+    "Daily limit of 50 requests reached. Current plan: free. "
+    "Upgrade for a higher daily limit: https://app.sugra.ai/plans?from=api.ratelimit.upgrade"
+)
+_QUOTA_HEADERS = {
+    "Retry-After": "3600",
+    "X-RateLimit-Limit": "50",
+    "X-RateLimit-Remaining": "0",
+    "X-RateLimit-Reset": "2026-09-29T23:59:59Z",
+    "X-Request-ID": "req_quota",
+}
+
+
+async def _answer(status: int, body: Any, headers: dict[str, str] | None = None) -> dict[str, Any]:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status, json=body, headers=headers or {}, request=request)
+
+    client = _client(handler)
+    try:
+        return await client.get("/api/v1/quotes/AAPL/price")
+    finally:
+        await client.aclose()
+
+
+async def test_the_daily_limit_refusal_is_plain_information_for_the_model() -> None:
+    result = await _answer(429, {"detail": _QUOTA_DETAIL}, _QUOTA_HEADERS)
+
+    assert result["error"] == (
+        "The daily request limit of 50 for this Sugra account on the free plan has been "
+        "reached. It resets at 00:00 UTC. Sugra plans and their daily limits are described "
+        f"at {PLANS_PAGE_URL}."
+    )
+    assert result["reason"] == "daily_limit_reached"
+    assert result["daily_limit"] == 50
+    assert result["plan"] == "free"
+    assert result["status_code"] == 429
+    assert result["retry_after"] == 3600
+    assert result["request_id"] == "req_quota"
+    text = json.dumps(result).lower()
+    assert "upgrade" not in text
+    assert "app.sugra.ai" not in text
+
+
+async def test_the_daily_limit_refusal_leaves_out_what_the_api_did_not_say() -> None:
+    detail = _QUOTA_DETAIL.replace("Current plan: free.", "Current plan: unknown.")
+
+    result = await _answer(429, {"detail": detail}, {"Retry-After": "3600"})
+
+    assert result["error"] == (
+        "The daily request limit for this Sugra account has been reached. It resets at "
+        f"00:00 UTC. Sugra plans and their daily limits are described at {PLANS_PAGE_URL}."
+    )
+    assert result["reason"] == "daily_limit_reached"
+    assert "daily_limit" not in result
+    assert "plan" not in result
+
+
+async def test_other_rate_limits_keep_their_own_text() -> None:
+    """A provider's limit behind the API, or the API's reduced quota while
+    its cache is down, is not the account's daily limit: saying so would
+    send the caller to the plans page for nothing."""
+    for detail in (
+        "FRED rate limit exceeded",
+        "Rate limit temporarily reduced (upstream cache unavailable). Try again shortly. "
+        "Conservative per-worker quota: 12.",
+    ):
+        result = await _answer(429, {"detail": detail}, {"Retry-After": "60"})
+
+        assert result["error"] == detail
+        assert "reason" not in result
+        assert result["retry_after"] == 60
+
+
+async def test_a_string_detail_is_the_error_text() -> None:
+    result = await _answer(404, {"detail": "Unknown series XYZ"})
+
+    assert result["error"] == "Unknown series XYZ"
+    assert result["status_code"] == 404
+
+
+async def test_an_error_key_wins_over_detail() -> None:
+    result = await _answer(401, {"error": "Unauthorized", "detail": "Missing x-api-key"})
+
+    assert result["error"] == "Unauthorized"
+
+    for empty in ("", None):
+        result = await _answer(404, {"error": empty, "detail": "Unknown series XYZ"})
+
+        assert result["error"] == "HTTP 404", empty
+
+
+async def test_a_detail_that_is_not_a_sentence_keeps_the_status_text() -> None:
+    for body in (
+        {"detail": [{"loc": ["query", "symbol"], "msg": "field required"}]},
+        {"detail": "   "},
+    ):
+        result = await _answer(422, body)
+
+        assert result["error"] == "HTTP 422"
+
+
+async def test_a_detail_that_sells_is_not_forwarded() -> None:
+    for status, detail in (
+        (403, "This endpoint needs another plan. Upgrade at https://sugra.systems/api/pricing"),
+        (429, "Quota spent. Manage your plan at https://app.sugra.ai/billing"),
+    ):
+        result = await _answer(status, {"detail": detail})
+
+        assert result["error"] == f"HTTP {status}"
+        assert "reason" not in result
 
 
 # ---- size enforcement stays the default for every non-gateway caller ----
