@@ -111,6 +111,56 @@ async def test_an_upstream_failure_reaches_the_caller_intact(monkeypatch, upstre
         assert payload[key] == value, f"{key} was lost or altered"
 
 
+async def test_the_daily_limit_reaches_the_caller_as_plain_information(monkeypatch) -> None:
+    """End to end: the API's quota 429, through the real client and the
+    gateway, reaches the MCP caller as information with no upgrade wording
+    and no link into billing."""
+    import httpx
+
+    from sugra_api_mcp.client import PLANS_PAGE_URL, SugraClient
+    from sugra_api_mcp.config import Config
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            429,
+            json={
+                "detail": "Daily limit of 1000 requests reached. Current plan: personal. "
+                "Upgrade for a higher daily limit: https://app.sugra.ai/plans?from=api.ratelimit.upgrade"
+            },
+            headers={
+                "Retry-After": "7200",
+                "X-RateLimit-Limit": "1000",
+                "X-RateLimit-Remaining": "0",
+            },
+            request=request,
+        )
+
+    client = SugraClient(
+        Config(api_base="https://api.test", api_key="test-key", timeout=0.25),
+        transport=httpx.MockTransport(handler),
+    )
+    monkeypatch.setattr(gateway, "get_client", lambda: client)
+    try:
+        result = await _call(
+            "call_endpoint", {"operation_id": "quotes_symbol_price", "params": {"symbol": "AAPL"}}
+        )
+    finally:
+        await client.aclose()
+
+    assert result.isError is True
+    payload = _structured(result)
+    assert payload["status_code"] == 429
+    assert payload["reason"] == "daily_limit_reached"
+    assert payload["daily_limit"] == 1000
+    assert payload["retry_after"] == 7200
+    assert "of 1000" in payload["error"] and "personal plan" in payload["error"]
+    assert PLANS_PAGE_URL in payload["error"]
+    text = " ".join(block.text for block in result.content if hasattr(block, "text"))
+    for seen in (json.dumps(payload), text):
+        assert "upgrade" not in seen.lower()
+        assert "app.sugra.ai" not in seen
+
+
 async def test_the_error_text_is_never_empty() -> None:
     """The reason failures were returned rather than raised: a raised exception
     with no message reaches the agent as an empty string."""
