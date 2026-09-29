@@ -363,17 +363,18 @@ def test_response_shaping_bounds_cpi_like_sibling_series() -> None:
 
     shaped = shape_response(payload, limit=2)
 
+    # Each sub-series runs oldest first by period, so limit keeps its newest end.
     assert shaped["data"]["annual_change"]["observations"] == [
-        {"period": "2026-01", "value": 3.1},
-        {"period": "2026-02", "value": 3.0},
+        {"period": "2026-03", "value": 2.9},
+        {"period": "2026-04", "value": 2.8},
     ]
     assert shaped["data"]["monthly_change"]["observations"] == [
-        {"period": "2026-01", "value": 0.4},
-        {"period": "2026-02", "value": 0.2},
+        {"period": "2026-03", "value": 0.1},
+        {"period": "2026-04", "value": 0.3},
     ]
     assert shaped["data"]["index"]["observations"] == [
-        {"period": "2026-01", "value": 118.2},
-        {"period": "2026-02", "value": 118.4},
+        {"period": "2026-03", "value": 118.5},
+        {"period": "2026-04", "value": 118.8},
     ]
     # Sibling metadata beside the list stays exactly as the API sent it.
     assert shaped["data"]["annual_change"]["unit"] == "percent"
@@ -389,16 +390,16 @@ def test_response_shaping_bounds_ipva_like_sibling_series() -> None:
     shaped = shape_response(payload, limit=2)
 
     assert shaped["data"]["annual_change"]["observations"] == [
-        {"period": "2026-01", "value": 3.1},
-        {"period": "2026-02", "value": 3.0},
+        {"period": "2026-03", "value": 2.9},
+        {"period": "2026-04", "value": 2.8},
     ]
     assert shaped["data"]["quarterly_change"]["observations"] == [
-        {"period": "2026-01", "value": 0.4},
-        {"period": "2026-02", "value": 0.2},
+        {"period": "2026-03", "value": 0.1},
+        {"period": "2026-04", "value": 0.3},
     ]
     assert shaped["data"]["index"]["observations"] == [
-        {"period": "2026-01", "value": 118.2},
-        {"period": "2026-02", "value": 118.4},
+        {"period": "2026-03", "value": 118.5},
+        {"period": "2026-04", "value": 118.8},
     ]
     block = shaped["meta"]["shaped"]
     assert block["limit_applied"] is True
@@ -570,7 +571,8 @@ def test_response_shaping_fred_series_observations() -> None:
 
     bounded = shape_response(payload, limit=2, fields=["value"])
 
-    assert bounded["data"]["observations"] == [{"value": 320.1}, {"value": 320.8}]
+    # Observations run oldest first by date, so limit keeps the newest two.
+    assert bounded["data"]["observations"] == [{"value": 320.8}, {"value": 321.4}]
     assert bounded["data"]["count"] == 3
     assert bounded["data"]["series_id"] == "CPIAUCSL"
     assert bounded["data"]["license"] == {"status": "public_domain", "originator": None}
