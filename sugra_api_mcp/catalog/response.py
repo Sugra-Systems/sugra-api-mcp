@@ -27,8 +27,8 @@ without an ``observations`` list) keeps today's behaviour exactly.
 ``limit`` keeps the newest end of a records list whose order it can read:
 every record carries exactly one of the known date or period keys at its
 top level, all values share one format, and the whole list runs one way by
-them (date-times with a numeric UTC offset by instant, not by text). An
-ascending list keeps its last N records, a descending one its first
+them (ISO 8601 date-times by the moment they name, so differing UTC
+offsets compare correctly). An ascending list keeps its last N records, a descending one its first
 N. Anything else keeps the first N records, as limit always did. When a
 limit was applied to a records list, ``meta.shaped`` reports ``order``
 (``asc``, ``desc`` or ``unknown``) and ``kept_end`` (``newest`` or
@@ -168,9 +168,11 @@ _DATE_KEY_CANDIDATES = frozenset(
 
 _ASCII_DIGITS = frozenset("0123456789")
 
-# A shape (digits read as "#") holding a time of day with a sign and a digit
-# somewhere after it: a numeric UTC offset such as "+01:00" or "-0500".
-_NUMERIC_OFFSET_SHAPE = re.compile(r"(?:T#|#:#).*[+-]#")
+# A shape (digits read as "#") that looks like it carries a numeric UTC
+# offset: a plus sign before a digit anywhere, or a minus sign before a
+# digit after a time of day or a space. Only consulted for values that do
+# not parse as ISO 8601, whose offsets cannot be read.
+_UNREAD_OFFSET_SHAPE = re.compile(r"\+#|(?:T#|#:#|\s#).*-#")
 
 ORDER_ASC = "asc"
 ORDER_DESC = "desc"
@@ -340,10 +342,11 @@ def _order_keys(keys: list[Any]) -> list[Any] | None:
     ``-1m`` fail one of the two tests. Any boolean, or numbers mixed with
     strings, fails.
 
-    A shape with a time of day and a numeric UTC offset is the exception:
-    two offsets can put text order and time order apart, so those values
-    compare as instants, and one that does not parse as an ISO 8601
-    date-time fails the whole list.
+    Text order breaks where a UTC offset varies, so values that parse as
+    ISO 8601 date-times compare as the moments they name instead, and must
+    all parse and all carry an offset or all lack one. A value that does
+    not parse but has the look of an offset (see ``_UNREAD_OFFSET_SHAPE``)
+    fails the whole list.
     """
     if all(_is_number(key) for key in keys):
         return keys
@@ -354,22 +357,31 @@ def _order_keys(keys: list[Any]) -> list[Any] | None:
         return None
     if not all(_string_template(key) == template for key in keys[1:]):
         return None
-    if _NUMERIC_OFFSET_SHAPE.search(template):
-        return _instants(keys)
+    if _iso_moment(keys[0]) is not None:
+        return _iso_moments(keys)
+    if _UNREAD_OFFSET_SHAPE.search(template):
+        return None
     return keys
 
 
-def _instants(keys: list[str]) -> list[datetime] | None:
-    instants = []
+def _iso_moment(value: str) -> datetime | None:
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _iso_moments(keys: list[str]) -> list[datetime] | None:
+    moments = []
     for key in keys:
-        try:
-            moment = datetime.fromisoformat(key)
-        except ValueError:
+        moment = _iso_moment(key)
+        if moment is None:
             return None
-        if moment.utcoffset() is None:
-            return None
-        instants.append(moment)
-    return instants
+        moments.append(moment)
+    # Aware and naive values never compare with each other.
+    if len({moment.utcoffset() is None for moment in moments}) != 1:
+        return None
+    return moments
 
 
 def _records_order(records: list[Any]) -> str:

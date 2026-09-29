@@ -255,6 +255,39 @@ def test_offset_values_that_name_one_instant_at_both_ends_mean_unknown() -> None
     assert _block(shaped)["order"] == "unknown"
 
 
+def test_differing_offsets_in_basic_time_with_a_space_order_by_instant() -> None:
+    ascending = _series("time", ["2026-01-01 003000+0100", "2026-01-01 000000+0000"])
+    descending = list(reversed(ascending))
+
+    up = shape_response(_enveloped(ascending), limit=1)
+    down = shape_response(_enveloped(descending), limit=1)
+
+    assert up["data"] == ascending[1:]
+    assert _block(up)["order"] == "asc"
+    assert down["data"] == descending[:1]
+    assert _block(down)["order"] == "desc"
+
+
+def test_one_date_that_does_not_parse_among_iso_dates_means_unknown() -> None:
+    records = _series("date", ["2026-01-01", "2026-02-01", "2026-13-01"])
+
+    shaped = shape_response(_enveloped(records), limit=1)
+
+    assert shaped["data"] == records[:1]
+    assert _block(shaped)["order"] == "unknown"
+
+
+def test_a_negative_offset_that_does_not_parse_means_unknown() -> None:
+    """Text reads 00:30 then 00:00 as descending; in time the second is
+    the later one, and the trailing text stops the offsets being read."""
+    records = _series("time", ["2026-01-01 00:30:00 -0500 (local)", "2026-01-01 00:00:00 -0600 (local)"])
+
+    shaped = shape_response(_enveloped(records), limit=1)
+
+    assert shaped["data"] == records[:1]
+    assert _block(shaped)["order"] == "unknown"
+
+
 def test_offset_values_that_do_not_parse_mean_unknown() -> None:
     """Same shape, so text would read this pair as descending, but the
     offsets cannot be read, so neither can the order."""
