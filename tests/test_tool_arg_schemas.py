@@ -96,6 +96,17 @@ def test_call_and_fetch_projection_args_have_descriptions(tool_schemas):
             assert desc, f"{tool}.{arg} missing description"
 
 
+def test_call_and_fetch_limit_description_covers_sibling_series(tool_schemas):
+    """The limit description must say what happens to sibling sub-series
+    (each holding its own observations list), not just the single-list
+    case, or an agent reading tools/list would think limit never applies
+    there."""
+    for tool in ("call_endpoint", "fetch_data"):
+        desc = tool_schemas[tool]["limit"].get("description", "")
+        assert "data.<key>.observations" in desc, f"{tool}.limit missing sibling-series case"
+        assert "data.*.observations" in desc, f"{tool}.limit missing sibling-series records_path"
+
+
 def test_gateway_dynamic_params_carry_schema_guidance(tool_schemas):
     # params/body stay open (dynamic gateway) but must point at how to get the
     # per-operation schema (describe_endpoint / required_parameters / request_body_schema).

@@ -311,11 +311,14 @@ async def call_endpoint(
                 "array, or the list inside an object data when exactly one of "
                 "these keys holds a list: data, entries, events, history, items, "
                 "observations, points, records, results, rows, series, timeseries "
-                "(for example data.items). No such list, or several, means the "
-                "limit does not apply. Keys beside the list such as total and "
-                "count are not rewritten, and lists nested inside records are "
-                "never truncated. meta.shaped reports limit_applied and "
-                "records_path."
+                "(for example data.items). When data has no such single list but "
+                "every one of its values is an object holding exactly one list "
+                "named observations, limit bounds each data.<key>.observations "
+                "list on its own (records_path data.*.observations). Otherwise, "
+                "no such list, or several, means the limit does not apply. Keys "
+                "beside the list such as total and count are not rewritten, and "
+                "lists nested inside records are never truncated. meta.shaped "
+                "reports limit_applied and records_path."
             ),
         ),
     ] = None,
@@ -527,11 +530,14 @@ async def fetch_data(
                 "array, or the list inside an object data when exactly one of "
                 "these keys holds a list: data, entries, events, history, items, "
                 "observations, points, records, results, rows, series, timeseries "
-                "(for example data.items). No such list, or several, means the "
-                "limit does not apply. Keys beside the list such as total and "
-                "count are not rewritten, and lists nested inside records are "
-                "never truncated. meta.shaped reports limit_applied and "
-                "records_path."
+                "(for example data.items). When data has no such single list but "
+                "every one of its values is an object holding exactly one list "
+                "named observations, limit bounds each data.<key>.observations "
+                "list on its own (records_path data.*.observations). Otherwise, "
+                "no such list, or several, means the limit does not apply. Keys "
+                "beside the list such as total and count are not rewritten, and "
+                "lists nested inside records are never truncated. meta.shaped "
+                "reports limit_applied and records_path."
             ),
         ),
     ] = None,
