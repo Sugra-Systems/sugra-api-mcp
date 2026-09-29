@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-09-13T22:08:58Z",
+  "built_at": "2026-09-29T06:30:57Z",
   "endpoint_count": 1626,
   "endpoints": [
     {
@@ -1282,20 +1282,20 @@
       "toolset": "central_banks"
     },
     {
-      "description": "USD to Brazilian real spot quotes from Banco Central do Brasil SGS. Returns sell (venda, SGS 1) and buy (compra, SGS 10813) rates. The midpoint between buy and sell is the reference for cross-border settlement.",
+      "description": "USD to Brazilian real spot quotes from Banco Central do Brasil SGS. Returns sell (venda, SGS 1) and buy (compra, SGS 10813) rates. The midpoint between buy and sell is the reference for cross-border settlement. This is a daily series; above 20 observations the client fetches by date range instead of BCB's 20-item 'ultimos' shortcut, so the default window is not limited to 20 days.",
       "method": "GET",
       "operation_id": "bcb_fx",
       "parameters": [
         {
-          "description": "Number of most-recent business-day quotes.",
-          "example": 10,
+          "description": "Number of most-recent business-day quotes. Values above 20 are served from a date-range fetch (BCB's own 'ultimos' shortcut is capped at 20 upstream), so the daily series is no longer limited to 20 days by default.",
+          "example": 90,
           "location": "query",
           "name": "last_n",
           "required": false,
           "schema": {
-            "default": 20,
-            "description": "Number of most-recent business-day quotes.",
-            "maximum": 20,
+            "default": 90,
+            "description": "Number of most-recent business-day quotes. Values above 20 are served from a date-range fetch (BCB's own 'ultimos' shortcut is capped at 20 upstream), so the daily series is no longer limited to 20 days by default.",
+            "maximum": 365,
             "minimum": 1,
             "title": "Last N",
             "type": "integer"
@@ -29090,13 +29090,13 @@
       "operation_id": "fed_rates_rate_type",
       "parameters": [
         {
-          "description": "Rate type (SOFR, EFFR, DFEDTAR, etc).",
+          "description": "Rate type. One of: SOFR, EFFR, OBFR, TGCR, BGCR (case-insensitive). No other value is accepted.",
           "example": "SOFR",
           "location": "path",
           "name": "rate_type",
           "required": true,
           "schema": {
-            "description": "Rate type (SOFR, EFFR, DFEDTAR, etc).",
+            "description": "Rate type. One of: SOFR, EFFR, OBFR, TGCR, BGCR (case-insensitive). No other value is accepted.",
             "title": "Rate Type",
             "type": "string"
           }
@@ -30824,13 +30824,13 @@
           }
         },
         {
-          "description": "Max observations to return. FRED's hard cap is 100000; we cap at 1000 here for RAM safety and predictable response sizes.",
+          "description": "Max observations to return. FRED's hard cap is 100000; we cap at 1000 here for RAM safety and predictable response sizes. Default raised from 100 (APP-30.23): with sort_order=desc a daily series at 100 returned barely 3 months and read as its whole history. When the series holds more than `limit`, the response also carries `observations_truncated` and `observations_available`. observations_available is null when FRED reported no total.",
           "location": "query",
           "name": "limit",
           "required": false,
           "schema": {
-            "default": 100,
-            "description": "Max observations to return. FRED's hard cap is 100000; we cap at 1000 here for RAM safety and predictable response sizes.",
+            "default": 500,
+            "description": "Max observations to return. FRED's hard cap is 100000; we cap at 1000 here for RAM safety and predictable response sizes. Default raised from 100 (APP-30.23): with sort_order=desc a daily series at 100 returned barely 3 months and read as its whole history. When the series holds more than `limit`, the response also carries `observations_truncated` and `observations_available`. observations_available is null when FRED reported no total.",
             "maximum": 1000,
             "minimum": 1,
             "title": "Limit",
@@ -36250,16 +36250,35 @@
       "operation_id": "ilostat_child_labor",
       "parameters": [
         {
-          "description": "ISO 3166-1 alpha-3 country codes.",
+          "description": "ISO 3166-1 alpha-3 code, alpha-2 code, or country name (Portugal), joined with `+` for multi-country. An unresolvable value answers 422.",
           "example": "IND+ETH+BGD",
           "location": "query",
           "name": "countries",
           "required": false,
           "schema": {
             "default": "IND",
-            "description": "ISO 3166-1 alpha-3 country codes.",
+            "description": "ISO 3166-1 alpha-3 code, alpha-2 code, or country name (Portugal), joined with `+` for multi-country. An unresolvable value answers 422.",
             "title": "Countries",
             "type": "string"
+          }
+        },
+        {
+          "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+          "example": "Portugal",
+          "location": "query",
+          "name": "country",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+            "title": "Country"
           }
         },
         {
@@ -36384,7 +36403,7 @@
           }
         },
         {
-          "description": "Optional REF_AREA filter (ISO 3166-1 alpha-3, `+` separator).",
+          "description": "Optional REF_AREA filter: ISO-3, ISO-2, or country name, `+`-joined for multi-country. An unresolvable value answers 422.",
           "example": "USA+GBR+DEU",
           "location": "query",
           "name": "countries",
@@ -36398,8 +36417,27 @@
                 "type": "null"
               }
             ],
-            "description": "Optional REF_AREA filter (ISO 3166-1 alpha-3, `+` separator).",
+            "description": "Optional REF_AREA filter: ISO-3, ISO-2, or country name, `+`-joined for multi-country. An unresolvable value answers 422.",
             "title": "Countries"
+          }
+        },
+        {
+          "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+          "example": "Portugal",
+          "location": "query",
+          "name": "country",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+            "title": "Country"
           }
         },
         {
@@ -36564,16 +36602,35 @@
       "operation_id": "ilostat_earnings",
       "parameters": [
         {
-          "description": "ISO 3166-1 alpha-3 country codes.",
+          "description": "ISO 3166-1 alpha-3 code, alpha-2 code, or country name (Portugal), joined with `+` for multi-country. An unresolvable value answers 422.",
           "example": "USA+GBR+DEU",
           "location": "query",
           "name": "countries",
           "required": false,
           "schema": {
             "default": "USA",
-            "description": "ISO 3166-1 alpha-3 country codes.",
+            "description": "ISO 3166-1 alpha-3 code, alpha-2 code, or country name (Portugal), joined with `+` for multi-country. An unresolvable value answers 422.",
             "title": "Countries",
             "type": "string"
+          }
+        },
+        {
+          "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+          "example": "Portugal",
+          "location": "query",
+          "name": "country",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+            "title": "Country"
           }
         },
         {
@@ -36700,16 +36757,35 @@
       "operation_id": "ilostat_employment_rate",
       "parameters": [
         {
-          "description": "ISO 3166-1 alpha-3 country codes.",
+          "description": "ISO 3166-1 alpha-3 code, alpha-2 code, or country name (Portugal), joined with `+` for multi-country. An unresolvable value answers 422.",
           "example": "USA+GBR+DEU",
           "location": "query",
           "name": "countries",
           "required": false,
           "schema": {
             "default": "USA",
-            "description": "ISO 3166-1 alpha-3 country codes.",
+            "description": "ISO 3166-1 alpha-3 code, alpha-2 code, or country name (Portugal), joined with `+` for multi-country. An unresolvable value answers 422.",
             "title": "Countries",
             "type": "string"
+          }
+        },
+        {
+          "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+          "example": "Portugal",
+          "location": "query",
+          "name": "country",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+            "title": "Country"
           }
         },
         {
@@ -36823,16 +36899,35 @@
       "operation_id": "ilostat_gender_gap",
       "parameters": [
         {
-          "description": "ISO 3166-1 alpha-3 country codes.",
+          "description": "ISO 3166-1 alpha-3 code, alpha-2 code, or country name (Portugal), joined with `+` for multi-country. An unresolvable value answers 422.",
           "example": "USA+GBR+DEU",
           "location": "query",
           "name": "countries",
           "required": false,
           "schema": {
             "default": "USA",
-            "description": "ISO 3166-1 alpha-3 country codes.",
+            "description": "ISO 3166-1 alpha-3 code, alpha-2 code, or country name (Portugal), joined with `+` for multi-country. An unresolvable value answers 422.",
             "title": "Countries",
             "type": "string"
+          }
+        },
+        {
+          "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+          "example": "Portugal",
+          "location": "query",
+          "name": "country",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+            "title": "Country"
           }
         },
         {
@@ -36933,16 +37028,35 @@
       "operation_id": "ilostat_hours_worked",
       "parameters": [
         {
-          "description": "ISO 3166-1 alpha-3 country codes.",
+          "description": "ISO 3166-1 alpha-3 code, alpha-2 code, or country name (Portugal), joined with `+` for multi-country. An unresolvable value answers 422.",
           "example": "USA+GBR+DEU",
           "location": "query",
           "name": "countries",
           "required": false,
           "schema": {
             "default": "USA",
-            "description": "ISO 3166-1 alpha-3 country codes.",
+            "description": "ISO 3166-1 alpha-3 code, alpha-2 code, or country name (Portugal), joined with `+` for multi-country. An unresolvable value answers 422.",
             "title": "Countries",
             "type": "string"
+          }
+        },
+        {
+          "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+          "example": "Portugal",
+          "location": "query",
+          "name": "country",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+            "title": "Country"
           }
         },
         {
@@ -37069,16 +37183,35 @@
       "operation_id": "ilostat_informal_employment",
       "parameters": [
         {
-          "description": "ISO 3166-1 alpha-3 country codes (developing countries coverage).",
+          "description": "ISO 3166-1 alpha-3 code, alpha-2 code, or country name (developing countries coverage). An unresolvable value answers 422.",
           "example": "IND+BRA+MEX",
           "location": "query",
           "name": "countries",
           "required": false,
           "schema": {
             "default": "IND",
-            "description": "ISO 3166-1 alpha-3 country codes (developing countries coverage).",
+            "description": "ISO 3166-1 alpha-3 code, alpha-2 code, or country name (developing countries coverage). An unresolvable value answers 422.",
             "title": "Countries",
             "type": "string"
+          }
+        },
+        {
+          "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+          "example": "Portugal",
+          "location": "query",
+          "name": "country",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+            "title": "Country"
           }
         },
         {
@@ -37192,16 +37325,35 @@
       "operation_id": "ilostat_injuries",
       "parameters": [
         {
-          "description": "ISO 3166-1 alpha-3 country codes.",
+          "description": "ISO 3166-1 alpha-3 code, alpha-2 code, or country name (Portugal), joined with `+` for multi-country. An unresolvable value answers 422.",
           "example": "USA+GBR+DEU",
           "location": "query",
           "name": "countries",
           "required": false,
           "schema": {
             "default": "USA",
-            "description": "ISO 3166-1 alpha-3 country codes.",
+            "description": "ISO 3166-1 alpha-3 code, alpha-2 code, or country name (Portugal), joined with `+` for multi-country. An unresolvable value answers 422.",
             "title": "Countries",
             "type": "string"
+          }
+        },
+        {
+          "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+          "example": "Portugal",
+          "location": "query",
+          "name": "country",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+            "title": "Country"
           }
         },
         {
@@ -37289,16 +37441,35 @@
       "operation_id": "ilostat_labor_force",
       "parameters": [
         {
-          "description": "ISO 3166-1 alpha-3 country codes.",
+          "description": "ISO 3166-1 alpha-3 code, alpha-2 code, or country name (Portugal), joined with `+` for multi-country. An unresolvable value answers 422.",
           "example": "USA+GBR+DEU",
           "location": "query",
           "name": "countries",
           "required": false,
           "schema": {
             "default": "USA",
-            "description": "ISO 3166-1 alpha-3 country codes.",
+            "description": "ISO 3166-1 alpha-3 code, alpha-2 code, or country name (Portugal), joined with `+` for multi-country. An unresolvable value answers 422.",
             "title": "Countries",
             "type": "string"
+          }
+        },
+        {
+          "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+          "example": "Portugal",
+          "location": "query",
+          "name": "country",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+            "title": "Country"
           }
         },
         {
@@ -37412,16 +37583,35 @@
       "operation_id": "ilostat_labor_productivity",
       "parameters": [
         {
-          "description": "ISO 3166-1 alpha-3 country codes.",
+          "description": "ISO 3166-1 alpha-3 code, alpha-2 code, or country name (Portugal), joined with `+` for multi-country. An unresolvable value answers 422.",
           "example": "USA+GBR+DEU",
           "location": "query",
           "name": "countries",
           "required": false,
           "schema": {
             "default": "USA",
-            "description": "ISO 3166-1 alpha-3 country codes.",
+            "description": "ISO 3166-1 alpha-3 code, alpha-2 code, or country name (Portugal), joined with `+` for multi-country. An unresolvable value answers 422.",
             "title": "Countries",
             "type": "string"
+          }
+        },
+        {
+          "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+          "example": "Portugal",
+          "location": "query",
+          "name": "country",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+            "title": "Country"
           }
         },
         {
@@ -37509,16 +37699,35 @@
       "operation_id": "ilostat_strikes_lockouts",
       "parameters": [
         {
-          "description": "ISO 3166-1 alpha-3 country codes.",
+          "description": "ISO 3166-1 alpha-3 code, alpha-2 code, or country name (Portugal), joined with `+` for multi-country. An unresolvable value answers 422.",
           "example": "USA+GBR+DEU",
           "location": "query",
           "name": "countries",
           "required": false,
           "schema": {
             "default": "USA",
-            "description": "ISO 3166-1 alpha-3 country codes.",
+            "description": "ISO 3166-1 alpha-3 code, alpha-2 code, or country name (Portugal), joined with `+` for multi-country. An unresolvable value answers 422.",
             "title": "Countries",
             "type": "string"
+          }
+        },
+        {
+          "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+          "example": "Portugal",
+          "location": "query",
+          "name": "country",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+            "title": "Country"
           }
         },
         {
@@ -37619,16 +37828,35 @@
       "operation_id": "ilostat_unemployment",
       "parameters": [
         {
-          "description": "ISO 3166-1 alpha-3 country codes, joined with `+` for multi-country (USA+GBR+DEU).",
+          "description": "ISO 3166-1 alpha-3 code, alpha-2 code, or country name (Portugal), joined with `+` for multi-country (USA+GBR+DEU). An unresolvable value answers 422.",
           "example": "USA+GBR+DEU",
           "location": "query",
           "name": "countries",
           "required": false,
           "schema": {
             "default": "USA",
-            "description": "ISO 3166-1 alpha-3 country codes, joined with `+` for multi-country (USA+GBR+DEU).",
+            "description": "ISO 3166-1 alpha-3 code, alpha-2 code, or country name (Portugal), joined with `+` for multi-country (USA+GBR+DEU). An unresolvable value answers 422.",
             "title": "Countries",
             "type": "string"
+          }
+        },
+        {
+          "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+          "example": "Portugal",
+          "location": "query",
+          "name": "country",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+            "title": "Country"
           }
         },
         {
@@ -37742,16 +37970,35 @@
       "operation_id": "ilostat_youth_unemployment",
       "parameters": [
         {
-          "description": "ISO 3166-1 alpha-3 country codes.",
+          "description": "ISO 3166-1 alpha-3 code, alpha-2 code, or country name (Portugal), joined with `+` for multi-country. An unresolvable value answers 422.",
           "example": "USA+GBR+DEU",
           "location": "query",
           "name": "countries",
           "required": false,
           "schema": {
             "default": "USA",
-            "description": "ISO 3166-1 alpha-3 country codes.",
+            "description": "ISO 3166-1 alpha-3 code, alpha-2 code, or country name (Portugal), joined with `+` for multi-country. An unresolvable value answers 422.",
             "title": "Countries",
             "type": "string"
+          }
+        },
+        {
+          "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+          "example": "Portugal",
+          "location": "query",
+          "name": "country",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Alias of `countries` for a single country - ISO-3, ISO-2, or name. If both `country` and `countries` are given and resolve to different countries, 422 names both.",
+            "title": "Country"
           }
         },
         {
@@ -50154,7 +50401,7 @@
       "toolset": "statistics"
     },
     {
-      "description": "Quarterly Housing Price Index from INE operation IPV (15). Returns the general national series: annual variation (IPV948), quarterly variation (IPV949), and index level (IPV769). Published ~90 days after quarter end. Note: the canonical INE code for this operation is IPV; the endpoint is named /ipva to match Sugra naming conventions.",
+      "description": "Quarterly Housing Price Index from INE operation IPV (15). Returns the general national series: annual variation (IPV948), quarterly variation (IPV949), and index level (IPV769). Published ~90 days after quarter end. Note: the canonical INE code for this operation is IPV; the endpoint is named /ipva to match Sugra naming conventions. meta.stale is true once the latest observation is older than the quarterly freshness threshold - do not rely on meta.data_age_days alone.",
       "method": "GET",
       "operation_id": "ine_ipva",
       "parameters": [
@@ -91761,7 +92008,7 @@
       "toolset": "environment"
     },
     {
-      "description": "Sugra Weather forecast for any coordinate or city worldwide: hourly steps and daily aggregates up to 16 days ahead (and up to 92 past days for context), covering temperature, feels-like, humidity, dew point, precipitation with probability, rain, showers, snowfall, snow depth, WMO weather code, pressure, cloud cover by level, visibility, wind with gusts, UV index, daylight, sunshine, solar radiation, and reference evapotranspiration. National high-resolution weather models are blended into a global best match for every location. Units, timezone, and time format are configurable. Resolve any city by name with the optional country filter.",
+      "description": "Sugra Weather forecast for any coordinate or city worldwide: hourly steps and daily aggregates up to 16 days ahead (and up to 92 past days for context), covering temperature, feels-like, humidity, dew point, precipitation with probability, rain, showers, snowfall, snow depth, WMO weather code, pressure, cloud cover by level, visibility, wind with gusts, UV index, daylight, sunshine, solar radiation, and reference evapotranspiration. National high-resolution weather models are blended into a global best match for every location. Units, timezone, and time format are configurable. Resolve any plain city name, narrowed by the separate country parameter if given; an unresolvable location is 422, never 404.",
       "method": "GET",
       "operation_id": "v2_weather_forecast",
       "parameters": [
@@ -91858,7 +92105,7 @@
           }
         },
         {
-          "description": "City name (alternative to lat/lon), resolved globally.",
+          "description": "Plain city name (alternative to lat/lon), resolved globally. The country goes in the separate country parameter, never combined into this field. An unresolvable location is 422, never 404.",
           "location": "query",
           "name": "city",
           "required": false,
@@ -91872,7 +92119,7 @@
                 "type": "null"
               }
             ],
-            "description": "City name (alternative to lat/lon), resolved globally.",
+            "description": "Plain city name (alternative to lat/lon), resolved globally. The country goes in the separate country parameter, never combined into this field. An unresolvable location is 422, never 404.",
             "examples": [
               "Jakarta"
             ],
@@ -91880,7 +92127,7 @@
           }
         },
         {
-          "description": "Country name or ISO-2 code (narrows the city match).",
+          "description": "Country name or ISO-2 code (narrows the city match). Always a separate parameter from city.",
           "location": "query",
           "name": "country",
           "required": false,
@@ -91894,7 +92141,7 @@
                 "type": "null"
               }
             ],
-            "description": "Country name or ISO-2 code (narrows the city match).",
+            "description": "Country name or ISO-2 code (narrows the city match). Always a separate parameter from city.",
             "examples": [
               "ID"
             ],
@@ -92061,7 +92308,7 @@
       "toolset": "environment"
     },
     {
-      "description": "Sugra Weather history for any coordinate or city worldwide, from 1940-01-01 to the recent past: daily aggregates (temperature and feels-like min/max/mean, sunrise/sunset, daylight and sunshine duration, precipitation sums and hours, wind maxima and dominant direction, solar radiation, reference evapotranspiration, WMO weather code) plus full hourly steps for ranges up to a year. Reanalysis-backed for every location on Earth. Units, timezone, and time format are configurable; resolve any city by name with the optional country filter. Ranges up to 10 years per request.",
+      "description": "Sugra Weather history for any coordinate or city worldwide, from 1940-01-01 to the recent past: daily aggregates (temperature and feels-like min/max/mean, sunrise/sunset, daylight and sunshine duration, precipitation sums and hours, wind maxima and dominant direction, solar radiation, reference evapotranspiration, WMO weather code) plus full hourly steps for ranges up to a year. Reanalysis-backed for every location on Earth. Units, timezone, and time format are configurable; resolve any plain city name, narrowed by the separate country parameter if given - an unresolvable location is 422, never 404. Ranges up to 10 years per request.",
       "method": "GET",
       "operation_id": "v2_weather_history",
       "parameters": [
@@ -92186,7 +92433,7 @@
           }
         },
         {
-          "description": "City name (alternative to lat/lon), resolved globally.",
+          "description": "Plain city name (alternative to lat/lon), resolved globally. The country goes in the separate country parameter, never combined into this field. An unresolvable location is 422, never 404.",
           "location": "query",
           "name": "city",
           "required": false,
@@ -92200,7 +92447,7 @@
                 "type": "null"
               }
             ],
-            "description": "City name (alternative to lat/lon), resolved globally.",
+            "description": "Plain city name (alternative to lat/lon), resolved globally. The country goes in the separate country parameter, never combined into this field. An unresolvable location is 422, never 404.",
             "examples": [
               "Paris"
             ],
@@ -92208,7 +92455,7 @@
           }
         },
         {
-          "description": "Country name or ISO-2 code (narrows the city match).",
+          "description": "Country name or ISO-2 code (narrows the city match). Always a separate parameter from city.",
           "location": "query",
           "name": "country",
           "required": false,
@@ -92222,7 +92469,7 @@
                 "type": "null"
               }
             ],
-            "description": "Country name or ISO-2 code (narrows the city match).",
+            "description": "Country name or ISO-2 code (narrows the city match). Always a separate parameter from city.",
             "examples": [
               "FR"
             ],
@@ -92359,5 +92606,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "e5fc924792140af3672316e8f453da46385b6fedcdb707c0000b6c50663009ee"
+  "spec_sha256": "1d95a9a0017554520d4a9a96319b4fa754f360d27cffdb86908832d64651f2fd"
 }
