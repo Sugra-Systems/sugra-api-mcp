@@ -337,6 +337,26 @@ def test_three_part_dates_that_do_not_parse_mean_unknown() -> None:
         assert _block(shaped)["order"] == "unknown", values
 
 
+def test_dates_that_parse_as_iso_8601_are_read_year_month_day() -> None:
+    """The standard's reading is the one used, also where every day is 12 or
+    less. A first-of-period series is the common case that relies on it."""
+    for values in (["2024-02-01", "2024-01-02"], ["20240201", "20240102"]):
+        records = _series("date", values)
+
+        shaped = shape_response(_enveloped(records), limit=1)
+
+        assert shaped["data"] == records[:1], values
+        assert _block(shaped)["order"] == "desc", values
+
+    records = _series("date", ["2024-10-01", "2024-11-01", "2024-12-01", "2025-01-01"])
+
+    shaped = shape_response(_enveloped(records), limit=2)
+
+    assert shaped["data"] == records[2:]
+    assert _block(shaped)["order"] == "asc"
+    assert _block(shaped)["kept_end"] == "newest"
+
+
 def test_a_year_and_one_part_that_do_not_parse_order_as_text() -> None:
     for values in (
         ["202411", "202412", "202501"],

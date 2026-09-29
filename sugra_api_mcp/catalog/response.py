@@ -27,9 +27,10 @@ without an ``observations`` list) keeps today's behaviour exactly.
 ``limit`` keeps the newest end of a records list whose order it can read:
 every record carries exactly one of the known date or period keys at its
 top level, all values share one format, and the whole list runs one way by
-them (ISO 8601 date-times by the moment they name, so differing UTC
-offsets compare correctly; another format only when it is a year alone or
-a year and one part, such as a month or a quarter). An ascending list
+them (values in ISO 8601 form by the moment they name, read year, month,
+day as the standard defines, so differing UTC offsets compare correctly;
+another format only when it is a year alone or a year and one part, such
+as a month or a quarter). An ascending list
 keeps its last N records, a descending one its first N. Anything else
 keeps the first N records, as limit always did. When a
 limit was applied to a records list, ``meta.shaped`` reports ``order``
@@ -177,7 +178,8 @@ _ASCII_DIGITS = frozenset("0123456789")
 # text order is date order, and there is no time of day to carry an offset.
 # Two or more parts after the year could run month then day or day then
 # month, which a shape cannot tell. Only consulted for values that do not
-# parse as ISO 8601, where the standard names every part.
+# parse as ISO 8601; a value that parses is read as the standard defines it,
+# year, then month, then day.
 _YEAR_AND_ONE_PART_SHAPE = re.compile(r"####(?:[-/.]?[A-Z]?#{1,3})?")
 
 ORDER_ASC = "asc"
@@ -349,12 +351,16 @@ def _order_keys(keys: list[Any]) -> list[Any] | None:
 
     Values that parse as ISO 8601 compare as the moments they name, so a
     UTC offset that varies still orders correctly; they must all parse and
-    all carry an offset or all lack one. A value that does not parse
-    compares as text only when it is a year alone or a year and one part
-    after it (``_YEAR_AND_ONE_PART_SHAPE``), where text order is date order
-    whatever the part means. Any other shape needs a convention the shape
-    cannot show (month then day or day then month, a UTC offset), and fails
-    the whole list.
+    all carry an offset or all lack one. They are read as the standard
+    defines them, year, then month, then day. A source that wrote year, day,
+    month in the same form would be misread whenever every day is 12 or
+    less; a larger day does not parse and makes the list unknown.
+
+    A value that does not parse compares as text only when it is a year
+    alone or a year and one part after it (``_YEAR_AND_ONE_PART_SHAPE``),
+    where text order is date order whatever the part means. Any other shape
+    needs a convention the shape cannot show (month then day or day then
+    month, a UTC offset), and fails the whole list.
     """
     if all(_is_number(key) for key in keys):
         return keys
