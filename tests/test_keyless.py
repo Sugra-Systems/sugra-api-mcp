@@ -27,7 +27,7 @@ from sugra_api_mcp.tools import entities, gateway
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURE = Path(__file__).parent / "fixtures" / "openapi_minimal.json"
 
-EXPECTED_TOOL_COUNT = 10
+EXPECTED_TOOL_COUNT = 8
 EXPECTED_PROMPT_COUNT = 6
 # The default surface: the opt-in ui:// widget is off, and
 # _keyless_env removes SUGRA_MCP_UI_WIDGETS so the runner's env cannot add it.
@@ -197,7 +197,9 @@ class FakeClient:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, dict[str, Any] | None]] = []
 
-    async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def get(
+        self, path: str, params: dict[str, Any] | None = None, **_kwargs: Any
+    ) -> dict[str, Any]:
         self.calls.append(("GET", path, params))
         return {"data": [{"symbol": "AAPL", "price": 200}], "meta": {}}
 

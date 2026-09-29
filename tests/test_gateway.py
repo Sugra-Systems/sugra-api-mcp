@@ -21,11 +21,15 @@ class FakeClient:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, dict[str, Any] | None, dict[str, Any] | None]] = []
 
-    async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def get(
+        self, path: str, params: dict[str, Any] | None = None, **_kwargs: Any
+    ) -> dict[str, Any]:
         self.calls.append(("GET", path, params, None))
         return {"data": [{"symbol": "AAPL", "price": 200, "extra": "drop"}], "meta": {}}
 
-    async def post(self, path: str, json: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def post(
+        self, path: str, json: dict[str, Any] | None = None, **_kwargs: Any
+    ) -> dict[str, Any]:
         self.calls.append(("POST", path, None, json))
         return {"data": {"ok": True}, "meta": {}}
 
@@ -35,6 +39,7 @@ class FakeClient:
         path: str,
         params: dict[str, Any] | None = None,
         json: dict[str, Any] | None = None,
+        **_kwargs: Any,
     ) -> dict[str, Any]:
         self.calls.append((method, path, params, json))
         return {"data": {"ok": True}, "meta": {}}
@@ -130,7 +135,9 @@ async def test_call_endpoint_applies_fields_to_envelope_less_payload(monkeypatch
     """
 
     class FlatClient(FakeClient):
-        async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        async def get(
+            self, path: str, params: dict[str, Any] | None = None, **_kwargs: Any
+        ) -> dict[str, Any]:
             self.calls.append(("GET", path, params, None))
             return {
                 "ip": "8.8.8.8",
@@ -400,10 +407,10 @@ class StructuredErrorClient:
         "timeout_s": 30.0,
     }
 
-    async def get(self, path, params=None):
+    async def get(self, path, params=None, **_kwargs):
         return dict(self.ERROR)
 
-    async def request(self, method, path, params=None, json=None):
+    async def request(self, method, path, params=None, json=None, **_kwargs):
         return dict(self.ERROR)
 
 
@@ -427,10 +434,10 @@ async def test_call_endpoint_returns_structured_error_without_shaping(monkeypatc
 class RaisingClient:
     """Mimics an unexpected non-httpx failure inside the call path."""
 
-    async def get(self, path, params=None):
+    async def get(self, path, params=None, **_kwargs):
         raise RuntimeError("unexpected internal failure")
 
-    async def request(self, method, path, params=None, json=None):
+    async def request(self, method, path, params=None, json=None, **_kwargs):
         raise RuntimeError("unexpected internal failure")
 
 
@@ -489,7 +496,7 @@ async def test_call_endpoint_shapes_success_payload_containing_error_key(monkeyp
     top-level error note must still get shaped (limit applied), not returned raw."""
 
     class PartialClient:
-        async def get(self, path, params=None):
+        async def get(self, path, params=None, **_kwargs):
             return {"data": [{"v": 1}, {"v": 2}], "error": "partial", "meta": {}}
 
     monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)

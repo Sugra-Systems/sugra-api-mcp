@@ -413,7 +413,7 @@ class _GateClient:
         self.entered = entered
         self.release = release
 
-    async def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+    async def get(self, path: str, params: dict[str, Any] | None = None, **_kwargs: Any) -> Any:
         self.entered.set()
         await self.release.wait()
         return {"data": [{"ok": 1}]}

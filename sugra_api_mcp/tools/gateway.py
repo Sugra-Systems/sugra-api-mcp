@@ -15,6 +15,7 @@ from ..catalog.loader import load_catalog
 from ..catalog.response import shape_response
 from ..catalog.search import known_sources, known_toolsets, query_limit_error, search_catalog
 from ..catalog.toolsets import ordered_toolsets
+from ..client import _enforce_size_limit
 from ..errors import is_error_payload, server_busy_error
 from ..observability import trace_mcp_tool
 from ..server import current_caller, get_client, mcp, read_only
@@ -433,9 +434,11 @@ async def call_endpoint(
 
         client = get_client()
         if endpoint.method == "GET":
-            payload = await client.get(path, params=query_params)
+            payload = await client.get(path, params=query_params, enforce_size=False)
         elif endpoint.method == "POST":
-            payload = await client.request(endpoint.method, path, params=query_params, json=body)
+            payload = await client.request(
+                endpoint.method, path, params=query_params, json=body, enforce_size=False
+            )
         else:
             return {
                 "error": "unsupported_method",
@@ -443,17 +446,25 @@ async def call_endpoint(
                 "method": endpoint.method,
             }
 
+        # The client above measured nothing (enforce_size=False): here is
+        # where the raw body is measured, AFTER any fields/limit projection
+        # this call applies, never before it - a request that projects a
+        # large envelope down to a small field must not be rejected for the
+        # size of the body it never returns. Applied on every return path,
+        # including the structured-error one below, for parity with the
+        # client's own unconditional enforcement on every other caller.
         if is_error_payload(payload):
-            # Structured error contract from SugraClient (transport failure,
-            # HTTP 4xx/5xx, or size-limit refusal). Return it untouched:
-            # shaping an error dict would only decorate it with misleading
-            # meta while the agent needs the raw {error, reason, elapsed_ms}.
-            # The "no data key" guard mirrors entities._is_error: a success
-            # envelope always carries data, so a hypothetical 200 partial
-            # payload with both keys still gets shaped normally.
-            return payload
+            # Structured error contract from SugraClient (transport failure
+            # or HTTP 4xx/5xx). Return it untouched apart from the same size
+            # cap: shaping an error dict would only decorate it with
+            # misleading meta while the agent needs the raw {error, reason,
+            # elapsed_ms}. The "no data key" guard mirrors entities._is_error:
+            # a success envelope always carries data, so a hypothetical 200
+            # partial payload with both keys still gets shaped normally.
+            return _enforce_size_limit(payload, path)
 
-        return shape_response(payload, limit=limit, fields=fields, include_raw=include_raw)
+        shaped = shape_response(payload, limit=limit, fields=fields, include_raw=include_raw)
+        return _enforce_size_limit(shaped, path)
     except Exception as exc:
         return {
             "error": "tool_execution_failed",
