@@ -1018,3 +1018,65 @@ def test_toolsets_payload_lists_new_toolsets_with_descriptions() -> None:
         assert name in by_name, name
         assert by_name[name]["endpoint_count"] > 0
         assert by_name[name]["description"]
+
+
+def test_builder_carries_x_sugra_keywords_extension() -> None:
+    """x-sugra-keywords is an OpenAPI vendor extension a generic parser
+    treats as unknown data - the builder must read it explicitly, or it is
+    dropped silently and search has nothing to index."""
+    from sugra_api_mcp.catalog.models import Catalog
+
+    spec = {
+        "openapi": "3.1.0",
+        "info": {"title": "t", "version": "1"},
+        "paths": {
+            "/beans": {
+                "get": {
+                    "tags": ["Reference"],
+                    "summary": "Bean data",
+                    "operationId": "beans_op",
+                    "x-sugra-keywords": ["cappuccino", "espresso"],
+                }
+            },
+            "/plain": {
+                "get": {
+                    "tags": ["Reference"],
+                    "summary": "Plain data",
+                    "operationId": "plain_op",
+                }
+            },
+        },
+    }
+    catalog = build_catalog_from_openapi(spec)
+    assert catalog.get("beans_op").keywords == ["cappuccino", "espresso"]
+    assert catalog.get("plain_op").keywords == []
+
+    # Round-trip through to_dict/from_dict - the shape the bundled JSON is
+    # stored and reloaded in.
+    round_tripped = Catalog.from_dict(catalog.to_dict())
+    assert round_tripped.get("beans_op").keywords == ["cappuccino", "espresso"]
+    assert "keywords" not in round_tripped.get("plain_op").to_dict()
+
+
+def test_search_indexes_operation_keywords() -> None:
+    """A query matching only a keyword the operation itself never spells out
+    in its path/summary/description/tags must still find that operation."""
+    spec = {
+        "openapi": "3.1.0",
+        "info": {"title": "t", "version": "1"},
+        "paths": {
+            "/beans": {
+                "get": {
+                    "tags": ["Reference"],
+                    "summary": "Bean data",
+                    "operationId": "beans_op",
+                    "x-sugra-keywords": ["cappuccino"],
+                }
+            }
+        },
+    }
+    catalog = build_catalog_from_openapi(spec)
+    results = search_catalog(catalog, "cappuccino", limit=5)
+    assert results
+    assert results[0]["operation_id"] == "beans_op"
+    assert any(reason == "keyword:cappuccino" for reason in results[0]["why"])

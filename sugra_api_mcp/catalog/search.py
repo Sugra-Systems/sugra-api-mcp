@@ -102,6 +102,18 @@ CENTRAL_BANK_MISMATCH_PENALTY = 10
 # - DEPRECATION: a deprecated route with a live replacement in the catalog
 #   must never outrank it; the penalty exceeds every token-luck margin.
 DEPRECATED_REPLACED_PENALTY = 25
+# x-sugra-keywords carries synonyms a query might use that the operation's
+# own path/summary/description never spell out ("coffee" for
+# fred_series_series_id). Weighted like tag_toolset (4) - a keyword IS a tag
+# the API author chose to attach to the operation, not prose.
+KEYWORD_FIELD_WEIGHT = 4
+# The query names a country (detect_query_countries) and the endpoint takes a
+# `country` parameter - a generic signal that the endpoint can answer for
+# that country, independent of the SOURCE_COUNTRY_PREFIXES national-source
+# penalty above. Without this, a bare country name query ("Portugal") matched
+# nothing: no field in the catalog spells country names out, only the
+# parameter NAME "country" appears, and nothing in the query text touched it.
+COUNTRY_PARAM_BOOST = 6
 
 
 def _tokens(value: str) -> list[str]:
@@ -176,13 +188,17 @@ class _EndpointProfile:
     the normalized text is exactly what ``_phrase_has`` builds.
     """
 
-    __slots__ = ("description", "operation_id", "params", "path", "summary", "tags", "text", "text_normalized")
+    __slots__ = (
+        "description", "keywords", "operation_id", "params", "path",
+        "summary", "tags", "takes_country_param", "text", "text_normalized",
+    )
 
     def __init__(self, endpoint: Endpoint) -> None:
         tag_text = " ".join([*endpoint.tags, endpoint.toolset, endpoint.source_family])
         param_text = " ".join(
             f"{parameter.name} {parameter.description}" for parameter in endpoint.parameters
         )
+        keyword_text = " ".join(endpoint.keywords)
         text_tokens = _tokens(_endpoint_text(endpoint))
         self.operation_id = frozenset(_tokens(endpoint.operation_id))
         self.tags = frozenset(_tokens(tag_text))
@@ -190,6 +206,10 @@ class _EndpointProfile:
         self.path = frozenset(_tokens(endpoint.path))
         self.params = frozenset(_tokens(param_text))
         self.description = frozenset(_tokens(endpoint.description))
+        self.keywords = frozenset(_tokens(keyword_text))
+        self.takes_country_param = any(
+            parameter.name.lower() == "country" for parameter in endpoint.parameters
+        )
         self.text = frozenset(text_tokens)
         self.text_normalized = " ".join(text_tokens)
 
@@ -343,6 +363,10 @@ def _score(
             score += 2
             hit = True
             why.append(f"params:{term}")
+        if term in profile.keywords:
+            score += KEYWORD_FIELD_WEIGHT
+            hit = True
+            why.append(f"keyword:{term}")
         if term in profile.description:
             score += 1
             why.append(f"description:{term}")
@@ -388,6 +412,14 @@ def _score(
                     score -= WRONG_COUNTRY_PENALTY
                     why.append(f"geo-mismatch:{country}")
                 break
+
+        # A generic country-parameterized endpoint can answer for WHATEVER
+        # country the query names (it is not fixed to one nation the way a
+        # national source is), so it earns a positive boost rather than the
+        # mismatch penalty above.
+        if profile.takes_country_param:
+            score += COUNTRY_PARAM_BOOST
+            why.append("pattern:country->param")
 
     # Deprecation: never above the live replacement.
     if endpoint.deprecated and endpoint.replaced_by:
