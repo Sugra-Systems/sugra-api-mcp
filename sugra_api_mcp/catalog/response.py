@@ -27,7 +27,8 @@ without an ``observations`` list) keeps today's behaviour exactly.
 ``limit`` keeps the newest end of a records list whose order it can read:
 every record carries exactly one of the known date or period keys at its
 top level, all values share one format, and the whole list runs one way by
-them. An ascending list keeps its last N records, a descending one its first
+them (date-times with a numeric UTC offset by instant, not by text). An
+ascending list keeps its last N records, a descending one its first
 N. Anything else keeps the first N records, as limit always did. When a
 limit was applied to a records list, ``meta.shaped`` reports ``order``
 (``asc``, ``desc`` or ``unknown``) and ``kept_end`` (``newest`` or
@@ -48,7 +49,9 @@ envelope-less payloads (2026-06-07), and fields on news_latest returned
 from __future__ import annotations
 
 import json
+import re
 from copy import deepcopy
+from datetime import datetime
 from itertools import pairwise
 from typing import Any
 
@@ -164,6 +167,10 @@ _DATE_KEY_CANDIDATES = frozenset(
 )
 
 _ASCII_DIGITS = frozenset("0123456789")
+
+# A shape (digits read as "#") holding a time of day with a sign and a digit
+# somewhere after it: a numeric UTC offset such as "+01:00" or "-0500".
+_NUMERIC_OFFSET_SHAPE = re.compile(r"(?:T#|#:#).*[+-]#")
 
 ORDER_ASC = "asc"
 ORDER_DESC = "desc"
@@ -322,8 +329,8 @@ def _string_template(value: str) -> str:
     return "".join("#" if char in _ASCII_DIGITS else char for char in value)
 
 
-def _comparable_keys(keys: list[Any]) -> bool:
-    """True when every key can be ordered against every other as a date.
+def _order_keys(keys: list[Any]) -> list[Any] | None:
+    """The keys in a form whose natural order is date order, or None.
 
     Numbers compare numerically (years, epoch seconds). Strings compare as
     text only when every value has the same shape, with each ASCII digit
@@ -332,15 +339,37 @@ def _comparable_keys(keys: list[Any]) -> bool:
     Day-first and month-first dates, month names and ordinal codes such as
     ``-1m`` fail one of the two tests. Any boolean, or numbers mixed with
     strings, fails.
+
+    A shape with a time of day and a numeric UTC offset is the exception:
+    two offsets can put text order and time order apart, so those values
+    compare as instants, and one that does not parse as an ISO 8601
+    date-time fails the whole list.
     """
     if all(_is_number(key) for key in keys):
-        return True
+        return keys
     if not all(isinstance(key, str) for key in keys):
-        return False
+        return None
     template = _string_template(keys[0])
     if not template.startswith("####"):
-        return False
-    return all(_string_template(key) == template for key in keys[1:])
+        return None
+    if not all(_string_template(key) == template for key in keys[1:]):
+        return None
+    if _NUMERIC_OFFSET_SHAPE.search(template):
+        return _instants(keys)
+    return keys
+
+
+def _instants(keys: list[str]) -> list[datetime] | None:
+    instants = []
+    for key in keys:
+        try:
+            moment = datetime.fromisoformat(key)
+        except ValueError:
+            return None
+        if moment.utcoffset() is None:
+            return None
+        instants.append(moment)
+    return instants
 
 
 def _records_order(records: list[Any]) -> str:
@@ -359,8 +388,8 @@ def _records_order(records: list[Any]) -> str:
     ]
     if len(present) != 1:
         return ORDER_UNKNOWN
-    keys = [record[present[0]] for record in records]
-    if not _comparable_keys(keys) or keys[0] == keys[-1]:
+    keys = _order_keys([record[present[0]] for record in records])
+    if keys is None or keys[0] == keys[-1]:
         return ORDER_UNKNOWN
     pairs = list(pairwise(keys))
     if all(earlier <= later for earlier, later in pairs):

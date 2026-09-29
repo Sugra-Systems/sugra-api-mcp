@@ -216,6 +216,56 @@ def test_year_led_formats_with_letters_establish_the_order() -> None:
         assert _block(shaped)["order"] == "asc", values
 
 
+def test_differing_utc_offsets_order_by_instant_not_text() -> None:
+    """00:30 at +01:00 is 23:30 UTC the day before, so this pair ascends in
+    time although it descends as text."""
+    ascending = _series("time", ["2026-01-01T00:30:00+01:00", "2026-01-01T00:00:00+00:00"])
+    descending = list(reversed(ascending))
+
+    up = shape_response(_enveloped(ascending), limit=1)
+    down = shape_response(_enveloped(descending), limit=1)
+
+    assert up["data"] == ascending[1:]
+    assert _block(up)["order"] == "asc"
+    assert _block(up)["kept_end"] == "newest"
+    assert down["data"] == descending[:1]
+    assert _block(down)["order"] == "desc"
+
+
+def test_a_series_across_a_clock_change_orders_by_instant() -> None:
+    """The hour repeated when clocks go back: text order runs 01:30, 01:15,
+    01:45, time order 05:30, 06:15, 06:45 UTC."""
+    records = _series(
+        "timestamp",
+        ["2026-11-01T01:30:00-04:00", "2026-11-01T01:15:00-05:00", "2026-11-01T01:45:00-05:00"],
+    )
+
+    shaped = shape_response(_enveloped(records), limit=1)
+
+    assert shaped["data"] == records[2:]
+    assert _block(shaped)["order"] == "asc"
+
+
+def test_offset_values_that_name_one_instant_at_both_ends_mean_unknown() -> None:
+    records = _series("time", ["2026-01-01T01:00:00+01:00", "2026-01-01T00:00:00+00:00"])
+
+    shaped = shape_response(_enveloped(records), limit=1)
+
+    assert shaped["data"] == records[:1]
+    assert _block(shaped)["order"] == "unknown"
+
+
+def test_offset_values_that_do_not_parse_mean_unknown() -> None:
+    """Same shape, so text would read this pair as descending, but the
+    offsets cannot be read, so neither can the order."""
+    records = _series("time", ["2026-01-01T00:30:00+01:00 (local)", "2026-01-01T00:00:00+00:00 (local)"])
+
+    shaped = shape_response(_enveloped(records), limit=1)
+
+    assert shaped["data"] == records[:1]
+    assert _block(shaped)["order"] == "unknown"
+
+
 def test_integer_years_ascending_and_descending() -> None:
     ascending = _series("year", [2022, 2023, 2024, 2025])
     descending = list(reversed(ascending))
