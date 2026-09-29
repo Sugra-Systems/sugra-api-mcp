@@ -250,7 +250,8 @@ async def get_snapshot(recipe: str, entity: EntityArg) -> dict[str, Any]:
     recipe's fixed cost (1-2 units) from the daily quota. status "partial"
     means an optional component was unavailable - the present components are
     still trustworthy; honor the freshness block (stale=true means the data
-    aged past its budget).
+    aged past its budget); for macro_calendar, entity is accepted but does
+    not filter the calendar.
 
     Args:
         recipe: Recipe name from the fixed manifest.
