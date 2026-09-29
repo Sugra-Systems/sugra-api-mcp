@@ -175,6 +175,13 @@ def build_catalog_from_openapi(
                     groups_mutually_exclusive=bool(
                         (operation.get("x-sugra-required-groups") or {})
                         .get("mutually_exclusive", False)),
+                    # Carry the spec's x-sugra-keywords vendor extension into
+                    # the bundle so search can index it - dropped silently
+                    # before this, since nothing in the builder read unknown
+                    # extensions.
+                    keywords=[
+                        str(word) for word in (operation.get("x-sugra-keywords") or [])
+                    ],
                 )
             )
 

@@ -73,6 +73,11 @@ class Endpoint(BaseModel):
     # must be fully covered before the gateway dispatches.
     required_groups: tuple[tuple[str, ...], ...] = ()
     groups_mutually_exclusive: bool = False
+    # Search vocabulary from the spec's x-sugra-keywords vendor extension -
+    # lowercase synonyms/labels a query might use that the operation's own
+    # path/summary/description never spell out (coffee, cocoa, sugar,
+    # gasoline, ...). Empty for every operation the API does not annotate.
+    keywords: list[str] = Field(default_factory=list)
 
     @property
     def required_parameters(self) -> list[str]:
@@ -108,6 +113,7 @@ class Endpoint(BaseModel):
                 for group in (data.get("required_groups") or [])
             ),
             groups_mutually_exclusive=bool(data.get("groups_mutually_exclusive", False)),
+            keywords=[str(word) for word in (data.get("keywords") or [])],
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -138,6 +144,8 @@ class Endpoint(BaseModel):
             result["required_groups"] = [list(group) for group in self.required_groups]
             if self.groups_mutually_exclusive:
                 result["groups_mutually_exclusive"] = True
+        if self.keywords:
+            result["keywords"] = self.keywords
         return result
 
 
