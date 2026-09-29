@@ -320,11 +320,27 @@ def test_a_time_of_day_that_does_not_parse_means_unknown_even_without_an_offset(
     assert _block(shaped)["order"] == "unknown"
 
 
-def test_dates_and_periods_that_do_not_parse_order_as_text() -> None:
+def test_three_part_dates_that_do_not_parse_mean_unknown() -> None:
+    """31 January then 1 February read as year, day, month: text says
+    descending, and no shape can tell year-day-month from year-month-day."""
+    for values in (
+        ["2024/31/01", "2024/01/02"],
+        ["2024.31.01", "2024.01.02"],
+        ["2024-31-01", "2024-01-02"],
+        ["2024/12/30", "2024/12/31", "2025/01/01"],
+    ):
+        records = _series("date", values)
+
+        shaped = shape_response(_enveloped(records), limit=1)
+
+        assert shaped["data"] == records[:1], values
+        assert _block(shaped)["order"] == "unknown", values
+
+
+def test_a_year_and_one_part_that_do_not_parse_order_as_text() -> None:
     for values in (
         ["202411", "202412", "202501"],
-        ["2024/12/30", "2024/12/31", "2025/01/01"],
-        ["2024.12.30", "2024.12.31", "2025.01.01"],
+        ["2024/11", "2024/12", "2025/01"],
         ["2024-365", "2024-366", "2025-001"],
         ["2024H1", "2024H2", "2025H1"],
         ["2024-S1", "2024-S2", "2025-S1"],

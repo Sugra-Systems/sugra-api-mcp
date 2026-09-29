@@ -28,9 +28,10 @@ without an ``observations`` list) keeps today's behaviour exactly.
 every record carries exactly one of the known date or period keys at its
 top level, all values share one format, and the whole list runs one way by
 them (ISO 8601 date-times by the moment they name, so differing UTC
-offsets compare correctly; other formats only when they carry no time of
-day). An ascending list keeps its last N records, a descending one its
-first N. Anything else keeps the first N records, as limit always did. When a
+offsets compare correctly; another format only when it is a year alone or
+a year and one part, such as a month or a quarter). An ascending list
+keeps its last N records, a descending one its first N. Anything else
+keeps the first N records, as limit always did. When a
 limit was applied to a records list, ``meta.shaped`` reports ``order``
 (``asc``, ``desc`` or ``unknown``) and ``kept_end`` (``newest`` or
 ``first``), as maps keyed by sibling name for sibling sub-series.
@@ -169,12 +170,15 @@ _DATE_KEY_CANDIDATES = frozenset(
 
 _ASCII_DIGITS = frozenset("0123456789")
 
-# The shapes (digits read as "#") of a date or period with no time of day,
-# so no UTC offset: a year alone; a year and month, or year, month and day,
-# under one separator or none; a day of the year; a half-year (H or S),
-# quarter, month or week code. Only consulted for values that do not parse as
-# ISO 8601; text order is date order for these and for no other shape.
-_OFFSET_FREE_SHAPE = re.compile(r"####(?:([-/.]?)##(?:\1##)?|-?###|-?[HQS]#|-?[MW]##)?")
+# A year alone, or a year and ONE part after it (digits read as "#"): an
+# optional separator, an optional capital letter, one to three digits, as in
+# 2024, 2024-07, 202407, 2024-Q3, 2024M11, 2024H1 or 2024-189. Whatever that
+# part means, a list of one such shape runs year first and then the part, so
+# text order is date order, and there is no time of day to carry an offset.
+# Two or more parts after the year could run month then day or day then
+# month, which a shape cannot tell. Only consulted for values that do not
+# parse as ISO 8601, where the standard names every part.
+_YEAR_AND_ONE_PART_SHAPE = re.compile(r"####(?:[-/.]?[A-Z]?#{1,3})?")
 
 ORDER_ASC = "asc"
 ORDER_DESC = "desc"
@@ -346,10 +350,11 @@ def _order_keys(keys: list[Any]) -> list[Any] | None:
     Values that parse as ISO 8601 compare as the moments they name, so a
     UTC offset that varies still orders correctly; they must all parse and
     all carry an offset or all lack one. A value that does not parse
-    compares as text only when its shape is a date or period with no time
-    of day (``_OFFSET_FREE_SHAPE``), where text order is date order. Any
-    other shape could carry an offset that cannot be read, and fails the
-    whole list.
+    compares as text only when it is a year alone or a year and one part
+    after it (``_YEAR_AND_ONE_PART_SHAPE``), where text order is date order
+    whatever the part means. Any other shape needs a convention the shape
+    cannot show (month then day or day then month, a UTC offset), and fails
+    the whole list.
     """
     if all(_is_number(key) for key in keys):
         return keys
@@ -362,7 +367,7 @@ def _order_keys(keys: list[Any]) -> list[Any] | None:
         return None
     if _iso_moment(keys[0]) is not None:
         return _iso_moments(keys)
-    if _OFFSET_FREE_SHAPE.fullmatch(template) is None:
+    if _YEAR_AND_ONE_PART_SHAPE.fullmatch(template) is None:
         return None
     return keys
 
