@@ -397,3 +397,26 @@ def test_get_timeseries_passes_a_partial_answer_through_untouched(monkeypatch, f
     # still pass if the tool dropped `coverage` or any other metadata, and
     # "passes through untouched" is the claim being made.
     assert out == payload
+
+
+def test_get_snapshot_description_warns_macro_calendar_ignores_entity(monkeypatch):
+    """The macro_calendar recipe accepts an entity argument (the tool
+    signature requires one) but the server-side recipe never filters by it -
+    entity_namespaces is empty for macro_calendar, so any entity passes
+    validation and the underlying loader is symbol-agnostic. A caller reading
+    only the served tool description, never the source, must be told this or
+    it will assume a ticker narrows the calendar the way it does for every
+    other recipe."""
+    monkeypatch.setenv("SUGRA_AGENT_INTERNAL_TOKEN", "tok-123")
+    instance = FastMCP("probe")
+    assert register_agent_tools(instance) is True
+    tools = {t.name: t for t in asyncio.run(instance.list_tools())}
+    description = tools["get_snapshot"].description or ""
+    # Collapse the docstring's line wrapping (a single space in source can
+    # land as a newline in the served text) so the phrase check is not
+    # accidentally sensitive to where the source happens to wrap the line.
+    normalized = " ".join(description.split())
+    assert (
+        "for macro_calendar, entity is accepted but does not filter the "
+        "calendar" in normalized
+    ), normalized
