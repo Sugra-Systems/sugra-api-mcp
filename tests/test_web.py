@@ -207,12 +207,12 @@ def test_tabs_point_at_the_public_listings_before_the_commands(client: TestClien
 
     parser = _parse_landing(client)
     assert parser.pre_text["cmd-claude-code-skills"] == (
-        "claude plugin marketplace add Sugra-Systems/sugra-api-skills\n"
-        "claude plugin install sugra-api@sugra-api-skills"
+        "claude plugin marketplace add Sugra-Systems/sugra-api-plugins\n"
+        "claude plugin install sugra-api@sugra-api-plugins"
     )
     assert parser.pre_text["cmd-codex-skills"] == (
-        "codex plugin marketplace add Sugra-Systems/sugra-api-skills\n"
-        "codex plugin add sugra-api@sugra-api-skills"
+        "codex plugin marketplace add Sugra-Systems/sugra-api-plugins\n"
+        "codex plugin add sugra-api@sugra-api-plugins"
     )
 
 
@@ -241,7 +241,7 @@ def test_highlighted_blocks_copy_as_the_plain_source(client: TestClient) -> None
         "Authorization": "Bearer ${input:sugra-api-key}"
     }
     assert parser.pre_text["cmd-grok-skills"] == (
-        "grok plugin install Sugra-Systems/sugra-api-skills#plugins/sugra-api"
+        "grok plugin install Sugra-Systems/sugra-api-plugins#xai"
     )
     assert parser.pre_text["cfg-url"] == "https://mcp.sugra.ai/mcp"
 
@@ -359,7 +359,9 @@ def test_skills_index_is_served_unauthenticated(client: TestClient) -> None:
 
 def test_every_listed_skill_file_redirects_to_the_pinned_commit(client: TestClient) -> None:
     source = skills_index.SOURCE
-    raw = f"https://raw.githubusercontent.com/{source['repo']}/{source['commit']}/{source['path']}/"
+    # The skills sit at the root of the skills repository: no path segment.
+    assert source["path"] == ""
+    raw = f"https://raw.githubusercontent.com/{source['repo']}/{source['commit']}/"
     for skill in skills_index.INDEX["skills"]:
         for name in skill["files"]:
             path = f"/.well-known/skills/{skill['name']}/{name}"

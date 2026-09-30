@@ -1,9 +1,11 @@
 """Build the skills index served at https://mcp.sugra.ai/.well-known/skills/.
 
-The skill text lives in one repository, Sugra-Systems/sugra-api-skills. This
-script reads one commit of it and writes only the index: each skill's name,
-its description and the list of its files. The server redirects every listed
-file to that commit's raw copy, so the text is never copied here.
+The skill text lives in one repository, Sugra-Systems/sugra-api-skills, one
+folder per skill at its root. This script reads one commit of it and writes
+the index: each skill's name, its description and the list of its files. The
+server redirects every listed file to that commit's raw copy. The index also
+keeps each SKILL.md text, which the sugra://skills/ MCP resources serve, so a
+stdio install reads them without a network call.
 
 Rebuild after the skills change:
 
@@ -24,7 +26,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REPO = "Sugra-Systems/sugra-api-skills"
-DEFAULT_PATH = "plugins/sugra-api/skills"
+DEFAULT_PATH = ""
 DEFAULT_OUTPUT = REPO_ROOT / "sugra_api_mcp" / "skills_index.json"
 
 # The skills CLI refuses any other name (lowercase letters, digits, single hyphens).
@@ -62,12 +64,15 @@ def build_index(
 ) -> dict:
     """The index for every skill directory directly under `path`.
 
-    `blobs` are the file paths of the commit's tree; `read` returns a file's
-    text at that commit.
+    A skill directory is one that holds a SKILL.md of its own; any other
+    directory (scripts/, a nested plugin copy) is not a skill. An empty `path`
+    is the repository root. `blobs` are the file paths of the commit's tree;
+    `read` returns a file's text at that commit.
     """
     if not _SHA.match(commit):
         raise ValueError(f"commit must be a full 40-character sha, got {commit!r}")
-    prefix = path.rstrip("/") + "/"
+    path = path.strip("/")
+    prefix = f"{path}/" if path else ""
     files: dict[str, list[str]] = {}
     for blob in blobs:
         if not blob.startswith(prefix):
@@ -76,12 +81,14 @@ def build_index(
         if sep and rest:
             files.setdefault(name, []).append(rest)
     skills = []
+    texts: dict[str, str] = {}
     for name in sorted(files):
+        if "SKILL.md" not in files[name]:
+            continue
         if not _NAME.match(name) or len(name) > 64:
             raise ValueError(f"skill directory {name!r} is not a valid skill name")
-        if "SKILL.md" not in files[name]:
-            raise ValueError(f"skill {name!r} has no SKILL.md")
-        meta = frontmatter(read(f"{prefix}{name}/SKILL.md"))
+        text = read(f"{prefix}{name}/SKILL.md")
+        meta = frontmatter(text)
         if meta.get("name") != name:
             raise ValueError(f"skill {name!r} declares name {meta.get('name')!r}")
         if not meta.get("description"):
@@ -89,9 +96,14 @@ def build_index(
         skills.append(
             {"name": name, "description": meta["description"], "files": sorted(files[name])}
         )
+        texts[name] = text
     if not skills:
         raise ValueError(f"no skills under {path!r} at {commit}")
-    return {"source": {"repo": repo, "commit": commit, "path": path.rstrip("/")}, "skills": skills}
+    return {
+        "source": {"repo": repo, "commit": commit, "path": path},
+        "skills": skills,
+        "skill_md": texts,
+    }
 
 
 def main() -> None:

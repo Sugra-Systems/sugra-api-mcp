@@ -1,4 +1,4 @@
-"""Official SKILL.md pack as MCP resources."""
+"""The sugra-api-skills skills as MCP resources, read from the pinned index."""
 
 from __future__ import annotations
 
@@ -6,13 +6,8 @@ import re
 
 import pytest
 
-from sugra_api_mcp.tools.skills import (
-    HOSTED_ONLY_TOOLS,
-    SKILL_SLUGS,
-    SKILL_URIS,
-    STDIO_ONLY_SKILL_SLUGS,
-    read_skill,
-)
+from sugra_api_mcp import skills_index
+from sugra_api_mcp.tools.skills import SKILL_SPECS, SKILL_URIS, read_skill
 
 TIER_C_NAME_FRAGMENTS = [
     "yahoo",
@@ -26,8 +21,7 @@ TIER_C_NAME_FRAGMENTS = [
 ]
 
 FRONTMATTER_RE = re.compile(
-    r"^---\nname: (?P<name>[^\n]+)\ndescription: (?P<description>.+)\n---\n",
-    re.DOTALL,
+    r"^---\nname: (?P<name>[^\n]+)\ndescription: (?P<description>[^\n]+)\n",
 )
 
 GATEWAY_LOOP_TOOLS = (
@@ -35,6 +29,16 @@ GATEWAY_LOOP_TOOLS = (
     "describe_endpoint",
     "call_endpoint",
 )
+HOSTED_ONLY_TOOLS = ("resolve_entity", "get_snapshot", "get_timeseries")
+
+# The five URIs predate sugra-api-skills; clients may have them saved.
+LEGACY_URIS = {
+    "sugra://skills/explore-catalog",
+    "sugra://skills/envelope-attribution",
+    "sugra://skills/auth-limits",
+    "sugra://skills/hosted-vs-gateway",
+    "sugra://skills/cross-domain-briefing",
+}
 
 
 @pytest.fixture()
@@ -46,83 +50,71 @@ def registered_mcp(monkeypatch):
     return mcp
 
 
-async def _read(mcp, uri: str) -> str:
+async def _read(mcp, uri: str):
     contents = list(await mcp.read_resource(uri))
     assert len(contents) == 1
     return contents[0]
 
 
+def test_the_old_uris_keep_working() -> None:
+    assert set(SKILL_URIS) == LEGACY_URIS
+
+
 async def test_all_skill_uris_are_registered(registered_mcp) -> None:
-    listed = {str(resource.uri) for resource in await registered_mcp.list_resources()}
-    assert set(SKILL_URIS) <= listed
-    for uri in SKILL_URIS:
-        listed_mime = next(
-            resource.mimeType
-            for resource in await registered_mcp.list_resources()
-            if str(resource.uri) == uri
-        )
-        assert listed_mime == "text/markdown"
+    listed = {str(r.uri): r for r in await registered_mcp.list_resources()}
+    descriptions = {s["name"]: s["description"] for s in skills_index.INDEX["skills"]}
+    for (slug, name, title, skill), uri in zip(SKILL_SPECS, SKILL_URIS, strict=True):
+        resource = listed[uri]
+        assert resource.mimeType == "text/markdown", slug
+        assert (resource.name, resource.title) == (name, title)
+        assert resource.description == descriptions[skill]
 
 
-async def test_skill_resource_body_matches_packaged_file(registered_mcp) -> None:
-    for slug, uri in zip(SKILL_SLUGS, SKILL_URIS, strict=True):
+async def test_each_uri_serves_its_skill_from_the_pinned_index(registered_mcp) -> None:
+    for (_slug, _name, _title, skill), uri in zip(SKILL_SPECS, SKILL_URIS, strict=True):
         content = await _read(registered_mcp, uri)
         assert content.mime_type == "text/markdown"
-        assert content.content == read_skill(slug)
+        assert content.content == skills_index.SKILL_MD[skill]
+        match = FRONTMATTER_RE.match(content.content)
+        assert match, f"{skill}: missing YAML frontmatter name/description"
+        assert match.group("name") == skill
 
 
-def test_each_skill_is_a_claude_codex_drop_in() -> None:
-    for slug in SKILL_SLUGS:
-        text = read_skill(slug)
-        match = FRONTMATTER_RE.match(text)
-        assert match, f"{slug}: missing YAML frontmatter name/description"
-        assert match.group("name") == slug
-        assert len(match.group("description").strip()) > 20
+def test_the_index_keeps_the_text_of_every_listed_skill() -> None:
+    assert set(skills_index.SKILL_MD) == {s["name"] for s in skills_index.INDEX["skills"]}
 
 
 def test_skill_copy_lint() -> None:
-    for slug in SKILL_SLUGS:
-        text = read_skill(slug)
-        assert text.isascii(), f"{slug}: skill copy must be plain ASCII"
+    for skill, text in skills_index.SKILL_MD.items():
+        assert text.isascii(), f"{skill}: skill copy must be plain ASCII"
         lowered = text.lower()
         assert "real-time" not in lowered
         assert "realtime" not in lowered
         assert "financial intelligence" not in lowered
         assert "blackbox" not in lowered
         for fragment in TIER_C_NAME_FRAGMENTS:
-            assert fragment not in lowered, f"{slug}: commercial name {fragment}"
+            assert fragment not in lowered, f"{skill}: commercial name {fragment}"
 
 
-def test_stdio_skills_do_not_name_hosted_only_tools() -> None:
-    for slug in STDIO_ONLY_SKILL_SLUGS:
-        text = read_skill(slug)
-        for tool in HOSTED_ONLY_TOOLS:
-            assert tool not in text, f"{slug} names hosted-only tool {tool}"
-
-
-def test_hosted_skill_names_hosted_only_and_the_eight() -> None:
-    text = read_skill("hosted-vs-gateway")
-    for tool in HOSTED_ONLY_TOOLS:
-        assert tool in text
-    for tool in GATEWAY_LOOP_TOOLS:
-        assert tool in text
-
-
-def test_auth_skill_distinguishes_stdio_env_from_http_bearer() -> None:
-    text = read_skill("auth-limits")
-    assert "missing_bearer_token" in text
-    assert "retry_after" in text
-    assert "SUGRA_API_KEY" in text
-    hosted = read_skill("hosted-vs-gateway")
-    assert "Bearer" in hosted
-    assert "fallback" in hosted.lower()
-
-
-def test_explore_catalog_teaches_the_search_describe_call_loop() -> None:
-    text = read_skill("explore-catalog")
+def test_discover_and_call_teaches_the_search_describe_call_loop() -> None:
+    text = read_skill("discover-and-call")
     for tool in GATEWAY_LOOP_TOOLS:
         assert tool in text
     assert "fetch_data" in text
     lowered = text.lower()
     assert "prompt" in lowered
     assert "catalog" in lowered
+
+
+def test_connect_names_the_hosted_only_tools_and_the_bearer_header() -> None:
+    text = read_skill("connect")
+    for tool in HOSTED_ONLY_TOOLS:
+        assert tool in text
+    assert "Bearer" in text
+
+
+def test_auth_skill_distinguishes_stdio_env_from_http_bearer() -> None:
+    text = read_skill("auth-and-quota")
+    assert "missing_bearer_token" in text
+    assert "retry_after" in text
+    assert "SUGRA_API_KEY" in text

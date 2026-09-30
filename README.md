@@ -80,51 +80,45 @@ Behind the gateway sits the Sugra API: 160+ primary sources - sovereign statisti
 
 ## What agents build with it
 
-Five official skills ship as MCP resources (`sugra://skills/...`) and as `SKILL.md` files in `sugra_api_mcp/skills/`: explore the catalog, envelope and attribution, auth and rate limits, hosted vs gateway, and a cross-domain briefing pattern. Install them as a plugin from this repository (next section), or `resources/read` the matching URI after connect.
+The Sugra API skills live in [Sugra-Systems/sugra-api-skills](https://github.com/Sugra-Systems/sugra-api-skills). The server serves five of them as MCP resources (`sugra://skills/...`) from a pinned commit of that repository: `resources/read` the URI after connect.
 
 ## Agent skills
 
-These skills teach the catalog loop. They do not add MCP tools. Connect the Sugra MCP server separately (hosted or local).
+These skills teach the catalog loop. They do not add MCP tools. Connect the Sugra MCP server separately (hosted or local). The plugin package for each agent lives in [Sugra-Systems/sugra-api-plugins](https://github.com/Sugra-Systems/sugra-api-plugins).
 
 ### Claude Code
 
 ```
-/plugin marketplace add Sugra-Systems/sugra-api-mcp
-/plugin install sugra-api@sugra-api-mcp
+/plugin marketplace add Sugra-Systems/sugra-api-plugins
+/plugin install sugra-api@sugra-api-plugins
 ```
 
-Skills appear as `/sugra-api:explore-catalog`, `/sugra-api:envelope-attribution`, `/sugra-api:auth-limits`, `/sugra-api:hosted-vs-gateway`, and `/sugra-api:cross-domain-briefing`.
+Skills appear as `/sugra-api:<skill>`, for example `/sugra-api:discover-and-call`.
+
+### Codex
+
+```bash
+codex plugin marketplace add Sugra-Systems/sugra-api-plugins
+codex plugin add sugra-api@sugra-api-plugins
+```
 
 ### Grok
 
 ```bash
-grok plugin marketplace add Sugra-Systems/sugra-api-mcp
-grok plugin install sugra-api --trust
+grok plugin install Sugra-Systems/sugra-api-plugins#xai
 ```
 
-### Codex
-
-Ask `$skill-installer` to pull from this repo, or run:
+### Cursor, Gemini CLI and other agents
 
 ```bash
-python ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
-  --repo Sugra-Systems/sugra-api-mcp \
-  --path sugra_api_mcp/skills/explore-catalog \
-  --path sugra_api_mcp/skills/envelope-attribution \
-  --path sugra_api_mcp/skills/auth-limits \
-  --path sugra_api_mcp/skills/hosted-vs-gateway \
-  --path sugra_api_mcp/skills/cross-domain-briefing
+npx skills add https://mcp.sugra.ai
 ```
 
-Codex also loads a copied folder from `$HOME/.agents/skills/<slug>/` (current) or `~/.codex/skills/<slug>/`.
-
-### Cursor
-
-Copy each skill folder into `.cursor/skills/` (this project) or `~/.cursor/skills/` (every project). Team marketplace install is org-admin and is not covered here.
+Or copy the skill folders of sugra-api-skills into the agent's skills directory.
 
 ### ChatGPT
 
-ChatGPT does not load SKILL.md from disk. Use the hosted MCP connector at `https://mcp.sugra.ai/mcp` (permanent alias `https://app.sugra.ai/mcp`).
+The skills install from [OpenAI's Plugins Directory](https://chatgpt.com/plugins/plugins_6aa4f7db79848191a81e4048990545ef). The MCP server attaches as a hosted connector at `https://mcp.sugra.ai/mcp` (permanent alias `https://app.sugra.ai/mcp`).
 
 Six workflow prompts ship with the server and turn these into one-click flows in clients that surface MCP prompts:
 
@@ -227,11 +221,11 @@ export SUGRA_API_KEY=sugra_xxx_...
 
 Or edit `~/.claude/config.json` manually with the same shape as Claude Desktop above.
 
-To install the official skills as a plugin (separate from the MCP server):
+To install the skills as a plugin (separate from the MCP server):
 
 ```
-/plugin marketplace add Sugra-Systems/sugra-api-mcp
-/plugin install sugra-api@sugra-api-mcp
+/plugin marketplace add Sugra-Systems/sugra-api-plugins
+/plugin install sugra-api@sugra-api-plugins
 ```
 
 ### Usage with Gemini CLI
