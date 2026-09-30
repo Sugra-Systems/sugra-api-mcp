@@ -184,8 +184,30 @@ def _daily_limit_error(detail: str, response: httpx.Response) -> dict[str, Any]:
     return fields
 
 
-def _enforce_size_limit(payload: Any, url: str) -> Any:
-    """Trim payload to fit MCP token limits. Returns possibly-modified dict."""
+def _unshaped_records(unshaped: Any) -> list[Any] | None:
+    """The records list of a response as the API sent it: its ``data`` list
+    or a bare top-level array. None for any other shape."""
+    if isinstance(unshaped, list):
+        return unshaped
+    if isinstance(unshaped, dict) and isinstance(unshaped.get("data"), list):
+        return unshaped["data"]
+    return None
+
+
+def _enforce_size_limit(payload: Any, url: str, *, unshaped: Any = None) -> Any:
+    """Trim payload to fit MCP token limits. Returns possibly-modified dict.
+
+    An oversized ``data`` list is cut by the rule ``limit`` uses
+    (``catalog.response._limit_records``): the newest end when the order of
+    the records can be read, the first records otherwise, and
+    ``meta.truncated`` reports ``order`` and ``kept_end``.
+
+    ``unshaped`` is the same response before shaping cut or projected its
+    ``data`` list, passed by a caller that shaped it (call_endpoint). The
+    order is then read from that list instead: a cut or a projection keeps
+    the records' order but may drop the date key it is read from, and it is
+    the very read ``meta.shaped`` reports, so the two agree on the end kept.
+    """
     payload_str = json.dumps(payload)
     if len(payload_str) <= MAX_RESPONSE_CHARS:
         return payload
@@ -194,17 +216,35 @@ def _enforce_size_limit(payload: Any, url: str) -> Any:
     if isinstance(payload, dict) and isinstance(payload.get("data"), list):
         data_list = payload["data"]
         if data_list:
+            # Imported here, not at the top: catalog.response imports
+            # MAX_RESPONSE_CHARS from this module.
+            from .catalog.response import _limit_records, _records_order
+
             empty_shell = {**payload, "data": []}
             shell_size = len(json.dumps(empty_shell))
             budget = MAX_RESPONSE_CHARS - shell_size - 500  # room for notice
             avg_item = max(1, (len(payload_str) - shell_size) // len(data_list))
             kept = max(1, min(len(data_list), budget // avg_item))
-            truncated = {**payload, "data": data_list[:kept]}
+            source = _unshaped_records(unshaped)
+            order = _records_order(source) if source is not None else None
+            kept_list, order, kept_end = _limit_records(data_list, kept, order=order)
+            # The count is estimated from the average record, but the records
+            # kept come from one end, which may run larger than the average
+            # (the newest points of a series often carry more digits). Shrink
+            # until they really fit; shell_size already counts the "[]".
+            kept_size = len(json.dumps(kept_list)) - 2
+            while kept > 1 and kept_size > budget:
+                kept = max(1, min(kept - 1, budget * kept // kept_size))
+                kept_list, _, _ = _limit_records(data_list, kept, order=order)
+                kept_size = len(json.dumps(kept_list)) - 2
+            truncated = {**payload, "data": kept_list}
             meta = dict(truncated.get("meta") or {})
             meta["truncated"] = {
                 "reason": "exceeds_mcp_25k_token_limit",
                 "original_count": len(data_list),
                 "kept_count": kept,
+                "order": order,
+                "kept_end": kept_end,
                 "retry_hint": "Add filters (country, date range, limit) to reduce response size.",
             }
             truncated["meta"] = meta

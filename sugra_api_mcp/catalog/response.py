@@ -35,7 +35,10 @@ keeps its last N records, a descending one its first N. Anything else
 keeps the first N records, as limit always did. When a
 limit was applied to a records list, ``meta.shaped`` reports ``order``
 (``asc``, ``desc`` or ``unknown``) and ``kept_end`` (``newest`` or
-``first``), as maps keyed by sibling name for sibling sub-series.
+``first``), as maps keyed by sibling name for sibling sub-series. The
+response size gate (``client._enforce_size_limit``) cuts an oversized
+``data`` list by this same rule and reports the same two keys in
+``meta.truncated``.
 
 Shaping never empties a response: when no requested field matches, the
 target is returned unprojected and every field is reported unmatched.
@@ -425,16 +428,24 @@ def _records_order(records: list[Any]) -> str:
     return ORDER_UNKNOWN
 
 
-def _limit_records(records: list[Any], limit: int) -> tuple[list[Any], str, str]:
+def _limit_records(
+    records: list[Any], limit: int, *, order: str | None = None
+) -> tuple[list[Any], str, str]:
     """Bound a records list, keeping its newest end when the order is known.
 
     Returns ``(records, order, kept_end)``. A descending list keeps its first
     ``limit`` records and an ascending one its last ``limit``, in their
     original order. Without an established order the first ``limit`` records
     are kept, exactly as before order was read.
+
+    ``order`` is read from ``records`` unless the caller passes one it
+    already read, from these records or from the list they were cut and
+    projected from (the response size gate does, so it keeps the same end
+    ``meta.shaped`` reports even after a projection dropped the date key).
     """
     count = max(0, limit)
-    order = _records_order(records)
+    if order is None:
+        order = _records_order(records)
     if order == ORDER_ASC:
         if count == 0:
             # records[-0:] would be the whole list.

@@ -525,7 +525,9 @@ async def call_endpoint(
             return _enforce_size_limit(payload, path)
 
         shaped = shape_response(payload, limit=limit, fields=fields, include_raw=include_raw)
-        return _enforce_size_limit(shaped, path)
+        # The unshaped payload lets the gate read the records' order as the
+        # API sent them, so it keeps the same end meta.shaped reports.
+        return _enforce_size_limit(shaped, path, unshaped=payload)
     except Exception as exc:
         return {
             "error": "tool_execution_failed",

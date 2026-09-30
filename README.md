@@ -453,7 +453,7 @@ setting.
 
 **Tool result truncated with `meta.truncated` notice**
 
-Some endpoints return very large payloads (global wildfires, full table catalogs). The client enforces the MCP 25k token limit - when hit, the data list is trimmed and a retry hint appears in `meta.truncated.retry_hint`. Add narrower filters (country, date range, `limit`) to get the full result.
+Some endpoints return very large payloads (global wildfires, full table catalogs). The client enforces the MCP 25k token limit - when hit, the data list is trimmed and a retry hint appears in `meta.truncated.retry_hint`. The trim keeps the newest end of the list by the same order rule as `limit`, else its first records, and `meta.truncated.order` and `meta.truncated.kept_end` say which (`asc`, `desc` or `unknown`; `newest` or `first`). Add narrower filters (country, date range, `limit`) to get the full result.
 
 **`Python version 3.11 or higher is required`**
 
