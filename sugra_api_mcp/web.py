@@ -32,7 +32,7 @@ from . import __version__, skills_index
 
 SITE = "https://mcp.sugra.ai"
 ENDPOINT = f"{SITE}/mcp"
-SKILLS_REPO = "Sugra-Systems/sugra-api-skills"
+PLUGINS_REPO = "Sugra-Systems/sugra-api-plugins"
 DOCS_URL = "https://docs.sugra.ai"
 REGISTER_URL = "https://app.sugra.ai/register"
 
@@ -277,8 +277,8 @@ _TABS: list[tuple[str, str, str]] = [
         + _step("Skills (optional)")
         + _terminal(
             "cmd-claude-code-skills",
-            f"claude plugin marketplace add {SKILLS_REPO}\n"
-            "claude plugin install sugra-api@sugra-api-skills",
+            f"claude plugin marketplace add {PLUGINS_REPO}\n"
+            "claude plugin install sugra-api@sugra-api-plugins",
         )
         + _SKILLS_NOTE,
     ),
@@ -299,8 +299,8 @@ _TABS: list[tuple[str, str, str]] = [
         " Directory. In the Codex CLI, add them from GitHub.</p>"
         + _terminal(
             "cmd-codex-skills",
-            f"codex plugin marketplace add {SKILLS_REPO}\n"
-            "codex plugin add sugra-api@sugra-api-skills",
+            f"codex plugin marketplace add {PLUGINS_REPO}\n"
+            "codex plugin add sugra-api@sugra-api-plugins",
         )
         + _SKILLS_NOTE,
     ),
@@ -309,7 +309,7 @@ _TABS: list[tuple[str, str, str]] = [
         "Grok",
         _header_server("grok", "grok mcp add --transport http sugra")
         + _step("Skills (optional)")
-        + _terminal("cmd-grok-skills", f"grok plugin install {SKILLS_REPO}#plugins/sugra-api")
+        + _terminal("cmd-grok-skills", f"grok plugin install {PLUGINS_REPO}#xai")
         + _SKILLS_NOTE,
     ),
     (

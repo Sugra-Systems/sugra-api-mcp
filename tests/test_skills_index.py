@@ -52,14 +52,39 @@ def test_build_index_lists_every_file_of_every_skill() -> None:
             },
             {"name": "beta", "description": "Does a thing.", "files": ["SKILL.md"]},
         ],
+        "skill_md": {
+            "alpha": texts["plugins/p/skills/alpha/SKILL.md"],
+            "beta": texts["plugins/p/skills/beta/SKILL.md"],
+        },
     }
+
+
+def test_build_index_at_the_root_takes_only_folders_with_a_skill_md() -> None:
+    blobs = [
+        "README.md",
+        "llms.txt",
+        ".github/workflows/test.yml",
+        "scripts/check.py",
+        "plugins/sugra-api/skills/alpha/SKILL.md",
+        "alpha/SKILL.md",
+        "alpha/references/clients.md",
+        "beta/SKILL.md",
+    ]
+    texts = {"alpha/SKILL.md": _skill_md("alpha"), "beta/SKILL.md": _skill_md("beta")}
+    index = build.build_index("Org/repo", SHA, "", blobs, texts.__getitem__)
+    assert index["source"] == {"repo": "Org/repo", "commit": SHA, "path": ""}
+    assert [(s["name"], s["files"]) for s in index["skills"]] == [
+        ("alpha", ["SKILL.md", "references/clients.md"]),
+        ("beta", ["SKILL.md"]),
+    ]
+    assert index["skill_md"] == {"alpha": texts["alpha/SKILL.md"], "beta": texts["beta/SKILL.md"]}
 
 
 @pytest.mark.parametrize(
     ("blobs", "text", "message"),
     [
         (["s/Bad_Name/SKILL.md"], _skill_md("Bad_Name"), "not a valid skill name"),
-        (["s/alpha/README.md"], "", "has no SKILL.md"),
+        (["s/alpha/README.md"], "", "no skills under"),
         (["s/alpha/SKILL.md"], _skill_md("beta"), "declares name"),
         (["s/alpha/SKILL.md"], "---\nname: alpha\n---\n", "has no description"),
         (["s/alpha/SKILL.md"], "# no frontmatter\n", "no frontmatter"),
@@ -79,8 +104,10 @@ def test_build_index_pins_a_full_sha() -> None:
 
 def test_the_pinned_index_is_well_formed() -> None:
     data = json.loads((REPO_ROOT / "sugra_api_mcp" / "skills_index.json").read_text("utf-8"))
+    assert set(data) == {"source", "skills", "skill_md"}
     assert data["source"]["repo"] == "Sugra-Systems/sugra-api-skills"
-    assert data["source"]["path"] == "plugins/sugra-api/skills"
+    # The skills sit at the root of sugra-api-skills.
+    assert data["source"]["path"] == ""
     assert re.fullmatch(r"[0-9a-f]{40}", data["source"]["commit"])
     names = [skill["name"] for skill in data["skills"]]
     assert names == sorted(set(names))
@@ -96,9 +123,9 @@ def test_the_pinned_index_is_well_formed() -> None:
 
 def test_runtime_targets_are_the_pinned_raw_files() -> None:
     source = skills_index.SOURCE
-    prefix = (
-        f"https://raw.githubusercontent.com/{source['repo']}/{source['commit']}/{source['path']}/"
-    )
+    path = f"{source['path']}/" if source["path"] else ""
+    prefix = f"https://raw.githubusercontent.com/{source['repo']}/{source['commit']}/{path}"
+    assert "//" not in prefix.removeprefix("https://")
     assert skills_index.FILE_TARGETS
     for path, target in skills_index.FILE_TARGETS.items():
         assert path.startswith("/.well-known/skills/")
