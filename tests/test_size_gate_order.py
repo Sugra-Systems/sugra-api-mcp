@@ -183,6 +183,35 @@ def test_payload_is_not_mutated() -> None:
     assert json.dumps(payload) == before
 
 
+# When no trim fits, the gate answers with its structured error, never an
+# over-cap payload
+
+
+def _too_large(result: dict) -> bool:
+    return result.get("error") == "response_too_large" and "data" not in result and _fits(result)
+
+
+def test_one_record_larger_than_the_cap_returns_the_structured_error() -> None:
+    payload = _enveloped([{"date": "2020-01-01", "note": "x" * MAX_RESPONSE_CHARS}])
+
+    assert _too_large(_enforce_size_limit(payload, "test://url"))
+
+
+def test_newest_record_larger_than_the_cap_returns_the_structured_error() -> None:
+    # The newest end is one record that alone exceeds the cap: the shrink
+    # loop stops at one record, which still does not fit.
+    records = _ascending()
+    records[-1] = {**records[-1], "note": "x" * MAX_RESPONSE_CHARS}
+
+    assert _too_large(_enforce_size_limit(_enveloped(records), "test://url"))
+
+
+def test_envelope_too_large_for_any_record_returns_the_structured_error() -> None:
+    payload = {"data": _ascending()[:10], "meta": {"blob": "y" * MAX_RESPONSE_CHARS}}
+
+    assert _too_large(_enforce_size_limit(payload, "test://url"))
+
+
 # The default client path, which every non-gateway tool takes
 
 
@@ -318,3 +347,14 @@ async def test_bare_array_with_fields_that_drop_the_date_key_keeps_the_newest_en
     assert "date" not in result["data"][0]
     assert result["data"][-1]["value"] == _COUNT - 1
     assert _notice(result)["kept_end"] == "newest"
+
+
+async def test_oversized_error_envelope_keeps_the_structured_error(monkeypatch) -> None:
+    # An error payload carries no data key by definition (is_error_payload),
+    # so the order-aware trim never reaches the error path: an oversized
+    # error still becomes response_too_large, as before this change.
+    body = {"error": "upstream_error", "reason": "r" * MAX_RESPONSE_CHARS}
+
+    result = await _call(monkeypatch, body)
+
+    assert _too_large(result)

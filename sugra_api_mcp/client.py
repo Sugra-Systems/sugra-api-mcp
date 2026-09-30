@@ -200,7 +200,10 @@ def _enforce_size_limit(payload: Any, url: str, *, unshaped: Any = None) -> Any:
     An oversized ``data`` list is cut by the rule ``limit`` uses
     (``catalog.response._limit_records``): the newest end when the order of
     the records can be read, the first records otherwise, and
-    ``meta.truncated`` reports ``order`` and ``kept_end``.
+    ``meta.truncated`` reports ``order`` and ``kept_end``. When no trim fits
+    the cap (one record alone is larger, or the envelope around the list
+    is), the result is the ``response_too_large`` error an unknown shape
+    gets.
 
     ``unshaped`` is the same response before shaping cut or projected its
     ``data`` list, passed by a caller that shaped it (call_endpoint). The
@@ -237,20 +240,29 @@ def _enforce_size_limit(payload: Any, url: str, *, unshaped: Any = None) -> Any:
                 kept = max(1, min(kept - 1, budget * kept // kept_size))
                 kept_list, _, _ = _limit_records(data_list, kept, order=order)
                 kept_size = len(json.dumps(kept_list)) - 2
-            truncated = {**payload, "data": kept_list}
-            meta = dict(truncated.get("meta") or {})
-            meta["truncated"] = {
-                "reason": "exceeds_mcp_25k_token_limit",
-                "original_count": len(data_list),
-                "kept_count": kept,
-                "order": order,
-                "kept_end": kept_end,
-                "retry_hint": "Add filters (country, date range, limit) to reduce response size.",
-            }
-            truncated["meta"] = meta
-            return truncated
+            # When even one record does not fit, or the envelope around the
+            # list leaves no room, no trim can meet the cap: fall through to
+            # the structured error below instead of returning an over-cap
+            # payload.
+            if kept_size <= budget:
+                truncated = {**payload, "data": kept_list}
+                meta = dict(truncated.get("meta") or {})
+                meta["truncated"] = {
+                    "reason": "exceeds_mcp_25k_token_limit",
+                    "original_count": len(data_list),
+                    "kept_count": kept,
+                    "order": order,
+                    "kept_end": kept_end,
+                    "retry_hint": "Add filters (country, date range, limit) to reduce response size.",
+                }
+                truncated["meta"] = meta
+                # The notice fits the 500 characters kept for it; checked
+                # rather than assumed, because the cap is the gate's promise.
+                if len(json.dumps(truncated)) <= MAX_RESPONSE_CHARS:
+                    return truncated
 
-    # Unknown shape - return a structured error the agent can act on
+    # Unknown shape, or no trim of the data list fits - return a structured
+    # error the agent can act on
     return {
         "error": "response_too_large",
         "message": (
