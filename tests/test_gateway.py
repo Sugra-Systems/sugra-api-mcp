@@ -66,8 +66,14 @@ async def test_call_endpoint_builds_correct_get_request(monkeypatch) -> None:
 
 
 async def test_call_endpoint_post_preserves_query_params_and_body(monkeypatch) -> None:
+    # The fixture's openfigi_map declares no query parameter, and an
+    # undeclared key is now refused before dispatch: declare one here.
+    spec = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    spec["paths"]["/api/v1/openfigi/map"]["post"]["parameters"] = [
+        {"name": "limit", "in": "query", "schema": {"type": "integer"}}
+    ]
     fake = FakeClient()
-    monkeypatch.setattr(gateway, "load_catalog", _fixture_catalog)
+    monkeypatch.setattr(gateway, "load_catalog", lambda: build_catalog_from_openapi(spec))
     monkeypatch.setattr(gateway, "get_client", lambda: fake)
 
     result = await gateway.call_endpoint(

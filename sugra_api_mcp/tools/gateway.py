@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import difflib
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -131,6 +132,54 @@ def _group_violation(endpoint, params: dict[str, Any]) -> str | None:
         if active > 1:
             return "multiple"
     return None
+
+
+# Operations whose API handler reads filters from the raw query string beyond
+# the parameters it declares, so an undeclared key is a real filter there and
+# not a typo. The StatBank DK data endpoint takes the table's own dimension
+# codes (OMRÅDE, KØN, Tid, ...) this way. Every other operation ignores an
+# undeclared key without an error, which is why the gateway refuses one.
+_OPEN_QUERY_OPERATIONS: frozenset[str] = frozenset({
+    "statistical_agencies_statbank_dk_data_table_id",
+})
+
+
+def _unknown_params_error(
+    operation_id: str, endpoint, params: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Refuse keys the operation does not declare, BEFORE any HTTP call.
+
+    The API drops an undeclared query parameter silently, so a misnamed
+    filter (country for countries) returned the endpoint's default data
+    with no sign that the filter was never applied.
+    """
+    if operation_id in _OPEN_QUERY_OPERATIONS:
+        return None
+    accepted = [parameter.name for parameter in endpoint.parameters]
+    unknown = [key for key in params if key not in accepted]
+    if not unknown:
+        return None
+    payload: dict[str, Any] = {
+        "error": "unknown_parameters",
+        "operation_id": operation_id,
+        "unknown": unknown,
+        "accepted": accepted,
+    }
+    by_lower = {name.lower(): name for name in accepted}
+    did_you_mean: dict[str, str] = {}
+    for key in unknown:
+        match = by_lower.get(key.lower()) or next(
+            iter(difflib.get_close_matches(key, accepted, n=1, cutoff=0.6)), None)
+        if match:
+            did_you_mean[key] = match
+    if did_you_mean:
+        payload["did_you_mean"] = did_you_mean
+    payload["hint"] = (
+        "The API ignores parameters it does not declare, so this call would "
+        "have returned unfiltered data. Rename or drop the unknown keys; "
+        "describe_endpoint(operation_id) lists every parameter."
+    )
+    return payload
 
 
 def _missing_required(
@@ -289,7 +338,9 @@ async def call_endpoint(
             description=(
                 "Query and path parameters for this operation_id. Keys and types are "
                 "operation-specific - call describe_endpoint(operation_id) first to get the "
-                "exact parameter names, types, and examples. Omit if the operation takes none."
+                "exact parameter names, types, and examples. Omit if the operation takes none. "
+                "A key the operation does not declare returns error unknown_parameters "
+                "with the accepted names and did_you_mean, before any request is made."
             ),
         ),
     ] = None,
@@ -384,6 +435,11 @@ async def call_endpoint(
             return {"error": "unknown_operation_id", "operation_id": operation_id}
 
         clean_params = {key: value for key, value in (params or {}).items() if value is not None}
+        # Checked before the required ones: a misnamed key is usually the
+        # missing parameter itself, and did_you_mean names it.
+        unknown = _unknown_params_error(operation_id, endpoint, clean_params)
+        if unknown:
+            return unknown
         missing = _missing_required(endpoint, clean_params, body)
         if missing:
             payload: dict[str, Any] = {
