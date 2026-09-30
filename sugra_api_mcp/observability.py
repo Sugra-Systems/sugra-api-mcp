@@ -212,6 +212,9 @@ _KNOWN_ERROR_CODES: frozenset[str] = frozenset({
     "missing_required_parameter_groups",
     "unsupported_method",
     "unresolved_path_parameters",
+    # call_endpoint refuses a params key the operation does not declare,
+    # because the API would drop it silently and serve unfiltered data.
+    "unknown_parameters",
     "no_endpoint_found",
     # search_endpoints filter validation: an unknown toolset/source value is
     # reported as a typed error naming the valid values, never a silent empty
