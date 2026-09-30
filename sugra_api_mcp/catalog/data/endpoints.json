@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-09-29T08:42:56Z",
+  "built_at": "2026-09-30T16:32:39Z",
   "endpoint_count": 1626,
   "endpoints": [
     {
@@ -409,7 +409,7 @@
           }
         },
         {
-          "description": "City name (alternative to lat/lon).",
+          "description": "City name (alternative to lat/lon). A combined 'City,CC' form is not accepted - pass the country in the separate country parameter instead.",
           "example": "moscow",
           "location": "query",
           "name": "city",
@@ -424,12 +424,12 @@
                 "type": "null"
               }
             ],
-            "description": "City name (alternative to lat/lon).",
+            "description": "City name (alternative to lat/lon). A combined 'City,CC' form is not accepted - pass the country in the separate country parameter instead.",
             "title": "City"
           }
         },
         {
-          "description": "Country name or code",
+          "description": "Country name or code. An unresolvable city/country pair is 422, never 404.",
           "example": "us",
           "location": "query",
           "name": "country",
@@ -444,7 +444,7 @@
                 "type": "null"
               }
             ],
-            "description": "Country name or code",
+            "description": "Country name or code. An unresolvable city/country pair is 422, never 404.",
             "title": "Country"
           }
         }
@@ -519,7 +519,7 @@
           }
         },
         {
-          "description": "City name (alternative to lat/lon).",
+          "description": "City name (alternative to lat/lon). A combined 'City,CC' form is not accepted - pass the country in the separate country parameter instead.",
           "example": "moscow",
           "location": "query",
           "name": "city",
@@ -534,12 +534,12 @@
                 "type": "null"
               }
             ],
-            "description": "City name (alternative to lat/lon).",
+            "description": "City name (alternative to lat/lon). A combined 'City,CC' form is not accepted - pass the country in the separate country parameter instead.",
             "title": "City"
           }
         },
         {
-          "description": "Country name or code",
+          "description": "Country name or code. An unresolvable city/country pair is 422, never 404.",
           "example": "us",
           "location": "query",
           "name": "country",
@@ -554,7 +554,7 @@
                 "type": "null"
               }
             ],
-            "description": "Country name or code",
+            "description": "Country name or code. An unresolvable city/country pair is 422, never 404.",
             "title": "Country"
           }
         },
@@ -11634,7 +11634,7 @@
           }
         },
         {
-          "description": "City name (alternative to lat/lon).",
+          "description": "City name (alternative to lat/lon). A combined 'City,CC' form is not accepted - pass the country in the separate country parameter instead.",
           "example": "moscow",
           "location": "query",
           "name": "city",
@@ -11649,12 +11649,12 @@
                 "type": "null"
               }
             ],
-            "description": "City name (alternative to lat/lon).",
+            "description": "City name (alternative to lat/lon). A combined 'City,CC' form is not accepted - pass the country in the separate country parameter instead.",
             "title": "City"
           }
         },
         {
-          "description": "Country name or code",
+          "description": "Country name or code. An unresolvable city/country pair is 422, never 404.",
           "example": "us",
           "location": "query",
           "name": "country",
@@ -11669,7 +11669,7 @@
                 "type": "null"
               }
             ],
-            "description": "Country name or code",
+            "description": "Country name or code. An unresolvable city/country pair is 422, never 404.",
             "title": "Country"
           }
         },
@@ -11792,7 +11792,7 @@
           }
         },
         {
-          "description": "City name (alternative to lat/lon).",
+          "description": "City name (alternative to lat/lon). A combined 'City,CC' form is not accepted - pass the country in the separate country parameter instead.",
           "example": "moscow",
           "location": "query",
           "name": "city",
@@ -11807,12 +11807,12 @@
                 "type": "null"
               }
             ],
-            "description": "City name (alternative to lat/lon).",
+            "description": "City name (alternative to lat/lon). A combined 'City,CC' form is not accepted - pass the country in the separate country parameter instead.",
             "title": "City"
           }
         },
         {
-          "description": "Country name or code",
+          "description": "Country name or code. An unresolvable city/country pair is 422, never 404.",
           "example": "us",
           "location": "query",
           "name": "country",
@@ -11827,7 +11827,7 @@
                 "type": "null"
               }
             ],
-            "description": "Country name or code",
+            "description": "Country name or code. An unresolvable city/country pair is 422, never 404.",
             "title": "Country"
           }
         },
@@ -29137,6 +29137,9 @@
           "required": true,
           "schema": {
             "description": "Rate type. One of: SOFR, EFFR, OBFR, TGCR, BGCR (case-insensitive). No other value is accepted.",
+            "maxLength": 4,
+            "minLength": 4,
+            "pattern": "^(?:[Ss][Oo][Ff][Rr]|[Ee][Ff][Ff][Rr]|[Oo][Bb][Ff][Rr]|[Tt][Gg][Cc][Rr]|[Bb][Gg][Cc][Rr])$",
             "title": "Rate Type",
             "type": "string"
           }
@@ -30879,13 +30882,13 @@
           }
         },
         {
-          "description": "Max observations to return. FRED's hard cap is 100000; we cap at 1000 here for RAM safety and predictable response sizes. Default raised from 100 (APP-30.23): with sort_order=desc a daily series at 100 returned barely 3 months and read as its whole history. When the series holds more than `limit`, the response also carries `observations_truncated` and `observations_available`. observations_available is null when FRED reported no total.",
+          "description": "Max observations to return. FRED's hard cap is 100000; we cap at 1000 here for RAM safety and predictable response sizes. Default raised from 100: with sort_order=desc a daily series at 100 returned barely 3 months and read as its whole history. When the series holds more than `limit`, the response also carries `observations_truncated` and `observations_available`. observations_available is null when FRED reported no total.",
           "location": "query",
           "name": "limit",
           "required": false,
           "schema": {
             "default": 500,
-            "description": "Max observations to return. FRED's hard cap is 100000; we cap at 1000 here for RAM safety and predictable response sizes. Default raised from 100 (APP-30.23): with sort_order=desc a daily series at 100 returned barely 3 months and read as its whole history. When the series holds more than `limit`, the response also carries `observations_truncated` and `observations_available`. observations_available is null when FRED reported no total.",
+            "description": "Max observations to return. FRED's hard cap is 100000; we cap at 1000 here for RAM safety and predictable response sizes. Default raised from 100: with sort_order=desc a daily series at 100 returned barely 3 months and read as its whole history. When the series holds more than `limit`, the response also carries `observations_truncated` and `observations_available`. observations_available is null when FRED reported no total.",
             "maximum": 1000,
             "minimum": 1,
             "title": "Limit",
@@ -78838,7 +78841,7 @@
           }
         },
         {
-          "description": "City name (alternative to lat/lon).",
+          "description": "City name (alternative to lat/lon). A combined 'City,CC' form is not accepted - pass the country in the separate country parameter instead.",
           "example": "moscow",
           "location": "query",
           "name": "city",
@@ -78853,12 +78856,12 @@
                 "type": "null"
               }
             ],
-            "description": "City name (alternative to lat/lon).",
+            "description": "City name (alternative to lat/lon). A combined 'City,CC' form is not accepted - pass the country in the separate country parameter instead.",
             "title": "City"
           }
         },
         {
-          "description": "Country code (ISO 3166-1 alpha-2/alpha-3) or slug.",
+          "description": "Country code (ISO 3166-1 alpha-2/alpha-3) or slug. An unresolvable city/country pair is 422, never 404.",
           "example": "us",
           "location": "query",
           "name": "country",
@@ -78873,7 +78876,7 @@
                 "type": "null"
               }
             ],
-            "description": "Country code (ISO 3166-1 alpha-2/alpha-3) or slug.",
+            "description": "Country code (ISO 3166-1 alpha-2/alpha-3) or slug. An unresolvable city/country pair is 422, never 404.",
             "title": "Country"
           }
         }
@@ -78948,7 +78951,7 @@
           }
         },
         {
-          "description": "City name (alternative to lat/lon).",
+          "description": "City name (alternative to lat/lon). A combined 'City,CC' form is not accepted - pass the country in the separate country parameter instead.",
           "example": "moscow",
           "location": "query",
           "name": "city",
@@ -78963,12 +78966,12 @@
                 "type": "null"
               }
             ],
-            "description": "City name (alternative to lat/lon).",
+            "description": "City name (alternative to lat/lon). A combined 'City,CC' form is not accepted - pass the country in the separate country parameter instead.",
             "title": "City"
           }
         },
         {
-          "description": "Country code (ISO 3166-1 alpha-2/alpha-3) or slug.",
+          "description": "Country code (ISO 3166-1 alpha-2/alpha-3) or slug. An unresolvable city/country pair is 422, never 404.",
           "example": "us",
           "location": "query",
           "name": "country",
@@ -78983,7 +78986,7 @@
                 "type": "null"
               }
             ],
-            "description": "Country code (ISO 3166-1 alpha-2/alpha-3) or slug.",
+            "description": "Country code (ISO 3166-1 alpha-2/alpha-3) or slug. An unresolvable city/country pair is 422, never 404.",
             "title": "Country"
           }
         },
@@ -79107,7 +79110,7 @@
           }
         },
         {
-          "description": "City name (alternative to lat/lon).",
+          "description": "City name (alternative to lat/lon). A combined 'City,CC' form is not accepted - pass the country in the separate country parameter instead.",
           "example": "moscow",
           "location": "query",
           "name": "city",
@@ -79122,12 +79125,12 @@
                 "type": "null"
               }
             ],
-            "description": "City name (alternative to lat/lon).",
+            "description": "City name (alternative to lat/lon). A combined 'City,CC' form is not accepted - pass the country in the separate country parameter instead.",
             "title": "City"
           }
         },
         {
-          "description": "Country code (ISO 3166-1 alpha-2/alpha-3) or slug.",
+          "description": "Country code (ISO 3166-1 alpha-2/alpha-3) or slug. An unresolvable city/country pair is 422, never 404.",
           "example": "us",
           "location": "query",
           "name": "country",
@@ -79142,7 +79145,7 @@
                 "type": "null"
               }
             ],
-            "description": "Country code (ISO 3166-1 alpha-2/alpha-3) or slug.",
+            "description": "Country code (ISO 3166-1 alpha-2/alpha-3) or slug. An unresolvable city/country pair is 422, never 404.",
             "title": "Country"
           }
         },
@@ -80312,7 +80315,7 @@
           }
         },
         {
-          "description": "US city name (alternative to lat/lon; uses geocoding fallback).",
+          "description": "US city name (alternative to lat/lon; uses geocoding fallback). A combined 'City,ST' form is not accepted - pass the state in the separate state parameter instead.",
           "example": "New York",
           "location": "query",
           "name": "city",
@@ -80327,12 +80330,12 @@
                 "type": "null"
               }
             ],
-            "description": "US city name (alternative to lat/lon; uses geocoding fallback).",
+            "description": "US city name (alternative to lat/lon; uses geocoding fallback). A combined 'City,ST' form is not accepted - pass the state in the separate state parameter instead.",
             "title": "City"
           }
         },
         {
-          "description": "Two-letter US state code (e.g. NY, CA).",
+          "description": "Two-letter US state code (e.g. NY, CA). An unresolvable city/state pair is 422, never 404.",
           "example": "NY",
           "location": "query",
           "name": "state",
@@ -80347,7 +80350,7 @@
                 "type": "null"
               }
             ],
-            "description": "Two-letter US state code (e.g. NY, CA).",
+            "description": "Two-letter US state code (e.g. NY, CA). An unresolvable city/state pair is 422, never 404.",
             "title": "State"
           }
         }
@@ -80422,7 +80425,7 @@
           }
         },
         {
-          "description": "US city name (alternative to lat/lon; uses geocoding fallback).",
+          "description": "US city name (alternative to lat/lon; uses geocoding fallback). A combined 'City,ST' form is not accepted - pass the state in the separate state parameter instead.",
           "example": "New York",
           "location": "query",
           "name": "city",
@@ -80437,12 +80440,12 @@
                 "type": "null"
               }
             ],
-            "description": "US city name (alternative to lat/lon; uses geocoding fallback).",
+            "description": "US city name (alternative to lat/lon; uses geocoding fallback). A combined 'City,ST' form is not accepted - pass the state in the separate state parameter instead.",
             "title": "City"
           }
         },
         {
-          "description": "Two-letter US state code (e.g. NY, CA).",
+          "description": "Two-letter US state code (e.g. NY, CA). An unresolvable city/state pair is 422, never 404.",
           "example": "NY",
           "location": "query",
           "name": "state",
@@ -80457,7 +80460,7 @@
                 "type": "null"
               }
             ],
-            "description": "Two-letter US state code (e.g. NY, CA).",
+            "description": "Two-letter US state code (e.g. NY, CA). An unresolvable city/state pair is 422, never 404.",
             "title": "State"
           }
         }
@@ -92881,5 +92884,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "0181d7e8abe2133fceae56391404a91fd4ecb2bd2a18c6c78c984da82492981b"
+  "spec_sha256": "9f260d5bdd37b1bb1e2b661f3d049e40ae139da3541b5e35d1567d683a33fec8"
 }
