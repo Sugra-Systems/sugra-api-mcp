@@ -212,6 +212,26 @@ def test_envelope_too_large_for_any_record_returns_the_structured_error() -> Non
     assert _too_large(_enforce_size_limit(payload, "test://url"))
 
 
+def test_envelope_leaving_less_than_the_estimate_reserve_still_keeps_the_newest() -> None:
+    """The envelope leaves less room than the 500 characters the first
+    estimate sets aside for the notice, yet the notice and the newest record
+    fit: the fit is measured, not assumed, so the record is kept."""
+    records = [{"date": value, "value": index} for index, value in enumerate(_dates())]
+    meta = {"source": "fixture", "blob": ""}
+    meta["blob"] = "y" * (MAX_RESPONSE_CHARS - 420 - len(json.dumps({"data": [], "meta": meta})))
+    payload = {"data": records, "meta": meta}
+    shell_size = len(json.dumps({"data": [], "meta": meta}))
+    assert shell_size == MAX_RESPONSE_CHARS - 420
+    assert MAX_RESPONSE_CHARS - shell_size - 500 < len(json.dumps(records[-1]))
+
+    result = _enforce_size_limit(payload, "test://url")
+
+    kept = _notice(result)["kept_count"]
+    assert result["data"] == records[_COUNT - kept:]
+    assert _notice(result)["kept_end"] == "newest"
+    assert _fits(result)
+
+
 # The default client path, which every non-gateway tool takes
 
 

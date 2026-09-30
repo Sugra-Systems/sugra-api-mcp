@@ -231,35 +231,41 @@ def _enforce_size_limit(payload: Any, url: str, *, unshaped: Any = None) -> Any:
             source = _unshaped_records(unshaped)
             order = _records_order(source) if source is not None else None
             kept_list, order, kept_end = _limit_records(data_list, kept, order=order)
-            # The count is estimated from the average record, but the records
-            # kept come from one end, which may run larger than the average
-            # (the newest points of a series often carry more digits). Shrink
-            # until they really fit; shell_size already counts the "[]".
-            kept_size = len(json.dumps(kept_list)) - 2
-            while kept > 1 and kept_size > budget:
-                kept = max(1, min(kept - 1, budget * kept // kept_size))
-                kept_list, _, _ = _limit_records(data_list, kept, order=order)
-                kept_size = len(json.dumps(kept_list)) - 2
-            # When even one record does not fit, or the envelope around the
-            # list leaves no room, no trim can meet the cap: fall through to
-            # the structured error below instead of returning an over-cap
-            # payload.
-            if kept_size <= budget:
-                truncated = {**payload, "data": kept_list}
+
+            def candidate(records):
+                truncated = {**payload, "data": records}
                 meta = dict(truncated.get("meta") or {})
                 meta["truncated"] = {
                     "reason": "exceeds_mcp_25k_token_limit",
                     "original_count": len(data_list),
-                    "kept_count": kept,
+                    "kept_count": len(records),
                     "order": order,
                     "kept_end": kept_end,
                     "retry_hint": "Add filters (country, date range, limit) to reduce response size.",
                 }
                 truncated["meta"] = meta
-                # The notice fits the 500 characters kept for it; checked
-                # rather than assumed, because the cap is the gate's promise.
-                if len(json.dumps(truncated)) <= MAX_RESPONSE_CHARS:
-                    return truncated
+                return truncated
+
+            # The count is estimated from the average record, but the records
+            # kept come from one end, which may run larger than the average
+            # (the newest points of a series often carry more digits). Shrink
+            # until the whole payload, notice included, really fits: the 500
+            # characters above only seed the estimate, the cap is measured.
+            truncated = candidate(kept_list)
+            size = len(json.dumps(truncated))
+            while kept > 1 and size > MAX_RESPONSE_CHARS:
+                kept_size = len(json.dumps(kept_list)) - 2
+                room = MAX_RESPONSE_CHARS - (size - kept_size)
+                kept = max(1, min(kept - 1, room * kept // kept_size))
+                kept_list, _, _ = _limit_records(data_list, kept, order=order)
+                truncated = candidate(kept_list)
+                size = len(json.dumps(truncated))
+            # When even one record does not fit, or the envelope around the
+            # list leaves no room, no trim can meet the cap: fall through to
+            # the structured error below instead of returning an over-cap
+            # payload.
+            if size <= MAX_RESPONSE_CHARS:
+                return truncated
 
     # Unknown shape, or no trim of the data list fits - return a structured
     # error the agent can act on
