@@ -19,7 +19,7 @@
       "environmentVariables": [
         {
           "name": "SUGRA_API_KEY",
-          "description": "Your Sugra API key (sugra_...). Required for data tools; catalog tools work without it. Free key: https://app.sugra.ai/settings/billing (50 req/day). Only env var needed for local installs and directory sandboxes.",
+          "description": "Your Sugra API key (sugra_...). Required for data tools; catalog tools work without it. Free key: https://app.sugra.ai/register (50 req/day). Only env var needed for local installs and directory sandboxes.",
           "isRequired": true,
           "format": "string",
           "isSecret": true
