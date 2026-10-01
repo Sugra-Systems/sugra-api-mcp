@@ -9,7 +9,7 @@ from dataclasses import dataclass
 # Remediation copy for the call-time missing_api_key error. Shared by the
 # keyless stand-in client (server.py) and the CLI doctor warning (__main__.py).
 MISSING_API_KEY_HINT = (
-    "Set SUGRA_API_KEY. Get one free at https://app.sugra.ai/settings/billing"
+    "Set SUGRA_API_KEY. Get one free at https://app.sugra.ai/register"
 )
 
 DEFAULT_ALLOWED_ORIGINS: tuple[str, ...] = (

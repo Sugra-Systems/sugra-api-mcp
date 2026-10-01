@@ -163,13 +163,13 @@ pip install sugra-api-mcp
 - stdio for desktop clients and IDEs, Streamable HTTP for self-hosting
 - Authenticates with `SUGRA_API_KEY`
 
-Get a free API key at [app.sugra.ai/settings/billing](https://app.sugra.ai/settings/billing) (Free tier: 50 req/day).
+Get a free API key at [app.sugra.ai/register](https://app.sugra.ai/register) (Free tier: 50 req/day).
 
 ## Quick start
 
 ```bash
 pip install sugra-api-mcp
-export SUGRA_API_KEY=sugra_xxx_...   # free key: app.sugra.ai/settings/billing
+export SUGRA_API_KEY=sugra_xxx_...   # free key: app.sugra.ai/register
 sugra-api-mcp call quotes_symbol_price --params '{"symbol":"AAPL"}'
 ```
 
@@ -355,7 +355,7 @@ directory sandboxes (for example Glama Try in Browser). Set only this:
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `SUGRA_API_KEY` | For API calls | - | Your Sugra API key (`sugra_...`). Get a free key at [app.sugra.ai/settings/billing](https://app.sugra.ai/settings/billing) (Free tier: 50 req/day). Not needed to start the server: catalog tools (`search_endpoints`, `describe_endpoint`, `list_toolsets`, `list_sources`) work without it; API-calling tools return a structured `missing_api_key` error until it is set. In HTTP mode with a client Bearer token this is only a fallback. |
+| `SUGRA_API_KEY` | For API calls | - | Your Sugra API key (`sugra_...`). Get a free key at [app.sugra.ai/register](https://app.sugra.ai/register) (Free tier: 50 req/day). Not needed to start the server: catalog tools (`search_endpoints`, `describe_endpoint`, `list_toolsets`, `list_sources`) work without it; API-calling tools return a structured `missing_api_key` error until it is set. In HTTP mode with a client Bearer token this is only a fallback. |
 
 Optional overrides (leave unset unless you need them):
 
@@ -431,13 +431,13 @@ The server starts and lists its tools without a key, but API-calling tools (`cal
 **`401 Unauthorized` or `403 Forbidden` in tool responses**
 
 Key accepted but rejected. Common causes:
-- Key was regenerated in [app.sugra.ai/settings/billing](https://app.sugra.ai/settings/billing) and your config still has the old one.
+- Key was regenerated in [app.sugra.ai/developer/keys](https://app.sugra.ai/developer/keys) and your config still has the old one.
 - Typo - key contains only lowercase letters and digits, no spaces, no trailing newlines.
 - Free tier was deactivated. Sign in to verify status.
 
 **`429 Too Many Requests`**
 
-Hit your plan's daily limit. Response headers include `X-RateLimit-Reset` with the UTC timestamp when the counter resets (midnight UTC). Upgrade your plan at [app.sugra.ai/settings/billing](https://app.sugra.ai/settings/billing).
+Hit your plan's daily limit. Response headers include `X-RateLimit-Reset` with the UTC timestamp when the counter resets (midnight UTC). Plans: [sugra.systems/api/pricing](https://sugra.systems/api/pricing).
 
 **`Invalid Host header`** (only if self-hosting HTTP mode)
 

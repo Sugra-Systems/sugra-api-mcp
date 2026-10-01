@@ -41,7 +41,7 @@ Sugra Forex, Sugra Weather, and more - all behind one gateway.
 ## Get your keys (2 minutes)
 
 1. Sugra API key - free tier, 50 requests/day, no credit card, no time limit:
-   https://app.sugra.ai/settings/billing
+   https://app.sugra.ai/register
 2. Anthropic API key: https://console.anthropic.com
 
 Then, from the `examples/` directory:
@@ -96,7 +96,7 @@ so you can point it at any provider that supports tools.
 - Ask broader questions: economics, markets, crypto, weather, and more are all
   reachable through `fetch_data`.
 - The free tier allows 50 requests per day. A single run uses only a few calls.
-  Upgrade at https://app.sugra.ai/settings/billing when you need more.
+  Plans: https://sugra.systems/api/pricing
 - Change the model: the `MODEL` constant at the top of `agent.ts` is marked
   "change me" - set it to any current Anthropic model id.
 - Bring your own provider: keep the MCP wiring, replace the LLM client.
