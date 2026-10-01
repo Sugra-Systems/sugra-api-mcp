@@ -41,10 +41,10 @@ jobs:
     outputs:
       drift: ${{ steps.parity.outcome == 'failure' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
       - name: Install
@@ -74,7 +74,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           # History for branching ci/catalog-resync from origin/main. Credentials
           # stay off: this repo is public, and the resync push must use the
@@ -82,7 +82,7 @@ jobs:
           # that PR would not trigger Test).
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
       - name: Install
@@ -90,7 +90,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev,http]"
       - name: Azure login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
