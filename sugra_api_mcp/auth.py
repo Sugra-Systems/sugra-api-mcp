@@ -14,7 +14,12 @@ On success the resolved x-api-key is stored in a ContextVar that
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import logging
+import os
+import re
+import secrets
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
@@ -30,6 +35,7 @@ from starlette.types import ASGIApp
 
 from .client import shared_ssl_context
 from .config import AuthConfig
+from .observability import _UA_PATTERNS, _host_class, _origin_class, _text_class
 from .server import api_key_ctx
 from .skills_index import PUBLIC_PATHS as SKILLS_PUBLIC_PATHS
 
@@ -101,6 +107,70 @@ PUBLIC_MCP_METHODS = frozenset(
 # and // variants deliberately stay behind auth and 401 rather than redirect).
 # Handlers live in sugra_api_mcp.web; the two lists must stay in sync.
 PUBLIC_GET_PATHS = frozenset({"/", "/health"}) | SKILLS_PUBLIC_PATHS
+
+# PyJWT reasons that are fixed text. A reason outside this set is left out of
+# the AuthError message: some quote a value decoded from the presented token
+# (an unknown kid, an unsupported crit entry, an undecodable header byte).
+_FIXED_JWT_REASONS = frozenset({
+    "Not enough segments",
+    "Invalid header padding",
+    "Invalid payload padding",
+    "Invalid crypto padding",
+    "Invalid header string: must be a json object",
+    "Invalid payload string: must be a json object",
+    "Key ID header parameter must be a string",
+    "The JWKS endpoint did not return a JSON object",
+    "The JWKS endpoint did not contain any signing keys",
+})
+
+# The auth failure line names the token by shape and fingerprint, never by
+# its text. A placeholder is a template a client sent unexpanded instead of a
+# key: ${NAME}, $NAME, {{NAME}} or <NAME>.
+_PLACEHOLDER_RE = re.compile(
+    r"\$\{[^{}]*\}|\$[A-Za-z_][A-Za-z0-9_]*|\{\{[^{}]*\}\}|<[^<>]*>")
+_JWT_SHAPE_RE = re.compile(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")
+# Drawn once per process: the fingerprint links repeats of one failing token
+# within the process and cannot be recomputed from a guess outside it. A forked
+# worker draws its own instead of keeping its parent's.
+_fingerprint_key = secrets.token_bytes(32)
+
+
+def _draw_fingerprint_key() -> None:
+    """Replace the fingerprint key; runs in every child right after a fork."""
+    global _fingerprint_key
+    _fingerprint_key = secrets.token_bytes(32)
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_draw_fingerprint_key)
+
+
+def _jwt_reason(prefix: str, error: Exception) -> str:
+    """The AuthError message for a PyJWT failure: the reason only when it is fixed text."""
+    reason = str(error)
+    return f"{prefix}: {reason}" if reason in _FIXED_JWT_REASONS else prefix
+
+
+def _token_kind(token: str) -> str:
+    """empty, api_key, placeholder, jwt or other, from the token's shape alone."""
+    if not token:
+        return "empty"
+    if token.startswith("sugra_"):
+        return "api_key"
+    if _PLACEHOLDER_RE.fullmatch(token):
+        return "placeholder"
+    if _JWT_SHAPE_RE.fullmatch(token):
+        return "jwt"
+    return "other"
+
+
+def _token_fingerprint(token: str) -> str:
+    """First 8 hex of HMAC-SHA256 under the per-process key; "-" for an empty token."""
+    if not token:
+        return "-"
+    digest = hmac.new(
+        _fingerprint_key, token.encode("utf-8", "surrogatepass"), hashlib.sha256)
+    return digest.hexdigest()[:8]
 
 
 class AuthError(Exception):
@@ -235,7 +305,7 @@ class Authenticator:
         try:
             header = jwt.get_unverified_header(token)
         except jwt.InvalidTokenError as e:
-            raise AuthError(f"Malformed token: {e}") from e
+            raise AuthError(_jwt_reason("Malformed token", e)) from e
         has_kid = bool(header.get("kid"))
 
         # A failing JWKS endpoint cooldowns the whole JWT path.
@@ -326,7 +396,7 @@ class Authenticator:
                 raise AuthError(
                     f"Unable to load signing keys: {e}", status=503) from e
             except Exception as e:
-                raise AuthError(f"Unknown signing key: {e}") from e
+                raise AuthError(_jwt_reason("Unknown signing key", e)) from e
         else:
             try:
                 keys = list(self._jwks.get_signing_keys())
@@ -628,10 +698,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 headers=self._auth_headers(),
             )
         except AuthError as e:
-            token_prefix = token[:12] + "..." if len(token) > 12 else token
+            # Shape class and fingerprint of the token, and the caller's fixed
+            # classes the spans carry too, never raw header text.
             logger.warning(
-                "auth_failed status=%d token_prefix=%s msg=%s",
-                e.status, token_prefix, e,
+                "auth_failed status=%d kind=%s fp=%s host=%s ua=%s origin=%s msg=%s",
+                e.status,
+                _token_kind(token),
+                _token_fingerprint(token),
+                _host_class(request.headers.get("host")) or "-",
+                _text_class(request.headers.get("user-agent"), _UA_PATTERNS),
+                _origin_class(request.headers.get("origin")),
+                e,
             )
             return JSONResponse(
                 {"error": "auth_failed", "message": str(e)},
