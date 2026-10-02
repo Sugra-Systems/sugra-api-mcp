@@ -38,8 +38,12 @@ def macro_briefing(country: str) -> str:
     """Brief the key macro indicators for a country from sovereign sources."""
     return f"""Prepare a macro briefing for {country} covering inflation, policy rate, GDP, and unemployment.
 
-1. Start with call_endpoint operation_id "macro_country_profile" and params {{"country": "{country}"}} for a composite overview.
-2. For the United States, pull individual series with operation_id "fred_series_series_id": CPIAUCSL (CPI), UNRATE (unemployment), GDP (output).
+1. Start with call_endpoint operation_id "macro_country_profile" and params {{"country": "{country}"}} for a composite overview. Its rates are fractions: 0.025 means 2.5%.
+2. For the United States, read rates, not index levels, with call_endpoint operation_id "macro_multi" (at most five series per call):
+   - inflation: {{"series": "us/cpi,us/core-cpi,us/core-pce", "transform": "yoy_pct", "last_n": 13}}; quote value_yoy_pct, never the index value;
+   - policy rate: {{"series": "us/fedfunds-target,us/fedfunds", "last_n": 13}}; the upper bound of the target range and the effective rate, in percent;
+   - growth: {{"series": "us/real-gdp", "transform": "qoq_ann_pct", "last_n": 4}}; real GDP, quarter over quarter at an annual rate;
+   - labor market: {{"series": "us/unrate,us/lfpr,us/payrolls,us/initial-claims", "last_n": 13}}; unemployment beside participation, the monthly payroll change (value_mom_abs) and weekly initial claims.
 3. For other countries, try operation_id "imf_country_indicator" (params: country, indicator), or run search_endpoints with queries like "CPI {country}", "policy rate {country}", "GDP {country}", "unemployment {country}".
 4. Use describe_endpoint on any match before calling it to confirm required parameters; fetch_data is a one-step alternative for simple queries.
 5. Cover all four pillars, quoting the latest value, the reference period, and the direction of change.
