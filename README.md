@@ -90,16 +90,16 @@ These skills teach the catalog loop. They do not add MCP tools. Connect the Sugr
 
 ```
 /plugin marketplace add Sugra-Systems/sugra-api-plugins
-/plugin install sugra-api@sugra-api-plugins
+/plugin install sugra-api-skills@sugra-api-plugins
 ```
 
-Skills appear as `/sugra-api:<skill>`, for example `/sugra-api:discover-and-call`.
+Skills appear as `/sugra-api-skills:<skill>`, for example `/sugra-api-skills:discover-and-call`.
 
 ### Codex
 
 ```bash
 codex plugin marketplace add Sugra-Systems/sugra-api-plugins
-codex plugin add sugra-api@sugra-api-plugins
+codex plugin add sugra-api-skills@sugra-api-plugins
 ```
 
 ### Grok
@@ -225,7 +225,7 @@ To install the skills as a plugin (separate from the MCP server):
 
 ```
 /plugin marketplace add Sugra-Systems/sugra-api-plugins
-/plugin install sugra-api@sugra-api-plugins
+/plugin install sugra-api-skills@sugra-api-plugins
 ```
 
 ### Usage with Gemini CLI

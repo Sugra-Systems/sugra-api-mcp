@@ -208,11 +208,11 @@ def test_tabs_point_at_the_public_listings_before_the_commands(client: TestClien
     parser = _parse_landing(client)
     assert parser.pre_text["cmd-claude-code-skills"] == (
         "claude plugin marketplace add Sugra-Systems/sugra-api-plugins\n"
-        "claude plugin install sugra-api@sugra-api-plugins"
+        "claude plugin install sugra-api-skills@sugra-api-plugins"
     )
     assert parser.pre_text["cmd-codex-skills"] == (
         "codex plugin marketplace add Sugra-Systems/sugra-api-plugins\n"
-        "codex plugin add sugra-api@sugra-api-plugins"
+        "codex plugin add sugra-api-skills@sugra-api-plugins"
     )
 
 
