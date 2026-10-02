@@ -9,6 +9,14 @@ import os
 import sys
 from typing import Literal
 
+# How long uvicorn waits on SIGTERM for open connections to finish before it
+# cancels them. Only plain responses wait: SSE streams close when the signal
+# arrives. The lifespan exit then writes the last gate summary, closes the
+# Sugra API clients and the authenticator, and flushes telemetry for at most
+# gate.FLUSH_TIMEOUT_SECONDS, so the service manager's stop timeout must allow
+# this plus that.
+GRACEFUL_SHUTDOWN_SECONDS = 45
+
 
 def _print_json(payload: object) -> None:
     print(json.dumps(payload, indent=2, sort_keys=True))
@@ -60,8 +68,10 @@ def _run_server(args: argparse.Namespace) -> None:
         import uvicorn
         from starlette.middleware.cors import CORSMiddleware
 
+        from . import gate
         from .auth import Authenticator, AuthMiddleware
         from .config import load_allowed_origins, load_auth_config
+        from .server import close_clients
         from .tools.agent import register_agent_tools
 
         # Hosted-only Agent Context Layer tools: registered from the HTTP
@@ -106,7 +116,23 @@ def _run_server(args: argparse.Namespace) -> None:
             ],
             max_age=86400,
         )
-        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+        # Added last, so it wraps CORS and auth too and records the status the
+        # client was actually sent.
+        app.add_middleware(gate.GateMiddleware, max_body_bytes=mcp.settings.max_request_body_size)
+        # The summaries and the exit work run around the app's own lifespan,
+        # which runs the MCP session manager. The exit work closes every Sugra
+        # API client and the authenticator's connection pool after the last
+        # summary, before the telemetry flush.
+        app.router.lifespan_context = gate.wrap_lifespan(
+            app.router.lifespan_context, on_exit=(close_clients, auth.aclose)
+        )
+        uvicorn.run(
+            app,
+            host=args.host,
+            port=args.port,
+            log_level="info",
+            timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_SECONDS,
+        )
 
 
 async def _call_operation(args: argparse.Namespace) -> dict[str, object]:

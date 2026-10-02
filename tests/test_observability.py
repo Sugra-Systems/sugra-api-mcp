@@ -24,9 +24,11 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import importlib
+import logging
 import os
 import re
 import sys
+import threading
 import time
 import types
 
@@ -50,8 +52,9 @@ class _FakeSpan:
     so we can assert on the dimensions actually emitted.
     """
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, start_time: int | None = None):
         self.name = name
+        self.start_time = start_time
         self.attributes: dict[str, object] = {}
         self.ended = False
         self.status = None
@@ -73,8 +76,8 @@ class _FakeTracer:
     def __init__(self):
         self.spans: list[_FakeSpan] = []
 
-    def start_span(self, name: str) -> _FakeSpan:
-        span = _FakeSpan(name)
+    def start_span(self, name: str, start_time: int | None = None) -> _FakeSpan:
+        span = _FakeSpan(name, start_time)
         self.spans.append(span)
         return span
 
@@ -459,7 +462,7 @@ def test_telemetry_failure_does_not_mask_tool_result(monkeypatch) -> None:
         def __init__(self):
             self.last_span: _BrokenSpan | None = None
 
-        def start_span(self, name: str) -> _BrokenSpan:
+        def start_span(self, name: str, start_time: int | None = None) -> _BrokenSpan:
             self.last_span = _BrokenSpan(name)
             return self.last_span
 
@@ -500,7 +503,7 @@ def test_telemetry_failure_does_not_mask_tool_exception(monkeypatch) -> None:
         def __init__(self):
             self.last_span: _BrokenSpan | None = None
 
-        def start_span(self, name: str) -> _BrokenSpan:
+        def start_span(self, name: str, start_time: int | None = None) -> _BrokenSpan:
             self.last_span = _BrokenSpan(name)
             return self.last_span
 
@@ -524,7 +527,7 @@ def test_span_creation_failure_falls_back_to_direct_call(monkeypatch) -> None:
     than mask the call.
     """
     class _BrokenTracer:
-        def start_span(self, name: str):
+        def start_span(self, name: str, start_time: int | None = None):
             raise RuntimeError("tracer is broken")
 
     monkeypatch.setattr(observability, "_TRACER", _BrokenTracer())
@@ -668,6 +671,10 @@ def test_setup_preserves_operator_otel_service_name_override(monkeypatch) -> Non
 # name set kills both; the sentinels below then guard the values.
 _BASE_ATTRS = frozenset({"mcp.tool.name", "mcp.success", "mcp.duration_ms"})
 _FAILURE_ATTRS = _BASE_ATTRS | {"mcp.error.code"}
+# Every span the tool wrapper leaves also says where the call ran and how many
+# Sugra API requests it made; a call refused at admission (record_refused_call)
+# carries neither.
+_TOOL_ATTRS = frozenset({"mcp.side", "mcp.api.requests"})
 
 # The one scalar type each attribute may carry. Checked with `type(value) is`
 # so a bool never passes as an int and a list never passes as a string: a
@@ -698,6 +705,9 @@ _ATTR_TYPES: dict[str, type] = {
     "mcp.agent.units": int,
     "mcp.agent.downstream_calls": int,
     "mcp.agent.stale": bool,
+    "mcp.side": str,
+    "mcp.api.requests": int,
+    "mcp.request.id": str,
 }
 
 _API_TEXT = "Unknown ticker NOPE for user@example.com (token=abc123)"
@@ -783,7 +793,7 @@ def test_http_failure_is_named_by_status_not_by_text(monkeypatch, status: int, e
     span = tracer.spans[0]
     assert span.attributes["mcp.success"] is False
     assert span.attributes["mcp.error.code"] == expected
-    _assert_span_is_clean(span, _FAILURE_ATTRS, *_API_SENTINELS)
+    _assert_span_is_clean(span, _FAILURE_ATTRS | _TOOL_ATTRS, *_API_SENTINELS)
 
 
 @pytest.mark.parametrize("status", ["503", True, None, 3.0, 200, 99, 600, -1])
@@ -804,7 +814,7 @@ def test_status_that_is_not_an_http_failure_int_stays_unknown_error(monkeypatch,
     span = tracer.spans[0]
     assert span.attributes["mcp.success"] is False
     assert span.attributes["mcp.error.code"] == "unknown_error"
-    _assert_span_is_clean(span, _FAILURE_ATTRS, *_API_SENTINELS)
+    _assert_span_is_clean(span, _FAILURE_ATTRS | _TOOL_ATTRS, *_API_SENTINELS)
 
 
 def test_allowlisted_code_wins_over_the_status_beside_it(monkeypatch) -> None:
@@ -821,7 +831,7 @@ def test_allowlisted_code_wins_over_the_status_beside_it(monkeypatch) -> None:
 
     span = tracer.spans[0]
     assert span.attributes["mcp.error.code"] == "agent_plane_unavailable"
-    _assert_span_is_clean(span, _FAILURE_ATTRS, "plane text")
+    _assert_span_is_clean(span, _FAILURE_ATTRS | _TOOL_ATTRS, "plane text")
 
 
 def test_a_str_subclass_error_code_reaches_the_span_as_str(monkeypatch) -> None:
@@ -840,7 +850,7 @@ def test_a_str_subclass_error_code_reaches_the_span_as_str(monkeypatch) -> None:
     code = span.attributes["mcp.error.code"]
     assert code == "query_too_long"
     assert type(code) is str
-    _assert_span_is_clean(span, _FAILURE_ATTRS)
+    _assert_span_is_clean(span, _FAILURE_ATTRS | _TOOL_ATTRS)
 
 
 
@@ -872,7 +882,7 @@ def test_partial_success_envelope_with_data_is_a_success(monkeypatch) -> None:
 
     span = tracer.spans[0]
     assert span.attributes["mcp.success"] is True
-    _assert_span_is_clean(span, _BASE_ATTRS, "one component stale")
+    _assert_span_is_clean(span, _BASE_ATTRS | _TOOL_ATTRS, "one component stale")
 
 
 @pytest.mark.parametrize("error_value", ["", None, {"code": "nested"}, 42])
@@ -909,13 +919,13 @@ def test_entity_and_keyless_codes_pass_the_allowlist(monkeypatch, code: str) -> 
 
     span = tracer.spans[0]
     assert span.attributes["mcp.error.code"] == code
-    _assert_span_is_clean(span, _FAILURE_ATTRS, "free text stays out of spans")
+    _assert_span_is_clean(span, _FAILURE_ATTRS | _TOOL_ATTRS, "free text stays out of spans")
 
 
 # ---- A partial envelope now reaches the agent extractor ----
 
 
-_AGENT_SUCCESS_ATTRS = _BASE_ATTRS | {
+_AGENT_SUCCESS_ATTRS = _BASE_ATTRS | _TOOL_ATTRS | {
     "mcp.agent.recipe_version",
     "mcp.agent.status",
     "mcp.agent.units",
@@ -1112,7 +1122,7 @@ def _assert_cancelled_verdict(span: _FakeSpan, code: str, *extra_attrs: str) -> 
     assert isinstance(span.attributes["mcp.duration_ms"], int)
     assert "ERROR" in repr(getattr(span.status, "status_code", span.status))
     assert span.ended is True
-    _assert_span_is_clean(span, _FAILURE_ATTRS | set(extra_attrs))
+    _assert_span_is_clean(span, _FAILURE_ATTRS | _TOOL_ATTRS | set(extra_attrs))
 
 
 def test_a_call_cancelled_by_the_budget_records_deadline_exceeded(monkeypatch) -> None:
@@ -1448,7 +1458,7 @@ def test_a_returned_server_busy_keeps_its_scope_on_the_span(monkeypatch, scope: 
     span = tracer.spans[0]
     assert span.attributes["mcp.error.code"] == "server_busy"
     assert span.attributes["mcp.busy.scope"] == scope
-    _assert_span_is_clean(span, _BUSY_ATTRS, "concurrency limit")
+    _assert_span_is_clean(span, _BUSY_ATTRS | _TOOL_ATTRS, "concurrency limit")
 
 
 @pytest.mark.parametrize("scope", _NOT_A_SCOPE, ids=repr)
@@ -1462,7 +1472,7 @@ def test_a_returned_scope_outside_the_four_names_never_reaches_the_span(monkeypa
     assert asyncio.run(fake_search()) == _busy_payload(scope)
     span = tracer.spans[0]
     assert span.attributes["mcp.error.code"] == "server_busy"
-    _assert_span_is_clean(span, _FAILURE_ATTRS, "concurrency limit", "everything", "user@example.com")
+    _assert_span_is_clean(span, _FAILURE_ATTRS | _TOOL_ATTRS, "concurrency limit", "everything", "user@example.com")
 
 
 def test_a_returned_server_busy_without_a_scope_keeps_its_span(monkeypatch) -> None:
@@ -1474,7 +1484,7 @@ def test_a_returned_server_busy_without_a_scope_keeps_its_span(monkeypatch) -> N
 
     asyncio.run(fake_fetch())
     assert tracer.spans[0].attributes["mcp.error.code"] == "server_busy"
-    _assert_span_is_clean(tracer.spans[0], _FAILURE_ATTRS)
+    _assert_span_is_clean(tracer.spans[0], _FAILURE_ATTRS | _TOOL_ATTRS)
 
 
 @pytest.mark.parametrize(
@@ -1497,7 +1507,7 @@ def test_only_a_server_busy_failure_carries_a_scope(monkeypatch, payload: dict) 
 
     asyncio.run(fake_tool())
     assert "mcp.busy.scope" not in tracer.spans[0].attributes
-    _assert_span_is_clean(tracer.spans[0], _FAILURE_ATTRS)
+    _assert_span_is_clean(tracer.spans[0], _FAILURE_ATTRS | _TOOL_ATTRS)
 
 
 class _ScopeLookupRaises(dict):
@@ -1523,7 +1533,7 @@ def test_a_payload_whose_scope_lookup_raises_still_reaches_the_caller(monkeypatc
     span = tracer.spans[0]
     assert span.attributes["mcp.error.code"] == "server_busy"
     assert span.ended is True
-    _assert_span_is_clean(span, _FAILURE_ATTRS, "exploded")
+    _assert_span_is_clean(span, _FAILURE_ATTRS | _TOOL_ATTRS, "exploded")
 
 
 @pytest.mark.parametrize("scope", _SCOPE_NAMES)
@@ -2212,3 +2222,524 @@ def test_the_azure_exporter_keeps_caller_attributes_as_custom_dimensions() -> No
     assert tags.get("ai.user.id") == _HTTP_CALLER
     assert tags.get("ai.user.authUserId") == "7"
     assert envelope.data.base_data.type == "InProc"
+
+
+# ---- Where a call ran, the request that carried it, its API requests ----
+
+
+_REQUEST_ID = "0123456789abcdef0123456789abcdef"
+# What a call that never reached its tool carries besides the caller: no
+# mcp.tool.name when the name is not registered, and never an operation id.
+_UNSTARTED_ATTRS = frozenset({"mcp.success", "mcp.error.code", "mcp.duration_ms"}) | _TOOL_ATTRS
+
+
+def _assert_error_status(span: _FakeSpan) -> None:
+    assert "ERROR" in repr(getattr(span.status, "status_code", span.status))
+
+
+def test_a_name_no_tool_is_registered_under_leaves_an_unknown_span(monkeypatch) -> None:
+    monkeypatch.delenv("CONTAINER_APP_REVISION", raising=False)
+    tracer = _install_fake_tracer(monkeypatch)
+    _install_facts(monkeypatch, _http_facts(request_id=_REQUEST_ID))
+
+    observability.record_unstarted_call(None, "unknown_tool", 3)
+
+    [span] = tracer.spans
+    assert span.name == "mcp.tool.unknown"
+    assert "mcp.tool.name" not in span.attributes
+    assert {key: span.attributes[key] for key in _UNSTARTED_ATTRS | {"mcp.request.id"}} == {
+        "mcp.success": False,
+        "mcp.error.code": "unknown_tool",
+        "mcp.duration_ms": 3,
+        "mcp.api.requests": 0,
+        "mcp.side": "vm",
+        "mcp.request.id": _REQUEST_ID,
+    }
+    assert _caller_of(span) == _EXPECTED_HTTP_ATTRS
+    _assert_error_status(span)
+    assert span.ended is True
+    _assert_span_is_clean(span, _UNSTARTED_ATTRS | {"mcp.request.id"} | _CALLER_SPAN_ATTRS)
+
+
+def test_arguments_that_failed_validation_keep_the_registered_name(monkeypatch) -> None:
+    tracer = _install_fake_tracer(monkeypatch)
+    _install_facts(monkeypatch, _http_facts())
+
+    observability.record_unstarted_call("call_endpoint", "invalid_arguments", 0)
+
+    [span] = tracer.spans
+    assert span.name == "mcp.tool.call_endpoint"
+    assert span.attributes["mcp.tool.name"] == "call_endpoint"
+    assert span.attributes["mcp.error.code"] == "invalid_arguments"
+    assert span.attributes["mcp.api.requests"] == 0
+    assert "mcp.request.id" not in span.attributes
+    _assert_error_status(span)
+    assert span.ended is True
+    _assert_span_is_clean(span, _FAILURE_ATTRS | _TOOL_ATTRS | _CALLER_SPAN_ATTRS)
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "code"), [(None, "unknown_tool"), ("call_endpoint", "invalid_arguments")]
+)
+def test_an_unstarted_key_call_leaves_no_span(monkeypatch, tool_name: str | None, code: str) -> None:
+    tracer = _install_fake_tracer(monkeypatch)
+    _install_facts(monkeypatch, _http_facts(auth="api_key"))
+    observability.record_unstarted_call(tool_name, code, 1)
+    assert tracer.spans == []
+
+
+def test_an_unstarted_call_names_only_an_allowlisted_code(monkeypatch) -> None:
+    tracer = _install_fake_tracer(monkeypatch)
+    _install_facts(monkeypatch, _http_facts())
+    observability.record_unstarted_call(None, "Unknown tool: user@example.com", 1)
+    assert tracer.spans == []
+
+
+def test_an_unstarted_call_without_a_tracer_does_nothing(monkeypatch) -> None:
+    _install_facts(monkeypatch, _http_facts())
+    assert observability._TRACER is None
+    assert observability.record_unstarted_call(None, "unknown_tool", 1) is None
+
+
+def test_an_unstarted_call_without_caller_facts_still_leaves_its_span(monkeypatch) -> None:
+    tracer = _install_fake_tracer(monkeypatch)
+    monkeypatch.delitem(sys.modules, "sugra_api_mcp.server", raising=False)
+    observability.record_unstarted_call(None, "unknown_tool", 1)
+    [span] = tracer.spans
+    assert _caller_of(span) == {}
+    _assert_span_is_clean(span, _UNSTARTED_ATTRS)
+
+
+def test_a_failing_exporter_still_ends_an_unstarted_span(monkeypatch) -> None:
+    tracer = _RaisingTracer()
+    monkeypatch.setattr(observability, "_TRACER", tracer)
+    _install_facts(monkeypatch, _http_facts())
+    assert observability.record_unstarted_call(None, "unknown_tool", 1) is None
+    assert [span.ended for span in tracer.spans] == [True]
+
+
+@pytest.mark.parametrize("code", ["unknown_tool", "invalid_arguments"])
+def test_the_unstarted_call_codes_are_allowlisted(code: str) -> None:
+    assert code in observability._KNOWN_ERROR_CODES
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (_REQUEST_ID, _REQUEST_ID),
+        ("f" * 32, "f" * 32),
+        (_REQUEST_ID.upper(), None),
+        (_REQUEST_ID[:31], None),
+        (_REQUEST_ID + "0", None),
+        ("g" + _REQUEST_ID[1:], None),
+        (" " + _REQUEST_ID, None),
+        (_REQUEST_ID + "\n", None),
+        ("01234567-89ab-cdef-0123-456789abcdef", None),
+        (chr(0x0660) * 32, None),
+        ("", None),
+        (_StrLookalike(_REQUEST_ID), None),
+        (_REQUEST_ID.encode("ascii"), None),
+        (None, None),
+        (0x0123456789ABCDEF0123456789ABCDEF, None),
+    ],
+)
+def test_only_an_exact_request_id_is_kept(value: object, expected: str | None) -> None:
+    assert observability.request_id_of(value) == expected
+
+
+@pytest.mark.parametrize(
+    ("request_id", "expected"),
+    [(_REQUEST_ID, _REQUEST_ID), (_REQUEST_ID.upper(), None), ("req-SECRETREQID", None), (None, None)],
+)
+def test_a_tool_span_carries_the_request_id_only_when_it_is_exact(
+    monkeypatch, request_id: object, expected: str | None
+) -> None:
+    tracer = _install_fake_tracer(monkeypatch)
+    _install_facts(monkeypatch, _http_facts(request_id=request_id))
+
+    @observability.trace_mcp_tool("call_endpoint")
+    async def fake_tool() -> dict:
+        return {"data": []}
+
+    asyncio.run(fake_tool())
+    span = tracer.spans[0]
+    assert span.attributes.get("mcp.request.id") == expected
+    _assert_span_is_clean(
+        span, _BASE_ATTRS | _TOOL_ATTRS | {"mcp.request.id"} | _CALLER_SPAN_ATTRS, "SECRETREQID"
+    )
+
+
+@pytest.mark.parametrize(
+    ("revision", "expected"),
+    [
+        (None, "vm"),
+        ("", "vm"),
+        ("   ", "vm"),
+        ("sugra-mcp--r1", "sugra-mcp--r1"),
+        (" sugra-mcp--r1 ", "sugra-mcp--r1"),
+        ("0abc", "0abc"),
+        ("a" * 128, "a" * 128),
+        ("a" * 129, "unknown"),
+        ("Sugra-MCP--R1", "unknown"),
+        ("-sugra-mcp", "unknown"),
+        ("sugra mcp", "unknown"),
+        ("sugra_mcp", "unknown"),
+        ("sugra-mcp\n--r1", "unknown"),
+        ("token=abc123", "unknown"),
+    ],
+)
+def test_the_side_is_the_revision_name_or_a_fixed_word(
+    monkeypatch, revision: str | None, expected: str
+) -> None:
+    if revision is None:
+        monkeypatch.delenv("CONTAINER_APP_REVISION", raising=False)
+    else:
+        monkeypatch.setenv("CONTAINER_APP_REVISION", revision)
+    assert observability.process_side() == expected
+
+
+def test_every_span_says_which_deployment_served_it(monkeypatch) -> None:
+    monkeypatch.setenv("CONTAINER_APP_REVISION", "sugra-mcp--r7")
+    tracer = _install_fake_tracer(monkeypatch)
+    _install_facts(monkeypatch, _http_facts())
+
+    @observability.trace_mcp_tool("call_endpoint")
+    async def fake_tool() -> dict:
+        return {"data": []}
+
+    asyncio.run(fake_tool())
+    observability.record_unstarted_call(None, "unknown_tool", 0)
+    assert [span.attributes["mcp.side"] for span in tracer.spans] == ["sugra-mcp--r7"] * 2
+
+
+def test_an_oauth_call_that_made_no_api_request_reports_zero(monkeypatch) -> None:
+    tracer = _install_fake_tracer(monkeypatch)
+    _install_facts(monkeypatch, _http_facts())
+
+    @observability.trace_mcp_tool("list_toolsets")
+    async def fake_tool() -> dict:
+        return {"toolsets": []}
+
+    asyncio.run(fake_tool())
+    assert tracer.spans[0].attributes["mcp.api.requests"] == 0
+
+
+@pytest.mark.parametrize("outcome", ["success", "failure", "exception", "cancelled"])
+def test_a_key_call_that_made_no_api_request_leaves_no_span(monkeypatch, outcome: str) -> None:
+    tracer = _install_fake_tracer(monkeypatch)
+    _install_facts(monkeypatch, _http_facts(auth="api_key"))
+
+    @observability.trace_mcp_tool("call_endpoint")
+    async def fake_tool() -> dict:
+        if outcome == "exception":
+            raise ValueError("boom")
+        if outcome == "cancelled":
+            raise asyncio.CancelledError()
+        return {"data": []} if outcome == "success" else {"error": "unknown_operation_id"}
+
+    if outcome in ("exception", "cancelled"):
+        with pytest.raises((ValueError, asyncio.CancelledError)):
+            asyncio.run(fake_tool())
+    else:
+        asyncio.run(fake_tool())
+    assert tracer.spans == []
+
+
+def test_a_key_call_that_reached_the_api_leaves_one_span_dated_from_its_entry(monkeypatch) -> None:
+    monkeypatch.delenv("CONTAINER_APP_REVISION", raising=False)
+    tracer = _install_fake_tracer(monkeypatch)
+    _install_facts(monkeypatch, _http_facts(auth="api_key", request_id=_REQUEST_ID))
+    open_spans: list[int] = []
+
+    @observability.trace_mcp_tool("call_endpoint")
+    async def fake_tool(operation_id: str) -> dict:
+        observability.note_api_request()
+        open_spans.append(len(tracer.spans))
+        return {"data": []}
+
+    before = time.time_ns()
+    asyncio.run(fake_tool(operation_id="quotes_symbol_price"))
+    after = time.time_ns()
+
+    # Nothing opens while the call runs: the span is created at its exit.
+    assert open_spans == [0]
+    [span] = tracer.spans
+    assert span.name == "mcp.tool.call_endpoint"
+    assert span.start_time is not None and before <= span.start_time <= after
+    assert span.attributes["mcp.success"] is True
+    assert span.attributes["mcp.operation_id"] == "quotes_symbol_price"
+    assert span.attributes["mcp.api.requests"] == 1
+    assert span.attributes["mcp.side"] == "vm"
+    assert span.attributes["mcp.request.id"] == _REQUEST_ID
+    assert _caller_of(span) == {**_EXPECTED_HTTP_ATTRS, "mcp.caller.auth": "api_key"}
+    assert span.attributes["enduser.pseudo.id"] == _HTTP_CALLER
+    assert "enduser.id" not in span.attributes
+    assert span.ended is True
+    _assert_span_is_clean(
+        span,
+        _BASE_ATTRS | _TOOL_ATTRS | {"mcp.operation_id", "mcp.request.id"} | _CALLER_SPAN_ATTRS,
+    )
+
+
+@pytest.mark.parametrize(
+    ("outcome", "code"),
+    [
+        ("http_401", "upstream_http_401"),
+        ("http_503", "upstream_http_503"),
+        ("timeout", "upstream_timeout"),
+        ("exception", "exception"),
+        ("cancelled", "cancelled"),
+    ],
+)
+def test_a_key_call_that_failed_after_reaching_the_api_names_its_failure(
+    monkeypatch, outcome: str, code: str
+) -> None:
+    tracer = _install_fake_tracer(monkeypatch)
+    _install_facts(monkeypatch, _http_facts(auth="api_key"))
+
+    @observability.trace_mcp_tool("call_endpoint")
+    async def fake_tool() -> dict:
+        observability.note_api_request()
+        if outcome == "exception":
+            raise ValueError(_API_TEXT)
+        if outcome == "cancelled":
+            raise asyncio.CancelledError()
+        if outcome == "timeout":
+            return {"error": "upstream_timeout", "reason": _API_TEXT, "status_code": None, "url": _API_URL}
+        return _http_failure(int(outcome[5:]))
+
+    if outcome in ("exception", "cancelled"):
+        with pytest.raises((ValueError, asyncio.CancelledError)):
+            asyncio.run(fake_tool())
+    else:
+        asyncio.run(fake_tool())
+    [span] = tracer.spans
+    assert span.attributes["mcp.success"] is False
+    assert span.attributes["mcp.error.code"] == code
+    assert span.attributes["mcp.api.requests"] == 1
+    _assert_error_status(span)
+    assert span.ended is True
+    _assert_span_is_clean(
+        span, _FAILURE_ATTRS | _TOOL_ATTRS | _CALLER_SPAN_ATTRS | {"mcp.exception.type"}, *_API_SENTINELS
+    )
+
+
+@pytest.mark.parametrize("auth", ["oauth", "api_key"])
+def test_a_nested_tool_call_counts_its_requests_on_both_spans(monkeypatch, auth: str) -> None:
+    tracer = _install_fake_tracer(monkeypatch)
+    _install_facts(monkeypatch, _http_facts(auth=auth))
+
+    @observability.trace_mcp_tool("call_endpoint")
+    async def inner() -> dict:
+        observability.note_api_request()
+        observability.note_api_request()
+        return {"data": []}
+
+    @observability.trace_mcp_tool("fetch_data")
+    async def outer() -> dict:
+        observability.note_api_request()
+        return await inner()
+
+    asyncio.run(outer())
+    assert {span.name: span.attributes["mcp.api.requests"] for span in tracer.spans} == {
+        "mcp.tool.fetch_data": 3,
+        "mcp.tool.call_endpoint": 2,
+    }
+    assert all(span.ended for span in tracer.spans)
+
+
+@pytest.mark.parametrize("traced", [False, True], ids=["no-tracer", "tracer"])
+def test_the_dispatch_learns_that_the_call_entered_and_what_it_sent(monkeypatch, traced: bool) -> None:
+    if traced:
+        _install_fake_tracer(monkeypatch)
+    _install_facts(monkeypatch, _http_facts(auth="api_key"))
+
+    @observability.trace_mcp_tool("call_endpoint")
+    async def fake_tool() -> dict:
+        observability.note_api_request()
+        observability.note_api_request()
+        return {"data": []}
+
+    async def dispatch() -> tuple[bool, observability.ToolDispatch]:
+        published = observability.ToolDispatch()
+        previous = observability.tool_dispatch.set(published)
+        try:
+            entered_before = published.entered
+            await fake_tool()
+        finally:
+            observability.tool_dispatch.reset(previous)
+        return entered_before, published
+
+    entered_before, published = asyncio.run(dispatch())
+    assert entered_before is False
+    assert published.entered is True
+    assert published.api_requests == 2
+
+
+def test_counting_a_request_outside_any_call_is_harmless() -> None:
+    assert observability.tool_dispatch.get() is None
+    assert observability._call_frame.get() is None
+    assert observability.note_api_request() is None
+
+
+def _fake_azure_monitor(monkeypatch, captured: dict) -> None:
+    # setup_observability edits os.environ directly; these records let
+    # monkeypatch put back whatever the process had before the test.
+    monkeypatch.setenv("OTEL_SERVICE_NAME", "sugra-mcp")
+    for name in observability._TRACE_OVERRIDE_VARS:
+        monkeypatch.delenv(name, raising=False)
+
+    def _fake_configure(**kwargs) -> None:
+        captured.update(kwargs)
+        captured["environment"] = {name: os.environ.get(name) for name in observability._TRACE_OVERRIDE_VARS}
+
+    fake_module = types.ModuleType("azure.monitor.opentelemetry")
+    fake_module.configure_azure_monitor = _fake_configure
+    monkeypatch.setitem(sys.modules, "azure.monitor.opentelemetry", fake_module)
+    fake_trace_mod = types.ModuleType("opentelemetry")
+    fake_trace_mod.trace = types.SimpleNamespace(get_tracer=lambda _name: object())
+    monkeypatch.setitem(sys.modules, "opentelemetry", fake_trace_mod)
+    monkeypatch.setitem(sys.modules, "opentelemetry.trace", fake_trace_mod.trace)
+
+
+def test_setup_exports_every_span(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "APPLICATIONINSIGHTS_CONNECTION_STRING",
+        "InstrumentationKey=00000000-0000-0000-0000-000000000000",
+    )
+    captured: dict = {}
+    _fake_azure_monitor(monkeypatch, captured)
+    assert observability.setup_observability() is True
+    assert captured["sampling_ratio"] == 1.0
+
+
+def test_setup_removes_trace_overrides_and_names_only_the_variable(monkeypatch, caplog) -> None:
+    monkeypatch.setenv(
+        "APPLICATIONINSIGHTS_CONNECTION_STRING",
+        "InstrumentationKey=00000000-0000-0000-0000-000000000000",
+    )
+    values = {
+        "OTEL_TRACES_EXPORTER": "none-SENTINEL-ONE",
+        "OTEL_TRACES_SAMPLER": "traceidratio-SENTINEL-TWO",
+        "OTEL_TRACES_SAMPLER_ARG": "0.01-SENTINEL-THREE",
+    }
+    captured: dict = {}
+    _fake_azure_monitor(monkeypatch, captured)
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+
+    with caplog.at_level(logging.WARNING, logger="sugra_mcp.observability"):
+        assert observability.setup_observability() is True
+
+    assert captured["environment"] == dict.fromkeys(values)
+    assert not set(values) & set(os.environ)
+    warnings = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "sugra_mcp.observability" and record.levelno == logging.WARNING
+    ]
+    assert warnings == [f"{name} is set; removed so that every tool span is exported." for name in values]
+    assert "SENTINEL" not in caplog.text
+
+
+class _Provider:
+    """A telemetry provider whose flush is recorded, and may fail or hang."""
+
+    def __init__(
+        self, name: str, calls: list, *, fail: bool = False, hang: threading.Event | None = None
+    ) -> None:
+        self.name = name
+        self.calls = calls
+        self.fail = fail
+        self.hang = hang
+
+    def force_flush(self, timeout_millis: int = 30_000) -> bool:
+        self.calls.append((self.name, timeout_millis))
+        if self.fail:
+            raise RuntimeError("exporter died")
+        if self.hang is not None:
+            self.hang.wait(10)
+        return True
+
+
+def _install_providers(monkeypatch, logs: object, spans: object, metrics: object) -> None:
+    import opentelemetry._logs
+    import opentelemetry.metrics
+    import opentelemetry.trace
+
+    monkeypatch.setattr(opentelemetry._logs, "get_logger_provider", lambda: logs)
+    monkeypatch.setattr(opentelemetry.trace, "get_tracer_provider", lambda: spans)
+    monkeypatch.setattr(opentelemetry.metrics, "get_meter_provider", lambda: metrics)
+
+
+def _wait_for_flush_thread() -> None:
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and any(
+        thread.name == "sugra-telemetry-flush" for thread in threading.enumerate()
+    ):
+        time.sleep(0.01)
+
+
+def test_flush_telemetry_flushes_logs_then_spans_then_metrics(monkeypatch) -> None:
+    calls: list = []
+    _install_providers(
+        monkeypatch, _Provider("logs", calls), _Provider("spans", calls), _Provider("metrics", calls)
+    )
+    assert observability.flush_telemetry(5.0) is True
+    assert [name for name, _ in calls] == ["logs", "spans", "metrics"]
+    assert all(0 < timeout <= 5000 for _, timeout in calls)
+
+
+def test_flush_telemetry_keeps_going_past_a_provider_that_fails(monkeypatch) -> None:
+    calls: list = []
+    _install_providers(monkeypatch, _Provider("logs", calls, fail=True), _Provider("spans", calls), object())
+    assert observability.flush_telemetry(5.0) is True
+    assert [name for name, _ in calls] == ["logs", "spans"]
+
+
+def test_flush_telemetry_gives_up_on_a_provider_that_hangs(monkeypatch) -> None:
+    calls: list = []
+    release = threading.Event()
+    _install_providers(
+        monkeypatch,
+        _Provider("logs", calls, hang=release),
+        _Provider("spans", calls),
+        _Provider("metrics", calls),
+    )
+    started = time.monotonic()
+    try:
+        assert observability.flush_telemetry(0.2) is False
+        assert time.monotonic() - started < 2.0
+    finally:
+        release.set()
+        _wait_for_flush_thread()
+    # Once the time is spent, the providers after the one that hung are skipped.
+    assert all(name == "logs" for name, _ in calls)
+
+
+def test_flush_telemetry_is_a_no_op_without_the_sdk(monkeypatch) -> None:
+    monkeypatch.setitem(sys.modules, "opentelemetry._logs", None)
+    assert observability.flush_telemetry(1.0) is True
+
+
+def test_the_azure_exporter_keeps_placement_attributes_as_custom_dimensions() -> None:
+    from azure.monitor.opentelemetry.exporter.export.trace._exporter import (
+        _convert_span_to_envelope,
+    )
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    memory = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(memory))
+    span = provider.get_tracer("sugra_mcp.tools").start_span("mcp.tool.call_endpoint")
+    span.set_attribute("mcp.side", "sugra-mcp--r7")
+    span.set_attribute("mcp.api.requests", 2)
+    span.set_attribute("mcp.request.id", _REQUEST_ID)
+    span.end()
+    envelope = _convert_span_to_envelope(memory.get_finished_spans()[0])
+    properties = envelope.data.base_data.properties or {}
+    assert properties["mcp.side"] == "sugra-mcp--r7"
+    assert properties["mcp.api.requests"] == "2"
+    assert properties["mcp.request.id"] == _REQUEST_ID

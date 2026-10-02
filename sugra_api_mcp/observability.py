@@ -9,7 +9,9 @@ Custom dimensions captured per MCP tool invocation:
     mcp.tool.name        - the traced tool's registered name: the six gateway
                            tools (tools/gateway.py), sugra_entity_screen and
                            sugra_entity_lookup, and on the hosted server
-                           resolve_entity, get_snapshot and get_timeseries
+                           resolve_entity, get_snapshot and get_timeseries.
+                           A call naming no registered tool leaves a span
+                           named mcp.tool.unknown with no mcp.tool.name at all
     mcp.operation_id     - the operation_id kwarg, ONLY if it matches a
                            catalog-known operation_id (allowlist). Arbitrary
                            client-supplied strings (PII, secrets, free text)
@@ -25,7 +27,9 @@ Custom dimensions captured per MCP tool invocation:
                            upstream_http_5xx, ...); otherwise "unknown_error".
                            Free-text upstream messages never reach the span.
                            A tool that raised is "exception"; a cancelled call
-                           is "deadline_exceeded" or "cancelled".
+                           is "deadline_exceeded" or "cancelled". A call that
+                           never reached its tool is "unknown_tool" or
+                           "invalid_arguments".
     mcp.busy.scope       - server_busy failures only: the bound
                            that refused the call, one of tool_calls /
                            caller_tool_calls / search / caller_search; any
@@ -57,9 +61,30 @@ Custom dimensions captured per MCP tool invocation:
                            callers only. Absent for a sugra_ key
     mcp.duration_ms      - integer ms wall-clock from before-call to
                            after-return
+    mcp.api.requests     - integer count of the Sugra API requests the call
+                           made, nested tool calls included
+    mcp.side             - the deployment that served the call: the Container
+                           Apps revision (CONTAINER_APP_REVISION), or "vm"
+                           where the platform sets none
+    mcp.request.id       - the X-Request-Id of the HTTP request that carried
+                           the call, only when it is exactly 32 lowercase hex
+                           (the id nginx assigns); anything else is dropped
     mcp.exception.type   - exception class name only (NEVER the message)
     mcp.agent.*          - agent tools only, from the response envelope
                            metadata (tools/agent.py _agent_result_attrs)
+
+Which calls leave a span:
+- A call that reached its tool, OAuth, unauthenticated or local, whatever
+  the outcome.
+- A call authenticated by a sugra_ API key only once it reached its first
+  Sugra API request; the span then opens at the call's exit, backdated to
+  its entry. Its catalog lookups and its failures before any API request
+  leave no span: the gate summary (gate.py) counts them instead.
+- A call that never reached its tool (unknown_tool, invalid_arguments) on
+  the same terms: every caller except a sugra_ API key.
+- A call refused at admission (server_busy): record_refused_call, for
+  registered names only, whatever the caller.
+Sampling is off: every span is exported.
 
 Privacy contract (enforced by tests):
 - Raw query strings, params dicts, body payloads, response payloads are
@@ -89,6 +114,7 @@ import logging
 import os
 import re
 import sys
+import threading
 import time
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
@@ -151,6 +177,89 @@ def _cancellation_code() -> str:
     if budget is not None and budget.owns_the_cancellation():
         return "deadline_exceeded"
     return "cancelled"
+
+
+@dataclass
+class ToolDispatch:
+    """What server.py call_tool publishes for ONE tools/call, for the wrapper to fill in.
+
+    entered turns True once the call reached a traced tool, so a ToolError the
+    SDK raises while it is still False means the call never started: a name
+    no tool is registered under, or arguments that failed validation.
+    api_requests counts the Sugra API requests the whole call made, nested
+    tool calls included, for the gate summary (gate.py).
+    """
+
+    entered: bool = False
+    api_requests: int = 0
+
+
+tool_dispatch: ContextVar[ToolDispatch | None] = ContextVar("sugra_tool_dispatch", default=None)
+
+
+class _CallFrame:
+    """One traced tool invocation's count of Sugra API requests.
+
+    note_api_request adds to every frame up the parent chain, so a tool that
+    calls another traced tool (fetch_data delegates to call_endpoint) counts
+    the nested call's requests as its own as well.
+    """
+
+    __slots__ = ("api_requests", "parent")
+
+    def __init__(self, parent: _CallFrame | None) -> None:
+        self.api_requests = 0
+        self.parent = parent
+
+
+_call_frame: ContextVar[_CallFrame | None] = ContextVar("sugra_call_frame", default=None)
+
+
+def note_api_request() -> None:
+    """Count one Sugra API request for the tool call being dispatched.
+
+    server.get_client calls this each time it hands out a client that sends
+    one (never the keyless stand-in, which answers without a request). The
+    count is the span's mcp.api.requests, decides whether a sugra_ key call
+    leaves a span at all, and is the per-call count of the gate summary.
+    """
+    dispatch = tool_dispatch.get()
+    if dispatch is not None:
+        dispatch.api_requests += 1
+    frame = _call_frame.get()
+    while frame is not None:
+        frame.api_requests += 1
+        frame = frame.parent
+
+
+# nginx's $request_id: 32 lowercase hex. Anything else a request carries as
+# X-Request-Id is dropped, never trimmed or copied through.
+_REQUEST_ID_RE = re.compile(r"[0-9a-f]{32}")
+
+
+def request_id_of(value: object) -> str | None:
+    """The request id when the value is exactly 32 lowercase hex, else None."""
+    if type(value) is not str:
+        return None
+    return value if _REQUEST_ID_RE.fullmatch(value) else None
+
+
+# A Container Apps revision name: lowercase letters, digits and hyphens.
+_SIDE_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,127}")
+
+
+def process_side() -> str:
+    """The deployment this process belongs to: its Container Apps revision, or "vm".
+
+    Azure Container Apps sets CONTAINER_APP_REVISION in every replica; the VM
+    sets nothing, so an unset or empty value is "vm". A value that is not a
+    plain revision name is "unknown", never copied through.
+    """
+    value = os.environ.get("CONTAINER_APP_REVISION", "").strip()
+    if not value:
+        return "vm"
+    return value if _SIDE_RE.fullmatch(value) else "unknown"
+
 
 # HTTP failures from the Sugra API. SugraClient keeps the API's own text at
 # result["error"] for the CALLER (a bad symbol says which, a quota refusal
@@ -257,6 +366,10 @@ _KNOWN_ERROR_CODES: frozenset[str] = frozenset({
     # A tool call refused at the in-flight cap (server.py), or a
     # search refused because the search queue is full (tools/gateway.py).
     "server_busy",
+    # A tool call that never reached its tool (server.py call_tool): a name
+    # no tool is registered under, or arguments that failed validation.
+    "unknown_tool",
+    "invalid_arguments",
 }) | frozenset(_HTTP_STATUS_ERROR_CODES.values()) | frozenset(_HTTP_CLASS_ERROR_CODES.values())
 # Identity map so a str subclass that equals an allowlisted code attaches the
 # interned constant, never the caller's object.
@@ -328,6 +441,8 @@ class CallerFacts:
     numeric OAuth sub, or None. Every other field is whatever the client sent
     (header, clientInfo text, ASGI peer, or None), and none of it reaches a
     span as such: _caller_attrs reduces each to a fixed class, digest or prefix.
+    request_id, the X-Request-Id header, is attached only when request_id_of
+    accepts it as the exact 32 lowercase hex that nginx assigns.
     """
 
     transport: str
@@ -343,6 +458,7 @@ class CallerFacts:
     client_addr: object = None
     x_real_ip: object = None
     platform: object = None
+    request_id: object = None
 
 
 _CALLER_TRANSPORTS: frozenset[str] = frozenset({"streamable_http", "local"})
@@ -563,19 +679,60 @@ def _caller_attrs(facts: object) -> dict[str, str]:
     return attrs
 
 
-def _dispatch_caller_attrs() -> dict[str, str]:
-    """The caller attributes of the tool call being dispatched, or {} when there are none.
+def _dispatch_facts() -> object:
+    """The CallerFacts of the tool call being dispatched, or None when there are none.
 
     server.current_caller_facts is looked up at call time, never imported, so a
     test that reloads either module cannot leave a stale binding, and any failure
-    to read the facts drops only the attributes, never the tool result.
+    to read the facts reads as no facts, never as a failed tool call.
     """
     try:
         provider = getattr(sys.modules.get("sugra_api_mcp.server"), "current_caller_facts", None)
-        facts = provider() if callable(provider) else None
-        return _caller_attrs(facts) if facts is not None else {}
+        return provider() if callable(provider) else None
+    except Exception:
+        return None
+
+
+def _caller_attrs_of(facts: object) -> dict[str, str]:
+    """_caller_attrs for facts that may be None or unreadable: {} instead of raising."""
+    if facts is None:
+        return {}
+    try:
+        return _caller_attrs(facts)
     except Exception:
         return {}
+
+
+def _dispatch_caller_attrs() -> dict[str, str]:
+    """The caller attributes of the tool call being dispatched, or {} when there are none.
+
+    Any failure to read the facts drops only the attributes, never the tool
+    result (_dispatch_facts, _caller_attrs_of).
+    """
+    return _caller_attrs_of(_dispatch_facts())
+
+
+def _facts_field(facts: object, name: str) -> object:
+    """One field of the facts, or None when it is missing or reading it raises."""
+    try:
+        return getattr(facts, name, None)
+    except Exception:
+        return None
+
+
+def _is_key_call(facts: object) -> bool:
+    """True when the request that carried the call authenticated with a sugra_ API key."""
+    auth = _facts_field(facts, "auth")
+    return type(auth) is str and auth == "api_key"
+
+
+def _placement_attrs(facts: object) -> dict[str, str]:
+    """mcp.side always, and mcp.request.id when the carrying request had a valid one."""
+    attrs = {"mcp.side": process_side()}
+    request_id = request_id_of(_facts_field(facts, "request_id"))
+    if request_id is not None:
+        attrs["mcp.request.id"] = request_id
+    return attrs
 
 
 def record_refused_call(tool_name: str, error_code: str, scope: object = None) -> None:
@@ -609,6 +766,45 @@ def record_refused_call(tool_name: str, error_code: str, scope: object = None) -
     finally:
         _safe_end(span)
 
+
+def record_unstarted_call(tool_name: str | None, error_code: str, duration_ms: int) -> None:
+    """Leave a failure span for an admitted tool call that never reached its tool.
+
+    server.py call_tool calls this when the SDK refused the call before the
+    tool ran: tool_name is the registered name whose arguments failed
+    validation, or None for a name no tool is registered under. That span is
+    always named mcp.tool.unknown and carries no mcp.tool.name, so a name the
+    client chose never reaches the workspace. A call authenticated by a sugra_
+    API key leaves no span: it never reached the API, and the gate summary
+    counts it instead.
+    """
+    if _TRACER is None or error_code not in _KNOWN_ERROR_CODES:
+        return
+    facts = _dispatch_facts()
+    if _is_key_call(facts):
+        return
+    try:
+        span = _TRACER.start_span(
+            name="mcp.tool.unknown" if tool_name is None else f"mcp.tool.{tool_name}"
+        )
+    except Exception:
+        return
+    try:
+        if tool_name is not None:
+            _safe_attr(span, "mcp.tool.name", tool_name)
+        for key, value in _caller_attrs_of(facts).items():
+            _safe_attr(span, key, value)
+        for key, value in _placement_attrs(facts).items():
+            _safe_attr(span, key, value)
+        _safe_attr(span, "mcp.success", False)
+        _safe_attr(span, "mcp.error.code", error_code)
+        _safe_attr(span, "mcp.api.requests", 0)
+        _safe_attr(span, "mcp.duration_ms", duration_ms)
+        _safe_status_error(span)
+    finally:
+        _safe_end(span)
+
+
 # azure-monitor-opentelemetry enables all bundled instrumentations by default
 # (fastapi, requests, urllib, urllib3, azure_sdk, django, flask, psycopg2).
 # Those auto-spans carry URL + query-string attributes that bypass our privacy
@@ -624,6 +820,24 @@ _DISABLE_ALL_INSTRUMENTATION = {
     "urllib": {"enabled": False},
     "urllib3": {"enabled": False},
 }
+
+# Environment variables through which the distro would export no spans
+# (OTEL_TRACES_EXPORTER=none) or only a sample of them (OTEL_TRACES_SAMPLER,
+# OTEL_TRACES_SAMPLER_ARG). An environment sampler outranks the sampling_ratio
+# argument, so setup_observability removes all three before configuring.
+_TRACE_OVERRIDE_VARS: tuple[str, ...] = (
+    "OTEL_TRACES_EXPORTER",
+    "OTEL_TRACES_SAMPLER",
+    "OTEL_TRACES_SAMPLER_ARG",
+)
+
+
+def _drop_trace_overrides() -> None:
+    """Remove the trace override variables; the warning names the variable, never its value."""
+    for name in _TRACE_OVERRIDE_VARS:
+        if name in os.environ:
+            del os.environ[name]
+            logger.warning("%s is set; removed so that every tool span is exported.", name)
 
 
 def setup_observability(connection_string: str | None = None) -> bool:
@@ -671,6 +885,7 @@ def setup_observability(connection_string: str | None = None) -> bool:
         # via Resource auto-detector. setdefault preserves any operator
         # override in /etc/systemd unit or .env.
         os.environ.setdefault("OTEL_SERVICE_NAME", "sugra-mcp")
+        _drop_trace_overrides()
 
         configure_azure_monitor(
             connection_string=conn,
@@ -682,6 +897,10 @@ def setup_observability(connection_string: str | None = None) -> bool:
             # Disable every bundled auto-instrumentation so only our explicit
             # `@trace_mcp_tool` spans reach the workspace.
             instrumentation_options=_DISABLE_ALL_INSTRUMENTATION,
+            # No sampling. Without a sampler setting the distro keeps at most
+            # five traces a second; every tool span is exported instead, so
+            # each call can be found by its request id.
+            sampling_ratio=1.0,
         )
         _TRACER = trace.get_tracer("sugra_mcp.tools")
         _INITIALISED = True
@@ -696,6 +915,45 @@ def setup_observability(connection_string: str | None = None) -> bool:
         )
         _INITIALISED = True
         return False
+
+
+def flush_telemetry(timeout_s: float) -> bool:
+    """Hand buffered logs, spans and metrics to their exporters, within timeout_s in all.
+
+    The OpenTelemetry providers flush their batches from an atexit hook, and a
+    process uvicorn stops on SIGTERM never runs it: uvicorn raises the signal
+    again once it has shut down. gate.wrap_lifespan calls this on the way out
+    instead. Logs go first, since the last gate summary is one. The work runs
+    on a daemon thread, so an exporter that hangs costs at most timeout_s and
+    never holds the process. True when every flush finished in time; a
+    no-op without the OpenTelemetry SDK.
+    """
+    deadline = time.monotonic() + timeout_s
+    done = threading.Event()
+
+    def flush() -> None:
+        try:
+            from opentelemetry import metrics, trace
+            from opentelemetry._logs import get_logger_provider
+
+            providers = [
+                get_logger_provider(),
+                trace.get_tracer_provider(),
+                metrics.get_meter_provider(),
+            ]
+            for provider in providers:
+                force_flush = getattr(provider, "force_flush", None)
+                remaining_ms = int((deadline - time.monotonic()) * 1000)
+                if callable(force_flush) and remaining_ms > 0:
+                    with contextlib.suppress(Exception):
+                        force_flush(timeout_millis=remaining_ms)
+        except Exception:
+            pass
+        finally:
+            done.set()
+
+    threading.Thread(target=flush, name="sugra-telemetry-flush", daemon=True).start()
+    return done.wait(timeout_s)
 
 
 def _get_valid_operation_ids() -> frozenset[str]:
@@ -754,6 +1012,90 @@ def _safe_end(span: Any) -> None:
         span.end()
 
 
+def _entry_attrs(tool_name: str, facts: object, operation_id: object) -> dict[str, Any]:
+    """The attributes a tool span carries from the call's entry, in the order they are set."""
+    attrs: dict[str, Any] = {"mcp.tool.name": tool_name}
+    attrs.update(_caller_attrs_of(facts))
+    # operation_id is attached ONLY if the kwarg value matches a
+    # catalog-known operation_id. Arbitrary client-supplied strings
+    # (PII / secrets / free text) are dropped before reaching App
+    # Insights.
+    if isinstance(operation_id, str) and operation_id in _get_valid_operation_ids():
+        attrs["mcp.operation_id"] = operation_id
+    attrs.update(_placement_attrs(facts))
+    return attrs
+
+
+def _late_span(tool_name: str, entry_attrs: dict[str, Any], frame: _CallFrame, start_ns: int) -> Any:
+    """The span of a sugra_ key call that reached the API, opened at the call's exit.
+
+    Backdated to the call's entry, so its timestamp and duration read like an
+    eager span's. None when the call made no API request, or when span creation
+    fails: telemetry never breaks the tool result.
+    """
+    if frame.api_requests <= 0 or _TRACER is None:
+        return None
+    try:
+        span = _TRACER.start_span(name=f"mcp.tool.{tool_name}", start_time=start_ns)
+    except Exception:
+        return None
+    for key, value in entry_attrs.items():
+        _safe_attr(span, key, value)
+    return span
+
+
+def _stamp_failure(
+    span: Any, error_code: str, exception_type: str | None, frame: _CallFrame, start: float
+) -> None:
+    """Close the attributes of a call that raised or was cancelled."""
+    _safe_attr(span, "mcp.success", False)
+    _safe_attr(span, "mcp.error.code", error_code)
+    if exception_type is not None:
+        _safe_attr(span, "mcp.exception.type", exception_type)
+    _safe_attr(span, "mcp.api.requests", frame.api_requests)
+    _safe_attr(span, "mcp.duration_ms", int((time.perf_counter() - start) * 1000))
+    _safe_status_error(span)
+
+
+def _stamp_returned(
+    span: Any,
+    result: Any,
+    result_attrs: Callable[[Any], dict[str, Any]] | None,
+    frame: _CallFrame,
+    start: float,
+) -> None:
+    """Close the attributes of a call that returned."""
+    # Failure is errors.is_error_payload - the ONE
+    # definition the tool protocol (server.py) applies - so a
+    # partial envelope pairing an error note with data counts as
+    # the success the client received, and a bare error key counts
+    # as a failure whatever the type of its value.
+    success = not is_error_payload(result)
+    error_code: str | None = None if success else _error_code_of(result)
+    _safe_attr(span, "mcp.success", success)
+    if error_code is not None:
+        _safe_attr(span, "mcp.error.code", error_code)
+        busy_scope = _busy_scope_of(error_code, _payload_scope(result))
+        if busy_scope is not None:
+            _safe_attr(span, "mcp.busy.scope", busy_scope)
+    if result_attrs is not None and success:
+        try:
+            for key, value in result_attrs(result).items():
+                _safe_attr(span, key, value)
+        except Exception:
+            # Extractor bugs must never break the tool result.
+            pass
+    _safe_attr(span, "mcp.api.requests", frame.api_requests)
+    _safe_attr(span, "mcp.duration_ms", int((time.perf_counter() - start) * 1000))
+    # Status drives App Insights top-level `success` column;
+    # ERROR for tool-reported failures (catalog-mapped error
+    # code), OK for clean success.
+    if success:
+        _safe_status_ok(span)
+    else:
+        _safe_status_error(span)
+
+
 def trace_mcp_tool(
     tool_name: str,
     result_attrs: Callable[[Any], dict[str, Any]] | None = None,
@@ -769,6 +1111,11 @@ def trace_mcp_tool(
     privacy allowlist - it must derive attributes from response metadata only,
     never from request values). An extractor failure is swallowed: telemetry
     must never break the tool result.
+
+    A call authenticated by a sugra_ API key leaves a span only once it made a
+    Sugra API request (see "Which calls leave a span" at the module level):
+    its span opens at the call's exit, backdated to the entry, and carries
+    the same attributes an eager span would.
 
     Failure-safety guarantees:
     - If span creation fails, the tool still runs.
@@ -788,32 +1135,33 @@ def trace_mcp_tool(
     def decorator(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
         @functools.wraps(func)
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            dispatch = tool_dispatch.get()
+            if dispatch is not None:
+                # The call reached its tool: whatever follows is the tool's own
+                # outcome, never a refused name or refused arguments.
+                dispatch.entered = True
             if _TRACER is None:
                 return await func(*args, **kwargs)
 
             start = time.perf_counter()
+            start_ns = time.time_ns()
+            # How the call arrived, read before the tool runs so
+            # every exit (success, failure, exception, cancellation) carries it.
+            facts = _dispatch_facts()
+            entry_attrs = _entry_attrs(tool_name, facts, kwargs.get("operation_id"))
+            frame = _CallFrame(_call_frame.get())
+            previous_frame = _call_frame.set(frame)
             span: Any = None
             try:
-                span = _TRACER.start_span(name=f"mcp.tool.{tool_name}")
-            except Exception:
-                # Span creation itself failed - run the tool without
-                # telemetry rather than masking the call.
-                return await func(*args, **kwargs)
-
-            try:
-                _safe_attr(span, "mcp.tool.name", tool_name)
-                # How the call arrived, read before the tool runs so
-                # every exit (success, failure, exception, cancellation) carries it.
-                for key, value in _dispatch_caller_attrs().items():
-                    _safe_attr(span, key, value)
-
-                # operation_id is attached ONLY if the kwarg value matches a
-                # catalog-known operation_id. Arbitrary client-supplied strings
-                # (PII / secrets / free text) are dropped before reaching App
-                # Insights.
-                operation_id = kwargs.get("operation_id")
-                if isinstance(operation_id, str) and operation_id in _get_valid_operation_ids():
-                    _safe_attr(span, "mcp.operation_id", operation_id)
+                if not _is_key_call(facts):
+                    try:
+                        span = _TRACER.start_span(name=f"mcp.tool.{tool_name}")
+                    except Exception:
+                        # Span creation itself failed - run the tool without
+                        # telemetry rather than masking the call.
+                        return await func(*args, **kwargs)
+                    for key, value in entry_attrs.items():
+                        _safe_attr(span, key, value)
 
                 try:
                     result = await func(*args, **kwargs)
@@ -824,50 +1172,27 @@ def trace_mcp_tool(
                     # failure that fires when the API is slowest was invisible
                     # to every failure query. Stamp the verdict and
                     # re-raise unchanged so the cancellation still propagates.
-                    _safe_attr(span, "mcp.success", False)
-                    _safe_attr(span, "mcp.error.code", _cancellation_code())
-                    _safe_attr(span, "mcp.duration_ms", int((time.perf_counter() - start) * 1000))
-                    _safe_status_error(span)
+                    if span is None:
+                        span = _late_span(tool_name, entry_attrs, frame, start_ns)
+                    if span is not None:
+                        _stamp_failure(span, _cancellation_code(), None, frame, start)
                     raise
                 except Exception as e:
-                    _safe_attr(span, "mcp.success", False)
-                    _safe_attr(span, "mcp.error.code", "exception")
-                    _safe_attr(span, "mcp.exception.type", type(e).__name__)
-                    _safe_attr(span, "mcp.duration_ms", int((time.perf_counter() - start) * 1000))
-                    _safe_status_error(span)
+                    if span is None:
+                        span = _late_span(tool_name, entry_attrs, frame, start_ns)
+                    if span is not None:
+                        _stamp_failure(span, "exception", type(e).__name__, frame, start)
                     raise
 
-                # Returned path. Failure is errors.is_error_payload - the ONE
-                # definition the tool protocol (server.py) applies - so a
-                # partial envelope pairing an error note with data counts as
-                # the success the client received, and a bare error key counts
-                # as a failure whatever the type of its value.
-                success = not is_error_payload(result)
-                error_code: str | None = None if success else _error_code_of(result)
-                _safe_attr(span, "mcp.success", success)
-                if error_code is not None:
-                    _safe_attr(span, "mcp.error.code", error_code)
-                    busy_scope = _busy_scope_of(error_code, _payload_scope(result))
-                    if busy_scope is not None:
-                        _safe_attr(span, "mcp.busy.scope", busy_scope)
-                if result_attrs is not None and success:
-                    try:
-                        for key, value in result_attrs(result).items():
-                            _safe_attr(span, key, value)
-                    except Exception:
-                        # Extractor bugs must never break the tool result.
-                        pass
-                _safe_attr(span, "mcp.duration_ms", int((time.perf_counter() - start) * 1000))
-                # Status drives App Insights top-level `success` column;
-                # ERROR for tool-reported failures (catalog-mapped error
-                # code), OK for clean success.
-                if success:
-                    _safe_status_ok(span)
-                else:
-                    _safe_status_error(span)
+                if span is None:
+                    span = _late_span(tool_name, entry_attrs, frame, start_ns)
+                if span is not None:
+                    _stamp_returned(span, result, result_attrs, frame, start)
                 return result
             finally:
-                _safe_end(span)
+                _call_frame.reset(previous_frame)
+                if span is not None:
+                    _safe_end(span)
 
         return wrapper
 

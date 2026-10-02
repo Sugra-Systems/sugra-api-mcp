@@ -1,0 +1,252 @@
+"""Shutdown of the HTTP server: the last gate summary is exported and its connections close.
+
+The SIGTERM test runs the server in a process of its own, started the way the
+hosted service starts it, with an OpenTelemetry log exporter that writes to a
+file and exports nothing on a timer or at interpreter exit. uvicorn raises
+SIGTERM again once it has shut down, so the process never runs its exit hooks
+either: the summary arrives only when the lifespan exit wrote it and flushed
+the logs.
+
+The other tests run, in process, the lifespan of the app the entry point
+builds: on the way out it closes every Sugra API client and the
+authenticator's connection pool, after the last summary and before the flush.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import signal
+import socket
+import subprocess
+import sys
+import time
+from collections.abc import AsyncIterator
+from pathlib import Path
+from typing import Any
+
+import httpx
+import pytest
+
+from sugra_api_mcp import gate, observability, server
+from sugra_api_mcp.auth import AuthMiddleware
+from sugra_api_mcp.client import SugraClient
+from tests.test_request_credentials import HEADERS, INITIALIZE
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# Runs in the server process; its arguments are the repository root, the
+# export file and the port.
+_SERVER = """
+import json, logging, sys
+
+repo_root, exported, port = sys.argv[1:4]
+sys.path.insert(0, repo_root)
+
+from opentelemetry._logs import set_logger_provider
+from opentelemetry.sdk._logs import LoggerProvider
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+
+try:
+    from opentelemetry.sdk._logs.export import LogRecordExporter as Exporter
+    from opentelemetry.sdk._logs.export import LogRecordExportResult as Result
+except ImportError:
+    from opentelemetry.sdk._logs.export import LogExporter as Exporter
+    from opentelemetry.sdk._logs.export import LogExportResult as Result
+try:
+    from opentelemetry.instrumentation.logging.handler import LoggingHandler
+except ImportError:
+    from opentelemetry.sdk._logs import LoggingHandler
+
+
+class FileExporter(Exporter):
+    def export(self, batch):
+        with open(exported, "a", encoding="utf-8") as out:
+            for item in batch:
+                print(json.dumps(str(getattr(item, "log_record", item).body)), file=out)
+        return Result.SUCCESS
+
+    def shutdown(self):
+        pass
+
+    def force_flush(self, timeout_millis=10000):
+        return True
+
+
+# As on the hosted server: the exporting handler is on the root logger before
+# the server is imported, and the root logger stays at WARNING.
+provider = LoggerProvider(shutdown_on_exit=False)
+provider.add_log_record_processor(
+    BatchLogRecordProcessor(FileExporter(), schedule_delay_millis=600000)
+)
+set_logger_provider(provider)
+logging.getLogger().addHandler(LoggingHandler(logger_provider=provider))
+
+from sugra_api_mcp.__main__ import main
+
+sys.argv = ["sugra-api-mcp", "--transport", "streamable-http", "--host", "127.0.0.1", "--port", port]
+main()
+"""
+
+
+def _free_port() -> int:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def _server_env() -> dict[str, str]:
+    """The test's environment without any Sugra, SDK or telemetry setting."""
+    env = {
+        name: value
+        for name, value in os.environ.items()
+        if not name.upper().startswith(("SUGRA_", "FASTMCP_", "OTEL_", "APPLICATIONINSIGHTS_"))
+        and name.upper() not in ("INTERNAL_API_TOKEN", "CONTAINER_APP_REVISION")
+    }
+    # Nothing here calls the API or the app; if something did, it would stay local.
+    env["SUGRA_API_BASE"] = env["SUGRA_APP_URL"] = "http://127.0.0.1:9"
+    return env
+
+
+def _tail(log: Path) -> str:
+    return log.read_text(encoding="utf-8", errors="replace")[-4000:]
+
+
+def _wait_until_serving(server: subprocess.Popen[bytes], client: httpx.Client, log: Path) -> None:
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        assert server.poll() is None, _tail(log)
+        try:
+            if client.get("/health").status_code == 200:
+                return
+        except httpx.TransportError:
+            pass
+        time.sleep(0.1)
+    raise AssertionError(f"the server never answered /health\n{_tail(log)}")
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "Windows cannot deliver SIGTERM to another process: send_signal(SIGTERM) "
+        "ends it at once, with no handler run. CI runs this test on Linux."
+    ),
+)
+def test_sigterm_exports_the_last_gate_summary(tmp_path: Path) -> None:
+    exported, log = tmp_path / "exported.jsonl", tmp_path / "server.log"
+    port = _free_port()
+    request_id = "7d793037a0760186574b0282f2f435e7"
+    with log.open("wb") as output:
+        server = subprocess.Popen(
+            [sys.executable, "-c", _SERVER, str(REPO_ROOT), str(exported), str(port)],
+            cwd=tmp_path,
+            env=_server_env(),
+            stdout=output,
+            stderr=subprocess.STDOUT,
+        )
+        try:
+            with httpx.Client(base_url=f"http://127.0.0.1:{port}", trust_env=False, timeout=10) as client:
+                _wait_until_serving(server, client, log)
+                opened = client.post("/mcp", json=INITIALIZE, headers={**HEADERS, "x-request-id": request_id})
+            assert opened.status_code == 200
+            server.send_signal(signal.SIGTERM)
+            server.wait(timeout=60)
+        finally:
+            if server.poll() is None:
+                server.kill()
+                server.wait()
+    assert exported.exists(), _tail(log)
+    records = [json.loads(line) for line in exported.read_text(encoding="utf-8").splitlines()]
+    summaries = [record for record in records if record.startswith("sgate1 ")]
+    assert len(summaries) == 1, _tail(log)
+    assert re.fullmatch(
+        rf"sgate1 side=vm boot=[0-9a-f]{{8}} seq=1 part=1/1 lines=1 dropped=0\n{request_id} -",
+        summaries[0],
+    )
+
+
+# ---- What closes on the way out ----
+
+
+@pytest.fixture
+async def api_clients(monkeypatch) -> AsyncIterator[list[SugraClient]]:
+    """A shared Sugra API client and two per-key ones, cached where get_client keeps them."""
+    monkeypatch.setattr(server, "_per_key_clients", {})
+    shared = server._build_client("sugra_shared")
+    monkeypatch.setattr(server, "_shared_client", shared)
+    clients = [shared, server._client_for_key("sugra_first"), server._client_for_key("sugra_second")]
+    yield clients
+    for client in clients:
+        await client._client.aclose()
+
+
+def _http_app(monkeypatch) -> Any:
+    """The app `sugra-api-mcp --transport streamable-http` builds; uvicorn.run only captures it."""
+    import uvicorn
+
+    from sugra_api_mcp import __main__ as entry
+
+    captured: dict[str, Any] = {}
+
+    def run(app: Any, **kwargs: Any) -> None:
+        captured["app"] = app
+
+    monkeypatch.setattr(observability, "setup_observability", lambda: False)
+    monkeypatch.setattr(uvicorn, "run", run)
+    monkeypatch.setattr(server.mcp, "_session_manager", None)
+    monkeypatch.delenv("SUGRA_AGENT_INTERNAL_TOKEN", raising=False)
+    monkeypatch.setenv("SUGRA_APP_URL", "http://127.0.0.1:9")
+    entry._run_server(argparse.Namespace(transport="streamable-http", host="127.0.0.1", port=0))
+    return captured["app"]
+
+
+async def test_the_http_server_closes_its_connections_after_the_last_summary_and_before_the_flush(
+    monkeypatch, api_clients
+) -> None:
+    app = _http_app(monkeypatch)
+    [authenticator] = [m.kwargs["authenticator"] for m in app.user_middleware if m.cls is AuthMiddleware]
+
+    def closed() -> list[bool]:
+        return [client._client.is_closed for client in api_clients] + [authenticator._http.is_closed]
+
+    events: list[tuple[str, list[bool]]] = []
+    monkeypatch.setattr(gate.default_summary, "write", lambda: events.append(("summary", closed())))
+
+    def flush(timeout_s: float) -> bool:
+        events.append(("flush", closed()))
+        return True
+
+    monkeypatch.setattr(observability, "flush_telemetry", flush)
+    try:
+        async with app.router.lifespan_context(app):
+            assert closed() == [False] * 4
+    finally:
+        await authenticator.aclose()
+    assert events == [("summary", [False] * 4), ("flush", [True] * 4)]
+    assert (server._per_key_clients, server._shared_client) == ({}, None)
+
+
+async def test_closing_the_clients_closes_each_one_and_forgets_it(api_clients) -> None:
+    await server.close_clients()
+    assert [client._client.is_closed for client in api_clients] == [True] * 3
+    assert (server._per_key_clients, server._shared_client) == ({}, None)
+    # Nothing is left for a second call, and a client asked for after it is a new one.
+    await server.close_clients()
+    fresh = server._client_for_key("sugra_first")
+    assert fresh is not api_clients[1]
+    assert not fresh._client.is_closed
+    await server.close_clients()
+    assert fresh._client.is_closed
+
+
+async def test_a_client_that_fails_to_close_leaves_no_other_open(monkeypatch, api_clients) -> None:
+    async def fail() -> None:
+        raise OSError("socket already gone")
+
+    monkeypatch.setattr(api_clients[1], "aclose", fail)
+    with pytest.raises(OSError, match="socket already gone"):
+        await server.close_clients()
+    assert [client._client.is_closed for client in api_clients] == [True, False, True]
+    assert (server._per_key_clients, server._shared_client) == ({}, None)

@@ -200,8 +200,9 @@ async def test_middleware_marks_every_request_it_serves_as_http(monkeypatch) -> 
 
 
 class _CaptureSpan:
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, start_time: int | None = None) -> None:
         self.name = name
+        self.start_time = start_time
         self.attributes: dict[str, object] = {}
         self.ended = False
 
@@ -220,8 +221,8 @@ class _CaptureTracer:
     def __init__(self) -> None:
         self.spans: list[_CaptureSpan] = []
 
-    def start_span(self, name: str) -> _CaptureSpan:
-        span = _CaptureSpan(name)
+    def start_span(self, name: str, start_time: int | None = None) -> _CaptureSpan:
+        span = _CaptureSpan(name, start_time)
         self.spans.append(span)
         return span
 
@@ -647,7 +648,10 @@ def test_every_credential_consumer_goes_through_get_client() -> None:
 
 
 async def test_span_user_id_matches_the_admission_name(upstream, monkeypatch) -> None:
-    """The span's user_Id is the same string admission counted this call under."""
+    """The span's user_Id is the same string admission counted this call under.
+
+    A sugra_ key call leaves a span only once it reached the API, so the call
+    here is one that does."""
     monkeypatch.setattr(server.mcp, "_session_manager", None)
     app = server.mcp.streamable_http_app()
     authenticator = _authenticator()
@@ -679,7 +683,7 @@ async def test_span_user_id_matches_the_admission_name(upstream, monkeypatch) ->
                         "jsonrpc": "2.0",
                         "id": 2,
                         "method": "tools/call",
-                        "params": {"name": "list_toolsets", "arguments": {}},
+                        "params": {"name": "call_endpoint", "arguments": {"operation_id": _operation_without_params()}},
                     },
                     headers={**HEADERS, "mcp-session-id": session_id, "authorization": "Bearer sugra_admit_me"},
                 )
@@ -687,7 +691,8 @@ async def test_span_user_id_matches_the_admission_name(upstream, monkeypatch) ->
     finally:
         await _close_clients(["sugra_admit_me"])
         await authenticator.aclose()
-    spans = [span for span in tracer.spans if span.name == "mcp.tool.list_toolsets"]
+    assert upstream == ["sugra_admit_me"]
+    spans = [span for span in tracer.spans if span.name == "mcp.tool.call_endpoint"]
     assert admitted and spans
     assert spans[0].attributes.get("enduser.pseudo.id") == admitted[0] == _digest("sugra_admit_me")
 
