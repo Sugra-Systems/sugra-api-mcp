@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-09-30T16:32:39Z",
+  "built_at": "2026-10-02T20:17:35Z",
   "endpoint_count": 1626,
   "endpoints": [
     {
@@ -3769,7 +3769,7 @@
       "toolset": "central_banks"
     },
     {
-      "description": "Total CPI year-over-year (`STATIC_ATABLE_V41690973`) plus the three core-inflation measures the Bank of Canada monitors:\n\n- `CPI_TRIM` - CPI-trim, trims 20% of outlier prices each month\n- `CPI_MEDIAN` - CPI-median, the 50th-percentile year-over-year change across the basket\n- `CPI_COMMON` - CPI-common, factor-analytic estimate of common price movements\n\nAll monthly, published by Statistics Canada and mirrored via the Valet API. Bank of Canada targets 2% total CPI with a 1% to 3% band.",
+      "description": "Total CPI year-over-year (`STATIC_ATABLE_V41690973`) plus the three core-inflation measures the Bank of Canada monitors:\n\n- `CPI_TRIM` - CPI-trim, excludes 20% of the weighted monthly price changes at each tail (40% in all)\n- `CPI_MEDIAN` - CPI-median, the 50th-percentile year-over-year change across the basket\n- `CPI_COMMON` - CPI-common, factor-analytic estimate of common price movements\n\nAll monthly, published by Statistics Canada and mirrored via the Valet API. Bank of Canada targets 2% total CPI with a 1% to 3% band.",
       "method": "GET",
       "operation_id": "boc_cpi",
       "parameters": [
@@ -13906,7 +13906,7 @@
       "toolset": "hedge_fund_intelligence"
     },
     {
-      "description": "Hedge fund / speculator net positioning extremes across 200+ active futures contracts. Returns top N markets ranked by 5-year percentile-rank deviation from the median (50). percentile_rank is 0-100 (50 = median), never a 0-1 fraction. Use to find crowded long/short trades that are contrarian reversal candidates. Picks the relevant trader category per report type: legacy=non-commercial, disaggregated=managed money, tff=leveraged funds, cit=commodity index traders. Defaults to TFF (financial futures, hedge fund leveraged-funds line). Cache TTL 24h - heavy single-query batch over 5 years of weekly data.",
+      "description": "Hedge fund / speculator net positioning extremes across 200+ active futures contracts. Returns the top `limit` markets ranked by how far the current net position's percentile rank within the lookback window (`lookback_weeks`, 52 to 520 weeks, default 260 = 5 years) deviates from the median (50). percentile_rank is 0-100 (50 = median), never a 0-1 fraction. Use to find the markets whose net position ranks near either end of its own lookback history. Picks the relevant trader category per report type: legacy=non-commercial, disaggregated=managed money, tff=leveraged funds, cit=commodity index traders. Defaults to TFF (financial futures, hedge fund leveraged-funds line). Cache TTL 24h - heavy single-query batch over the whole lookback window of weekly data.",
       "method": "GET",
       "operation_id": "cot_extremes",
       "parameters": [
@@ -13959,7 +13959,7 @@
       "sources": [
         "hedge_fund_intelligence"
       ],
-      "summary": "Net positioning extremes (5-year percentile rank)",
+      "summary": "Net positioning extremes (percentile rank over the lookback window)",
       "tags": [
         "Hedge Fund Intelligence"
       ],
@@ -14122,7 +14122,7 @@
       "toolset": "hedge_fund_intelligence"
     },
     {
-      "description": "Commercial vs Non-commercial (speculative) positions. The most widely followed COT report. Shows how hedgers and speculators are positioned across 500+ futures markets. Weekly data, Tuesday release. When speculators are extreme net long/short, it's a contrarian reversal signal. Set `combined=true` for Futures + Options report (default Futures-Only).",
+      "description": "Commercial vs Non-commercial (speculative) positions. The most widely followed COT report. Shows how hedgers and speculators are positioned across 500+ futures markets. Weekly data: positions as of Tuesday, released by the CFTC usually on Friday at 3:30 pm ET. Set `combined=true` for Futures + Options report (default Futures-Only).",
       "method": "GET",
       "operation_id": "cot_legacy",
       "parameters": [
@@ -25906,7 +25906,7 @@
       "toolset": "markets"
     },
     {
-      "description": "Primary news-flow sentiment + attention for a ticker, entirely from Sugra-owned sources: GDELT tone + volume timelines and the 43-feed first-party RSS ingest, entity-linked via the SEC registrant name + former names (so coverage filed under an old name is still matched). This is editorial NEWS-FLOW sentiment, the defensible alternative to scraped social mention-counting - it does not capture retail crowd psychology or pre-news buzz. Cached 10min (GDELT's update cadence). Not investment advice.",
+      "description": "Primary news-flow sentiment + attention for a ticker, entirely from Sugra-owned sources: GDELT tone + volume timelines and the first-party RSS news feeds (list: /api/v1/news/sources), entity-linked via the SEC registrant name + former names (so coverage filed under an old name is still matched). This is editorial NEWS-FLOW sentiment, the defensible alternative to scraped social mention-counting - it does not capture retail crowd psychology or pre-news buzz. Cached 10min (GDELT's update cadence). Not investment advice.",
       "method": "GET",
       "operation_id": "equities_symbol_news_sentiment",
       "parameters": [
@@ -28575,7 +28575,7 @@
       "toolset": "central_banks"
     },
     {
-      "description": "Federal Reserve G.19 statistical release (monthly, mid-month). Total consumer credit outstanding and its breakdown into revolving and non-revolving, plus sub-components for student loans and motor vehicle loans. Interest-rate detail from the G.19 release is deferred to a future /fed/g19/rates endpoint; Z.1 flow-of-funds cross-links (BOGZ1) are excluded as out of scope. Data drawn live from FRED with 6-hour cache.",
+      "description": "Federal Reserve G.19 statistical release (monthly, around the fifth business day). Total consumer credit outstanding and its breakdown into revolving and non-revolving, plus sub-components for student loans and motor vehicle loans. Interest-rate detail from the G.19 release is deferred to a future /fed/g19/rates endpoint; Z.1 flow-of-funds cross-links (BOGZ1) are excluded as out of scope. Data drawn live from FRED with 6-hour cache.",
       "method": "GET",
       "operation_id": "fed_g19",
       "parameters": [
@@ -29125,7 +29125,7 @@
       "toolset": "central_banks"
     },
     {
-      "description": "Daily history for a specific rate. Types: SOFR, EFFR, OBFR, TGCR, BGCR. SOFR daily volume exceeds $3 trillion - the world's most important benchmark rate.",
+      "description": "Daily history for a specific rate. Types: SOFR, EFFR, OBFR, TGCR, BGCR.",
       "method": "GET",
       "operation_id": "fed_rates_rate_type",
       "parameters": [
@@ -29210,7 +29210,7 @@
       "toolset": "central_banks"
     },
     {
-      "description": "System Open Market Account - the Federal Reserve's balance sheet. Breakdown: MBS ($2T), Notes/Bonds ($3.6T), Bills ($413B), TIPS ($291B). Total ~$6.3 trillion. Key indicator of monetary policy tightening/easing.",
+      "description": "Securities held in the Federal Reserve's System Open Market Account (SOMA), latest observation. Breakdown by asset type: MBS, Notes/Bonds, Bills, TIPS and others.",
       "method": "GET",
       "operation_id": "fed_soma",
       "parameters": [],
@@ -47432,7 +47432,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "Today's volume / rolling avg volume. >1.0 = unusually heavy day; <1.0 = light. time_period=lookback window (default 20). Wave F.",
+      "description": "Relative volume: each bar's volume divided by the rolling average volume over time_period bars (default 20, current bar included). 1.0 equals the window average.",
       "method": "GET",
       "operation_id": "indicators_rvol",
       "parameters": [
@@ -52162,7 +52162,7 @@
       "toolset": "macro"
     },
     {
-      "description": "Fetch multiple macro series in one request.\n\nseries:    comma-separated list of country/section, max 5\n           e.g. ?series=us/cpi,us/unrate,us/gdp\nstart:     observation start YYYY-MM-DD (range mode)\nend:       observation end YYYY-MM-DD\nlast_n:    max observations per series, newest first (takes precedence over limit)\nlimit:     deprecated alias for last_n\ntransform: comma-separated transforms (must be valid for each series' unit_type)\norder:     \"desc\" (newest first, default) or \"asc\"\n\nEach series is fetched concurrently. Partial failures are isolated - they appear\nin the errors dict and do not affect successful results.\nFredClient semaphore limits total parallel FRED connections to 3.",
+      "description": "Fetch multiple macro series in one request.\n\nseries:    comma-separated list of country/section, max 5\n           e.g. ?series=us/cpi,us/unrate,us/gdp\nstart:     observation start YYYY-MM-DD (range mode)\nend:       observation end YYYY-MM-DD\nlast_n:    max observations per series, newest first (takes precedence over limit)\nlimit:     deprecated alias for last_n\ntransform: comma-separated transforms; each series accepts only the\n           supported_transforms listed for its key in GET /api/v1/macro/catalog\n           (mom_* compare with the previous observation, dod_bps with the\n           previous observation of a daily or weekly series, yoy_* with the\n           same date a year earlier, wow_bps with one week earlier)\norder:     \"desc\" (newest first, default) or \"asc\"\n\nEach series is fetched concurrently. Partial failures are isolated - they appear\nin the errors dict and do not affect successful results.\nFredClient semaphore limits total parallel FRED connections to 3.",
       "method": "GET",
       "operation_id": "macro_multi",
       "parameters": [
@@ -52255,8 +52255,8 @@
           }
         },
         {
-          "description": "Data transformation (lin, chg, pch).",
-          "example": "lin",
+          "description": "Comma-separated transforms. Each key accepts only the transforms listed for it in /api/v1/macro/catalog (supported_transforms); any other value is a 400. Values: mom_pct, yoy_pct, qoq_ann_pct, dod_bps, wow_bps, mom_pp, yoy_pp, mom_abs, yoy_abs. mom_* compare with the previous observation, whatever the frequency (a day, week, month, quarter or year earlier); dod_bps compares with the previous observation of a daily or weekly series (on a weekly series it equals wow_bps); yoy_* compare with the same date a year earlier; wow_bps compares with one week earlier (5 observations on a daily series, 1 on a weekly one); qoq_ann_pct is the quarter-over-quarter change annualized, offered on the quarterly GDP keys only. Aliases: mom = mom_pct, yoy = yoy_pct, 3m_ann = qoq_ann_pct.",
+          "example": "yoy_pct",
           "location": "query",
           "name": "transform",
           "required": false,
@@ -52269,7 +52269,7 @@
                 "type": "null"
               }
             ],
-            "description": "Data transformation (lin, chg, pch).",
+            "description": "Comma-separated transforms. Each key accepts only the transforms listed for it in /api/v1/macro/catalog (supported_transforms); any other value is a 400. Values: mom_pct, yoy_pct, qoq_ann_pct, dod_bps, wow_bps, mom_pp, yoy_pp, mom_abs, yoy_abs. mom_* compare with the previous observation, whatever the frequency (a day, week, month, quarter or year earlier); dod_bps compares with the previous observation of a daily or weekly series (on a weekly series it equals wow_bps); yoy_* compare with the same date a year earlier; wow_bps compares with one week earlier (5 observations on a daily series, 1 on a weekly one); qoq_ann_pct is the quarter-over-quarter change annualized, offered on the quarterly GDP keys only. Aliases: mom = mom_pct, yoy = yoy_pct, 3m_ann = qoq_ann_pct.",
             "title": "Transform"
           }
         },
@@ -52339,7 +52339,7 @@
       "toolset": "macro"
     },
     {
-      "description": "FRED data release schedule - when CPI, jobs report, GDP, and other key economic data will be published. Returns the next scheduled releases in chronological order; set upcoming=false for the most recent past releases. Narrow it to one release with release=cpi, release=50 or release=employment; /macro/releases/catalog lists what can be named.",
+      "description": "FRED data release schedule - when CPI, jobs report, GDP, and other key economic data will be published. Returns the next scheduled releases in chronological order; set upcoming=false for the most recent past releases. Narrow it to one release with release=cpi, release=50 or release=nfp; /api/v1/macro/releases/catalog lists what can be named.",
       "method": "GET",
       "operation_id": "macro_releases",
       "parameters": [
@@ -52373,7 +52373,7 @@
           }
         },
         {
-          "description": "Narrow the calendar to one release: an id (10), a short alias (cpi, nfp, fomc), or part of a name (consumer price). See /macro/releases/catalog.",
+          "description": "Narrow the calendar to one release: an id (10), a short alias (cpi, nfp, fomc), or part of a name (consumer price). See /api/v1/macro/releases/catalog.",
           "example": "cpi",
           "location": "query",
           "name": "release",
@@ -52387,7 +52387,7 @@
                 "type": "null"
               }
             ],
-            "description": "Narrow the calendar to one release: an id (10), a short alias (cpi, nfp, fomc), or part of a name (consumer price). See /macro/releases/catalog.",
+            "description": "Narrow the calendar to one release: an id (10), a short alias (cpi, nfp, fomc), or part of a name (consumer price). See /api/v1/macro/releases/catalog.",
             "title": "Release"
           }
         },
@@ -52904,7 +52904,7 @@
       "toolset": "macro"
     },
     {
-      "description": "Fetch a single macro time-series from FRED.\n\ncountry:   ISO-2 lowercase code (us, eu, gb, jp)\nsection:   indicator key - see GET /api/macro/catalog for full list\n\nQuery parameters:\n  start     - observation start YYYY-MM-DD (activates range mode)\n  end       - observation end YYYY-MM-DD\n  last_n    - return N most recent observations (default: catalog default_last_n)\n  limit     - deprecated alias for last_n\n  transform - comma-separated transforms; must match series unit_type:\n                index/money:  mom_pct, yoy_pct, qoq_ann_pct\n                rate_pct daily:   dod_bps, wow_bps\n                rate_pct monthly: mom_pp, yoy_pp\n                spread_pct:       dod_bps, wow_bps\n                count:            mom_abs, yoy_abs\n              Legacy aliases: mom → mom_pct, yoy → yoy_pct, 3m_ann → qoq_ann_pct\n  order     - \"desc\" (newest first, default) or \"asc\"\n\nMode semantics:\n  last_n mode  - returns the N most recent observations (default when no start given)\n  range mode   - returns all observations in [start, end] up to max_last_n cap\n\nResponse is cached in-memory (TTL by frequency):\n  daily series     - 6 hours\n  monthly series   - 24 hours\n  quarterly series - 72 hours\nAnomalous results (mid-series nulls in monthly/quarterly) are not cached.",
+      "description": "Fetch a single macro time-series from FRED.\n\ncountry:   ISO-2 lowercase code (us, eu, gb, jp)\nsection:   indicator key - see GET /api/v1/macro/catalog for full list\n\nQuery parameters:\n  start     - observation start YYYY-MM-DD (activates range mode)\n  end       - observation end YYYY-MM-DD\n  last_n    - return N most recent observations (default: catalog default_last_n)\n  limit     - deprecated alias for last_n\n  transform - comma-separated transforms. The supported_transforms listed for\n              each key in GET /api/v1/macro/catalog are the authority; any\n              other value is a 400. Typical mapping by unit_type and frequency:\n                rate_pct, spread_pct (daily, weekly):\n                                    dod_bps, wow_bps\n                rate_pct, spread_pct (monthly, quarterly, annual):\n                                    mom_pp, yoy_pp\n                index/level/money:  mom_pct, yoy_pct\n                weekly indices us/nfci, us/anfci, us/stlfsi, us/stlfsi4 and\n                monthly ratio keys us/isratio, us/whlslrirsa:\n                                    mom_abs, yoy_abs\n                quarterly GDP keys (us/gdp, us/real-gdp, eu/gdp, gb/gdp,\n                jp/gdp):            yoy_pct, qoq_ann_pct\n                count:              mom_abs, yoy_abs\n                a key with an empty list (jp/cpi, cn/chngdpnqdsmei):\n                                    no transform\n              mom_* compare with the previous observation, whatever the\n              frequency (a day, week, month, quarter or year earlier); dod_bps\n              compares with the previous observation of a daily or weekly\n              series (on a weekly series it equals wow_bps); yoy_* compare\n              with the same date a year earlier; wow_bps compares with one week\n              earlier (5 observations on a daily series, 1 on a weekly one).\n              Aliases: mom = mom_pct, yoy = yoy_pct, 3m_ann = qoq_ann_pct\n  order     - \"desc\" (newest first, default) or \"asc\"\n\nMode semantics:\n  last_n mode  - returns the N most recent observations (default when no start given)\n  range mode   - returns all observations in [start, end] up to max_last_n cap\n\nResponse is cached in-memory (TTL by frequency):\n  daily series     - 6 hours\n  monthly series   - 24 hours\n  quarterly series - 72 hours\nAnomalous results (mid-series nulls in monthly/quarterly) are not cached.",
       "method": "GET",
       "operation_id": "macro_country_section",
       "parameters": [
@@ -53009,8 +53009,8 @@
           }
         },
         {
-          "description": "Data transformation (lin, chg, pch).",
-          "example": "lin",
+          "description": "Comma-separated transforms. Each key accepts only the transforms listed for it in /api/v1/macro/catalog (supported_transforms); any other value is a 400. Values: mom_pct, yoy_pct, qoq_ann_pct, dod_bps, wow_bps, mom_pp, yoy_pp, mom_abs, yoy_abs. mom_* compare with the previous observation, whatever the frequency (a day, week, month, quarter or year earlier); dod_bps compares with the previous observation of a daily or weekly series (on a weekly series it equals wow_bps); yoy_* compare with the same date a year earlier; wow_bps compares with one week earlier (5 observations on a daily series, 1 on a weekly one); qoq_ann_pct is the quarter-over-quarter change annualized, offered on the quarterly GDP keys only. Aliases: mom = mom_pct, yoy = yoy_pct, 3m_ann = qoq_ann_pct.",
+          "example": "yoy_pct",
           "location": "query",
           "name": "transform",
           "required": false,
@@ -53023,7 +53023,7 @@
                 "type": "null"
               }
             ],
-            "description": "Data transformation (lin, chg, pch).",
+            "description": "Comma-separated transforms. Each key accepts only the transforms listed for it in /api/v1/macro/catalog (supported_transforms); any other value is a 400. Values: mom_pct, yoy_pct, qoq_ann_pct, dod_bps, wow_bps, mom_pp, yoy_pp, mom_abs, yoy_abs. mom_* compare with the previous observation, whatever the frequency (a day, week, month, quarter or year earlier); dod_bps compares with the previous observation of a daily or weekly series (on a weekly series it equals wow_bps); yoy_* compare with the same date a year earlier; wow_bps compares with one week earlier (5 observations on a daily series, 1 on a weekly one); qoq_ann_pct is the quarter-over-quarter change annualized, offered on the quarterly GDP keys only. Aliases: mom = mom_pct, yoy = yoy_pct, 3m_ann = qoq_ann_pct.",
             "title": "Transform"
           }
         },
@@ -57587,7 +57587,7 @@
       "toolset": "news"
     },
     {
-      "description": "Latest headlines from 42 curated world-news RSS feeds across 11 regions. Updated every 5 minutes. Filter by region, category, or source.",
+      "description": "Latest headlines from the curated world-news RSS feeds across 11 regions. Updated every 5 minutes. Filter by region, category, or source. Feed list: /api/v1/news/sources.",
       "method": "GET",
       "operation_id": "news_latest",
       "parameters": [
@@ -57705,7 +57705,7 @@
       "toolset": "news"
     },
     {
-      "description": "Keyword search over the current 42-feed world-news corpus. All query terms must be present as whole words in the headline or description; wrap the query in double quotes for a literal phrase. This is a rolling window of what the feeds currently publish, not an archive, so a story that has aged out of every feed is gone. For company or ticker news use /api/v2/quotes/{symbol}/news, and for free-text search over the wider global press use /api/v1/gdelt/articles.",
+      "description": "Keyword search over the current world-news RSS corpus (feed list: /api/v1/news/sources). All query terms must be present as whole words in the headline or description; wrap the query in double quotes for a literal phrase. This is a rolling window of what the feeds currently publish, not an archive, so a story that has aged out of every feed is gone. For company or ticker news use /api/v2/quotes/{symbol}/news, and for free-text search over the wider global press use /api/v1/gdelt/articles.",
       "method": "GET",
       "operation_id": "news_search",
       "parameters": [
@@ -57769,7 +57769,7 @@
       "toolset": "news"
     },
     {
-      "description": "Catalog of all 42 RSS feeds with name, region, category, and slug.",
+      "description": "Catalog of all RSS feeds with name, region, category, and slug, plus the feed count.",
       "method": "GET",
       "operation_id": "news_sources",
       "parameters": [],
@@ -59550,18 +59550,18 @@
       "toolset": "trade"
     },
     {
-      "description": "Fetch latest value for all 10 OECD indicators for a single country.\n\n`country` is an ISO 3-letter code (e.g. USA, DEU, GBR, JPN, FRA).",
+      "description": "Fetch latest value for every OECD catalog indicator for a single country.\n\n`country` is an ISO 3-letter code (e.g. USA, DEU, GBR, JPN, FRA).",
       "method": "GET",
       "operation_id": "oecd_country_overview",
       "parameters": [
         {
-          "description": "Country code (ISO 3166-1 alpha-2/alpha-3) or slug.",
+          "description": "ISO 3166-1 alpha-3 code of an OECD member (e.g. USA, DEU, GBR); alpha-2 codes and slugs are not accepted. List: /api/v1/oecd/catalog.",
           "example": "USA",
           "location": "path",
           "name": "country",
           "required": true,
           "schema": {
-            "description": "Country code (ISO 3166-1 alpha-2/alpha-3) or slug.",
+            "description": "ISO 3166-1 alpha-3 code of an OECD member (e.g. USA, DEU, GBR); alpha-2 codes and slugs are not accepted. List: /api/v1/oecd/catalog.",
             "title": "Country",
             "type": "string"
           }
@@ -59588,25 +59588,25 @@
       "operation_id": "oecd_country_indicator",
       "parameters": [
         {
-          "description": "Country code (ISO 3166-1 alpha-2/alpha-3) or slug.",
+          "description": "ISO 3166-1 alpha-3 code of an OECD member (e.g. USA, DEU, GBR); alpha-2 codes and slugs are not accepted. List: /api/v1/oecd/catalog.",
           "example": "USA",
           "location": "path",
           "name": "country",
           "required": true,
           "schema": {
-            "description": "Country code (ISO 3166-1 alpha-2/alpha-3) or slug.",
+            "description": "ISO 3166-1 alpha-3 code of an OECD member (e.g. USA, DEU, GBR); alpha-2 codes and slugs are not accepted. List: /api/v1/oecd/catalog.",
             "title": "Country",
             "type": "string"
           }
         },
         {
-          "description": "Indicator code (e.g. NY.GDP.MKTP.CD for GDP).",
+          "description": "OECD catalog indicator key (e.g. gdp_growth, cpi, unemployment). List: /api/v1/oecd/catalog.",
           "example": "gdp_growth",
           "location": "path",
           "name": "indicator",
           "required": true,
           "schema": {
-            "description": "Indicator code (e.g. NY.GDP.MKTP.CD for GDP).",
+            "description": "OECD catalog indicator key (e.g. gdp_growth, cpi, unemployment). List: /api/v1/oecd/catalog.",
             "title": "Indicator",
             "type": "string"
           }
@@ -60222,7 +60222,7 @@
       "toolset": "digital_infra"
     },
     {
-      "description": "Crypto flowing into and out of exchanges in native units and USD. Inflow to exchanges = potential sell pressure (depositing to sell). Outflow from exchanges = accumulation/HODLing (withdrawing to cold storage). Net flow = FlowIn - FlowOut. Key institutional indicator. Daily frequency.",
+      "description": "Crypto flowing into and out of exchanges in native units and USD. Fields: FlowInExNtv and FlowInExUSD (into exchanges), FlowOutExNtv and FlowOutExUSD (out of exchanges). Net flow = FlowIn - FlowOut, computed by the caller. Daily frequency.",
       "method": "GET",
       "operation_id": "onchain_metrics_asset_exchange_flows",
       "parameters": [
@@ -70296,7 +70296,7 @@
       "toolset": "fundamentals"
     },
     {
-      "description": "8-K material events filed by the given CIK in the inclusive [from_date, to_date] window. The ``items`` CSV filter restricts to filings declaring at least one of the requested item codes (set intersection). Default per contract Section 6 is the high-signal subset ``1.01,2.01,5.02,8.01``. Pass ``items=all`` (or any value of ``all``/``*``) to disable the filter. Retention 730 days; out-of-window from_date returns 422.",
+      "description": "8-K material events filed by the given CIK in the inclusive [from_date, to_date] window. The ``items`` CSV filter restricts to filings declaring at least one of the requested item codes (set intersection). If ``items`` is omitted the default is ``1.01,2.01,5.02,8.01``: a filing that declares none of these four codes is left out, for example one with only 2.02 (results of operations), 1.03 (bankruptcy or receivership) or 1.05 (material cybersecurity incidents), and so is a filing with no item code; a filing that declares one of the four is kept with all of its item codes. An explicit list replaces the default, so to include those filings pass ``items=1.01,2.01,5.02,8.01,2.02,1.03,1.05``; pass ``items=all`` (or ``*``) to disable the filter. ``total_events_unfiltered`` counts events before filtering. Retention 730 days; out-of-window from_date returns 422.",
       "method": "GET",
       "operation_id": "sec_edgar_8_k_cik_material_events",
       "parameters": [
@@ -70337,7 +70337,7 @@
           }
         },
         {
-          "description": "CSV of 8-K item codes to filter to. Default (omitted) = '1.01,2.01,5.02,8.01' high-signal subset per contract. Pass 'all' or '*' to disable the filter.",
+          "description": "CSV of 8-K item codes to filter to: a filing is kept when it declares at least one of them, with all of its item codes. Default (omitted) = '1.01,2.01,5.02,8.01', so a filing that declares none of these (e.g. only 2.02, 1.03 or 1.05) is left out. An explicit list replaces the default. Pass 'all' or '*' to disable the filter.",
           "location": "query",
           "name": "items",
           "required": false,
@@ -70350,7 +70350,7 @@
                 "type": "null"
               }
             ],
-            "description": "CSV of 8-K item codes to filter to. Default (omitted) = '1.01,2.01,5.02,8.01' high-signal subset per contract. Pass 'all' or '*' to disable the filter.",
+            "description": "CSV of 8-K item codes to filter to: a filing is kept when it declares at least one of them, with all of its item codes. Default (omitted) = '1.01,2.01,5.02,8.01', so a filing that declares none of these (e.g. only 2.02, 1.03 or 1.05) is left out. An explicit list replaces the default. Pass 'all' or '*' to disable the filter.",
             "examples": [
               "1.01,2.01,5.02,8.01"
             ],
@@ -70906,7 +70906,7 @@
       "toolset": "fundamentals"
     },
     {
-      "description": "Daily short selling volume vs total volume per stock (Reg SHO data). Shows what percentage of daily trading was short selling. High short volume ratio (>50%) indicates bearish pressure.",
+      "description": "Daily short sale volume vs total volume per stock, from the FINRA Reg SHO daily files. Covers off-exchange trades reported to FINRA only, not consolidated with exchange volume; short_pct is short sale volume as a percent of total reported volume. Short sale volume is not short interest.",
       "method": "GET",
       "operation_id": "short_interest_daily_volume",
       "parameters": [
@@ -70988,7 +70988,7 @@
       "toolset": "markets"
     },
     {
-      "description": "Consolidated short interest from FINRA. Shows how many shares are sold short for each stock, with days-to-cover ratio. Updated bi-weekly (15th + month end). High short interest + low days-to-cover = potential short squeeze setup.",
+      "description": "Consolidated short interest from FINRA. Shows how many shares are sold short for each stock, with days-to-cover (days of average daily share volume needed to buy back all shares sold short). Updated bi-weekly (15th + month end).",
       "method": "GET",
       "operation_id": "short_interest_positions",
       "parameters": [
@@ -75718,7 +75718,7 @@
       "toolset": "public_finance"
     },
     {
-      "description": "Total public debt outstanding, updated daily. Current: ~$38.9 trillion.",
+      "description": "Total public debt outstanding, updated daily. Returns the latest daily records, newest first.",
       "method": "GET",
       "operation_id": "treasury_debt",
       "parameters": [],
@@ -75736,7 +75736,7 @@
       "toolset": "public_finance"
     },
     {
-      "description": "Annual national debt from 1790 to present. 237 years of data.",
+      "description": "Annual national debt from 1790 to present.",
       "method": "GET",
       "operation_id": "treasury_debt_history",
       "parameters": [],
@@ -81328,18 +81328,18 @@
       "toolset": "trade"
     },
     {
-      "description": "Fetch a BLS time series.\n\n`series` must be a valid key from the BLS catalog (e.g. `unemployment`, `cpi-all`).\nEach datapoint carries BLS `calculations` (net + percent change over 1/3/6/12\nperiods) and any `footnotes`; the series carries `catalog` metadata when BLS\nprovides it.",
+      "description": "Fetch a US Bureau of Labor Statistics (BLS) time series: labor-market and price data.\n\n`series` must be one valid key from the BLS catalog (e.g. `unemployment`, `cpi-all`).\nEach datapoint carries BLS `calculations` (net + percent change over 1/3/6/12\nperiods) and any `footnotes`; the series carries `catalog` metadata when BLS\nprovides it.",
       "method": "GET",
       "operation_id": "worldbank_bls_series",
       "parameters": [
         {
-          "description": "Series code(s) comma-separated.",
+          "description": "One BLS catalog key (e.g. unemployment, cpi-all); comma-separated lists are not accepted. Keys: /api/v1/worldbank/bls/catalog.",
           "example": "unemployment",
           "location": "path",
           "name": "series",
           "required": true,
           "schema": {
-            "description": "Series code(s) comma-separated.",
+            "description": "One BLS catalog key (e.g. unemployment, cpi-all); comma-separated lists are not accepted. Keys: /api/v1/worldbank/bls/catalog.",
             "title": "Series",
             "type": "string"
           }
@@ -81460,7 +81460,7 @@
       "sources": [
         "trade"
       ],
-      "summary": "Catalog of 30 available World Bank macro indicators",
+      "summary": "Catalog of available World Bank macro indicators",
       "tags": [
         "Global Economy & Trade"
       ],
@@ -85052,14 +85052,14 @@
           }
         },
         {
-          "description": "1m, 5m, 15m, 1h, 1d, 1wk, 1mo",
+          "description": "1m, 2m, 5m, 15m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo",
           "example": "1d",
           "location": "query",
           "name": "interval",
           "required": false,
           "schema": {
             "default": "1d",
-            "description": "1m, 5m, 15m, 1h, 1d, 1wk, 1mo",
+            "description": "1m, 2m, 5m, 15m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo",
             "title": "Interval",
             "type": "string"
           }
@@ -88661,7 +88661,7 @@
       "toolset": "markets"
     },
     {
-      "description": "OHLCV historical data. Use period OR start/end, not both. Supports intraday intervals (1m, 5m, 15m, 1h) and daily+.",
+      "description": "OHLCV historical data. Use period OR start/end, not both. Supports intraday intervals (1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h) and daily+ (1d, 5d, 1wk, 1mo, 3mo). A long window is downsampled upstream; the response reports the granularity actually served.",
       "method": "GET",
       "operation_id": "quotes_symbol_historical",
       "parameters": [
@@ -88848,7 +88848,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Insider roster and insider transactions in one response. roster is the full /api/v2/quotes/{symbol}/insider-roster list; transactions is the /api/v2/quotes/{symbol}/insider-transactions list cut to the first transactions_limit records (default 20, maximum 200). roster_count and transactions_count give the list sizes before the cut.",
       "method": "GET",
       "operation_id": "quotes_symbol_holders_insiders",
       "parameters": [
@@ -89013,7 +89013,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Insider roster of the company, one record per insider: name, position, text and date of the most recent transaction, and shares owned directly and indirectly. Each record carries only the latest transaction, not a trade history (see /api/v2/quotes/{symbol}/insider-transactions). This API applies no row limit or date window.",
       "method": "GET",
       "operation_id": "quotes_symbol_insider_roster",
       "parameters": [
@@ -89046,7 +89046,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Individual insider transactions of the company, one record per transaction: insider, position, transaction text, start date, shares, value and ownership. This API applies no row limit or date window; records are passed through as the upstream source returns them. For who the insiders are and what they hold, see /api/v2/quotes/{symbol}/insider-roster.",
       "method": "GET",
       "operation_id": "quotes_symbol_insider_transactions",
       "parameters": [
@@ -92884,5 +92884,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "9f260d5bdd37b1bb1e2b661f3d049e40ae139da3541b5e35d1567d683a33fec8"
+  "spec_sha256": "8fda56963bf76d24b2f76be11f1e0d857650c0eb16473536c0b1f9a7a4eb7fc0"
 }
