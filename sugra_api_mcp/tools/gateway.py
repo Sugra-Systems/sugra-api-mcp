@@ -6,7 +6,10 @@ import asyncio
 import difflib
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from collections import deque
+from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
+from functools import partial
 from typing import Annotated, Any
 
 from pydantic import Field
@@ -24,21 +27,68 @@ from ..server import current_caller, get_client, mcp, read_only
 # Catalog search is pure CPU work, so it runs on one worker thread
 # instead of the event loop that serves every session. Two bounds admit a search
 # to that worker: SEARCH_MAX_PENDING searches running or queued in total, and
-# SEARCH_MAX_PENDING_PER_CALLER of them for any one caller (server.current_caller),
-# so a single credential cannot hold the whole queue. A search that finds a bound
-# reached waits up to SEARCH_WAIT_SECONDS for a slot, so an ordinary burst is
-# served in turn, and only then answers server_busy instead of queuing without
-# limit. Thirty days of hosted telemetry peaked at 3 concurrent search_endpoints
-# and fetch_data calls. Like the dispatch budget in server.py, this relies on the
-# asyncio event loop that both transports run on.
+# SEARCH_MAX_PENDING_PER_CALLER of them for any one caller (server.current_caller:
+# one API key, so every session of one account is one caller), so a single
+# credential cannot hold the whole queue. A search that finds a bound reached
+# waits in line, and each slot given back goes at once to the oldest waiting
+# search it admits; a search whose caller is still at its own bound keeps its
+# place without holding up other callers. The release submits that search to the
+# worker itself, so its slot comes back through the worker even when the waiting
+# call or its event loop is gone by then. A search that has waited
+# SEARCH_WAIT_SECONDS without a slot answers server_busy. At most
+# SEARCH_MAX_WAITING searches wait in total and SEARCH_MAX_WAITING_PER_CALLER for
+# one caller, and a search past either answers server_busy at once. A search
+# holds one tool-call slot of server.py (MAX_IN_FLIGHT_PER_CALLER 16,
+# MAX_IN_FLIGHT_TOOL_CALLS 32) for as long as it is queued, running or waiting,
+# so one caller's searches hold at most 8 of its 16 slots and all searches
+# together at most 16 of the 32.
+#
+# The wait has to cover the first search after a quiet spell. In ten days of
+# hosted telemetry, a search after an hour or more without one took p50 329 ms,
+# p90 4.07 s and at most 10.94 s, against a p90 of at most 175 ms for searches
+# under a minute apart; 12 s covers that maximum. Twice one client sent six
+# searches at once: the four admitted took 2.2-5.2 s, and the two behind them
+# were refused at the former 2 s wait.
 SEARCH_MAX_PENDING = 8
 SEARCH_MAX_PENDING_PER_CALLER = 4
-SEARCH_WAIT_SECONDS = 2.0
-_SEARCH_WAIT_STEP_SECONDS = 0.025
+SEARCH_MAX_WAITING = 8
+SEARCH_MAX_WAITING_PER_CALLER = 4
+SEARCH_WAIT_SECONDS = 12.0
 _search_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="catalog-search")
 _search_lock = threading.Lock()
 _search_pending = 0
 _search_pending_by_caller: dict[str, int] = {}
+
+
+class _SearchWaiter:
+    """A search waiting in line for a slot, woken on its own event loop.
+
+    `state` is "waiting" while it is in the line, "handed" once a release has
+    taken a slot for it and submitted `call` to the worker as `future`, and
+    "gone" once it has left the line without a slot or stopped waiting after
+    one. `state` and `future` are read and written under _search_lock only;
+    code outside the lock uses the future it took under the lock. No
+    release hands a slot to a search at or past its `deadline` (time.monotonic),
+    and `scope` names the bound that kept it out when it joined the line.
+    """
+
+    __slots__ = ("call", "caller", "deadline", "future", "loop", "scope", "state", "woken")
+
+    def __init__(
+        self, caller: str, call: Callable[[], Any], loop: asyncio.AbstractEventLoop, deadline: float, scope: str
+    ) -> None:
+        self.caller = caller
+        self.call = call
+        self.loop = loop
+        self.deadline = deadline
+        self.scope = scope
+        self.woken: asyncio.Future[None] = loop.create_future()
+        self.future: Future[Any] | None = None
+        self.state = "waiting"
+
+
+_search_waiters: deque[_SearchWaiter] = deque()
+_search_waiting_by_caller: dict[str, int] = {}
 
 
 def search_pending(caller: str | None = None) -> int:
@@ -52,29 +102,180 @@ def search_pending(caller: str | None = None) -> int:
         return _search_pending_by_caller.get(caller, 0)
 
 
+def search_waiting(caller: str | None = None) -> int:
+    """Searches waiting in line for a slot; given a caller, only that caller's."""
+    with _search_lock:
+        if caller is None:
+            return len(_search_waiters)
+        return _search_waiting_by_caller.get(caller, 0)
+
+
+def _full_bound(caller: str) -> str | None:
+    """The scope of the bound that keeps caller out, or None. Hold _search_lock."""
+    if _search_pending >= SEARCH_MAX_PENDING:
+        return "search"
+    if _search_pending_by_caller.get(caller, 0) >= SEARCH_MAX_PENDING_PER_CALLER:
+        return "caller_search"
+    return None
+
+
+def _take_slot(caller: str) -> None:
+    """Count one search in for caller. Hold _search_lock."""
+    global _search_pending
+    _search_pending += 1
+    _search_pending_by_caller[caller] = _search_pending_by_caller.get(caller, 0) + 1
+
+
+def _drop_slot(caller: str) -> None:
+    """Count one search out for caller. Hold _search_lock."""
+    global _search_pending
+    _search_pending -= 1
+    held = _search_pending_by_caller.get(caller, 0) - 1
+    if held > 0:
+        _search_pending_by_caller[caller] = held
+    else:
+        _search_pending_by_caller.pop(caller, None)
+
+
+def _leave_line(waiter: _SearchWaiter) -> None:
+    """Take waiter out of the line. Hold _search_lock."""
+    _search_waiters.remove(waiter)
+    held = _search_waiting_by_caller.get(waiter.caller, 0) - 1
+    if held > 0:
+        _search_waiting_by_caller[waiter.caller] = held
+    else:
+        _search_waiting_by_caller.pop(waiter.caller, None)
+
+
 def _claim_search_slot(caller: str) -> str | None:
     """Claim a slot for caller: None when claimed, else the scope of the bound that is full."""
-    global _search_pending
     with _search_lock:
-        if _search_pending >= SEARCH_MAX_PENDING:
-            return "search"
-        held = _search_pending_by_caller.get(caller, 0)
-        if held >= SEARCH_MAX_PENDING_PER_CALLER:
-            return "caller_search"
-        _search_pending += 1
-        _search_pending_by_caller[caller] = held + 1
-        return None
+        full = _full_bound(caller)
+        if full is None:
+            _take_slot(caller)
+        return full
+
+
+def _hand_off() -> list[tuple[_SearchWaiter, Future[Any]]]:
+    """Hand free slots to the oldest waiting searches they admit, submitting each
+    one's search to the worker, and return those searches with their futures, to
+    be started once the lock is let go. Hold _search_lock.
+
+    The slot is tied to the submitted search from here on, not to the waiting
+    call, so it comes back through the worker whatever happens to that call or
+    its event loop. A waiting search at or past its deadline, or whose event
+    loop has closed, leaves the line here: its wait is over.
+    """
+    now = time.monotonic()
+    granted: list[tuple[_SearchWaiter, Future[Any]]] = []
+    for waiter in list(_search_waiters):
+        if now >= waiter.deadline or waiter.loop.is_closed():
+            _leave_line(waiter)
+            waiter.state = "gone"
+            continue
+        if _full_bound(waiter.caller) is not None:
+            continue
+        try:
+            future = _search_executor.submit(waiter.call)
+        except RuntimeError:
+            # The worker is shut down (interpreter exit); the waiting searches time out.
+            break
+        _leave_line(waiter)
+        _take_slot(waiter.caller)
+        waiter.future = future
+        waiter.state = "handed"
+        granted.append((waiter, future))
+    return granted
+
+
+def _start_handed(granted: list[tuple[_SearchWaiter, Future[Any]]]) -> None:
+    """Tie each handed search's slot to its worker future and wake the search on
+    its own event loop. Outside _search_lock: a future already done runs the
+    callback, and so the release, at once."""
+    for waiter, future in granted:
+        future.add_done_callback(lambda _future, caller=waiter.caller: _release_search_slot(caller))
+        try:
+            waiter.loop.call_soon_threadsafe(_wake, waiter.woken)
+        except RuntimeError:
+            # Its event loop closed after the hand-off: nobody is left to read the answer.
+            future.cancel()
 
 
 def _release_search_slot(caller: str) -> None:
-    global _search_pending
+    """Give caller's slot back and hand it to the oldest waiting search it admits.
+
+    Runs on the search worker thread (the future's done callback) as well as on
+    an event loop thread, so the waiting search is woken through its own loop.
+    """
     with _search_lock:
-        _search_pending -= 1
-        held = _search_pending_by_caller.get(caller, 0) - 1
-        if held > 0:
-            _search_pending_by_caller[caller] = held
+        _drop_slot(caller)
+        granted = _hand_off()
+    _start_handed(granted)
+
+
+def _wake(woken: asyncio.Future[None]) -> None:
+    if not woken.done():
+        woken.set_result(None)
+
+
+def _leave_waiting(waiter: _SearchWaiter) -> None:
+    """A waiting search that stops waiting leaves the line, or cancels the search
+    a release already submitted for it, as a queued search is cancelled with its
+    caller."""
+    with _search_lock:
+        if waiter.state == "waiting":
+            _leave_line(waiter)
+        state, future, waiter.state = waiter.state, waiter.future, "gone"
+    if state == "handed":
+        future.cancel()
+
+
+def _admit_search(
+    caller: str, started: float, call: Callable[[], Any]
+) -> _SearchWaiter | dict[str, Any] | None:
+    """None when caller's search is admitted, a waiter when it waits in line,
+    else the server_busy payload of the full waiting bound.
+
+    The line is served first, so a new search never takes a slot that a search
+    already waiting could take, and never counts a place a search whose wait is
+    over still held.
+    """
+    with _search_lock:
+        granted = _hand_off()
+        admitted: _SearchWaiter | dict[str, Any] | None = None
+        full = _full_bound(caller)
+        if full is None:
+            _take_slot(caller)
+        elif len(_search_waiters) >= SEARCH_MAX_WAITING:
+            admitted = server_busy_error("search", SEARCH_MAX_WAITING)
+        elif _search_waiting_by_caller.get(caller, 0) >= SEARCH_MAX_WAITING_PER_CALLER:
+            admitted = server_busy_error("caller_search", SEARCH_MAX_WAITING_PER_CALLER)
         else:
-            _search_pending_by_caller.pop(caller, None)
+            admitted = _SearchWaiter(caller, call, asyncio.get_running_loop(), started + SEARCH_WAIT_SECONDS, full)
+            _search_waiters.append(admitted)
+            _search_waiting_by_caller[caller] = _search_waiting_by_caller.get(caller, 0) + 1
+    _start_handed(granted)
+    return admitted
+
+
+async def _wait_for_slot(waiter: _SearchWaiter, started: float) -> Future[Any] | dict[str, Any]:
+    """Wait until a release hands waiter a slot: the future of the search that
+    release submitted, else the server_busy payload once the deadline has passed
+    without one."""
+    try:
+        await asyncio.wait((waiter.woken,), timeout=max(0.0, waiter.deadline - time.monotonic()))
+    except BaseException:
+        _leave_waiting(waiter)
+        raise
+    with _search_lock:
+        if waiter.state == "handed":
+            return waiter.future
+        if waiter.state == "waiting":
+            _leave_line(waiter)
+            waiter.state = "gone"
+        full = _full_bound(waiter.caller) or waiter.scope
+    limit = SEARCH_MAX_PENDING if full == "search" else SEARCH_MAX_PENDING_PER_CALLER
+    return server_busy_error(full, limit, elapsed_ms=int((time.monotonic() - started) * 1000))
 
 
 async def _search_off_loop(catalog: Any, query: str, **kwargs: Any) -> list[dict[str, Any]] | dict[str, Any]:
@@ -84,17 +285,23 @@ async def _search_off_loop(catalog: Any, query: str, **kwargs: Any) -> list[dict
     started runs to completion and holds its slot until then, even when its
     caller was cancelled meanwhile. A search still queued when its caller is
     cancelled is cancelled with it: it never runs, and its slot is freed at once.
+    A search cancelled while it waits in line leaves the line; one cancelled after
+    a release handed it a slot is cancelled like a queued search, since that
+    release has already submitted it.
     """
     caller = current_caller()
     started = time.monotonic()
-    while (full := _claim_search_slot(caller)) is not None:
-        waited = time.monotonic() - started
-        if waited >= SEARCH_WAIT_SECONDS:
-            limit = SEARCH_MAX_PENDING if full == "search" else SEARCH_MAX_PENDING_PER_CALLER
-            return server_busy_error(full, limit, elapsed_ms=int(waited * 1000))
-        await asyncio.sleep(_SEARCH_WAIT_STEP_SECONDS)
+    call = partial(search_catalog, catalog, query, **kwargs)
+    admitted = _admit_search(caller, started, call)
+    if isinstance(admitted, dict):
+        return admitted
+    if admitted is not None:
+        handed = await _wait_for_slot(admitted, started)
+        if isinstance(handed, dict):
+            return handed
+        return await asyncio.wrap_future(handed)
     try:
-        future = _search_executor.submit(search_catalog, catalog, query, **kwargs)
+        future = _search_executor.submit(call)
     except BaseException:
         _release_search_slot(caller)
         raise

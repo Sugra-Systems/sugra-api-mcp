@@ -16,6 +16,7 @@ import hashlib
 import json
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +58,15 @@ async def _until(predicate, timeout: float = 5.0) -> bool:
         if predicate():
             return True
         await asyncio.sleep(0.01)
+    return predicate()
+
+
+def _until_sync(predicate, timeout: float = 5.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.01)
     return predicate()
 
 
@@ -403,6 +413,438 @@ async def test_a_search_that_raises_frees_its_slot(monkeypatch) -> None:
     assert failed["error"] == "tool_execution_failed"
     assert await _until(lambda: gateway.search_pending() == 0)
     assert gateway._search_pending_by_caller == {}
+
+
+# ---- waiting for a slot: woken by the release, oldest first, bounded ---------
+
+
+def _assert_no_search_left() -> None:
+    assert gateway.search_pending() == 0
+    assert gateway.search_waiting() == 0
+    assert gateway._search_pending_by_caller == {}
+    assert gateway._search_waiting_by_caller == {}
+
+
+async def test_six_searches_from_one_caller_behind_a_slow_first_search_are_all_served(monkeypatch) -> None:
+    """One client sends six searches at once and the first one is slow, as the
+    first search after a quiet spell is on the hosted server. With the default
+    bounds four are admitted and two wait, and all six are served."""
+    blocking = _BlockingSearch()
+    monkeypatch.setattr(gateway, "search_catalog", blocking)
+    monkeypatch.setattr(gateway, "current_caller", _CALLER.get)
+    calls = [_as_caller("caller-a", mcp.call_tool("search_endpoints", {"query": "US CPI"})) for _ in range(6)]
+    assert await asyncio.to_thread(blocking.started.wait, 5)
+    await asyncio.sleep(3.0)
+    blocking.release.set()
+    payloads = [_structured(result) for result in await asyncio.gather(*calls)]
+    assert [payload.get("error") for payload in payloads] == [None] * 6
+    assert blocking.calls == 6
+    _assert_no_search_left()
+
+
+async def test_the_slot_a_finished_search_frees_goes_to_the_waiting_search_in_the_release(monkeypatch) -> None:
+    """The release that runs on the worker thread when a search ends hands its
+    slot to the waiting search before it returns, so the waiting search never
+    looks at the bound again. Checked by state, not by timing: the worker is
+    still inside that release when the state is read, so the waiting search
+    cannot have run and given the slot back yet."""
+    blocking = _BlockingSearch()
+    monkeypatch.setattr(gateway, "search_catalog", blocking)
+    monkeypatch.setattr(gateway, "SEARCH_MAX_PENDING", 1)
+    monkeypatch.setattr(gateway, "SEARCH_WAIT_SECONDS", 60.0)
+    real_release = gateway._release_search_slot
+    seen: list[tuple[int, int, bool]] = []
+
+    def _release(caller: str) -> None:
+        real_release(caller)
+        seen.append((gateway.search_pending(), gateway.search_waiting(), threading.current_thread() is threading.main_thread()))
+
+    monkeypatch.setattr(gateway, "_release_search_slot", _release)
+    holder = asyncio.create_task(gateway._search_off_loop(None, "hold"))
+    assert await asyncio.to_thread(blocking.started.wait, 5)
+    waiter = asyncio.create_task(gateway._search_off_loop(None, "wait"))
+    assert await _until(lambda: gateway.search_waiting() == 1)
+    blocking.release.set()
+    assert await asyncio.wait_for(asyncio.gather(holder, waiter), 5) == [[], []]
+    assert seen[0] == (1, 0, False), seen
+    _assert_no_search_left()
+
+
+async def test_a_release_from_another_thread_wakes_the_waiting_search(monkeypatch) -> None:
+    """A slot given back on a thread that is neither the event loop nor the
+    search worker is handed over in the release and wakes the search waiting on
+    the loop. The loop has no timer due for 5 s, so only that wake can rouse it."""
+    monkeypatch.setattr(gateway, "SEARCH_MAX_PENDING", 1)
+    monkeypatch.setattr(gateway, "SEARCH_WAIT_SECONDS", 60.0)
+    monkeypatch.setattr(gateway, "current_caller", lambda: "caller-a")
+    checked = threading.Event()
+    seen: list[tuple[int, int]] = []
+
+    def _search(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        checked.wait(5)
+        return []
+
+    def _release() -> None:
+        # Lets the loop go idle first; nothing below depends on how long this takes.
+        time.sleep(0.05)
+        gateway._release_search_slot("caller-a")
+        seen.append((gateway.search_pending("caller-a"), gateway.search_waiting()))
+        checked.set()
+
+    monkeypatch.setattr(gateway, "search_catalog", _search)
+    assert gateway._claim_search_slot("caller-a") is None
+    waiter = asyncio.create_task(gateway._search_off_loop(None, "US CPI"))
+    assert await _until(lambda: gateway.search_waiting() == 1)
+    thread = threading.Thread(target=_release)
+    thread.start()
+    try:
+        assert await asyncio.wait_for(waiter, 5) == []
+    finally:
+        checked.set()
+        thread.join(5)
+    assert seen == [(1, 0)]
+    _assert_no_search_left()
+
+
+async def test_a_release_never_hands_a_slot_to_a_search_whose_wait_has_ended(monkeypatch) -> None:
+    """The wait of a search can end while its task has not run again yet. A
+    release in that gap passes it over, so the slot stays free and the search
+    answers server_busy instead of running after its wait. The deadline is put
+    in the past by hand to make the gap without depending on timing."""
+    monkeypatch.setattr(gateway, "SEARCH_MAX_PENDING", 1)
+    monkeypatch.setattr(gateway, "SEARCH_WAIT_SECONDS", 60.0)
+    ran: list[str] = []
+    assert gateway._claim_search_slot("caller-a") is None
+    started = time.monotonic()
+    waiter = gateway._admit_search("caller-a", started, lambda: ran.append("waiter"))
+    assert isinstance(waiter, gateway._SearchWaiter)
+    waiter.deadline = time.monotonic() - 0.001
+    gateway._release_search_slot("caller-a")
+    assert gateway.search_pending() == 0, "the release handed its slot to a search whose wait had ended"
+    assert gateway.search_waiting() == 0, "a search whose wait had ended kept its place in line"
+    refused = await asyncio.wait_for(gateway._wait_for_slot(waiter, started), 5)
+    assert (refused["error"], refused["scope"], refused["limit"]) == ("server_busy", "search", 1)
+    assert ran == []
+    _assert_no_search_left()
+
+
+def _park_on_own_loop(loop: asyncio.AbstractEventLoop, call: Any) -> tuple[threading.Thread, list[asyncio.Task]]:
+    """Start a thread running loop with one task that joins the line as caller-a
+    and waits there. The task is kept, so the collector cannot close it first."""
+    parked = threading.Event()
+    kept: list[asyncio.Task] = []
+
+    async def _wait() -> None:
+        started = time.monotonic()
+        waiter = gateway._admit_search("caller-a", started, call)
+        assert isinstance(waiter, gateway._SearchWaiter)
+        parked.set()
+        await gateway._wait_for_slot(waiter, started)
+
+    def _run() -> None:
+        kept.append(loop.create_task(_wait()))
+        loop.run_forever()
+        loop.close()
+
+    thread = threading.Thread(target=_run)
+    thread.start()
+    assert parked.wait(5)
+    return thread, kept
+
+
+def _close_parked_task(kept: list[asyncio.Task]) -> None:
+    """Close the parked task's coroutine, as the collector would; it must give nothing back twice."""
+    kept[0].get_coro().close()
+    kept[0]._log_destroy_pending = False
+    _assert_no_search_left()
+
+
+def test_a_slot_handed_to_a_search_whose_event_loop_closed_comes_back(monkeypatch) -> None:
+    """The release hands its slot over and schedules the wake, then the waiting
+    search's loop stops and closes before the wake runs. The release has already
+    submitted that search to the worker, so the slot comes back when it ends,
+    with no later release or admission."""
+    monkeypatch.setattr(gateway, "SEARCH_MAX_PENDING", 1)
+    monkeypatch.setattr(gateway, "SEARCH_WAIT_SECONDS", 60.0)
+    loop = asyncio.new_event_loop()
+    holding, go, finish = threading.Event(), threading.Event(), threading.Event()
+    ran: list[str] = []
+
+    def _search() -> list[Any]:
+        ran.append(threading.current_thread().name)
+        finish.wait(5)
+        return []
+
+    def _hold_then_stop() -> None:
+        # The wake scheduled while this runs is left for the next loop pass,
+        # and stop() ends the loop before that pass.
+        holding.set()
+        go.wait(5)
+        loop.stop()
+
+    assert gateway._claim_search_slot("caller-a") is None
+    thread, kept = _park_on_own_loop(loop, _search)
+    try:
+        loop.call_soon_threadsafe(_hold_then_stop)
+        assert holding.wait(5)
+        gateway._release_search_slot("caller-a")
+        assert (gateway.search_pending("caller-a"), gateway.search_waiting()) == (1, 0)
+    finally:
+        go.set()
+        thread.join(5)
+    try:
+        assert loop.is_closed()
+        assert not kept[0].done(), "the waiting search ran after all"
+    finally:
+        finish.set()
+    assert _until_sync(lambda: gateway.search_pending() == 0), "the slot handed to the closed loop's search was lost"
+    assert len(ran) == 1 and ran[0].startswith("catalog-search")
+    _assert_no_search_left()
+    _close_parked_task(kept)
+
+
+def test_a_search_whose_event_loop_closed_while_it_waited_leaves_the_line(monkeypatch) -> None:
+    """A search still waiting in line when its event loop closes can never
+    answer. The next walk of the line takes it out, so it holds no place a new
+    search needs and no release hands it a slot."""
+    monkeypatch.setattr(gateway, "SEARCH_MAX_PENDING", 1)
+    monkeypatch.setattr(gateway, "SEARCH_MAX_WAITING", 1)
+    monkeypatch.setattr(gateway, "SEARCH_WAIT_SECONDS", 60.0)
+    loop = asyncio.new_event_loop()
+    ran: list[str] = []
+
+    async def _admit_another() -> Any:
+        return gateway._admit_search("caller-b", time.monotonic(), lambda: ran.append("caller-b"))
+
+    assert gateway._claim_search_slot("caller-a") is None
+    thread, kept = _park_on_own_loop(loop, lambda: ran.append("caller-a"))
+    loop.call_soon_threadsafe(loop.stop)
+    thread.join(5)
+    assert loop.is_closed()
+    assert gateway.search_waiting("caller-a") == 1
+    newcomer = asyncio.run(_admit_another())
+    assert isinstance(newcomer, gateway._SearchWaiter), "a search whose loop had closed still held the only place in line"
+    assert (gateway.search_waiting("caller-a"), gateway.search_waiting("caller-b")) == (0, 1)
+    gateway._leave_waiting(newcomer)
+    gateway._release_search_slot("caller-a")
+    assert ran == []
+    _assert_no_search_left()
+    _close_parked_task(kept)
+
+
+class _LoopClosingAtTheWake:
+    """An event loop that is still open when the release looks at it and closed
+    by the time the release sends the wake."""
+
+    def __init__(self, loop: asyncio.AbstractEventLoop) -> None:
+        self._loop = loop
+
+    def create_future(self) -> asyncio.Future[Any]:
+        return self._loop.create_future()
+
+    def is_closed(self) -> bool:
+        return False
+
+    def call_soon_threadsafe(self, *args: Any) -> Any:
+        raise RuntimeError("Event loop is closed")
+
+
+async def test_a_search_handed_a_slot_as_its_event_loop_closes_is_cancelled(monkeypatch) -> None:
+    """When the loop closes between the hand-off and the wake, nobody is left to
+    read the answer. The search the release submitted is cancelled: while it is
+    still queued it never runs, and its slot comes back at once."""
+    monkeypatch.setattr(gateway, "SEARCH_MAX_PENDING", 1)
+    ran: list[str] = []
+    busy, hold = threading.Event(), threading.Event()
+
+    def _occupy() -> None:
+        busy.set()
+        hold.wait(5)
+
+    occupying = gateway._search_executor.submit(_occupy)
+    try:
+        assert await asyncio.to_thread(busy.wait, 5)
+        assert gateway._claim_search_slot("caller-a") is None
+        loop = _LoopClosingAtTheWake(asyncio.get_running_loop())
+        waiter = gateway._SearchWaiter("caller-a", lambda: ran.append("waiter"), loop, time.monotonic() + 60, "search")
+        with gateway._search_lock:
+            gateway._search_waiters.append(waiter)
+            gateway._search_waiting_by_caller["caller-a"] = 1
+        gateway._release_search_slot("caller-a")
+        assert waiter.future is not None and waiter.future.cancelled()
+        assert gateway.search_pending() == 0, "the slot handed to a search nobody can read was kept"
+    finally:
+        hold.set()
+    await asyncio.wrap_future(occupying)
+    assert ran == []
+    _assert_no_search_left()
+
+
+@pytest.mark.parametrize(
+    ("bounds", "scope", "limit"),
+    [
+        ({"SEARCH_MAX_PENDING": 1, "SEARCH_MAX_WAITING": 1}, "search", 1),
+        ({"SEARCH_MAX_PENDING_PER_CALLER": 1, "SEARCH_MAX_WAITING_PER_CALLER": 1}, "caller_search", 1),
+    ],
+    ids=["search", "caller_search"],
+)
+async def test_a_search_past_the_waiting_bound_is_refused_at_once(monkeypatch, bounds, scope, limit) -> None:
+    blocking = _BlockingSearch()
+    monkeypatch.setattr(gateway, "search_catalog", blocking)
+    monkeypatch.setattr(gateway, "current_caller", _CALLER.get)
+    monkeypatch.setattr(gateway, "SEARCH_WAIT_SECONDS", 5.0)
+    for name, value in bounds.items():
+        monkeypatch.setattr(gateway, name, value)
+    first = _as_caller("caller-a", gateway._search_off_loop(None, "US CPI"))
+    waiting = None
+    try:
+        assert await asyncio.to_thread(blocking.started.wait, 5)
+        waiting = _as_caller("caller-a", gateway._search_off_loop(None, "US CPI"))
+        await asyncio.sleep(0.03)
+        assert not waiting.done(), "the second search did not wait for a slot"
+        begun = time.monotonic()
+        refused = await asyncio.wait_for(_as_caller("caller-a", gateway._search_off_loop(None, "US CPI")), 2)
+        assert time.monotonic() - begun < 0.5, "the search past the waiting bound waited"
+        assert (refused["error"], refused["scope"], refused["limit"], refused["elapsed_ms"]) == (
+            "server_busy", scope, limit, 0)
+        assert gateway.search_waiting() == 1
+    finally:
+        blocking.release.set()
+        await first
+    assert await waiting == []
+    _assert_no_search_left()
+
+
+async def test_a_waiting_search_cancelled_leaves_the_line(monkeypatch) -> None:
+    blocking = _BlockingSearch()
+    monkeypatch.setattr(gateway, "search_catalog", blocking)
+    monkeypatch.setattr(gateway, "SEARCH_MAX_PENDING", 1)
+    monkeypatch.setattr(gateway, "SEARCH_WAIT_SECONDS", 5.0)
+    first = asyncio.create_task(gateway._search_off_loop(None, "US CPI"))
+    assert await asyncio.to_thread(blocking.started.wait, 5)
+    cancelled = asyncio.create_task(gateway._search_off_loop(None, "US CPI"))
+    later = asyncio.create_task(gateway._search_off_loop(None, "US CPI"))
+    assert await _until(lambda: gateway.search_waiting() == 2)
+    cancelled.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await cancelled
+    assert gateway.search_waiting() == 1
+    assert gateway.search_pending() == 1
+    blocking.release.set()
+    assert await asyncio.wait_for(later, 2) == []
+    await first
+    assert blocking.calls == 2, "a search cancelled while waiting still ran"
+    _assert_no_search_left()
+
+
+async def test_a_waiting_search_cancelled_after_the_hand_off_gives_its_slot_back(monkeypatch) -> None:
+    """The release hands its slot to the waiting search and submits its search
+    before that search runs again. Cancelled in between, while its search is
+    still queued behind other work, it is cancelled like a queued search: the
+    search never runs and the slot comes back at once."""
+    monkeypatch.setattr(gateway, "SEARCH_MAX_PENDING", 1)
+    monkeypatch.setattr(gateway, "SEARCH_WAIT_SECONDS", 5.0)
+    monkeypatch.setattr(gateway, "current_caller", lambda: "caller-a")
+    ran: list[str] = []
+    monkeypatch.setattr(gateway, "search_catalog", lambda catalog, query, **kwargs: ran.append(query) or [])
+    busy, hold = threading.Event(), threading.Event()
+
+    def _occupy() -> None:
+        busy.set()
+        hold.wait(5)
+
+    # Keeps the worker busy, so the search the release submits stays queued.
+    occupying = gateway._search_executor.submit(_occupy)
+    try:
+        assert await asyncio.to_thread(busy.wait, 5)
+        assert gateway._claim_search_slot("caller-a") is None
+        waiter = asyncio.create_task(gateway._search_off_loop(None, "cancelled"))
+        assert await _until(lambda: gateway.search_waiting() == 1)
+        gateway._release_search_slot("caller-a")
+        assert (gateway.search_pending(), gateway.search_waiting()) == (1, 0), "the release did not hand its slot to the waiting search"
+        waiter.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiter
+        assert gateway.search_pending() == 0, "the search cancelled after the hand-off kept its slot"
+    finally:
+        hold.set()
+    await asyncio.wrap_future(occupying)
+    assert ran == [], "a search cancelled after the hand-off still ran"
+    _assert_no_search_left()
+    assert await asyncio.wait_for(gateway._search_off_loop(None, "served"), 2) == []
+    assert ran == ["served"]
+    _assert_no_search_left()
+
+
+async def test_a_handed_search_cancelled_while_its_caller_awaits_the_answer_never_runs(monkeypatch) -> None:
+    """Woken with a slot, the waiting call awaits the future of the search the
+    release submitted. Cancelled there, while that search is still queued behind
+    other work, the search is cancelled with it, as a queued search is: it never
+    runs and its slot comes back at once."""
+    monkeypatch.setattr(gateway, "SEARCH_MAX_PENDING", 1)
+    monkeypatch.setattr(gateway, "SEARCH_WAIT_SECONDS", 5.0)
+    monkeypatch.setattr(gateway, "current_caller", lambda: "caller-a")
+    ran: list[str] = []
+    monkeypatch.setattr(gateway, "search_catalog", lambda catalog, query, **kwargs: ran.append(query) or [])
+    awaiting: list[Any] = []
+    real_wrap_future = asyncio.wrap_future
+
+    def _wrap_future(future: Any, **kwargs: Any) -> Any:
+        awaiting.append(future)
+        return real_wrap_future(future, **kwargs)
+
+    monkeypatch.setattr(gateway.asyncio, "wrap_future", _wrap_future)
+    busy, hold = threading.Event(), threading.Event()
+
+    def _occupy() -> None:
+        busy.set()
+        hold.wait(5)
+
+    occupying = gateway._search_executor.submit(_occupy)
+    try:
+        assert await asyncio.to_thread(busy.wait, 5)
+        assert gateway._claim_search_slot("caller-a") is None
+        waiter = asyncio.create_task(gateway._search_off_loop(None, "cancelled"))
+        assert await _until(lambda: gateway.search_waiting() == 1)
+        gateway._release_search_slot("caller-a")
+        # The waiting call has woken and awaits the handed future once it wrapped it.
+        assert await _until(lambda: len(awaiting) == 1)
+        assert not awaiting[0].done()
+        waiter.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiter
+        assert await _until(lambda: gateway.search_pending() == 0, timeout=2.0), "the cancelled search kept its slot"
+        assert awaiting[0].cancelled()
+    finally:
+        hold.set()
+    await real_wrap_future(occupying)
+    assert ran == [], "a search cancelled while its caller awaited the answer still ran"
+    _assert_no_search_left()
+
+
+async def test_waiting_searches_are_served_oldest_first_past_a_caller_at_its_bound(monkeypatch) -> None:
+    """A freed slot goes to the oldest waiting search it can admit. A search
+    whose caller is at its own bound stays in line without holding up the
+    searches of other callers behind it."""
+    order: list[str] = []
+    monkeypatch.setattr(gateway, "search_catalog", lambda catalog, query, **kwargs: order.append(query) or [])
+    monkeypatch.setattr(gateway, "current_caller", _CALLER.get)
+    monkeypatch.setattr(gateway, "SEARCH_MAX_PENDING", 2)
+    monkeypatch.setattr(gateway, "SEARCH_MAX_PENDING_PER_CALLER", 1)
+    monkeypatch.setattr(gateway, "SEARCH_WAIT_SECONDS", 5.0)
+    assert gateway._claim_search_slot("caller-a") is None
+    assert gateway._claim_search_slot("caller-c") is None
+    tasks = []
+    for caller, query in (("caller-a", "a2"), ("caller-b", "b1"), ("caller-d", "d1")):
+        tasks.append(_as_caller(caller, gateway._search_off_loop(None, query)))
+        assert await _until(lambda: gateway.search_waiting() == len(tasks))
+    gateway._release_search_slot("caller-c")
+    assert await _until(lambda: order == ["b1", "d1"])
+    assert gateway.search_waiting() == 1, "the search of the caller at its bound left the line"
+    gateway._release_search_slot("caller-a")
+    assert await asyncio.wait_for(asyncio.gather(*tasks), 2) == [[], [], []]
+    assert order == ["b1", "d1", "a2"]
+    _assert_no_search_left()
 
 
 # ---- the in-flight caps on tool calls ----------------------------------------
