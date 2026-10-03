@@ -674,19 +674,39 @@ NAMED_OPERATIONS: dict[str, tuple[str, ...]] = {
     "turkish straits": ("maritime_chokepoints_activity",),
     "dardanelles": ("maritime_chokepoints_activity",),
     # FRED holds these under series codes only (PCU484121484121, the
-    # producer price index of general freight trucking).
+    # producer price index of general freight trucking), so they name it only
+    # as a price of trucking: "trucking" and "truckload" alone count beside
+    # "freight" only (_NAME_CUES), because "trucking accidents" and "trucking
+    # jobs" ask about something else.
     "trucking": ("fred_series_series_id",),
     "truckload": ("fred_series_series_id",),
     "truck freight": ("fred_series_series_id",),
+    "trucking rate": ("fred_series_series_id",),
+    "trucking price": ("fred_series_series_id",),
+    "trucking cost": ("fred_series_series_id",),
+    "truckload rate": ("fred_series_series_id",),
+    "truckload price": ("fred_series_series_id",),
+    "cost of trucking": ("fred_series_series_id",),
+    "price of trucking": ("fred_series_series_id",),
 }
 
-# Other oils: "palm oil price" is not a crude oil question.
-_NAME_BLOCKERS: tuple[str, ...] = (
+# Names that point to their operations only when the query also holds one of
+# these words: "trucking freight rates" asks for the trucking price index,
+# "trucking employment" does not.
+_NAME_CUES: dict[str, tuple[str, ...]] = {
+    "trucking": ("freight",),
+    "truckload": ("freight",),
+}
+
+# Other oils: "palm oil price" is not a crude oil question, and neither is
+# "price of crude palm oil", a grade of palm oil.
+_OTHER_OILS: tuple[str, ...] = (
     "palm oil", "palm kernel oil", "olive oil", "soybean oil", "soy oil", "sunflower oil",
     "rapeseed oil", "canola oil", "coconut oil", "vegetable oil", "cooking oil",
     "fish oil", "linseed oil", "cottonseed oil", "groundnut oil", "peanut oil",
     "corn oil", "heating oil",
 )
+_NAME_BLOCKERS: tuple[str, ...] = _OTHER_OILS + tuple(f"crude {oil}" for oil in _OTHER_OILS)
 
 # Wording that asks for something besides the spot price, where a name that
 # points to a commodities_ price operation stays silent. Futures ("WTI
@@ -764,6 +784,9 @@ def detect_named_operations(query: str) -> NamedRequest:
     countries: set[str] = set()
     words: set[str] = set()
     for start, end, name in _claim_names(tokens, NAMED_OPERATIONS):
+        cues = _NAME_CUES.get(name, ())
+        if cues and not any(_phrase_spans(tokens, cue) for cue in cues):
+            continue
         targets = [op for op in NAMED_OPERATIONS[name]
                    if not (not_spot and op.startswith("commodities_"))]
         if not targets:

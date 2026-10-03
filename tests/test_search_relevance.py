@@ -1341,6 +1341,9 @@ def test_commodity_benchmarks_are_not_tickers(query: str) -> None:
     ("Henry Hub natural gas", "commodities_energy_natural_gas", "henry hub"),
     ("ships through Suez", "maritime_chokepoints_activity", "suez"),
     ("trucking freight rates", "fred_series_series_id", "trucking"),
+    ("truckload rates", "fred_series_series_id", "truckload rate"),
+    ("how much does trucking cost", "fred_series_series_id", "trucking cost"),
+    ("truck freight prices", "fred_series_series_id", "truck freight"),
     ("port congestion", "transport_ports_congestion", "port"),
 ])
 def test_everyday_names_point_to_their_operation(query: str, operation: str, name: str) -> None:
@@ -1350,14 +1353,30 @@ def test_everyday_names_point_to_their_operation(query: str, operation: str, nam
 
 
 @pytest.mark.parametrize("query", [
+    "trucking employment", "trucking accidents", "trucking accident rate",
+    "trucking jobs in Texas", "trucking companies stock", "a truckload of apples",
+])
+def test_trucking_names_the_price_index_only_as_a_price(catalog, query: str) -> None:
+    """FRED holds the trucking producer price index; "trucking" alone also
+    asks about jobs, accidents and companies, which that index does not answer."""
+    from sugra_api_mcp.catalog.aliases import detect_named_operations
+
+    assert "fred_series_series_id" not in detect_named_operations(query).operations
+    results = search_catalog(catalog, query, limit=1)
+    assert not results or results[0]["operation_id"] != "fred_series_series_id", results
+
+
+@pytest.mark.parametrize("query", [
     "palm oil price", "heating oil price", "olive oil price",
+    "price of crude palm oil", "price of crude soybean oil",
     "crude oil", "crude oil pipelines",
     "Brent inventories", "WTI crude oil futures", "TTF futures", "European gas storage",
     "US crude oil inventory",
 ])
 def test_no_price_name_without_a_spot_price_question(query: str) -> None:
-    """Other oils are not crude; "crude oil" alone also asks about pipelines
-    and stocks; futures, stocks and output have operations of their own."""
+    """Other oils are not crude, also as crude palm oil; "crude oil" alone also
+    asks about pipelines and stocks; futures, stocks and output have
+    operations of their own."""
     from sugra_api_mcp.catalog.aliases import detect_named_operations
 
     operations = detect_named_operations(query).operations
