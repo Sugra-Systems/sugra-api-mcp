@@ -32,8 +32,9 @@ Custom dimensions captured per MCP tool invocation:
                            "invalid_arguments".
     mcp.busy.scope       - server_busy failures only: the bound
                            that refused the call, one of tool_calls /
-                           caller_tool_calls / search / caller_search; any
-                           other value is dropped
+                           caller_tool_calls / search / caller_search /
+                           shaping / caller_shaping; any other value is
+                           dropped
     mcp.caller.*         - how the call arrived, read from the
                            request that carried it and its session: transport,
                            auth (api_key / oauth / none / local), host, ua_class
@@ -364,8 +365,11 @@ _KNOWN_ERROR_CODES: frozenset[str] = frozenset({
     # A search query over the search bounds, refused before any
     # scoring (catalog/search.py query_limit_error).
     "query_too_long",
-    # A tool call refused at the in-flight cap (server.py), or a
-    # search refused because the search queue is full (tools/gateway.py).
+    # A fields projection past one of its bounds (catalog/response.py).
+    "projection_too_large",
+    # A tool call refused at the in-flight cap (server.py), a search
+    # refused because the search queue is full, or a response refused at
+    # the shaping pool (tools/gateway.py).
     "server_busy",
     # A tool call that never reached its tool (server.py call_tool): a name
     # no tool is registered under, or arguments that failed validation.
@@ -398,14 +402,21 @@ def _error_code_of(result: dict[str, Any]) -> str:
 
 
 # The bound that refused a server_busy call, exactly as
-# errors.server_busy_error names it. Two of the four are one caller's share
+# errors.server_busy_error names it. Three of the six are one caller's share
 # (the name current_caller returns: http:<digest> of one key, http:anonymous
 # for every unauthenticated HTTP request together, or local for everything
 # off HTTP), so without the scope a span cannot tell one such caller held to
 # its share from the process at its limit. Other callers are served only
 # while the process-wide bound has room. Any other value is dropped, never
 # mapped to a placeholder.
-_BUSY_SCOPES: frozenset[str] = frozenset({"tool_calls", "caller_tool_calls", "search", "caller_search"})
+_BUSY_SCOPES: frozenset[str] = frozenset({
+    "tool_calls",
+    "caller_tool_calls",
+    "search",
+    "caller_search",
+    "shaping",
+    "caller_shaping",
+})
 
 
 def _busy_scope_of(error_code: str | None, scope: object) -> str | None:

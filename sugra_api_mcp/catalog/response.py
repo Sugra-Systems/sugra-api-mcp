@@ -50,12 +50,22 @@ reports what was ACTUALLY applied (``fields_applied`` / ``fields_unmatched``,
 Two live defects shaped these rules: fields were a silent no-op on
 envelope-less payloads (2026-06-07), and fields on news_latest returned
 ``data: {}`` while limit left all 50 items in place (2026-09-12).
+
+With ``fields`` a projection has six bounds: at most MAX_FIELDS paths, each
+at most MAX_FIELD_PATH_CHARS characters and MAX_FIELD_PATH_PARTS dotted
+parts, at most MAX_PROJECTION_ROWS list items visited, at most
+MAX_SHAPING_SECONDS of shaping, and a response of at most
+MAX_PROJECTION_RAW_CHARS characters before projection. Past one,
+ProjectionTooLargeError names the bound and its numbers, never the field
+text. None applies without ``fields``. Each path is split once per
+projection, never once per record.
 """
 
 from __future__ import annotations
 
 import json
 import re
+import time
 from copy import deepcopy
 from datetime import datetime
 from itertools import pairwise
@@ -196,50 +206,145 @@ def _split_field_path(field: str) -> list[str]:
     return [segment for segment in field.split(".") if segment]
 
 
-def _project_dict(value: dict[str, Any], fields: list[str], matched: set[str]) -> dict[str, Any]:
+# Bounds on one fields projection. The first three need no response: they are
+# checked before any request (call_endpoint calls compile_fields) and again
+# when shaping starts. The other three apply while a projection runs, and
+# only with fields.
+MAX_FIELDS = 32
+MAX_FIELD_PATH_CHARS = 256
+MAX_FIELD_PATH_PARTS = 16
+# List items one projection visits, counted across every list it walks.
+MAX_PROJECTION_ROWS = 100_000
+MAX_SHAPING_SECONDS = 5.0
+# The response before projection, measured as the size cap measures it (the
+# length of json.dumps). The 85,000-character cap (client.MAX_RESPONSE_CHARS)
+# is measured after projection, so this bound sits far above it: the 16-day
+# forecast body in the tests is 294,847 characters before fields=["daily"]
+# cuts it to fit, and 2,000,000 is about 6.8 times that.
+MAX_PROJECTION_RAW_CHARS = 2_000_000
+
+
+class ProjectionTooLargeError(Exception):
+    """A fields projection past one of its bounds: the kind of bound, its
+    limit, the actual value and, for one path, its index. Never the field text."""
+
+    def __init__(self, kind: str, limit: int, actual: int, field_index: int | None = None) -> None:
+        super().__init__(kind)
+        self.kind = kind
+        self.limit = limit
+        self.actual = actual
+        self.field_index = field_index
+
+
+def compile_fields(fields: list[str] | None) -> list[tuple[str, tuple[str, ...], str | None]]:
+    """Check fields against the count, length and depth bounds and split each
+    path once: (field, parent segments, leaf), the leaf None for a path of one
+    part. The length is checked before the path is split."""
+    if not fields:
+        return []
+    if len(fields) > MAX_FIELDS:
+        raise ProjectionTooLargeError("fields", MAX_FIELDS, len(fields))
+    compiled: list[tuple[str, tuple[str, ...], str | None]] = []
+    for index, field in enumerate(fields):
+        if len(field) > MAX_FIELD_PATH_CHARS:
+            raise ProjectionTooLargeError("path_chars", MAX_FIELD_PATH_CHARS, len(field), index)
+        segments = _split_field_path(field)
+        if len(segments) > MAX_FIELD_PATH_PARTS:
+            raise ProjectionTooLargeError("path_parts", MAX_FIELD_PATH_PARTS, len(segments), index)
+        if len(segments) < 2:
+            compiled.append((field, (), None))
+        else:
+            compiled.append((field, tuple(segments[:-1]), segments[-1]))
+    return compiled
+
+
+class _Projection:
+    """One fields projection: its compiled paths, the list items it has
+    visited so far and its clock (time.monotonic)."""
+
+    __slots__ = ("deadline", "fields", "limit_ms", "rows", "started")
+
+    def __init__(self, fields: list[tuple[str, tuple[str, ...], str | None]]) -> None:
+        self.fields = fields
+        self.rows = 0
+        self.started = time.monotonic()
+        self.deadline = self.started + MAX_SHAPING_SECONDS
+        self.limit_ms = int(MAX_SHAPING_SECONDS * 1000)
+
+    def count_rows(self, count: int) -> None:
+        self.rows += count
+        if self.rows > MAX_PROJECTION_ROWS:
+            raise ProjectionTooLargeError("rows", MAX_PROJECTION_ROWS, self.rows)
+
+    def check_time(self) -> None:
+        now = time.monotonic()
+        if now > self.deadline:
+            raise ProjectionTooLargeError("shaping_ms", self.limit_ms, int((now - self.started) * 1000))
+
+
+def _start_projection(payload: Any, fields: list[str] | None) -> _Projection | None:
+    """The projection fields ask for, or None without fields. Its clock starts
+    here, and the response is measured against the raw bound before
+    shape_response copies it."""
+    if not fields:
+        return None
+    projection = _Projection(compile_fields(fields))
+    raw_chars = len(json.dumps(payload))
+    if raw_chars > MAX_PROJECTION_RAW_CHARS:
+        raise ProjectionTooLargeError("raw_chars", MAX_PROJECTION_RAW_CHARS, raw_chars)
+    return projection
+
+
+def _project_dict(value: dict[str, Any], projection: _Projection, matched: set[str]) -> dict[str, Any]:
     """Project one dict by the requested fields.
 
     A literal key match (including keys that contain dots) takes precedence;
-    otherwise the field is treated as a dotted path through nested dicts.
+    otherwise the field is treated as a dotted path through nested dicts,
+    split once per projection (compile_fields), never once per record.
     Matched field names are recorded so the caller can report what actually
     applied.
     """
     result: dict[str, Any] = {}
-    for field in fields:
+    for field, parents, leaf in projection.fields:
         if field in value:
             result[field] = value[field]
             matched.add(field)
             continue
-        segments = _split_field_path(field)
-        if len(segments) < 2:
+        if leaf is None:
             continue
         node: Any = value
-        for segment in segments[:-1]:
+        for segment in parents:
             node = node.get(segment) if isinstance(node, dict) else None
             if node is None:
                 break
-        if isinstance(node, dict) and segments[-1] in node:
-            cursor = result
-            for segment in segments[:-1]:
-                existing = cursor.get(segment)
+        if isinstance(node, dict) and leaf in node:
+            target = result
+            for segment in parents:
+                existing = target.get(segment)
                 if not isinstance(existing, dict):
                     existing = {}
-                    cursor[segment] = existing
-                cursor = existing
-            cursor[segments[-1]] = node[segments[-1]]
+                    target[segment] = existing
+                target = existing
+            target[leaf] = node[leaf]
             matched.add(field)
     return result
 
 
-def _project_value(value: Any, fields: list[str], matched: set[str]) -> Any:
+def _project_value(value: Any, projection: _Projection, matched: set[str]) -> Any:
     if isinstance(value, dict):
-        return _project_dict(value, fields, matched)
+        return _project_dict(value, projection, matched)
     if isinstance(value, list):
-        return [_project_value(item, fields, matched) for item in value]
+        # Counted before the list is walked, and the clock read before each item.
+        projection.count_rows(len(value))
+        projected = []
+        for item in value:
+            projection.check_time()
+            projected.append(_project_value(item, projection, matched))
+        return projected
     return value
 
 
-def _project_or_keep(value: Any, fields: list[str], matched: set[str]) -> tuple[Any, bool]:
+def _project_or_keep(value: Any, projection: _Projection, matched: set[str]) -> tuple[Any, bool]:
     """Project ``value``, or return it whole when no field matches anything.
 
     This is the never-empty rule: a projection that matched nothing would
@@ -247,7 +352,7 @@ def _project_or_keep(value: Any, fields: list[str], matched: set[str]) -> tuple[
     result. The flag says whether any field matched.
     """
     hits: set[str] = set()
-    projected = _project_value(value, fields, hits)
+    projected = _project_value(value, projection, hits)
     if not hits:
         return value, False
     matched.update(hits)
@@ -298,7 +403,7 @@ def _shape_nested_series(
     nested_keys: list[str],
     *,
     limit: int | None,
-    fields: list[str] | None,
+    projection: _Projection | None,
     matched: set[str],
 ) -> tuple[Any, bool, str | None, dict[str, Any] | None]:
     """Bound each sibling sub-series independently.
@@ -326,8 +431,8 @@ def _shape_nested_series(
         limit_applied = True
         order_report = {"order": orders, "kept_end": kept_ends}
     records_path = "data.*.observations" if limit_applied else None
-    if fields:
-        projected, own_match = _project_or_keep(shaped, fields, matched)
+    if projection is not None:
+        projected, own_match = _project_or_keep(shaped, projection, matched)
         if own_match:
             shaped = projected
     return shaped, limit_applied, records_path, order_report
@@ -460,7 +565,7 @@ def _shape_data(
     data: Any,
     *,
     limit: int | None,
-    fields: list[str] | None,
+    projection: _Projection | None,
     matched: set[str],
 ) -> tuple[Any, bool, str | None, dict[str, Any] | None]:
     """Shape an envelope's ``data`` value.
@@ -478,8 +583,8 @@ def _shape_data(
         if limit is not None:
             limited, order, kept_end = _limit_records(data, limit)
             order_report = {"order": order, "kept_end": kept_end}
-        if fields:
-            limited, _ = _project_or_keep(limited, fields, matched)
+        if projection is not None:
+            limited, _ = _project_or_keep(limited, projection, matched)
         return limited, limit is not None, "data", order_report
 
     key = _records_key(data)
@@ -487,13 +592,13 @@ def _shape_data(
         nested_keys = _nested_series_keys(data)
         if nested_keys is not None:
             return _shape_nested_series(
-                data, nested_keys, limit=limit, fields=fields, matched=matched
+                data, nested_keys, limit=limit, projection=projection, matched=matched
             )
         # Scalar data, or an object without a single record list: limit
         # never applies, and fields project the object's own keys or leave
         # it whole.
-        if fields:
-            data, _ = _project_or_keep(data, fields, matched)
+        if projection is not None:
+            data, _ = _project_or_keep(data, projection, matched)
         return data, False, None, None
 
     shaped = dict(data)
@@ -503,14 +608,14 @@ def _shape_data(
         shaped[key], order, kept_end = _limit_records(shaped[key], limit)
         order_report = {"order": order, "kept_end": kept_end}
         records_path = f"data.{key}"
-    if fields:
-        projected, own_match = _project_or_keep(shaped, fields, matched)
+    if projection is not None:
+        projected, own_match = _project_or_keep(shaped, projection, matched)
         if own_match:
             # A field names one of data's own keys: project the object as a
             # single record, exactly as before records lists were known.
             shaped = projected
         else:
-            shaped[key], _ = _project_or_keep(shaped[key], fields, matched)
+            shaped[key], _ = _project_or_keep(shaped[key], projection, matched)
             records_path = f"data.{key}"
     return shaped, limit is not None, records_path, order_report
 
@@ -553,7 +658,13 @@ def shape_response(
     include_raw: bool = False,
     max_raw_chars: int = MAX_RESPONSE_CHARS,
 ) -> Any:
-    """Apply list limit, field projection, and optional raw payload inclusion."""
+    """Apply list limit, field projection, and optional raw payload inclusion.
+
+    With fields, a projection past one of its bounds raises
+    ProjectionTooLargeError; the raw bound is checked before the payload is
+    copied. Without fields none of the bounds applies.
+    """
+    projection = _start_projection(payload, fields)
     original = deepcopy(payload)
     shaping_requested = limit is not None or bool(fields)
     matched: set[str] = set()
@@ -565,7 +676,7 @@ def shape_response(
         # unchanged made a successful call arrive as isError with a
         # pydantic dict_type message and no rows.
         data, limit_applied, records_path, order_report = _shape_data(
-            payload, limit=limit, fields=fields, matched=matched
+            payload, limit=limit, projection=projection, matched=matched
         )
         shaped: dict[str, Any] = {"data": data}
         if shaping_requested:
@@ -602,13 +713,13 @@ def shape_response(
 
     if "data" in shaped:
         shaped["data"], limit_applied, records_path, order_report = _shape_data(
-            shaped["data"], limit=limit, fields=fields, matched=matched
+            shaped["data"], limit=limit, projection=projection, matched=matched
         )
-    elif fields:
+    elif projection is not None:
         # Envelope-less payload: project the payload's own keys, then make
         # sure provenance keys survive even when not requested. When no
         # field matches, the payload stays whole.
-        projected, any_match = _project_or_keep(shaped, fields, matched)
+        projected, any_match = _project_or_keep(shaped, projection, matched)
         if any_match:
             for key in _PRESERVED_KEYS:
                 if key in shaped:
