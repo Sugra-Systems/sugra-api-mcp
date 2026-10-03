@@ -16,6 +16,7 @@ from pydantic import Field
 
 from ..catalog.hints import hints_for
 from ..catalog.loader import load_catalog
+from ..catalog.place import place_gap
 from ..catalog.response import shape_response
 from ..catalog.search import known_sources, known_toolsets, query_limit_error, search_catalog
 from ..catalog.toolsets import ordered_toolsets
@@ -883,6 +884,10 @@ async def fetch_data(
     3. If required parameters are missing, return the candidate endpoints
        and the missing-params list so the LLM can retry with the correct
        `params` dict on the next call.
+    4. If the query names a country and the match takes a `country` or
+       `countries` param that `params` leaves unset, return needs_params
+       for it with query_countries (ISO2) instead of running the match
+       without that filter.
 
     Examples:
     - `fetch_data("US CPI inflation", params={"series_id": "CPIAUCSL"})`
@@ -931,6 +936,11 @@ async def fetch_data(
 
         clean_params = {key: value for key, value in (params or {}).items() if value is not None}
         missing = _missing_required(endpoint, clean_params, body)
+        # A query that names a country must not run on the operation's
+        # default place: that answered Germany with US figures.
+        gap = place_gap(endpoint, query, clean_params)
+        if gap and gap.parameter not in missing:
+            missing.append(gap.parameter)
 
         if missing:
             # LLM didn't supply enough — return both the selected endpoint's
@@ -954,14 +964,14 @@ async def fetch_data(
                         "required": p.required,
                     }
                     for p in endpoint.parameters
-                    if p.required
+                    if p.required or p.name in missing
                 ],
             }
             if endpoint.request_body_schema:
                 # "body" in missing means the agent must construct a JSON
                 # body - hand it the exact schema instead of letting it guess.
                 selected["request_body_schema"] = endpoint.request_body_schema
-            return {
+            needs: dict[str, Any] = {
                 "needs_params": missing,
                 "selected_endpoint": selected,
                 "candidate_endpoints": results,
@@ -971,6 +981,16 @@ async def fetch_data(
                     f"or call describe_endpoint(operation_id) for full schema."
                 ),
             }
+            if gap:
+                needs["query_countries"] = gap.countries
+                needs["hint"] += (
+                    f" The query names {', '.join(gap.countries)} (ISO2), and without "
+                    f"`{gap.parameter}` this operation is not filtered to it: set "
+                    f"`{gap.parameter}` in the format its parameter_examples entry shows. "
+                    f"If that param is not the place the query means, run the operation "
+                    f"with call_endpoint(operation_id, params) instead."
+                )
+            return needs
 
         violation = _group_violation(endpoint, clean_params)
         if violation:
