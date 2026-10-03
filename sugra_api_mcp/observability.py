@@ -937,6 +937,19 @@ def setup_observability(connection_string: str | None = None) -> bool:
         return False
 
 
+def _flush_targets(provider: object) -> tuple[object, ...]:
+    """The processors behind a logger or tracer provider, in order; else the provider itself."""
+    # opentelemetry-sdk before 1.42 stops a provider's flush at the first processor returning a
+    # falsy value, and Azure Monitor's live metrics and performance counter processors return None.
+    multi = getattr(provider, "_multi_log_record_processor", None) or getattr(
+        provider, "_active_span_processor", None
+    )
+    processors = getattr(multi, "_log_record_processors", None) or getattr(
+        multi, "_span_processors", None
+    )
+    return tuple(processors) if processors else (provider,)
+
+
 def flush_telemetry(timeout_s: float) -> bool:
     """Hand buffered logs, spans and metrics to their exporters, within timeout_s in all.
 
@@ -962,11 +975,12 @@ def flush_telemetry(timeout_s: float) -> bool:
                 metrics.get_meter_provider(),
             ]
             for provider in providers:
-                force_flush = getattr(provider, "force_flush", None)
-                remaining_ms = int((deadline - time.monotonic()) * 1000)
-                if callable(force_flush) and remaining_ms > 0:
-                    with contextlib.suppress(Exception):
-                        force_flush(timeout_millis=remaining_ms)
+                for target in _flush_targets(provider):
+                    force_flush = getattr(target, "force_flush", None)
+                    remaining_ms = int((deadline - time.monotonic()) * 1000)
+                    if callable(force_flush) and remaining_ms > 0:
+                        with contextlib.suppress(Exception):
+                            force_flush(timeout_millis=remaining_ms)
         except Exception:
             pass
         finally:
