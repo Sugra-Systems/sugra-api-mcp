@@ -538,7 +538,17 @@ async def describe_endpoint(
 @mcp.tool(annotations=read_only("Call endpoint"))
 @trace_mcp_tool("call_endpoint")
 async def call_endpoint(
-    operation_id: str,
+    operation_id: Annotated[
+        str,
+        Field(
+            description=(
+                "Catalog operation_id to call, from search_endpoints (or from "
+                "list_toolsets drill-down). Call describe_endpoint on it first "
+                "for the parameter names. Unknown ids return error "
+                "unknown_operation_id before any request is made."
+            ),
+        ),
+    ],
     params: Annotated[
         dict[str, Any] | None,
         Field(
@@ -876,11 +886,15 @@ async def fetch_data(
 
     Examples:
     - `fetch_data("US CPI inflation", params={"series_id": "CPIAUCSL"})`
-      → calls /api/v1/fred/series/CPIAUCSL, returns observations.
-    - `fetch_data("Bitcoin price", params={"coin_id": "bitcoin"})`
-      → calls /api/v1/crypto/bitcoin/price.
+      runs fred_series_series_id (/api/v1/fred/series/CPIAUCSL) and returns
+      observations.
+    - `fetch_data("Bitcoin price")`
+      runs onchain_bitcoin_price, which takes no params.
     - `fetch_data("Latest financial news")`
-      → news_latest has no required params, returns latest news directly.
+      runs news_latest, which has no required params.
+    Only the top match runs, and a param it does not declare returns error
+    unknown_parameters. For one coin's price, name the operation:
+    `call_endpoint("crypto_coin_id_price", params={"coin_id": "bitcoin"})`.
     """
     # Same whole-body safety net as call_endpoint (defect D2): the search and
     # selection path must never raise through FastMCP as an empty message.
