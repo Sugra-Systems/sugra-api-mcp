@@ -25,6 +25,25 @@ def test_tools_register(monkeypatch):
     assert names == expected, f"Mismatch: missing={expected - names}, extra={names - expected}"
 
 
+def test_every_tool_parameter_carries_a_description(monkeypatch):
+    monkeypatch.setenv("SUGRA_API_KEY", "dummy")
+    import asyncio
+
+    from sugra_api_mcp import tools  # noqa: F401
+    from sugra_api_mcp.server import mcp
+
+    tool_list = asyncio.run(mcp.list_tools())
+
+    bare = [
+        f"{tool.name}.{name}"
+        for tool in tool_list
+        for name, schema in tool.inputSchema.get("properties", {}).items()
+        if not schema.get("description")
+    ]
+    assert tool_list
+    assert bare == [], f"parameters without a description: {bare}"
+
+
 def test_tools_advertise_oauth_security_schemes_for_chatgpt(monkeypatch):
     monkeypatch.setenv("SUGRA_API_KEY", "dummy")
     import asyncio

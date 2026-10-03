@@ -1,6 +1,6 @@
 {
   "built_at": "2026-10-03T08:41:29Z",
-  "endpoint_count": 1626,
+  "endpoint_count": 1625,
   "endpoints": [
     {
       "description": "Pre-configured key Australian datasets: CPI, GDP, Labour, Trade, Retail, Wages, Population.",
@@ -16264,85 +16264,6 @@
         "statistics"
       ],
       "summary": "Browse the German GENESIS cube catalogue",
-      "tags": [
-        "Statistical Agencies"
-      ],
-      "toolset": "statistics"
-    },
-    {
-      "description": "Receipt for a GENESIS table extraction. A slice GENESIS refuses with Status 98 is submitted as job=true and collected later at GET /destatis/extractions/{id}. job=true is sent only after that size gate (or when this instance already cached it for the exact code, window and contents); a slice that would have succeeded synchronously is not queued as a vendor job. Vendor job ids are not published. Long-tail admission: wait 0 s, 429 when the lane is busy. Requires DESTATIS_USERNAME and DESTATIS_PASSWORD: the API token cannot call job=true (vendor Status 12). If GENESIS refuses to queue the slice (Status 99), the answer is 400 with a contents/classifying hint, not 502.",
-      "method": "POST",
-      "operation_id": "post_destatis_extractions",
-      "parameters": [],
-      "path": "/api/v1/destatis/extractions",
-      "request_body_required": true,
-      "request_body_schema": {
-        "additionalProperties": false,
-        "description": "Body for POST /destatis/extractions. Request model, not a generated response.",
-        "properties": {
-          "code": {
-            "description": "GENESIS table code, five digits, a hyphen, four more.",
-            "examples": [
-              "42131-0004"
-            ],
-            "pattern": "^[0-9]{5}-[0-9]{4}$",
-            "title": "Code",
-            "type": "string"
-          },
-          "contents": {
-            "anyOf": [
-              {
-                "maxLength": 256,
-                "pattern": "^([A-Za-z0-9]{1,16})(,([A-Za-z0-9]{1,16})){0,14}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Optional comma-separated GENESIS content variable codes.",
-            "examples": [
-              "PRODAW,UNT006"
-            ],
-            "title": "Contents"
-          },
-          "end_year": {
-            "default": 2025,
-            "description": "End year (YYYY).",
-            "examples": [
-              2025
-            ],
-            "maximum": 2026.0,
-            "minimum": 1990.0,
-            "title": "End Year",
-            "type": "integer"
-          },
-          "start_year": {
-            "default": 2023,
-            "description": "Start year (YYYY).",
-            "examples": [
-              2023
-            ],
-            "maximum": 2026.0,
-            "minimum": 1990.0,
-            "title": "Start Year",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "code"
-        ],
-        "title": "DestatisExtractionCreate",
-        "type": "object"
-      },
-      "required_parameters": [
-        "body"
-      ],
-      "source_family": "statistics",
-      "sources": [
-        "statistics"
-      ],
-      "summary": "Queue a Destatis extraction that is too large for a direct request",
       "tags": [
         "Statistical Agencies"
       ],

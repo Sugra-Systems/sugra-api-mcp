@@ -37,6 +37,17 @@ DEPRECATED_WITHOUT_REPLACEMENT: frozenset[str] = frozenset({
 
 SUPPORTED_METHODS = {"get", "post"}
 
+# Operations that change state upstream. Every gateway tool advertises
+# readOnlyHint and idempotentHint, and call_endpoint and fetch_data run only
+# what the bundle holds, so the bundle leaves these out. The API keeps serving
+# them to direct clients. A new POST operation is judged by hand: the test that
+# pins the bundle's POST set fails until it is added there or here.
+#
+#   post_destatis_extractions - queues a GENESIS job and writes a file to the
+#                               account's shared result store; two calls queue
+#                               two jobs.
+SIDE_EFFECT_OPERATIONS: frozenset[str] = frozenset({"post_destatis_extractions"})
+
 _SCHEMA_REF_PREFIX = "#/components/schemas/"
 
 
@@ -129,6 +140,8 @@ def build_catalog_from_openapi(
             operation_id = str(operation.get("operationId", "")).strip()
             if not operation_id:
                 raise ValueError(f"{method.upper()} {path} missing operationId")
+            if operation_id in SIDE_EFFECT_OPERATIONS:
+                continue
 
             tags = [str(tag) for tag in operation.get("tags", [])]
             toolset = toolset_for_tags(tags)

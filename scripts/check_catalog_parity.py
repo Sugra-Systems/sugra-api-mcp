@@ -38,7 +38,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from sugra_api_mcp.catalog.builder import build_catalog_from_openapi  # noqa: E402
+from sugra_api_mcp.catalog.builder import (  # noqa: E402
+    SIDE_EFFECT_OPERATIONS,
+    build_catalog_from_openapi,
+)
 from sugra_api_mcp.catalog.models import Catalog  # noqa: E402
 
 DEFAULT_SPEC = "https://sugra.ai/openapi.json"
@@ -122,9 +125,12 @@ def main() -> int:
     spec_sha = hashlib.sha256(raw).hexdigest()
     stamp_matches = bool(bundle.spec_sha256) and bundle.spec_sha256 == spec_sha
 
+    # The builder leaves out SIDE_EFFECT_OPERATIONS, so a spec that serves one
+    # is not drift, and a bundle that carries one is.
     current = build_catalog_from_openapi(json.loads(raw.decode("utf-8")), source=args.spec)
     missing = sorted(current.operation_ids - bundle.operation_ids)
-    extra = sorted(bundle.operation_ids - current.operation_ids)
+    side_effects = sorted(bundle.operation_ids & SIDE_EFFECT_OPERATIONS)
+    extra = sorted(bundle.operation_ids - current.operation_ids - SIDE_EFFECT_OPERATIONS)
 
     # Matching operation IDs are NOT a matching contract. A path, method,
     # parameter, required-body flag or body schema can change while the id stays
@@ -138,7 +144,7 @@ def main() -> int:
         if bundle_by_id[op_id] != current_by_id[op_id]
     )
 
-    if not missing and not extra and not changed:
+    if not missing and not extra and not changed and not side_effects:
         print(f"OK: {bundle.endpoint_count} operations match the spec in full "
               f"(ids, paths, parameters, bodies); spec sha256 {spec_sha[:12]}... "
               + ("matches the bundle stamp." if stamp_matches
@@ -157,6 +163,9 @@ def main() -> int:
     if extra:
         print(f"  not in the spec ({len(extra)}): {', '.join(extra[:20])}"
               + (" ..." if len(extra) > 20 else ""))
+    if side_effects:
+        print(f"  operations with side effects in the bundle ({len(side_effects)}): "
+              f"{', '.join(side_effects)} - the builder leaves these out")
     if changed:
         print(f"  same id, changed contract ({len(changed)}):")
         for op_id in changed[:10]:
