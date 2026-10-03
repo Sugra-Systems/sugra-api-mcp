@@ -639,7 +639,10 @@ def detect_fx_request(query: str) -> FxRequest | None:
 # not at all (TTF is the World Bank's "Natural gas, Europe" series), so the
 # token score alone never finds them. A product points to its price only
 # with the word price: "crude oil" alone also opens questions about
-# pipelines, tankers and stocks.
+# pipelines, tankers and stocks. The names of crude oil and trucking count
+# only where a conjunction joins the subject to another word or the query
+# holds a list mark; elsewhere the subject is named by its price
+# (PRICED_SUBJECTS).
 NAMED_OPERATIONS: dict[str, tuple[str, ...]] = {
     "oil price": ("commodities_energy_petroleum",),
     "price of oil": ("commodities_energy_petroleum",),
@@ -707,6 +710,463 @@ _OTHER_OILS: tuple[str, ...] = (
     "corn oil", "heating oil",
 )
 _NAME_BLOCKERS: tuple[str, ...] = _OTHER_OILS + tuple(f"crude {oil}" for oil in _OTHER_OILS)
+
+
+def _forms(*words: str) -> frozenset[str]:
+    """The words with the plurals a query token may take."""
+    return frozenset(form for word in words for form in (word, f"{word}s", f"{word}es"))
+
+
+@dataclass(frozen=True)
+class PricedSubject:
+    """A subject a query names by its price, and the operation that answers it.
+
+    A run of the subject's words holding one of its heads names the operation
+    only as the subject of one of its price words, in either word order, and
+    only when no other word claims that price.
+
+    The price word follows the run, past an "'s" and words that qualify a
+    price ("trucking rates", "crude oil spot price", "oil's price"), or it
+    precedes the run, through "of", "for" or "per", an article, a measure
+    ("price of a barrel of oil") and words that qualify the run: places, price
+    qualifiers and the subject's own modifiers ("price of spot crude", "price
+    of Russian oil", "price of light sweet crude oil"). Series words may stand
+    between a preceding price word and its link ("price history of oil"), and
+    the word before that price word is a word of asking, a phrase end, a
+    qualifier, a place, a grade or origin, a number or a word of the subject
+    ("freight rates for trucking").
+
+    Any other word claims the price: another commodity inside the run ("palm
+    oil", "crude palm oil", "palm oil crude"), a word the run modifies ("price
+    of trucking stocks"), another word between a preceding price and the run
+    ("price of shipping oil") or before that price ("insurance cost of
+    trucking"), the price's own "of" ("truckload price of corn"), another
+    subject after the price's link ("crude prices for palm oil"), and a traded
+    instrument after the price or the run, also as the unit after "per" ("oil
+    price ETF", "oil price per share", "price of oil index fund"). Otherwise
+    the word before a run whose price follows it stays open, because a verb
+    stands there as often as a modifier ("what affects oil prices"); there the
+    other subjects' words claim the price ("palm oil price").
+
+    A run joined to another word by "and", "or" or "versus", on either side
+    ("gold price and oil price", "price of oil and gas companies"), is left
+    to the subject's names in NAMED_OPERATIONS, and so is every run of a query
+    that holds a list mark ("price of oil, gold and silver").
+    """
+
+    operation: str
+    label: str                  # the name search reports
+    heads: tuple[str, ...]      # a run names the subject only holding one of these
+    words: frozenset[str]       # the words a run of the subject holds
+    prices: tuple[str, ...]     # the subject's price words, longest first
+    others: frozenset[str] = frozenset()     # words that make a run another subject
+    modifiers: frozenset[str] = frozenset()  # grades and origins that keep the subject
+    measures: frozenset[str] = frozenset()   # units a preceding price is given per
+
+
+PRICED_SUBJECTS: tuple[PricedSubject, ...] = (
+    PricedSubject(
+        operation="commodities_energy_petroleum",
+        label="oil price",
+        heads=("crude", "oil"),
+        words=_forms("crude", "oil", "barrel"),
+        prices=("price",),
+        # Other oils, which are no crude oil in any order ("palm oil price",
+        # "price of crude palm oil", "palm oil crude price").
+        others=_forms(
+            "palm", "kernel", "olive", "soybean", "soy", "sunflower", "rapeseed", "canola",
+            "coconut", "vegetable", "cooking", "fish", "linseed", "cottonseed", "groundnut",
+            "peanut", "corn", "heating",
+        ),
+        # Grades and origins of crude oil that no place name covers, and the
+        # agencies and exchanges that quote its price.
+        modifiers=frozenset({
+            "light", "sweet", "heavy", "sour", "medium", "shale", "tight", "imported",
+            "opec", "urals", "texas", "alaska", "alaskan", "slope", "arab", "arabian",
+            "gulf", "north", "sea", "west", "western", "intermediate", "venezuelan",
+            "iranian", "iraqi", "kuwaiti", "libyan", "omani", "qatari", "angolan",
+            "algerian", "dubai", "basrah", "bonny", "bakken", "permian", "alberta", "wcs",
+            "murban", "espo", "kurdistan", "kurdish", "eia", "iea", "nymex",
+        }),
+        measures=_forms("barrel", "bbl"),
+    ),
+    # FRED holds the producer price index of general freight trucking under
+    # its series code only (PCU484121484121). "truck" alone is a vehicle
+    # ("truck prices"), and freight alone also goes by sea, air and rail.
+    PricedSubject(
+        operation="fred_series_series_id",
+        label="trucking price",
+        heads=("trucking", "truckload", "truck freight"),
+        words=_forms(
+            "trucking", "truckload", "truck", "freight", "shipping", "transport",
+            "transportation", "haul", "hauling", "haulage", "goods", "cargo", "load",
+            "shipment", "container", "pallet", "service", "general", "long", "distance",
+            "local", "regional",
+        ),
+        prices=(
+            "producer price index", "price index", "price", "cost", "rate", "index",
+            "indices", "ppi",
+        ),
+        modifiers=frozenset({
+            "flatbed", "reefer", "refrigerated", "dry", "van", "ltl", "ftl", "intermodal",
+            "drayage",
+        }),
+    ),
+)
+
+# The names in NAMED_OPERATIONS that hold a priced subject's head, and the
+# subject's operation: they name it only in a run joined to another word or
+# in a query that holds a list mark.
+_SUBJECT_NAMES: dict[str, str] = {
+    name: subject.operation
+    for subject in PRICED_SUBJECTS
+    for name, operations in NAMED_OPERATIONS.items()
+    if subject.operation in operations
+    and any(_phrase_spans(_WORD_TOKEN_RE.findall(name), head) for head in subject.heads)
+}
+
+# Words that end a noun phrase. A subject followed by one of them is the whole
+# subject ("price of trucking in the US", "price of oil today", "price of oil
+# chart"); a subject followed by any other word modifies that word ("price of
+# trucking stocks", "price of oil paintings"). Never "of": "a truckload of
+# apples" asks about apples.
+_FUNCTION_WORDS: frozenset[str] = frozenset({
+    "a", "an", "the", "this", "that", "these", "those", "my", "our", "your", "their",
+    "its", "it", "s", "some", "any", "each", "every", "all",
+    "what", "which", "who", "why", "how", "when", "where",
+    "is", "are", "was", "were", "be", "been", "being", "has", "have", "had", "do", "does",
+    "did", "will", "would", "can", "could", "should", "may", "might",
+    "and", "or", "but", "so", "if", "as", "than", "versus", "vs",
+    "in", "on", "at", "for", "from", "to", "per", "by", "with", "without", "about",
+    "across", "between", "within", "over", "since", "during", "into", "through", "around",
+    "after", "before", "until", "under", "above", "below", "near", "via", "against", "like",
+    "among",
+})
+_TREND_WORDS: frozenset[str] = frozenset({
+    "going", "gone", "went", "rising", "rose", "risen", "falling", "fell", "fallen",
+    "increasing", "increased", "decreasing", "decreased", "dropping", "dropped",
+    "climbing", "climbed", "soaring", "surging", "spiking", "jumping", "changing",
+    "changed", "trending", "moving", "compared", "relative", "up", "down", "higher",
+    "lower", "now", "today", "tonight", "yesterday", "tomorrow", "currently", "recently",
+    "lately", "still", "already", "ever", "again", "right", "very", "too", "much", "more",
+    "less", "time", "year", "month", "week", "day", "daily", "weekly", "monthly",
+    "quarterly", "yearly", "annually", "historically", "last", "next", "past", "ytd",
+})
+_SERIES_WORDS: frozenset[str] = _forms(
+    "chart", "graph", "history", "trend", "data", "forecast", "outlook", "prediction",
+    "news", "level", "volatility", "statistic", "stats", "series", "index",
+) | {"indices"}
+_PHRASE_ENDS: frozenset[str] = _FUNCTION_WORDS | _TREND_WORDS | _SERIES_WORDS
+
+# Words that qualify a price itself: they may stand between a subject and its
+# price word ("truckload spot rates"), between a price's link and its subject
+# ("price of spot crude") or before a price word that reaches its subject
+# ("average cost of trucking"). Before such a price word may also stand a
+# phrase end, a word of asking ("show me the price of oil"), a verb that acts
+# on a price ("what drives the price of oil"), an event ("war price of oil"),
+# a place ("US price of crude"), a grade or origin of the subject or an agency
+# that quotes it ("OPEC price of oil") or a word of the subject itself
+# ("freight rates for trucking"); any other word claims the price ("insurance
+# cost of trucking", "accident rate for trucking").
+_PRICE_QUALIFIERS: frozenset[str] = frozenset({
+    "current", "latest", "average", "avg", "mean", "median", "typical", "total", "overall",
+    "real", "true", "actual", "nominal", "adjusted", "spot", "contract", "market",
+    "global", "world", "international", "national", "domestic", "historical", "historic",
+    "recent", "high", "highest", "low", "lowest", "record", "peak", "new", "expected",
+    "projected", "predicted", "forecasted", "estimated", "future", "breakeven",
+    "benchmark", "reference", "official", "live", "realtime", "closing", "opening",
+    "wholesale", "retail", "unit", "producer", "linehaul", "cheap", "cheaper", "cheapest",
+    "expensive", "volatile", "fair", "annual", "annualized", "posted", "selling",
+    "buying", "purchase", "fob", "cif",
+})
+# Places beside the country names and demonyms: world regions ("European oil
+# prices", "Middle East oil price"), the codes a query writes in lowercase
+# ("us crude") and the names of more than one word ("United States crude",
+# "U.S. crude").
+_REGIONS: tuple[str, ...] = (
+    "europe", "european", "asia", "asian", "africa", "african", "eurasia", "eurasian",
+    "caspian", "nordic", "scandinavian", "baltic", "mediterranean", "arctic",
+    "middle east", "middle eastern", "latin america", "latin american", "south america",
+    "south american", "north america", "central asia", "central asian", "east asia",
+    "east asian", "southeast asia", "southeast asian", "asia pacific", "west africa",
+    "west african",
+)
+_PLACE_CODES: frozenset[str] = frozenset({"us", "eu"})
+_PLACE_WORDS: frozenset[str] = _PLACE_CODES | frozenset(
+    name for name in (*COUNTRY_QUERY_TERMS, *_REGIONS) if " " not in name
+)
+_PLACE_PHRASES: tuple[str, ...] = (
+    *(name for name in (*COUNTRY_QUERY_TERMS, *_REGIONS)
+      if " " in name and " ".join(_WORD_TOKEN_RE.findall(name)) == name),
+    "u s",
+)
+_PLACE_FIRSTS: frozenset[str] = frozenset(
+    form for name in _PLACE_PHRASES for form in _phrase_forms(name)[0]
+)
+_PLACE_LASTS: frozenset[str] = frozenset(
+    form for name in _PLACE_PHRASES for form in _phrase_forms(name)[-1]
+)
+# Verbs that act on a price, which may stand before it ("OPEC cuts price of
+# oil").
+_PRICE_VERBS: frozenset[str] = frozenset({
+    "affect", "affects", "affected", "affecting", "impact", "impacts", "impacted",
+    "impacting", "influence", "influences", "influenced", "influencing", "drive",
+    "drives", "drove", "driven", "driving", "determine", "determines", "determined",
+    "determining", "set", "sets", "control", "controls", "controlled", "controlling",
+    "cut", "cuts", "raise", "raises", "raised", "raising", "lowers", "lowered",
+    "lowering", "push", "pushes", "pushed", "pushing", "boost", "boosts", "boosted",
+    "lift", "lifts", "lifted", "hit", "hits", "hitting", "cause", "causes", "caused",
+    "causing", "reduce", "reduces", "reduced", "reducing", "manipulate", "manipulates",
+    "manipulated", "manipulating", "keep", "keeps", "kept", "keeping", "support",
+    "supports", "supported", "supporting", "hurt", "hurts", "hurting", "help", "helps",
+    "helped", "helping", "move", "moves", "moved", "increase", "increases", "decrease",
+    "decreases",
+})
+# Events a keyword query names before a price ("war price of oil").
+_PRICE_EVENTS: frozenset[str] = frozenset({
+    "war", "wars", "crisis", "embargo", "sanctions", "pandemic", "covid", "recession",
+    "invasion", "election", "elections",
+})
+_PRICE_LEADS: frozenset[str] = (
+    _PHRASE_ENDS | _PRICE_QUALIFIERS | _PRICE_VERBS | _PRICE_EVENTS | frozenset({
+        "show", "get", "find", "check", "track", "tell", "me", "give", "list", "plot", "see",
+        "compare", "know", "need", "want", "fetch", "predict", "estimate", "monitor",
+        "analyze", "analyse", "download", "pull", "retrieve", "display", "explain",
+        "calculate", "lookup", "search", "query",
+    })
+)
+_PRICE_LINKS: frozenset[str] = frozenset({"of", "for", "per"})
+_DETERMINERS: frozenset[str] = frozenset({"a", "an", "the"})
+
+# Traded instruments: a price word in a noun phrase that names one of them is
+# the instrument's price ("oil price ETF", "trucking price index fund", "oil
+# price per share"). Not "future", which is time.
+_INSTRUMENTS: frozenset[str] = frozenset({
+    "stock", "stocks", "share", "shares", "equity", "equities", "fund", "funds", "etf",
+    "etfs", "etn", "etns", "futures", "option", "options", "swap", "swaps",
+    "derivative", "derivatives", "cfd", "cfds", "bond", "bonds", "warrant", "warrants",
+})
+
+# Conjunctions that join a run to another word ("gold and oil prices", "price
+# of oil and gas companies"), which leaves the run to its subject's names, and
+# the marks that join list items as they do ("price of oil, gold and silver",
+# "price of oil/gas"). The word tokens drop the marks, so a query holding one
+# is left to the subjects' names whole.
+_CONJUNCTIONS: frozenset[str] = frozenset({"and", "or", "versus", "vs"})
+_LIST_MARK_RE = re.compile(r"[,;/&+]")
+
+
+def _ends_phrase(tokens: list[str], index: int) -> bool:
+    """Whether the noun phrase before the token index ends there."""
+    return index >= len(tokens) or tokens[index][:1].isdigit() or tokens[index] in _PHRASE_ENDS
+
+
+def _names_instrument(tokens: list[str], index: int) -> bool:
+    """Whether the noun phrase going on at the token index names a traded
+    instrument, also as the unit after "per" ("oil price per share")."""
+    while index < len(tokens):
+        if tokens[index] in _INSTRUMENTS:
+            return True
+        if tokens[index] == "per":
+            index += 1
+            while index < len(tokens) and tokens[index] in _DETERMINERS:
+                index += 1
+            continue
+        if tokens[index] in _FUNCTION_WORDS:
+            return False
+        index += 1
+    return False
+
+
+def _qualifies_run(token: str, subject: PricedSubject) -> bool:
+    """Whether a word may stand between a price's link and its subject's run."""
+    return (
+        token in _DETERMINERS or token in _PRICE_QUALIFIERS or token in subject.modifiers
+        or token in _PLACE_WORDS or token == "s"
+    )
+
+
+def _place_start(tokens: list[str], end: int) -> int | None:
+    """Where a place name of more than one word, ending at the token index, starts."""
+    if end <= 0 or tokens[end - 1] not in _PLACE_LASTS:
+        return None
+    return _phrase_start(tokens, end, _PLACE_PHRASES)
+
+
+def _place_end(tokens: list[str], start: int) -> int | None:
+    """Where a place name of more than one word, starting at the token index, ends."""
+    if start >= len(tokens) or tokens[start] not in _PLACE_FIRSTS:
+        return None
+    return _phrase_end(tokens, start, _PLACE_PHRASES)
+
+
+def _qualifier_start(tokens: list[str], end: int, subject: PricedSubject) -> int:
+    """Where the words that may qualify a run, ending at the token index, start."""
+    while end > 0:
+        place = _place_start(tokens, end)
+        if place is not None:
+            end = place
+        elif _qualifies_run(tokens[end - 1], subject):
+            end -= 1
+        else:
+            return end
+    return end
+
+
+def _qualifier_end(tokens: list[str], start: int, subject: PricedSubject) -> int:
+    """Where the words that may qualify a run, starting at the token index, end."""
+    while start < len(tokens):
+        place = _place_end(tokens, start)
+        if place is not None:
+            start = place
+        elif _qualifies_run(tokens[start], subject):
+            start += 1
+        else:
+            return start
+    return start
+
+
+def _phrase_end(tokens: list[str], start: int, phrases: Iterable[str]) -> int | None:
+    """Where the longest of the phrases starting at the token index ends."""
+    for phrase in sorted(phrases, key=lambda phrase: -len(_phrase_forms(phrase))):
+        forms = _phrase_forms(phrase)
+        end = start + len(forms)
+        if start >= 0 and end <= len(tokens) and all(
+            tokens[start + k] in forms[k] for k in range(len(forms))
+        ):
+            return end
+    return None
+
+
+def _phrase_start(tokens: list[str], end: int, phrases: Iterable[str]) -> int | None:
+    """Where the longest of the phrases ending at the token index starts."""
+    for phrase in sorted(phrases, key=lambda phrase: -len(_phrase_forms(phrase))):
+        start = end - len(_phrase_forms(phrase))
+        if _phrase_end(tokens, start, (phrase,)) == end:
+            return start
+    return None
+
+
+def _subject_runs(tokens: list[str], subject: PricedSubject) -> list[tuple[int, int]]:
+    """Runs of the subject's words that hold one of its heads and no other subject."""
+    runs: list[tuple[int, int]] = []
+    index = 0
+    while index < len(tokens):
+        start = index
+        while index < len(tokens) and (tokens[index] in subject.words
+                                       or tokens[index] in subject.others):
+            index += 1
+        if index == start:
+            index += 1
+            continue
+        run = tokens[start:index]
+        if not any(token in subject.others for token in run) and any(
+            _phrase_spans(run, head) for head in subject.heads
+        ):
+            runs.append((start, index))
+    return runs
+
+
+def _leads_price(tokens: list[str], index: int, subject: PricedSubject) -> bool:
+    """Whether the word at the token index may stand before a price word that
+    reaches its subject: none, a number, a word of asking, a verb that acts on
+    a price, an event, a phrase end, a qualifier, a place, a grade or origin
+    of the subject, or a word of the subject in a run that holds no other
+    subject ("freight rates for trucking", not "palm oil price crude")."""
+    if index < 0:
+        return True
+    token = tokens[index]
+    if (token[:1].isdigit() or token in _PRICE_LEADS or token in _PLACE_WORDS
+            or token in subject.modifiers or _place_start(tokens, index + 1) is not None):
+        return True
+    while index >= 0 and (tokens[index] in subject.words or tokens[index] in subject.others):
+        if tokens[index] in subject.others:
+            return False
+        index -= 1
+    return token in subject.words
+
+
+def _claims_price(tokens: list[str], index: int, subject: PricedSubject) -> bool:
+    """Whether the words after a price word that follows its run claim the
+    price: the price's own "of" ("truckload price of corn") or another subject
+    after its link ("crude prices for palm oil")."""
+    if index >= len(tokens) or tokens[index] not in _PRICE_LINKS:
+        return False
+    start = end = _qualifier_end(tokens, index + 1, subject)
+    while end < len(tokens) and (tokens[end] in subject.words or tokens[end] in subject.others):
+        end += 1
+    if any(token in subject.others for token in tokens[start:end]):
+        return True
+    return tokens[index] == "of" and not _ends_phrase(tokens, end)
+
+
+def _price_after(
+    tokens: list[str], start: int, end: int, subject: PricedSubject,
+) -> list[tuple[int, int]] | None:
+    """The span naming a run whose price word follows it ("trucking rates",
+    "truckload spot rates", "oil's price")."""
+    index = end + 1 if tokens[end:end + 1] == ["s"] else end
+    while index < len(tokens) and tokens[index] in _PRICE_QUALIFIERS:
+        index += 1
+    price_end = _phrase_end(tokens, index, subject.prices)
+    if (price_end is None or _names_instrument(tokens, price_end)
+            or _claims_price(tokens, price_end, subject)):
+        return None
+    return [(start, price_end)]
+
+
+def _price_before(
+    tokens: list[str], start: int, end: int, subject: PricedSubject,
+) -> list[tuple[int, int]] | None:
+    """The spans naming a run whose price word precedes it ("price of oil",
+    "rates for spot trucking", "price of a barrel of Russian oil", "price
+    history of oil", "PPI trucking")."""
+    if not _ends_phrase(tokens, end) or _names_instrument(tokens, end):
+        return None
+    index = phrase_start = _qualifier_start(tokens, start, subject)
+    if index > 1 and tokens[index - 1] == "of" and tokens[index - 2] in subject.measures:
+        index -= 2
+        if index > 0 and tokens[index - 1] in _DETERMINERS:
+            index -= 1
+    if index > 0 and tokens[index - 1] in _PRICE_LINKS:
+        index -= 1
+    linked = index
+    price_start = _phrase_start(tokens, index, subject.prices)
+    while price_start is None and index > 0 and tokens[index - 1] in _SERIES_WORDS:
+        index -= 1
+        price_start = _phrase_start(tokens, index, subject.prices)
+    if price_start is None or not _leads_price(tokens, price_start - 1, subject):
+        return None
+    return [(price_start, index), (linked, phrase_start), (start, end)]
+
+
+def _priced_spans(tokens: list[str], subject: PricedSubject) -> list[tuple[int, int]]:
+    """Token spans where the query names the subject as the subject of a price.
+
+    The spans hold the run, its price word and the link between them. The
+    words that qualify the run before it and the series words after a
+    preceding price ("price history of oil") stay outside, so they keep their
+    own score and a place still credits its own national source.
+    """
+    spans: list[tuple[int, int]] = []
+    for start, end in _subject_runs(tokens, subject):
+        pieces = (_price_after(tokens, start, end, subject)
+                  or _price_before(tokens, start, end, subject) or [])
+        spans += [(first, last) for first, last in pieces if first < last]
+    return spans
+
+
+def _joined(tokens: list[str], start: int, end: int, subject: PricedSubject) -> bool:
+    """Whether a run is joined to another word by "and", "or" or "versus": a
+    conjunction stands before the words that qualify the run, or after the
+    run, past an "'s" and words that qualify a price."""
+    before = _qualifier_start(tokens, start, subject)
+    after = end + 1 if tokens[end:end + 1] == ["s"] else end
+    while after < len(tokens) and tokens[after] in _PRICE_QUALIFIERS:
+        after += 1
+    return (before > 0 and tokens[before - 1] in _CONJUNCTIONS) or (
+        after < len(tokens) and tokens[after] in _CONJUNCTIONS)
+
 
 # Wording that asks for something besides the spot price, where a name that
 # points to a commodities_ price operation stays silent. Futures ("WTI
@@ -778,17 +1238,33 @@ def detect_named_operations(query: str) -> NamedRequest:
     activity word asks for port activity without a name ("port congestion",
     "how busy are ports"); "busy airports" asks nothing of a seaport.
     """
-    tokens = _blank(_WORD_TOKEN_RE.findall(query.lower()), _NAME_BLOCKERS)
+    tokens = _WORD_TOKEN_RE.findall(query.lower())
     not_spot = any(_phrase_spans(tokens, word) for word in _NOT_SPOT_PRICE_WORDS)
+    listed = _LIST_MARK_RE.search(query) is not None
+    joined = {
+        subject.operation
+        for subject in PRICED_SUBJECTS
+        if listed or any(_joined(tokens, start, end, subject)
+                         for start, end in _subject_runs(tokens, subject))
+    }
     operations: dict[str, str] = {}
     countries: set[str] = set()
     words: set[str] = set()
-    for start, end, name in _claim_names(tokens, NAMED_OPERATIONS):
+    names = [
+        (start, end, name, NAMED_OPERATIONS[name])
+        for start, end, name in _claim_names(_blank(tokens, _NAME_BLOCKERS), NAMED_OPERATIONS)
+        if name not in _SUBJECT_NAMES or _SUBJECT_NAMES[name] in joined
+    ] + [
+        (start, end, subject.label, (subject.operation,))
+        for subject in PRICED_SUBJECTS
+        if subject.operation not in joined
+        for start, end in _priced_spans(tokens, subject)
+    ]
+    for start, end, name, named in sorted(names):
         cues = _NAME_CUES.get(name, ())
         if cues and not any(_phrase_spans(tokens, cue) for cue in cues):
             continue
-        targets = [op for op in NAMED_OPERATIONS[name]
-                   if not (not_spot and op.startswith("commodities_"))]
+        targets = [op for op in named if not (not_spot and op.startswith("commodities_"))]
         if not targets:
             continue
         for op in targets:
