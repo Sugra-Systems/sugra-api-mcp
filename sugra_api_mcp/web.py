@@ -278,7 +278,7 @@ _TABS: list[tuple[str, str, str]] = [
         + _terminal(
             "cmd-claude-code-skills",
             f"claude plugin marketplace add {PLUGINS_REPO}\n"
-            "claude plugin install sugra-api@sugra-api-plugins",
+            "claude plugin install sugra-api-skills@sugra-api-plugins",
         )
         + _SKILLS_NOTE,
     ),
@@ -300,7 +300,7 @@ _TABS: list[tuple[str, str, str]] = [
         + _terminal(
             "cmd-codex-skills",
             f"codex plugin marketplace add {PLUGINS_REPO}\n"
-            "codex plugin add sugra-api@sugra-api-plugins",
+            "codex plugin add sugra-api-skills@sugra-api-plugins",
         )
         + _SKILLS_NOTE,
     ),
