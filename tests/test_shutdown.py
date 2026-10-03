@@ -8,8 +8,9 @@ either: the summary arrives only when the lifespan exit wrote it and flushed
 the logs.
 
 The other tests run, in process, the lifespan of the app the entry point
-builds: on the way out it closes every Sugra API client and the
-authenticator's connection pool, after the last summary and before the flush.
+builds: on the way out it closes the shared Sugra API connection pools and
+the authenticator's connection pool, after the last summary and before the
+flush.
 """
 
 from __future__ import annotations
@@ -30,9 +31,9 @@ from typing import Any
 import httpx
 import pytest
 
+from sugra_api_mcp import client as client_module
 from sugra_api_mcp import gate, observability, server
 from sugra_api_mcp.auth import AuthMiddleware
-from sugra_api_mcp.client import SugraClient
 from tests.test_request_credentials import HEADERS, INITIALIZE
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -171,15 +172,17 @@ def test_sigterm_exports_the_last_gate_summary(tmp_path: Path) -> None:
 
 
 @pytest.fixture
-async def api_clients(monkeypatch) -> AsyncIterator[list[SugraClient]]:
-    """A shared Sugra API client and two per-key ones, cached where get_client keeps them."""
-    monkeypatch.setattr(server, "_per_key_clients", {})
-    shared = server._build_client("sugra_shared")
-    monkeypatch.setattr(server, "_shared_client", shared)
-    clients = [shared, server._client_for_key("sugra_first"), server._client_for_key("sugra_second")]
-    yield clients
-    for client in clients:
-        await client._client.aclose()
+async def api_pools(monkeypatch) -> AsyncIterator[list[httpx.AsyncClient]]:
+    """Three shared Sugra API connection pools, one per API base, kept where get_client finds them."""
+    monkeypatch.setattr(client_module, "_pools", {})
+    pools = [
+        client_module.shared_pool(base)
+        for base in ("https://api.test", "https://api-two.test", "https://api-three.test")
+    ]
+    yield pools
+    for pool in pools:
+        # Through the class, so that a pool whose aclose a test replaced is still closed here.
+        await httpx.AsyncClient.aclose(pool)
 
 
 def _http_app(monkeypatch) -> Any:
@@ -203,13 +206,13 @@ def _http_app(monkeypatch) -> Any:
 
 
 async def test_the_http_server_closes_its_connections_after_the_last_summary_and_before_the_flush(
-    monkeypatch, api_clients
+    monkeypatch, api_pools
 ) -> None:
     app = _http_app(monkeypatch)
     [authenticator] = [m.kwargs["authenticator"] for m in app.user_middleware if m.cls is AuthMiddleware]
 
     def closed() -> list[bool]:
-        return [client._client.is_closed for client in api_clients] + [authenticator._http.is_closed]
+        return [pool.is_closed for pool in api_pools] + [authenticator._http.is_closed]
 
     events: list[tuple[str, list[bool]]] = []
     monkeypatch.setattr(gate.default_summary, "write", lambda: events.append(("summary", closed())))
@@ -225,28 +228,28 @@ async def test_the_http_server_closes_its_connections_after_the_last_summary_and
     finally:
         await authenticator.aclose()
     assert events == [("summary", [False] * 4), ("flush", [True] * 4)]
-    assert (server._per_key_clients, server._shared_client) == ({}, None)
+    assert client_module._pools == {}
 
 
-async def test_closing_the_clients_closes_each_one_and_forgets_it(api_clients) -> None:
+async def test_closing_the_clients_closes_each_pool_and_forgets_it(api_pools) -> None:
     await server.close_clients()
-    assert [client._client.is_closed for client in api_clients] == [True] * 3
-    assert (server._per_key_clients, server._shared_client) == ({}, None)
-    # Nothing is left for a second call, and a client asked for after it is a new one.
+    assert [pool.is_closed for pool in api_pools] == [True] * 3
+    assert client_module._pools == {}
+    # Nothing is left for a second call, and a pool asked for after it is a new one.
     await server.close_clients()
-    fresh = server._client_for_key("sugra_first")
-    assert fresh is not api_clients[1]
-    assert not fresh._client.is_closed
+    fresh = client_module.shared_pool("https://api.test")
+    assert fresh is not api_pools[0]
+    assert not fresh.is_closed
     await server.close_clients()
-    assert fresh._client.is_closed
+    assert fresh.is_closed
 
 
-async def test_a_client_that_fails_to_close_leaves_no_other_open(monkeypatch, api_clients) -> None:
+async def test_a_pool_that_fails_to_close_leaves_no_other_open(monkeypatch, api_pools) -> None:
     async def fail() -> None:
         raise OSError("socket already gone")
 
-    monkeypatch.setattr(api_clients[1], "aclose", fail)
+    monkeypatch.setattr(api_pools[1], "aclose", fail)
     with pytest.raises(OSError, match="socket already gone"):
         await server.close_clients()
-    assert [client._client.is_closed for client in api_clients] == [True, False, True]
-    assert (server._per_key_clients, server._shared_client) == ({}, None)
+    assert [pool.is_closed for pool in api_pools] == [True, False, True]
+    assert client_module._pools == {}

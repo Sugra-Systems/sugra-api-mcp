@@ -6,7 +6,7 @@ tool on the SUGRA_API_KEY fallback, and a session opened by one principal kept
 that principal's key for any later caller, including after the principal's
 OAuth token was revoked. These tests drive the real app (AuthMiddleware in
 front of the SDK session manager) in process and record which API key each tool
-call would send upstream.
+call sends upstream, read off the request itself.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import asyncio
 import hashlib
 import inspect
 import json
+from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -58,28 +59,42 @@ def _authenticator() -> Authenticator:
     return Authenticator(AuthConfig(app_url="http://127.0.0.1:9", jwks_url="http://127.0.0.1:9/jwks", internal_token="x"))
 
 
+def _answer_api_requests(
+    monkeypatch: pytest.MonkeyPatch, answer: Callable[[httpx.Request], Awaitable[httpx.Response]]
+) -> None:
+    """Answer every Sugra API request at the transport, under a test API base.
+
+    Whichever client sends it, the request ends here: `answer` replies to one
+    for the test API, and one for any other host is refused, so nothing
+    reaches a network.
+    """
+
+    async def handle(transport: httpx.AsyncHTTPTransport, request: httpx.Request) -> httpx.Response:
+        if request.url.host == "api.test":
+            return await answer(request)
+        raise httpx.ConnectError(f"no network in tests: {request.url.host}", request=request)
+
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", handle)
+    monkeypatch.setenv("SUGRA_API_BASE", "https://api.test")
+
+
 @pytest.fixture
-def upstream(monkeypatch) -> list[str]:
-    """Record the API key of every upstream call instead of sending it."""
+async def upstream(monkeypatch) -> AsyncIterator[list[str]]:
+    """Record the API key each upstream call sends, as the request carries it.
+
+    No pool is open when the test starts, and none is left open after it.
+    """
     sent: list[str] = []
 
-    async def fake_request(self: SugraClient, *args: Any, **kwargs: Any) -> dict[str, Any]:
-        sent.append(self._config.api_key)
-        return {"data": [{"ok": 1}], "meta": {}}
+    async def answer(request: httpx.Request) -> httpx.Response:
+        sent.append(", ".join(request.headers.get_list("x-api-key")))
+        return httpx.Response(200, json={"data": [{"ok": 1}], "meta": {}})
 
-    monkeypatch.setattr(SugraClient, "request", fake_request)
-    monkeypatch.setattr(server, "_shared_client", None)
+    _answer_api_requests(monkeypatch, answer)
     monkeypatch.delenv("SUGRA_API_KEY", raising=False)
-    return sent
-
-
-async def _close_clients(keys: list[str]) -> None:
-    for key in keys:
-        client = server._per_key_clients.pop(key, None)
-        if client is not None:
-            await client.aclose()
-    if isinstance(server._shared_client, SugraClient):
-        await server._shared_client.aclose()
+    await server.close_clients()
+    yield sent
+    await server.close_clients()
 
 
 async def test_http_tool_calls_use_the_credential_of_the_request_that_carries_them(upstream, monkeypatch) -> None:
@@ -158,7 +173,6 @@ async def test_http_tool_calls_use_the_credential_of_the_request_that_carries_th
                 # After revocation a made-up raw key on A's session does not inherit A's key.
                 assert await call(client, opened_by_a, "sugra_made_up") == (200, ["sugra_made_up"])
     finally:
-        await _close_clients(["sugra_made_up", "sugra_TENANT_A", "sugra_TENANT_B"])
         await authenticator.aclose()
 
 
@@ -303,7 +317,6 @@ async def test_every_tool_span_names_how_its_own_request_arrived(upstream, monke
                 monkeypatch.setattr(server, "MAX_IN_FLIGHT_TOOL_CALLS", 0)
                 await call({"authorization": "Bearer jwt-B", "host": "mcp.sugra.ai", "user-agent": "python-httpx/0.27.0"})
     finally:
-        await _close_clients(["sugra_made_up", "sugra_TENANT_B"])
         await authenticator.aclose()
 
     calls = [span for span in tracer.spans if span.name == "mcp.tool.call_endpoint"]
@@ -354,19 +367,19 @@ async def test_concurrent_calls_each_carry_their_own_request(monkeypatch, one_se
     monkeypatch.setenv("SUGRA_MCP_ALLOWED_HOSTS", "app.sugra.ai,mcp.sugra.ai")
     monkeypatch.setattr(server.mcp.settings, "transport_security", server._build_transport_security())
     monkeypatch.setattr(server.mcp, "_session_manager", None)
-    monkeypatch.setattr(server, "_shared_client", None)
     monkeypatch.delenv("SUGRA_API_KEY", raising=False)
     arrived: list[str] = []
     both_arrived = asyncio.Event()
 
-    async def fake_request(self: SugraClient, *args: Any, **kwargs: Any) -> dict[str, Any]:
-        arrived.append(self._config.api_key)
+    async def answer(request: httpx.Request) -> httpx.Response:
+        arrived.append(", ".join(request.headers.get_list("x-api-key")))
         if len(arrived) >= 2:
             both_arrived.set()
         await asyncio.wait_for(both_arrived.wait(), 5)
-        return {"data": [{"ok": 1}], "meta": {}}
+        return httpx.Response(200, json={"data": [{"ok": 1}], "meta": {}})
 
-    monkeypatch.setattr(SugraClient, "request", fake_request)
+    _answer_api_requests(monkeypatch, answer)
+    await server.close_clients()
     gates: dict[bytes, asyncio.Event] = {}
     app = server.mcp.streamable_http_app()
     app.add_middleware(_Gate, gates=gates)
@@ -432,7 +445,7 @@ async def test_concurrent_calls_each_carry_their_own_request(monkeypatch, one_se
                 await asyncio.gather(call(client, session_a, by_key, 2), call(client, session_b, by_oauth, 3))
                 gates.clear()
     finally:
-        await _close_clients(["sugra_concurrent_a", "sugra_TENANT_B"])
+        await server.close_clients()
         await authenticator.aclose()
 
     assert sorted(arrived) == ["sugra_TENANT_B", "sugra_concurrent_a"]
@@ -595,18 +608,19 @@ def test_caller_attribution_reads_only_the_request_scope() -> None:
     assert "current_caller()" in facts_source
 
 
-def test_http_dispatch_without_an_attached_request_refuses_inherited_and_env_keys(upstream, monkeypatch) -> None:
+async def test_http_dispatch_without_an_attached_request_refuses_inherited_and_env_keys(upstream, monkeypatch) -> None:
     monkeypatch.setenv("SUGRA_API_KEY", "sugra_SERVER_FALLBACK")
     previous_transport = server.http_transport_ctx.set(True)
     previous_key = server.api_key_ctx.set("sugra_INHERITED_OPENER")
     try:
         client = server.get_client()
+        result = await client.get("/api/v1/ping")
     finally:
         server.api_key_ctx.reset(previous_key)
         server.http_transport_ctx.reset(previous_transport)
     assert isinstance(client, server._KeylessClient)
-    assert server._shared_client is None
-    assert "sugra_INHERITED_OPENER" not in server._per_key_clients
+    assert result == server.missing_api_key_error()
+    assert upstream == []
 
 
 async def test_in_process_callers_keep_api_key_ctx(upstream) -> None:
@@ -615,20 +629,16 @@ async def test_in_process_callers_keep_api_key_ctx(upstream) -> None:
         client = server.get_client()
     finally:
         server.api_key_ctx.reset(previous)
-    try:
-        assert isinstance(client, SugraClient)
-        assert client._config.api_key == "sugra_IN_PROCESS"
-    finally:
-        await _close_clients(["sugra_IN_PROCESS"])
+    assert isinstance(client, SugraClient)
+    # The key went with the client: it still rides on a request sent after the context is gone.
+    await client.get("/api/v1/ping")
+    assert upstream == ["sugra_IN_PROCESS"]
 
 
 async def test_stdio_still_uses_the_env_key(upstream, monkeypatch) -> None:
     monkeypatch.setenv("SUGRA_API_KEY", "sugra_STDIO_KEY")
-    try:
-        await gateway.call_endpoint(operation_id=_operation_without_params())
-        assert upstream == ["sugra_STDIO_KEY"]
-    finally:
-        await _close_clients([])
+    await gateway.call_endpoint(operation_id=_operation_without_params())
+    assert upstream == ["sugra_STDIO_KEY"]
 
 
 def test_every_credential_consumer_goes_through_get_client() -> None:
@@ -689,7 +699,6 @@ async def test_span_user_id_matches_the_admission_name(upstream, monkeypatch) ->
                 )
                 assert response.status_code == 200
     finally:
-        await _close_clients(["sugra_admit_me"])
         await authenticator.aclose()
     assert upstream == ["sugra_admit_me"]
     spans = [span for span in tracer.spans if span.name == "mcp.tool.call_endpoint"]
@@ -750,7 +759,6 @@ async def test_net_follows_x_real_ip_not_a_forged_forwarded_for(upstream, monkey
         trusted = await one_call("127.0.0.1")
         forged = await one_call("*")
     finally:
-        await _close_clients(["sugra_net_probe"])
         await authenticator.aclose()
     assert trusted.get("mcp.caller.net") == "8.8.8.0/24"
     assert "mcp.caller.net" not in forged

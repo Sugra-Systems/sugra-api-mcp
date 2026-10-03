@@ -9,6 +9,15 @@ its own response after the fact (gateway.call_endpoint, which applies a
 `_enforce_size_limit` itself once the projection has run, so the raw,
 unprojected body is never what gets measured for it.
 
+Connections: every client on the default transport sends through the shared
+pool of its API base (`shared_pool`), an `httpx.AsyncClient` that keeps its
+connections open between requests. A pool belongs to the event loop it was
+built on, and the served process runs one loop, so there every caller of an
+API base shares one pool. The pool holds no key and stores no cookie: each
+request carries its own caller's key as its x-api-key header, so no request
+goes out with the key of another caller. `close_shared_pools` closes the
+pools when the HTTP server shuts down.
+
 Error contract: this client NEVER raises httpx exceptions to callers.
 Transport failures (timeout, refused connection, mid-stream disconnect)
 return structured dicts the agent can act on, mirroring the shape already
@@ -33,6 +42,8 @@ retry strategy (field-test defect D2).
 
 from __future__ import annotations
 
+import asyncio
+import http.cookiejar
 import json
 import re
 import ssl
@@ -60,8 +71,7 @@ def shared_ssl_context() -> ssl.SSLContext:
 
     httpx builds a fresh SSLContext per AsyncClient whenever `verify` is left
     at its default. A context is expensive in both memory and construction
-    time, and a long-running server that builds a client per credential pays
-    that cost again for every one of them.
+    time, and every client that builds its own pays that cost again.
 
     It is `httpx.create_ssl_context()`, NOT `ssl.create_default_context()`:
     httpx's own default loads certifi's CA bundle and honours SSL_CERT_FILE /
@@ -83,8 +93,9 @@ def shared_ssl_context() -> ssl.SSLContext:
     ALPN offer between connects; give that client its own context instead.
     A test pins the condition.
 
-    Built on first use, not at import, so a process that never constructs a
-    client on the default transport never builds one at all.
+    Built on first use, not at import, so a process that never opens a pool
+    on the default transport, such as a keyless stdio session, never builds
+    one at all.
 
     `lru_cache` would not do here. Its miss path is not atomic, so two threads
     arriving first can each run the factory and each keep a DIFFERENT context,
@@ -98,6 +109,107 @@ def shared_ssl_context() -> ssl.SSLContext:
             if _ssl_context is None:
                 _ssl_context = httpx.create_ssl_context()
     return _ssl_context
+
+
+# The limits of each shared pool: at most 32 connections open at once, of
+# which 20 are kept open while idle, each for up to 5 seconds. A request that
+# finds all 32 busy waits for one, within its own timeout.
+POOL_LIMITS = httpx.Limits(max_connections=32, max_keepalive_connections=20, keepalive_expiry=5.0)
+
+# The shared pools, by the event loop each was built on and its API base.
+_pools: dict[tuple[asyncio.AbstractEventLoop, str], httpx.AsyncClient] = {}
+_pools_lock = threading.Lock()
+
+
+def _no_cookies() -> http.cookiejar.CookieJar:
+    """A cookie jar that stores nothing: its policy allows no domain, so a
+    Set-Cookie on one response is never stored and never sent again."""
+    return http.cookiejar.CookieJar(http.cookiejar.DefaultCookiePolicy(allowed_domains=[]))
+
+
+def _new_http_client(
+    api_base: str, transport: httpx.AsyncBaseTransport | None = None
+) -> httpx.AsyncClient:
+    """An httpx client for one API base, with no key and no cookie of its own."""
+    return httpx.AsyncClient(
+        base_url=api_base,
+        headers={
+            "User-Agent": f"sugra-api-mcp/{_pkg_version()}",
+            "Accept": "application/json",
+        },
+        cookies=_no_cookies(),
+        limits=POOL_LIMITS,
+        transport=transport,
+        # Only when httpx would build a context of its own: a supplied
+        # transport carries its own, and asking for the shared one there
+        # would build a real TLS context for a mock-transport test.
+        **({} if transport is not None else {"verify": shared_ssl_context()}),
+    )
+
+
+def shared_pool(api_base: str) -> httpx.AsyncClient:
+    """The connection pool every caller of this API base sends through on
+    the running event loop.
+
+    The connections of an `httpx.AsyncClient` belong to the event loop that
+    opened them and cannot be used from another, so each loop has pools of
+    its own. The served process runs one loop, which every caller shares, so
+    there each API base has one pool. A loop in another thread, or the next
+    one after `asyncio.run` returns, is handed a new pool, never the
+    connections a loop that has ended left open.
+
+    Built on the first request, and kept until `close_shared_pools` closes
+    it; a request after that builds a new one. A build also forgets the pools
+    of every loop that has closed since. The lock guards only the registry,
+    whose lookup and build never wait.
+    """
+    key = (asyncio.get_running_loop(), api_base)
+    pool = _pools.get(key)
+    if pool is None or pool.is_closed:
+        with _pools_lock:
+            pool = _pools.get(key)
+            if pool is None or pool.is_closed:
+                _forget_closed_loops()
+                pool = _new_http_client(api_base)
+                _pools[key] = pool
+    return pool
+
+
+def _forget_closed_loops() -> None:
+    """Forget the pools of every event loop that has closed; the caller
+    holds the lock.
+
+    Such a pool can no longer be closed, since closing it needs its loop:
+    forgetting it lets its connections be freed with it.
+    """
+    for key in [key for key in _pools if key[0].is_closed()]:
+        del _pools[key]
+
+
+async def close_shared_pools() -> None:
+    """Close the shared pools of the running event loop, and forget them.
+
+    The pools of loops that have closed are forgotten as well. A pool of
+    another loop that still runs is closed by that loop, with a call of its
+    own: only its own loop can close it. The served process runs one loop,
+    so there one call closes every pool.
+
+    Each pool is closed even when another fails to close, and the first
+    failure is raised after the rest. A second call finds nothing left to
+    close.
+    """
+    loop = asyncio.get_running_loop()
+    with _pools_lock:
+        pools = [_pools.pop(key) for key in [key for key in _pools if key[0] is loop]]
+        _forget_closed_loops()
+    first_failure: Exception | None = None
+    for pool in pools:
+        try:
+            await pool.aclose()
+        except Exception as e:
+            first_failure = first_failure or e
+    if first_failure is not None:
+        raise first_failure
 
 
 def _pkg_version() -> str:
@@ -281,24 +393,25 @@ def _enforce_size_limit(payload: Any, url: str, *, unshaped: Any = None) -> Any:
 
 
 class SugraClient:
-    """Thin async wrapper over the Sugra API with x-api-key auth."""
+    """Thin async wrapper over the Sugra API with x-api-key auth.
+
+    Light enough to build for every call: it holds this caller's key and
+    sends each request through the shared pool of its API base on the running
+    event loop, with the key as that request's own x-api-key header. A client
+    given a transport of its own sends through a client of its own on that
+    transport instead, which its aclose closes.
+    """
 
     def __init__(self, config: Config, *, transport: httpx.AsyncBaseTransport | None = None) -> None:
         self._config = config
-        self._client = httpx.AsyncClient(
-            base_url=config.api_base,
-            headers={
-                "x-api-key": config.api_key,
-                "User-Agent": f"sugra-api-mcp/{_pkg_version()}",
-                "Accept": "application/json",
-            },
-            timeout=config.timeout,
-            transport=transport,
-            # Only when httpx would build a context of its own: a supplied
-            # transport carries its own, and asking for the shared one there
-            # would build a real TLS context for a mock-transport test.
-            **({} if transport is not None else {"verify": shared_ssl_context()}),
-        )
+        self._key_header = httpx.Headers({"x-api-key": config.api_key})
+        self._own_http = None if transport is None else _new_http_client(config.api_base, transport)
+
+    def _http(self) -> httpx.AsyncClient:
+        """The httpx client this client's next request goes out on."""
+        if self._own_http is not None:
+            return self._own_http
+        return shared_pool(self._config.api_base)
 
     async def get(
         self,
@@ -332,17 +445,25 @@ class SugraClient:
         enforce_size: bool = True,
     ) -> dict[str, Any]:
         clean_params = {k: v for k, v in (params or {}).items() if v is not None}
+        # The key rides on this request alone, and it is always this client's
+        # own: extras such as X-Internal-Token for the agent plane ride
+        # alongside it, and a key header among them, in any case, is replaced
+        # by it. httpx then merges the result over the pool's User-Agent and
+        # Accept.
+        request_headers = httpx.Headers(headers)
+        request_headers.update(self._key_header)
+        http_client = self._http()
         start = time.perf_counter()
         try:
-            # Per-request headers are MERGED over the instance headers by httpx
-            # (request wins on key conflicts) - x-api-key stays, extras (e.g.
-            # X-Internal-Token for the agent plane) ride alongside.
-            response = await self._client.request(
+            response = await http_client.request(
                 method.upper(),
                 path,
                 params=clean_params,
                 json=json if json is not None else None,
-                headers=headers,
+                headers=request_headers,
+                # The configured timeout (SUGRA_TIMEOUT), for the connect, each
+                # read and write, and the wait for a free connection.
+                timeout=self._config.timeout,
             )
         # Order matters: ConnectTimeout subclasses TimeoutException (NOT
         # ConnectError), so all timeout flavors land in upstream_timeout.
@@ -467,4 +588,10 @@ class SugraClient:
         return _enforce_size_limit(payload, str(response.request.url))
 
     async def aclose(self) -> None:
-        await self._client.aclose()
+        """Close the client built on a transport of this client's own.
+
+        The shared pools are not this client's to close: `close_shared_pools`
+        closes them, once the server has stopped.
+        """
+        if self._own_http is not None:
+            await self._own_http.aclose()

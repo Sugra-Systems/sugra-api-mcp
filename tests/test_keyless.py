@@ -13,9 +13,11 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
 from sugra_api_mcp import server
@@ -23,6 +25,7 @@ from sugra_api_mcp.catalog.builder import build_catalog_from_openapi
 from sugra_api_mcp.client import SugraClient
 from sugra_api_mcp.config import MISSING_API_KEY_HINT
 from sugra_api_mcp.tools import entities, gateway
+from tests.test_request_credentials import _answer_api_requests
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURE = Path(__file__).parent / "fixtures" / "openapi_minimal.json"
@@ -46,11 +49,24 @@ def _fixture_catalog():
 
 
 @pytest.fixture
-def keyless(monkeypatch):
-    """No key in env, no per-request key, no cached shared client."""
+async def keyless(monkeypatch) -> AsyncIterator[pytest.MonkeyPatch]:
+    """No key in env, no per-request key, and no pool open before or after the test."""
     monkeypatch.delenv("SUGRA_API_KEY", raising=False)
-    monkeypatch.setattr(server, "_shared_client", None)
-    return monkeypatch
+    await server.close_clients()
+    yield monkeypatch
+    await server.close_clients()
+
+
+def _sent_keys(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
+    """The x-api-key values of every Sugra API request, answered without a network."""
+    sent: list[list[str]] = []
+
+    async def answer(request: httpx.Request) -> httpx.Response:
+        sent.append(request.headers.get_list("x-api-key"))
+        return httpx.Response(200, json={"data": [], "meta": {}})
+
+    _answer_api_requests(monkeypatch, answer)
+    return sent
 
 
 # ---------------------------------------------------------------------------
@@ -217,19 +233,23 @@ async def test_call_endpoint_with_key_behavior_unchanged(monkeypatch) -> None:
 
 
 async def test_get_client_with_env_key_builds_real_client(keyless) -> None:
+    sent = _sent_keys(keyless)
     keyless.setenv("SUGRA_API_KEY", "sugra_test_dummy")
 
     client = server.get_client()
-    try:
-        assert isinstance(client, SugraClient)
-        assert client._config.api_key == "sugra_test_dummy"
-    finally:
-        await client.aclose()
+    assert isinstance(client, SugraClient)
+    await client.get("/api/v1/ping")
+    assert sent == [["sugra_test_dummy"]]
 
 
-def test_get_client_keyless_is_not_cached_as_shared(keyless) -> None:
-    """The keyless stand-in must never occupy the shared-client slot: once the
-    environment gains a key, the next call builds a real client."""
+async def test_get_client_keyless_is_not_cached(keyless) -> None:
+    """The keyless stand-in is never kept: once the environment gains a key,
+    the next call hands out a real client, whose request carries that key."""
+    sent = _sent_keys(keyless)
     first = server.get_client()
     assert isinstance(first, server._KeylessClient)
-    assert server._shared_client is None
+    keyless.setenv("SUGRA_API_KEY", "sugra_test_dummy")
+    second = server.get_client()
+    assert isinstance(second, SugraClient)
+    await second.get("/api/v1/ping")
+    assert sent == [["sugra_test_dummy"]]

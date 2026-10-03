@@ -14,6 +14,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import httpx
@@ -27,13 +28,21 @@ from sugra_api_mcp.config import AuthConfig, Config
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-def _real_client(api_key: str) -> SugraClient:
+@pytest.fixture
+async def own_pools(monkeypatch) -> AsyncIterator[None]:
+    """The shared pools a test opens are its own, and closed after it."""
+    monkeypatch.setattr(client_module, "_pools", {})
+    yield
+    await client_module.close_shared_pools()
+
+
+def _real_client(api_key: str, api_base: str = "https://api.test") -> SugraClient:
     """A client on the DEFAULT transport - the only path that builds a context."""
-    return SugraClient(Config(api_base="https://api.test", api_key=api_key, timeout=1.0))
+    return SugraClient(Config(api_base=api_base, api_key=api_key, timeout=1.0))
 
 
 def _pool_context(client: SugraClient) -> ssl.SSLContext:
-    return client._client._transport._pool._ssl_context
+    return client._http()._transport._pool._ssl_context
 
 
 def _auth_config() -> AuthConfig:
@@ -44,33 +53,35 @@ def _auth_config() -> AuthConfig:
     )
 
 
-async def test_two_clients_share_one_context_object() -> None:
+async def test_two_clients_share_one_context_object(own_pools) -> None:
+    """Two API bases, so two pools: both on the one context."""
     first = _real_client("sugra_first")
-    second = _real_client("sugra_second")
-    try:
-        assert _pool_context(first) is shared_ssl_context()
-        assert _pool_context(first) is _pool_context(second)
-    finally:
-        await first.aclose()
-        await second.aclose()
+    second = _real_client("sugra_second", "https://api-two.test")
+    assert first._http() is not second._http()
+    assert _pool_context(first) is shared_ssl_context()
+    assert _pool_context(first) is _pool_context(second)
 
 
-async def test_each_client_keeps_its_own_key_on_its_own_headers() -> None:
-    """Sharing the context does not merge the clients: each keeps its own key.
+async def test_callers_share_one_pool_and_each_request_carries_its_own_key(monkeypatch, own_pools) -> None:
+    """Sharing the pool does not merge the callers: each request carries its own key.
 
-    This pins the header state, which is where the key lives; it is not a
-    claim about what a live TLS session resumes (nothing here talks to a
-    server, and the clients keep separate connection pools regardless).
+    The key rides on the request, never on the pool's own headers, so no
+    request can carry the key of another caller.
     """
+    sent: list[list[str]] = []
+
+    async def handle(transport: httpx.AsyncHTTPTransport, request: httpx.Request) -> httpx.Response:
+        sent.append(request.headers.get_list("x-api-key"))
+        return httpx.Response(200, json={"data": [], "meta": {}})
+
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", handle)
     first = _real_client("sugra_first")
     second = _real_client("sugra_second")
-    try:
-        assert first._client.headers["x-api-key"] == "sugra_first"
-        assert second._client.headers["x-api-key"] == "sugra_second"
-        assert first._client._transport._pool is not second._client._transport._pool
-    finally:
-        await first.aclose()
-        await second.aclose()
+    assert first._http() is second._http()
+    assert "x-api-key" not in first._http().headers
+    for client in (first, second, first):
+        await client.get("/api/v1/ping")
+    assert sent == [["sugra_first"], ["sugra_second"], ["sugra_first"]]
 
 
 def test_the_shared_context_is_the_one_an_unconfigured_httpx_client_builds() -> None:
@@ -208,7 +219,7 @@ def test_a_keyless_stdio_session_builds_no_context() -> None:
     assert built == "NONE", probe[-1]
 
 
-async def test_the_factory_runs_exactly_once_however_many_clients_ask(monkeypatch) -> None:
+async def test_the_factory_runs_exactly_once_however_many_clients_ask(monkeypatch, own_pools) -> None:
     """Built ONCE: the point of the accessor, measured by counting the factory.
 
     Through real clients, because that is what the name claims. The
@@ -226,13 +237,11 @@ async def test_the_factory_runs_exactly_once_however_many_clients_ask(monkeypatc
     monkeypatch.setattr(client_module, "_ssl_context", None)
 
     assert calls == []
-    clients = [_real_client(f"sugra_{n}") for n in range(3)]
-    try:
-        contexts = {id(_pool_context(client)) for client in clients}
-    finally:
-        for client in clients:
-            await client.aclose()
+    # One pool per API base: three bases, three pools, one context.
+    clients = [_real_client(f"sugra_{n}", f"https://api-{n}.test") for n in range(3)]
+    contexts = {id(_pool_context(client)) for client in clients}
 
+    assert len(client_module._pools) == 3
     assert len(calls) == 1
     assert len(contexts) == 1
 
@@ -286,7 +295,7 @@ async def test_the_middleware_client_is_on_the_same_context() -> None:
         await auth.aclose()
 
 
-async def test_no_client_in_this_package_enables_http2() -> None:
+async def test_no_client_in_this_package_enables_http2(own_pools) -> None:
     """The condition that makes ONE shared context safe, as a test.
 
     httpcore calls `set_alpn_protocols` on the context before every TLS
@@ -299,10 +308,9 @@ async def test_no_client_in_this_package_enables_http2() -> None:
     client = _real_client("sugra_alpn")
     auth = Authenticator(_auth_config())
     try:
-        assert client._client._transport._pool._http2 is False
+        assert client._http()._transport._pool._http2 is False
         assert auth._http._transport._pool._http2 is False
     finally:
-        await client.aclose()
         await auth.aclose()
 
 
@@ -325,7 +333,7 @@ async def test_a_supplied_transport_builds_no_context_at_all(monkeypatch) -> Non
         Config(api_base="https://api.test", api_key="k", timeout=1.0), transport=transport
     )
     try:
-        assert client._client._transport is transport
+        assert client._http()._transport is transport
         assert calls == []
         assert client_module._ssl_context is None
     finally:
