@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-10-02T20:17:35Z",
+  "built_at": "2026-10-03T08:41:29Z",
   "endpoint_count": 1626,
   "endpoints": [
     {
@@ -71188,7 +71188,48 @@
       "description": "SNB monthly balance sheet - assets (gold, foreign currency investments, reserve position, repo claims, domestic money market, etc.) and liabilities (banknotes in circulation, sight deposits, SNB debt certificates, foreign currency liabilities, provisions and equity) from cube `snbbipo`.",
       "method": "GET",
       "operation_id": "snb_balance_sheet",
-      "parameters": [],
+      "parameters": [
+        {
+          "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+          "example": "2025-01",
+          "location": "query",
+          "name": "start_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+            "title": "Start Date"
+          }
+        },
+        {
+          "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+          "example": "2025-12",
+          "location": "query",
+          "name": "end_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+            "title": "End Date"
+          }
+        }
+      ],
       "path": "/api/v1/snb/balance-sheet",
       "request_body_required": false,
       "required_parameters": [],
@@ -71206,7 +71247,48 @@
       "description": "Monthly aggregated banking statistics from the SNB BSTA warehouse cube (`BSTA.SNB.MIRE_U.MIR.AAK.GGU`) - total domestic and foreign balance-sheet totals for all Swiss banks, in CHF. Scale 3 (values are in thousand CHF).",
       "method": "GET",
       "operation_id": "snb_banking_stats",
-      "parameters": [],
+      "parameters": [
+        {
+          "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+          "example": "2025-01",
+          "location": "query",
+          "name": "start_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+            "title": "Start Date"
+          }
+        },
+        {
+          "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+          "example": "2025-12",
+          "location": "query",
+          "name": "end_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+            "title": "End Date"
+          }
+        }
+      ],
       "path": "/api/v1/snb/banking-stats",
       "request_body_required": false,
       "required_parameters": [],
@@ -71260,7 +71342,48 @@
       "description": "Swiss CPI (cube `plkopr`) from 1921 to present. The cube exposes the national index rebased to December 2025 = 100. SNB publishes the CPI itself; headline is compiled by the Federal Statistical Office (BFS) and republished by the SNB.",
       "method": "GET",
       "operation_id": "snb_cpi",
-      "parameters": [],
+      "parameters": [
+        {
+          "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+          "example": "2025-01",
+          "location": "query",
+          "name": "start_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+            "title": "Start Date"
+          }
+        },
+        {
+          "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+          "example": "2025-12",
+          "location": "query",
+          "name": "end_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+            "title": "End Date"
+          }
+        }
+      ],
       "path": "/api/v1/snb/cpi",
       "request_body_required": false,
       "required_parameters": [],
@@ -71278,7 +71401,48 @@
       "description": "Outstanding bank credit to the Swiss non-financial private sector by product type, loan amount bucket and reference value (cube `zikredvol`).",
       "method": "GET",
       "operation_id": "snb_credit_volume",
-      "parameters": [],
+      "parameters": [
+        {
+          "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+          "example": "2025-01",
+          "location": "query",
+          "name": "start_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+            "title": "Start Date"
+          }
+        },
+        {
+          "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+          "example": "2025-12",
+          "location": "query",
+          "name": "end_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+            "title": "End Date"
+          }
+        }
+      ],
       "path": "/api/v1/snb/credit-volume",
       "request_body_required": false,
       "required_parameters": [],
@@ -71385,7 +71549,48 @@
       "description": "International reserves of the SNB - foreign currency investments and other reserve assets sliced out of cube `snbimfra`. The cube reports balances in CHF equivalent with a nested currency dimension.",
       "method": "GET",
       "operation_id": "snb_foreign_reserves",
-      "parameters": [],
+      "parameters": [
+        {
+          "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+          "example": "2025-01",
+          "location": "query",
+          "name": "start_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+            "title": "Start Date"
+          }
+        },
+        {
+          "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+          "example": "2025-12",
+          "location": "query",
+          "name": "end_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+            "title": "End Date"
+          }
+        }
+      ],
       "path": "/api/v1/snb/foreign-reserves",
       "request_body_required": false,
       "required_parameters": [],
@@ -71403,7 +71608,48 @@
       "description": "Monthly average CHF exchange rates against 26+ currencies plus precious metals (cube `devkum`). Includes EUR, USD, GBP, JPY, CNY, INR, BRL and others. History starts in 1970 for major pairs.",
       "method": "GET",
       "operation_id": "snb_fx",
-      "parameters": [],
+      "parameters": [
+        {
+          "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+          "example": "2025-01",
+          "location": "query",
+          "name": "start_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+            "title": "Start Date"
+          }
+        },
+        {
+          "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+          "example": "2025-12",
+          "location": "query",
+          "name": "end_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+            "title": "End Date"
+          }
+        }
+      ],
       "path": "/api/v1/snb/fx",
       "request_body_required": false,
       "required_parameters": [],
@@ -71421,7 +71667,48 @@
       "description": "Daily CHF fixings. SNB publishes fixings inside `devkum`; this endpoint returns the cube with the 'Monthly average / End of month' dimension retained so clients can pick the daily slice when available, and is kept as a separate endpoint so future upgrades to a dedicated daily cube can happen without a breaking change.",
       "method": "GET",
       "operation_id": "snb_fx_daily",
-      "parameters": [],
+      "parameters": [
+        {
+          "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+          "example": "2025-01",
+          "location": "query",
+          "name": "start_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+            "title": "Start Date"
+          }
+        },
+        {
+          "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+          "example": "2025-12",
+          "location": "query",
+          "name": "end_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+            "title": "End Date"
+          }
+        }
+      ],
       "path": "/api/v1/snb/fx-daily",
       "request_body_required": false,
       "required_parameters": [],
@@ -71439,7 +71726,48 @@
       "description": "End-of-month CHF exchange-rate fixings for 26+ currencies (slice of cube `devkum` with dimension 'End of month').",
       "method": "GET",
       "operation_id": "snb_fx_end_of_month",
-      "parameters": [],
+      "parameters": [
+        {
+          "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+          "example": "2025-01",
+          "location": "query",
+          "name": "start_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+            "title": "Start Date"
+          }
+        },
+        {
+          "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+          "example": "2025-12",
+          "location": "query",
+          "name": "end_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+            "title": "End Date"
+          }
+        }
+      ],
       "path": "/api/v1/snb/fx-end-of-month",
       "request_body_required": false,
       "required_parameters": [],
@@ -71469,6 +71797,46 @@
             "title": "Pair",
             "type": "string"
           }
+        },
+        {
+          "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+          "example": "2025-01",
+          "location": "query",
+          "name": "start_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+            "title": "Start Date"
+          }
+        },
+        {
+          "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+          "example": "2025-12",
+          "location": "query",
+          "name": "end_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+            "title": "End Date"
+          }
         }
       ],
       "path": "/api/v1/snb/fx/{pair}",
@@ -71490,7 +71858,48 @@
       "description": "SNB gold holdings including gold deposits and gold swaps - both the CHF valuation and the weight in thousand fine ounces. Sliced from cube `snbimfra` by selecting the 'Gold' dimension item.",
       "method": "GET",
       "operation_id": "snb_gold_reserves",
-      "parameters": [],
+      "parameters": [
+        {
+          "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+          "example": "2025-01",
+          "location": "query",
+          "name": "start_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+            "title": "Start Date"
+          }
+        },
+        {
+          "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+          "example": "2025-12",
+          "location": "query",
+          "name": "end_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+            "title": "End Date"
+          }
+        }
+      ],
       "path": "/api/v1/snb/gold-reserves",
       "request_body_required": false,
       "required_parameters": [],
@@ -71508,7 +71917,48 @@
       "description": "Rates on new loans by product type - slices out of cube `zikreddet` excluding the current-account advance facility series. For raw cube access including all types use `/api/v1/snb/mortgage-rates`.",
       "method": "GET",
       "operation_id": "snb_lending_rates",
-      "parameters": [],
+      "parameters": [
+        {
+          "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+          "example": "2025-01",
+          "location": "query",
+          "name": "start_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+            "title": "Start Date"
+          }
+        },
+        {
+          "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+          "example": "2025-12",
+          "location": "query",
+          "name": "end_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+            "title": "End Date"
+          }
+        }
+      ],
       "path": "/api/v1/snb/lending-rates",
       "request_body_required": false,
       "required_parameters": [],
@@ -71526,7 +71976,48 @@
       "description": "Monetary base = currency in circulation plus sight deposits of domestic banks at the SNB. Derived from cube `snbmonagg` by selecting the 'Currency in circulation' and 'Sight deposits' items.",
       "method": "GET",
       "operation_id": "snb_monetary_base",
-      "parameters": [],
+      "parameters": [
+        {
+          "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+          "example": "2025-01",
+          "location": "query",
+          "name": "start_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+            "title": "Start Date"
+          }
+        },
+        {
+          "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+          "example": "2025-12",
+          "location": "query",
+          "name": "end_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+            "title": "End Date"
+          }
+        }
+      ],
       "path": "/api/v1/snb/monetary-base",
       "request_body_required": false,
       "required_parameters": [],
@@ -71544,7 +72035,48 @@
       "description": "Money supply aggregates M1, M2, M3 and components (currency in circulation, sight deposits, transaction-account deposits, savings deposits, time deposits) plus year-over-year change (cube `snbmonagg`).",
       "method": "GET",
       "operation_id": "snb_money_supply",
-      "parameters": [],
+      "parameters": [
+        {
+          "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+          "example": "2025-01",
+          "location": "query",
+          "name": "start_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+            "title": "Start Date"
+          }
+        },
+        {
+          "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+          "example": "2025-12",
+          "location": "query",
+          "name": "end_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+            "title": "End Date"
+          }
+        }
+      ],
       "path": "/api/v1/snb/money-supply",
       "request_body_required": false,
       "required_parameters": [],
@@ -71562,7 +72094,48 @@
       "description": "Posted rates on current account advance facilities, variable mortgages (with and without a base rate link), fixed-rate mortgages and investment loans with fixed rates (cube `zikreddet`).",
       "method": "GET",
       "operation_id": "snb_mortgage_rates",
-      "parameters": [],
+      "parameters": [
+        {
+          "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+          "example": "2025-01",
+          "location": "query",
+          "name": "start_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+            "title": "Start Date"
+          }
+        },
+        {
+          "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+          "example": "2025-12",
+          "location": "query",
+          "name": "end_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+            "title": "End Date"
+          }
+        }
+      ],
       "path": "/api/v1/snb/mortgage-rates",
       "request_body_required": false,
       "required_parameters": [],
@@ -71580,7 +72153,48 @@
       "description": "Daily SNB policy rate plus the target band dimensions: SNB policy rate, Special rate (liquidity-shortage financing facility), interest rate on sight deposits up to and above threshold, discount in basis points, threshold factor. Sourced from cube `snbgwdzid`.",
       "method": "GET",
       "operation_id": "snb_policy_rate",
-      "parameters": [],
+      "parameters": [
+        {
+          "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+          "example": "2025-01-01",
+          "location": "query",
+          "name": "start_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+            "title": "Start Date"
+          }
+        },
+        {
+          "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+          "example": "2025-12-31",
+          "location": "query",
+          "name": "end_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+            "title": "End Date"
+          }
+        }
+      ],
       "path": "/api/v1/snb/policy-rate",
       "request_body_required": false,
       "required_parameters": [],
@@ -71634,7 +72248,48 @@
       "description": "The two-tier rate structure paid on sight deposits at the SNB - the rate up to the threshold and the rate above the threshold - sliced out of cube `snbgwdzid`. Since the removal of the negative-interest regime this has tracked the SNB policy rate.",
       "method": "GET",
       "operation_id": "snb_sight_deposit_rate",
-      "parameters": [],
+      "parameters": [
+        {
+          "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+          "example": "2025-01-01",
+          "location": "query",
+          "name": "start_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+            "title": "Start Date"
+          }
+        },
+        {
+          "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+          "example": "2025-12-31",
+          "location": "query",
+          "name": "end_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+            "title": "End Date"
+          }
+        }
+      ],
       "path": "/api/v1/snb/sight-deposit-rate",
       "request_body_required": false,
       "required_parameters": [],
@@ -71652,7 +72307,48 @@
       "description": "Sight deposits held at the SNB - domestic banks, foreign banks and institutions, and other sight liabilities - sliced from cube `snbbipo` (Liabilities dimension). Sight deposits are a leading indicator of monetary policy stance.",
       "method": "GET",
       "operation_id": "snb_sight_deposits",
-      "parameters": [],
+      "parameters": [
+        {
+          "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+          "example": "2025-01",
+          "location": "query",
+          "name": "start_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+            "title": "Start Date"
+          }
+        },
+        {
+          "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+          "example": "2025-12",
+          "location": "query",
+          "name": "end_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+            "title": "End Date"
+          }
+        }
+      ],
       "path": "/api/v1/snb/sight-deposits",
       "request_body_required": false,
       "required_parameters": [],
@@ -71670,7 +72366,48 @@
       "description": "Swiss Confederation bond yields from 1 year to 30 years (cube `rendoblim`, monthly). Includes 1Y, 2Y, 3Y, 4Y, 5Y, 6Y, 7Y, 8Y, 9Y, 10Y, 15Y, 20Y and 30Y maturities.",
       "method": "GET",
       "operation_id": "snb_yields",
-      "parameters": [],
+      "parameters": [
+        {
+          "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+          "example": "2025-01",
+          "location": "query",
+          "name": "start_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+            "title": "Start Date"
+          }
+        },
+        {
+          "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+          "example": "2025-12",
+          "location": "query",
+          "name": "end_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+            "title": "End Date"
+          }
+        }
+      ],
       "path": "/api/v1/snb/yields",
       "request_body_required": false,
       "required_parameters": [],
@@ -71688,7 +72425,48 @@
       "description": "Daily zero-coupon Confederation yields across the maturity curve (cube `rendoblid`). Served raw and unfiltered so clients can pick any single maturity from the `Overview` dimension.",
       "method": "GET",
       "operation_id": "snb_zero_coupon_yields",
-      "parameters": [],
+      "parameters": [
+        {
+          "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+          "example": "2025-01-01",
+          "location": "query",
+          "name": "start_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional start of the date window (YYYY-MM-DD or YYYY-MM; a month starts on its first day). Omit for the cube's whole history.",
+            "title": "Start Date"
+          }
+        },
+        {
+          "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+          "example": "2025-12-31",
+          "location": "query",
+          "name": "end_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional end of the date window (YYYY-MM-DD or YYYY-MM; a month runs to its last day). Omit to run to the latest observation.",
+            "title": "End Date"
+          }
+        }
+      ],
       "path": "/api/v1/snb/zero-coupon-yields",
       "request_body_required": false,
       "required_parameters": [],
@@ -92884,5 +93662,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "8fda56963bf76d24b2f76be11f1e0d857650c0eb16473536c0b1f9a7a4eb7fc0"
+  "spec_sha256": "4e86b76b435bf758b1c6f081c3e926e3480401fb495a45c6c5b0b2211c04ac0e"
 }
