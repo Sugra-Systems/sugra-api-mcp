@@ -1340,10 +1340,10 @@ def test_commodity_benchmarks_are_not_tickers(query: str) -> None:
     ("TTF gas price", "commodities_commodity_id", "ttf"),
     ("Henry Hub natural gas", "commodities_energy_natural_gas", "henry hub"),
     ("ships through Suez", "maritime_chokepoints_activity", "suez"),
-    ("trucking freight rates", "fred_series_series_id", "trucking"),
-    ("truckload rates", "fred_series_series_id", "truckload rate"),
-    ("how much does trucking cost", "fred_series_series_id", "trucking cost"),
-    ("truck freight prices", "fred_series_series_id", "truck freight"),
+    ("trucking freight rates", "fred_series_series_id", "trucking price"),
+    ("truckload rates", "fred_series_series_id", "trucking price"),
+    ("how much does trucking cost", "fred_series_series_id", "trucking price"),
+    ("truck freight prices", "fred_series_series_id", "trucking price"),
     ("port congestion", "transport_ports_congestion", "port"),
 ])
 def test_everyday_names_point_to_their_operation(query: str, operation: str, name: str) -> None:
@@ -1352,31 +1352,352 @@ def test_everyday_names_point_to_their_operation(query: str, operation: str, nam
     assert detect_named_operations(query).operations.get(operation) == name
 
 
-@pytest.mark.parametrize("query", [
-    "trucking employment", "trucking accidents", "trucking accident rate",
-    "trucking jobs in Texas", "trucking companies stock", "a truckload of apples",
-])
-def test_trucking_names_the_price_index_only_as_a_price(catalog, query: str) -> None:
-    """FRED holds the trucking producer price index; "trucking" alone also
-    asks about jobs, accidents and companies, which that index does not answer."""
+# Crude oil and the trucking price index are named only as the subject of a
+# price word (PRICED_SUBJECTS): the price word follows the subject, or comes
+# before it directly or through "of", "for" or "per", past qualifiers and, but
+# before "oil" alone, places and grades; the subject's phrase then ends at a
+# word such as a month, a place or a currency code. A subject joined to another
+# word by "and", "or" or "vs" or by a list mark keeps the names it had before
+# the rule, and so does crude oil whose phrase goes on past its price. The near
+# misses, in both word orders, put trucking before another noun, another oil
+# inside the subject, a word that claims the price before it or a traded
+# instrument after it.
+_OIL = "commodities_energy_petroleum"
+_TRUCKING = "fred_series_series_id"
+
+PRICED_SUBJECT_NAMED = [
+    ("crude oil price", _OIL),
+    ("WTI", _OIL),
+    ("crude price", _OIL),
+    ("price of crude", _OIL),
+    ("price of crude oil", _OIL),
+    ("crude oil spot price", _OIL),
+    ("oil barrel price", _OIL),
+    ("price of oil per barrel", _OIL),
+    ("oil prices of the 1970s", _OIL),
+    ("what's the price of oil", _OIL),
+    ("why is the price of oil going up", _OIL),
+    ("price of oil and gas", _OIL),
+    ("palm oil vs crude oil price", _OIL),
+    ("price of crude vs palm oil", _OIL),
+    ("Russian oil price", _OIL),
+    ("US price of crude", _OIL),
+    ("oil price Germany", _OIL),
+    ("price of oil Germany", _OIL),
+    ("light sweet crude oil price", _OIL),
+    ("price of Russian crude", _OIL),
+    ("price of light sweet crude oil", _OIL),
+    ("price of spot crude", _OIL),
+    ("spot crude price", _OIL),
+    ("price of a barrel of oil", _OIL),
+    ("price of a barrel of oil, today", _OIL),
+    ("price per barrel of crude", _OIL),
+    ("oil price per barrel", _OIL),
+    ("oil's price", _OIL),
+    ("price of Venezuelan crude", _OIL),
+    ("Venezuelan oil price", _OIL),
+    ("annual price of oil", _OIL),
+    ("price of United States crude oil", _OIL),
+    ("price of U.S. crude", _OIL),
+    ("U.S. crude oil price", _OIL),
+    ("price of North Sea crude", _OIL),
+    ("price of West Texas Intermediate crude", _OIL),
+    ("West Texas Intermediate crude price", _OIL),
+    ("gold and oil prices", _OIL),
+    ("palm oil and crude oil prices", _OIL),
+    ("OPEC price of oil", _OIL),
+    ("OPEC oil price", _OIL),
+    ("what affects oil prices", _OIL),
+    ("what drives oil prices", _OIL),
+    ("price of Saudi Arabian crude oil", _OIL),
+    ("Saudi Arabian oil price", _OIL),
+    ("price of Moroccan crude oil", _OIL),
+    ("price of the world's oil", _OIL),
+    ("synthetic crude price", _OIL),
+    ("live oil price", _OIL),
+    ("yesterday's oil price", _OIL),
+    ("price of oil yesterday", _OIL),
+    ("price of oil March 2020", _OIL),
+    ("price of crude Texas", _OIL),
+    ("price of oil EIA", _OIL),
+    ("USD price of oil", _OIL),
+    ("price of crude oil USD per barrel", _OIL),
+    ("European oil prices", _OIL),
+    ("price of European crude", _OIL),
+    ("Middle East oil prices", _OIL),
+    ("price of Middle East crude", _OIL),
+    ("EIA oil price", _OIL),
+    ("war oil prices", _OIL),
+    ("truckload cost", _TRUCKING),
+    ("cost per truckload", _TRUCKING),
+    ("price per truckload", _TRUCKING),
+    ("rates for truckload freight", _TRUCKING),
+    ("freight rates for trucking", _TRUCKING),
+    ("truckload spot rates", _TRUCKING),
+    ("trucking PPI", _TRUCKING),
+    ("producer price index for trucking", _TRUCKING),
+    ("trucking producer price index", _TRUCKING),
+    ("price of long distance trucking", _TRUCKING),
+    ("is the price of trucking going up", _TRUCKING),
+    ("average cost of trucking", _TRUCKING),
+    ("cost of trucking goods from Chicago to Dallas", _TRUCKING),
+    ("cost of trucking March 2020", _TRUCKING),
+    ("truck freight rate per mile", _TRUCKING),
+    ("trucking rates in Texas", _TRUCKING),
+    ("less than truckload rates", _TRUCKING),
+    ("long-haul trucking rates", _TRUCKING),
+    ("rates for spot trucking", _TRUCKING),
+    ("spot trucking rates", _TRUCKING),
+    ("price of refrigerated trucking", _TRUCKING),
+    ("refrigerated trucking price", _TRUCKING),
+    ("rates for flatbed trucking", _TRUCKING),
+    ("rates for flatbed trucking, Texas", _TRUCKING),
+    ("flatbed trucking rates", _TRUCKING),
+    ("trucking and rail freight rates", _TRUCKING),
+    ("price index of trucking", _TRUCKING),
+    ("PPI trucking", _TRUCKING),
+]
+
+# Named in either word order, though another operation ranks first: natural
+# gas is named beside oil, "history" and "predict" also match the
+# prediction-market operations' own names, a repeated "price" favours the
+# operations named after it, and inflation has operations of its own.
+PRICED_SUBJECT_NAMED_BESIDE_OTHERS = [
+    ("price of oil and natural gas", _OIL),
+    ("price history of oil", _OIL),
+    ("oil price history", _OIL),
+    ("predict the price of oil", _OIL),
+    ("price of oil vs price of gold", _OIL),
+    ("how does the price of oil affect inflation", _OIL),
+]
+
+PRICED_SUBJECT_NOT_NAMED = [
+    # Trucking beside another subject, with or without a price word.
+    ("trucking stocks", _TRUCKING),
+    ("trucking accidents", _TRUCKING),
+    ("trucking jobs", _TRUCKING),
+    ("trucking companies", _TRUCKING),
+    ("trucking stock price", _TRUCKING),
+    ("stock price of trucking companies", _TRUCKING),
+    ("price of trucking stocks", _TRUCKING),
+    ("trucking index fund", _TRUCKING),
+    ("cost of trucking accidents", _TRUCKING),
+    ("cost of trucking school", _TRUCKING),
+    ("price of trucking permits", _TRUCKING),
+    ("insurance cost of trucking", _TRUCKING),
+    ("environmental cost of trucking", _TRUCKING),
+    ("accident rate of trucking", _TRUCKING),
+    ("injury rate for trucking", _TRUCKING),
+    ("rate of trucking accidents", _TRUCKING),
+    ("trucking rate of growth", _TRUCKING),
+    ("truckload price of corn", _TRUCKING),
+    ("price per truckload of apples", _TRUCKING),
+    ("a truckload of apples", _TRUCKING),
+    # Freight alone also goes by sea, air and rail; a truck alone is a vehicle.
+    ("freight cost per mile", _TRUCKING),
+    ("container freight rates", _TRUCKING),
+    ("truck prices", _TRUCKING),
+    # Another oil in any word order, crude another commodity.
+    ("palm oil crude price", _OIL),
+    ("crude palm oil futures", _OIL),
+    ("crude palm oil price", _OIL),
+    ("price of crude palm oil", _OIL),
+    ("palm crude price", _OIL),
+    ("price of oil palm", _OIL),
+    ("heating oil price", _OIL),
+    ("oil price ETF", _OIL),
+    ("crude steel price", _OIL),
+    ("crude prices for palm oil", _OIL),
+    ("palm oil price of crude", _OIL),
+    ("palm oil price crude", _OIL),
+    ("price of shipping oil", _OIL),
+    # A word between the price and "oil" that is no grade, place or qualifier
+    # may name another oil.
+    ("price of car oil", _OIL),
+    ("price of beard oil", _OIL),
+    ("price of lemon oil", _OIL),
+    ("price of synthetic oil", _OIL),
+    ("price of base oil", _OIL),
+    ("price of furnace oil", _OIL),
+    ("price of cutting oil", _OIL),
+    ("price of gas oil", _OIL),
+    # A place before "oil" alone may name another oil: Moroccan oil is argan
+    # oil, Italian oil olive oil.
+    ("price of Moroccan oil", _OIL),
+    ("price of Italian oil", _OIL),
+    # A company, a traded instrument or another subject the price belongs to,
+    # also beside a subject joined to another word.
+    ("oil and gas company prices", _OIL),
+    ("oil and the price of gold", _OIL),
+    ("oil price per share", _OIL),
+    ("price of oil per share", _OIL),
+    ("price of oil index fund", _OIL),
+    ("oil price index fund", _OIL),
+    ("price of oil ETF", _OIL),
+    ("oil and gas ETF prices", _OIL),
+    ("oil price options", _OIL),
+    ("price of oil options", _OIL),
+    ("oil and gas stock prices", _OIL),
+    ("price of oil and gas stocks", _OIL),
+    ("trucking and logistics stock prices", _TRUCKING),
+    ("trucking rate per share", _TRUCKING),
+    ("price of trucking per share", _TRUCKING),
+    ("price of trucking index fund", _TRUCKING),
+    ("trucking price index fund", _TRUCKING),
+    ("truckload price of the corn", _TRUCKING),
+    ("accident rate for trucking", _TRUCKING),
+    ("trucking accident rate", _TRUCKING),
+    ("trucking insurance cost", _TRUCKING),
+]
+
+
+@pytest.mark.parametrize("query,operation", PRICED_SUBJECT_NAMED)
+def test_a_priced_subject_names_its_operation_first(
+    catalog, query: str, operation: str,
+) -> None:
     from sugra_api_mcp.catalog.aliases import detect_named_operations
 
-    assert "fred_series_series_id" not in detect_named_operations(query).operations
+    assert operation in detect_named_operations(query).operations
+    top = search_catalog(catalog, query, limit=1)[0]["operation_id"]
+    assert top == operation, f"{query!r}: top-1 {top}"
+
+
+@pytest.mark.parametrize("query,operation", PRICED_SUBJECT_NAMED_BESIDE_OTHERS)
+def test_a_priced_subject_is_named_beside_other_words(query: str, operation: str) -> None:
+    from sugra_api_mcp.catalog.aliases import detect_named_operations
+
+    assert operation in detect_named_operations(query).operations
+
+
+@pytest.mark.parametrize("query,operation", PRICED_SUBJECT_NOT_NAMED)
+def test_a_near_miss_names_no_priced_subject(catalog, query: str, operation: str) -> None:
+    """FRED holds the producer price index of general freight trucking and the
+    petroleum operation crude oil spot prices; neither answers jobs,
+    accidents, companies, stocks, funds, options, another oil or another crude
+    commodity."""
+    from sugra_api_mcp.catalog.aliases import detect_named_operations
+
+    assert operation not in detect_named_operations(query).operations
     results = search_catalog(catalog, query, limit=1)
-    assert not results or results[0]["operation_id"] != "fred_series_series_id", results
+    assert not results or results[0]["operation_id"] != operation, results
+
+
+@pytest.mark.parametrize("query,operation,name", [
+    ("gold price and oil price", _OIL, "oil price"),
+    ("gas price or oil price", _OIL, "oil price"),
+    ("coffee price and crude price", _OIL, "crude price"),
+    ("house and oil price", _OIL, "oil price"),
+    ("price of oil and house", _OIL, "price of oil"),
+    ("price of house and oil price", _OIL, "oil price"),
+    ("price of oil and house price", _OIL, "price of oil"),
+    ("price of oil and the dollar", _OIL, "price of oil"),
+    ("rail rates and trucking rates", _TRUCKING, "trucking rate"),
+    ("rail rates and trucking cost", _TRUCKING, "trucking cost"),
+    ("cost of trucking and rail", _TRUCKING, "cost of trucking"),
+    ("trucking and rail freight rates", _TRUCKING, "trucking"),
+    ("oil and gas company prices", _OIL, None),
+    ("oil and the price of gold", _OIL, None),
+    ("trucking and logistics stock prices", _TRUCKING, None),
+    ("trucking & rail freight rates", _TRUCKING, "trucking"),
+    ("price of gold, oil", _OIL, None),
+    ("gold, crude price", _OIL, "crude price"),
+    ("rail rates, trucking cost", _TRUCKING, "trucking cost"),
+    ("rates of rail freight, trucking", _TRUCKING, "trucking"),
+    ("gold and crude outlook; price of a barrel of oil", _OIL, None),
+    ("oil and vinegar; price of oil paintings", _OIL, "price of oil"),
+])
+def test_a_joined_priced_subject_keeps_its_names(
+    query: str, operation: str, name: str | None,
+) -> None:
+    """A subject joined to another word by "and", "or" or "vs" or by a list
+    mark, on either side, is named only by its names in NAMED_OPERATIONS, as
+    before the price rule, and so is every other run of it in the query."""
+    from sugra_api_mcp.catalog.aliases import detect_named_operations
+
+    assert detect_named_operations(query).operations.get(operation) == name
+
+
+@pytest.mark.parametrize("query,name", [
+    ("price of oil California", "price of oil"),
+    ("price of oil Bloomberg", "price of oil"),
+    ("price of oil Gulf Coast", "price of oil"),
+    ("price of crude Texas refineries", "price of crude"),
+    ("oil price of California", "oil price"),
+    ("price of oil change", "price of oil"),
+    ("price of oil paintings", "price of oil"),
+    ("price of crude steel", "price of crude"),
+    ("price of a barrel of oil California", None),
+    ("price of oil ETF", None),
+])
+def test_crude_oil_past_its_phrase_keeps_its_names(query: str, name: str | None) -> None:
+    """Crude oil whose phrase goes on past the words its price reaches, after
+    the subject or after the price's "of", is named only by its names in
+    NAMED_OPERATIONS, as before the price rule; a traded instrument there
+    still claims the price."""
+    from sugra_api_mcp.catalog.aliases import detect_named_operations
+
+    assert detect_named_operations(query).operations.get(_OIL) == name
 
 
 @pytest.mark.parametrize("query", [
-    "palm oil price", "heating oil price", "olive oil price",
-    "price of crude palm oil", "price of crude soybean oil",
+    "price of oil California", "price of oil Bloomberg", "price of oil Gulf Coast",
+    "price of crude Texas refineries", "oil price of California",
+])
+def test_crude_oil_past_its_phrase_ranks_first(catalog, query: str) -> None:
+    """Crude oil has no catalog keywords of its own: only its name ranks the
+    petroleum operation first."""
+    top = search_catalog(catalog, query, limit=1)[0]["operation_id"]
+    assert top == _OIL, f"{query!r}: top-1 {top}"
+
+
+@pytest.mark.parametrize("query,operation", [
+    ("price of oil, gold and silver", _OIL),
+    ("price of oil/gas", _OIL),
+    ("price of gold, price of oil", _OIL),
+    ("price of a barrel of oil, today", _OIL),
+    ("cost of trucking, rail and air freight", _TRUCKING),
+])
+def test_a_list_mark_after_a_priced_subject_ends_its_phrase(query: str, operation: str) -> None:
+    """A list mark after a subject whose price precedes it ends the subject's
+    phrase as the end of the query does, so its price names it."""
+    from sugra_api_mcp.catalog.aliases import PRICED_SUBJECTS, detect_named_operations
+
+    label = next(subject.label for subject in PRICED_SUBJECTS if subject.operation == operation)
+    assert detect_named_operations(query).operations.get(operation) == label
+
+
+def test_priced_subject_words_keep_apart() -> None:
+    """A word that ends a phrase among the words of other subjects would read
+    "price of oil rose" as another oil; "of" ending a phrase would read "a
+    truckload of apples" as trucking; a conjunction that ended no phrase would
+    leave "gold and price of oil" unnamed; a grade among the words of other
+    subjects would both keep and break the subject; a modified head that is no
+    head would let no place or grade precede the subject."""
+    from sugra_api_mcp.catalog.aliases import (
+        _CONJUNCTIONS,
+        _PHRASE_ENDS,
+        _PRICE_LEADS,
+        PRICED_SUBJECTS,
+    )
+
+    assert "of" not in _PRICE_LEADS
+    assert _CONJUNCTIONS <= _PHRASE_ENDS
+    for subject in PRICED_SUBJECTS:
+        assert not subject.words & subject.others, subject.label
+        assert not subject.others & _PRICE_LEADS, subject.label
+        assert not subject.modifiers & subject.others, subject.label
+        assert all(set(head.split()) <= subject.words for head in subject.heads), subject.label
+        assert set(subject.modified_heads) <= set(subject.heads), subject.label
+
+
+@pytest.mark.parametrize("query", [
     "crude oil", "crude oil pipelines",
     "Brent inventories", "WTI crude oil futures", "TTF futures", "European gas storage",
     "US crude oil inventory",
 ])
 def test_no_price_name_without_a_spot_price_question(query: str) -> None:
-    """Other oils are not crude, also as crude palm oil; "crude oil" alone also
-    asks about pipelines and stocks; futures, stocks and output have
-    operations of their own."""
+    """"crude oil" alone also asks about pipelines and stocks; futures, stocks
+    and output have operations of their own."""
     from sugra_api_mcp.catalog.aliases import detect_named_operations
 
     operations = detect_named_operations(query).operations
