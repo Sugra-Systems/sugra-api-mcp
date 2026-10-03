@@ -15,11 +15,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, Icon, TextContent, ToolAnnotations
 from mcp.types import Tool as MCPTool
 
-from . import __version__, observability
+from . import __version__, gate, observability
 from .client import SugraClient
 from .config import MISSING_API_KEY_HINT, Config, load_allowed_origins, load_config
 from .errors import is_error_payload
@@ -134,6 +135,30 @@ class SugraFastMCP(FastMCP):
         ]
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+        """Count the call on its request's gate record, then admit and dispatch it.
+
+        Publishes a ToolDispatch for the duration of the call, which the tool's
+        span marks as entered and get_client fills with the number of Sugra API
+        requests. The call's outcome, duration and that number go to the gate
+        record of the request that carried it, when there is one (gate.py).
+        """
+        record = gate.current_record()
+        dispatch = observability.ToolDispatch()
+        gate_call = record.call_started(dispatch) if record is not None else None
+        previous_dispatch = observability.tool_dispatch.set(dispatch)
+        outcome = gate.FAILED
+        try:
+            result = await self._admitted_call_tool(name, arguments, dispatch)
+            outcome = gate.outcome_of(result)
+            return result
+        finally:
+            observability.tool_dispatch.reset(previous_dispatch)
+            if record is not None and gate_call is not None:
+                record.call_finished(gate_call, outcome)
+
+    async def _admitted_call_tool(
+        self, name: str, arguments: dict[str, Any], dispatch: observability.ToolDispatch
+    ) -> Any:
         """Refuse a call past the in-flight caps with server_busy.
 
         Admission and release go through the module-level counters under their
@@ -152,8 +177,22 @@ class SugraFastMCP(FastMCP):
                 content=[TextContent(type="text", text=json.dumps(refusal))],
                 structuredContent=refusal,
             )
+        started = time.perf_counter()
         try:
             return await self._call_tool_in_budget(name, arguments)
+        except ToolError:
+            if not dispatch.entered:
+                # The SDK refused the call before its tool ran: a name no tool
+                # is registered under, or arguments that failed validation.
+                # The tool's span never starts, so record one here; a name
+                # that is not registered is never attached.
+                tool = self._tool_manager.get_tool(name)
+                observability.record_unstarted_call(
+                    tool.name if tool is not None else None,
+                    "invalid_arguments" if tool is not None else "unknown_tool",
+                    int((time.perf_counter() - started) * 1000),
+                )
+            raise
         finally:
             _release_tool_call(caller)
 
@@ -396,6 +435,20 @@ def _build_transport_security() -> TransportSecuritySettings | None:
     )
 
 
+# Streamable HTTP session limits, set here rather than inherited so that a
+# new MCP SDK release cannot change them unnoticed. A stateful session with no
+# request in flight for SESSION_IDLE_TIMEOUT_SECONDS is closed, and a later
+# request naming it gets 404, so the client starts a new one. While
+# MAX_SESSIONS sessions are open, a request that would open another gets 503.
+# A request body over MAX_REQUEST_BODY_BYTES gets 413. The idle timeout is two
+# hours, four times the SDK 1.30 default, so a client that stays idle for up
+# to two hours keeps its session; MAX_SESSIONS still bounds the memory that
+# open sessions hold. The body limit is the SDK 1.30 default; the SDK allows
+# 10,000 sessions.
+SESSION_IDLE_TIMEOUT_SECONDS = 7200
+MAX_SESSIONS = 1000
+MAX_REQUEST_BODY_BYTES = 4 * 1024 * 1024
+
 mcp = SugraFastMCP(
     "sugra-api",
     instructions=(
@@ -406,6 +459,9 @@ mcp = SugraFastMCP(
     website_url=WEBSITE_URL,
     icons=SERVER_ICONS,
     transport_security=_build_transport_security(),
+    session_idle_timeout=SESSION_IDLE_TIMEOUT_SECONDS,
+    max_sessions=MAX_SESSIONS,
+    max_request_body_size=MAX_REQUEST_BODY_BYTES,
 )
 
 _shared_client: SugraClient | None = None
@@ -593,6 +649,7 @@ def current_caller_facts() -> observability.CallerFacts | None:
         session_id=headers.get("mcp-session-id") if headers is not None else None,
         client_addr=client_addr,
         x_real_ip=headers.get("x-real-ip") if headers is not None else None,
+        request_id=headers.get("x-request-id") if headers is not None else None,
     )
 
 
@@ -619,7 +676,19 @@ def get_client() -> SugraClient | _KeylessClient:
     SUGRA_API_KEY from env. When that is empty too, return the keyless stand-in
     whose network methods answer with the structured ``missing_api_key`` error -
     the key requirement is enforced here at call time, never at process startup.
+
+    Every real client handed out here is followed by exactly one request, so
+    each one counts as a Sugra API request of the call being dispatched
+    (observability.note_api_request); the keyless stand-in sends none.
     """
+    client = _resolve_client()
+    if client is not _keyless_client:
+        observability.note_api_request()
+    return client
+
+
+def _resolve_client() -> SugraClient | _KeylessClient:
+    """The client get_client hands out, by the rules its docstring states."""
     is_http_request, request_key = _dispatching_http_request()
     if is_http_request:
         return _client_for_key(request_key) if request_key else _keyless_client
@@ -637,3 +706,27 @@ def get_client() -> SugraClient | _KeylessClient:
             return _keyless_client
         _shared_client = SugraClient(config)
     return _shared_client
+
+
+async def close_clients() -> None:
+    """Close every Sugra API client get_client built, and forget it.
+
+    Run once the HTTP app has stopped serving: __main__ passes it to
+    gate.wrap_lifespan. Each client is closed even when another fails to
+    close, and the first failure is raised after the rest. A second call finds
+    nothing left to close, and a get_client after it builds a new client.
+    """
+    global _shared_client
+    clients = list(_per_key_clients.values())
+    _per_key_clients.clear()
+    if _shared_client is not None:
+        clients.append(_shared_client)
+        _shared_client = None
+    first_failure: Exception | None = None
+    for client in clients:
+        try:
+            await client.aclose()
+        except Exception as e:
+            first_failure = first_failure or e
+    if first_failure is not None:
+        raise first_failure
