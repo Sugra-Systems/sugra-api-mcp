@@ -135,15 +135,17 @@ class _Recorded:
 @contextlib.asynccontextmanager
 async def _served(monkeypatch, recorded: _Recorded) -> AsyncIterator[Call]:
     """An initialized session on the real app; yields call(entry, tool, arguments)."""
+    built: list[SugraClient] = []
 
     def build_client(api_key: str) -> SugraClient:
         config = Config(api_base="https://api.test", api_key=api_key, timeout=5.0)
-        return SugraClient(config, transport=httpx.MockTransport(recorded.api))
+        client = SugraClient(config, transport=httpx.MockTransport(recorded.api))
+        built.append(client)
+        return client
 
     monkeypatch.delenv("CONTAINER_APP_REVISION", raising=False)
     monkeypatch.delenv("SUGRA_API_KEY", raising=False)
-    monkeypatch.setattr(server, "_shared_client", None)
-    monkeypatch.setattr(server, "_per_key_clients", {})
+    await server.close_clients()
     monkeypatch.setattr(server, "_build_client", build_client)
     monkeypatch.setattr(observability, "_TRACER", recorded.tracer)
     monkeypatch.setattr(server.mcp, "_session_manager", None)
@@ -200,7 +202,7 @@ async def _served(monkeypatch, recorded: _Recorded) -> AsyncIterator[Call]:
 
                 yield call
     finally:
-        for client in server._per_key_clients.values():
+        for client in built:
             await client.aclose()
         await authenticator.aclose()
 
