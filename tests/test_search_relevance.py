@@ -487,6 +487,38 @@ def test_us_context_without_macro_keyword_does_not_boost_fred(catalog) -> None:
         f"FRED incorrectly boosted for US-but-non-macro query: "
         f"top-3 {[r['operation_id'] for r in results[:3]]}"
     )
+
+
+# ---- Unemployment: the rate itself, never the participation rate ----
+# "unemployment rate Germany" ranked ilostat_labor_force first: the
+# unemployment alias expanded to "labor force", which only the
+# participation-rate operation carries, so a different measure won.
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "unemployment rate Germany",
+        "Germany unemployment rate",
+        "unemployment rate Germany France",
+    ],
+)
+def test_unemployment_rate_by_country_lands_the_unemployment_rate(catalog, query: str) -> None:
+    results = search_catalog(catalog, query, limit=3)
+    top_3_ops = [r["operation_id"] for r in results]
+    # ilostat_youth_unemployment scores the same on these words; the
+    # operation_id tie-break puts the general measure first.
+    assert top_3_ops[0] == "ilostat_unemployment", top_3_ops
+    assert "ilostat_labor_force" not in top_3_ops, top_3_ops
+
+
+def test_jobless_rate_lands_an_unemployment_measure(catalog) -> None:
+    """The alias needs an anchor on the measure itself: without one,
+    "jobless rate" fell to a central bank's prime rate."""
+    results = search_catalog(catalog, "jobless rate", limit=3)
+    assert "unemployment" in results[0]["operation_id"], [r["operation_id"] for r in results]
+
+
 # ---- Symbol-aware relevance: ticker queries prefer symbol-routed endpoints ----
 # "MSFT earnings" ranked market_calendar_earnings (market-wide,
 # parameters from/to only) above quotes_symbol_earnings_events (symbol-routed).

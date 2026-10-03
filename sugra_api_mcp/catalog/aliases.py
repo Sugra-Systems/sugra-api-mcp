@@ -19,7 +19,11 @@ ALIASES: dict[str, list[str]] = {
     "exchange rate": ["forex", "currency", "fx"],
     "cpi": ["consumer price index", "inflation"],
     "gdp": ["gross domestic product", "national accounts"],
-    "unemployment": ["labor force", "jobless"],
+    # No "labor force": it named only the participation-rate operation, a
+    # different measure, and lifted it over the unemployment rate itself.
+    # "unemployment rate" anchors the family on the measure, so "jobless
+    # rate" lands on unemployment and not on a central bank's prime rate.
+    "unemployment": ["jobless", "unemployment rate"],
     "treasury yield": ["treasury rates", "bond yield"],
     "ip geolocation": ["network atlas", "ip address", "asn"],
     "available data sources": ["list sources", "source catalog"],
