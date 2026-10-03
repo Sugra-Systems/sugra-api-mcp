@@ -7,7 +7,7 @@ import asyncio
 import json
 import os
 import sys
-from typing import Literal
+from typing import Any, Literal
 
 # How long uvicorn waits on SIGTERM for open connections to finish before it
 # cancels them. Only plain responses wait: SSE streams close when the signal
@@ -40,6 +40,27 @@ def _add_server_args(parser: argparse.ArgumentParser) -> None:
         default=8001,
         help="Bind port for streamable-http (default: 8001)",
     )
+
+
+def uvicorn_settings(host: str, port: int) -> dict[str, Any]:
+    """The parameters the HTTP transport passes to uvicorn.run.
+
+    uvicorn writes its default headers into every response, its own 500
+    included and, under the httptools parser the http extra installs, its own
+    400 for a request it cannot parse. With server_header off it adds no
+    `server: uvicorn` of its own, so a response carries exactly the one Server
+    header given here. SUGRA_MCP_SERVER_VERSION is read once, at start.
+    """
+    from .config import server_header_value
+
+    return {
+        "host": host,
+        "port": port,
+        "log_level": "info",
+        "timeout_graceful_shutdown": GRACEFUL_SHUTDOWN_SECONDS,
+        "server_header": False,
+        "headers": [("server", server_header_value())],
+    }
 
 
 def _run_server(args: argparse.Namespace) -> None:
@@ -126,13 +147,7 @@ def _run_server(args: argparse.Namespace) -> None:
         app.router.lifespan_context = gate.wrap_lifespan(
             app.router.lifespan_context, on_exit=(close_clients, auth.aclose)
         )
-        uvicorn.run(
-            app,
-            host=args.host,
-            port=args.port,
-            log_level="info",
-            timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_SECONDS,
-        )
+        uvicorn.run(app, **uvicorn_settings(args.host, args.port))
 
 
 async def _call_operation(args: argparse.Namespace) -> dict[str, object]:

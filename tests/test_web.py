@@ -288,13 +288,15 @@ def test_cursor_install_link_carries_the_env_reference_not_a_key() -> None:
     }
 
 
-def test_health_serves_json_unauthenticated(client: TestClient) -> None:
+def test_health_serves_json_unauthenticated(client: TestClient, monkeypatch) -> None:
+    monkeypatch.delenv("SUGRA_MCP_SERVER_VERSION", raising=False)
     resp = client.get("/health")
     assert resp.status_code == 200
-    body = resp.json()
-    assert body["status"] == "ok"
-    assert body["service"] == "sugra-api-mcp"
-    assert body["version"] == __version__
+    assert resp.json() == {"status": "ok", "service": "sugra-api-mcp"}
+    # The version only when the operator turns it on.
+    monkeypatch.setenv("SUGRA_MCP_SERVER_VERSION", "1")
+    body = client.get("/health").json()
+    assert body == {"status": "ok", "service": "sugra-api-mcp", "version": __version__}
 
 
 def test_unknown_path_still_requires_auth(client: TestClient) -> None:

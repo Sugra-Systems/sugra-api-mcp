@@ -6,6 +6,8 @@ import math
 import os
 from dataclasses import dataclass
 
+from . import __version__
+
 # Remediation copy for the call-time missing_api_key error. Shared by the
 # keyless stand-in client (server.py) and the CLI doctor warning (__main__.py).
 MISSING_API_KEY_HINT = (
@@ -26,6 +28,11 @@ DEFAULT_ALLOWED_ORIGINS: tuple[str, ...] = (
 # only values that turn it on (compared after strip + lower).
 UI_WIDGETS_ENV = "SUGRA_MCP_UI_WIDGETS"
 _TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
+
+# The product token of the Server response header, and the opt-in switch that
+# adds the package version to that header and to the /health response.
+SERVER_PRODUCT = "sugra-api-mcp"
+SERVER_VERSION_ENV = "SUGRA_MCP_SERVER_VERSION"
 
 
 @dataclass(frozen=True)
@@ -174,3 +181,26 @@ def ui_widgets_enabled() -> bool:
     register_ui_widgets there), so a change takes a restart.
     """
     return os.environ.get(UI_WIDGETS_ENV, "").strip().lower() in _TRUTHY_ENV_VALUES
+
+
+def server_version_disclosed() -> bool:
+    """Whether HTTP responses name the package version.
+
+    On only when SUGRA_MCP_SERVER_VERSION is 1, true, yes or on, in any case
+    and with surrounding whitespace ignored. Unset, empty and every other value
+    mean off: the Server header carries the product name alone and /health
+    leaves the version out. The version stays in the telemetry resource, in the
+    MCP initialize result and in `sugra-api-mcp doctor`.
+    """
+    return os.environ.get(SERVER_VERSION_ENV, "").strip().lower() in _TRUTHY_ENV_VALUES
+
+
+def server_header_value() -> str:
+    """The Server response header (RFC 9110, section 10.2.4).
+
+    The product name, followed by "/" and the package version only when
+    server_version_disclosed() is on.
+    """
+    if server_version_disclosed():
+        return f"{SERVER_PRODUCT}/{__version__}"
+    return SERVER_PRODUCT

@@ -29,6 +29,7 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.routing import Route
 
 from . import __version__, skills_index
+from .config import server_version_disclosed
 
 SITE = "https://mcp.sugra.ai"
 ENDPOINT = f"{SITE}/mcp"
@@ -686,9 +687,11 @@ async def landing(_request: Request) -> HTMLResponse:
 
 
 async def health(_request: Request) -> JSONResponse:
-    return JSONResponse(
-        {"status": "ok", "service": "sugra-api-mcp", "version": __version__}
-    )
+    body = {"status": "ok", "service": "sugra-api-mcp"}
+    # The version only when SUGRA_MCP_SERVER_VERSION turns it on, as in the Server header.
+    if server_version_disclosed():
+        body["version"] = __version__
+    return JSONResponse(body)
 
 
 _SKILLS_CACHE = {"Cache-Control": "public, max-age=300"}
