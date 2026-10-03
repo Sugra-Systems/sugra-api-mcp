@@ -610,6 +610,7 @@ def test_setup_sets_otel_service_name_default(monkeypatch) -> None:
         "InstrumentationKey=00000000-0000-0000-0000-000000000000",
     )
     monkeypatch.delenv("OTEL_SERVICE_NAME", raising=False)
+    monkeypatch.delenv("OTEL_RESOURCE_ATTRIBUTES", raising=False)
 
     captured_env: dict[str, str | None] = {}
 
@@ -640,6 +641,7 @@ def test_setup_preserves_operator_otel_service_name_override(monkeypatch) -> Non
         "InstrumentationKey=00000000-0000-0000-0000-000000000000",
     )
     monkeypatch.setenv("OTEL_SERVICE_NAME", "sugra-mcp-staging")
+    monkeypatch.delenv("OTEL_RESOURCE_ATTRIBUTES", raising=False)
 
     captured: dict[str, str | None] = {}
 
@@ -2586,6 +2588,7 @@ def _fake_azure_monitor(monkeypatch, captured: dict) -> None:
     # setup_observability edits os.environ directly; these records let
     # monkeypatch put back whatever the process had before the test.
     monkeypatch.setenv("OTEL_SERVICE_NAME", "sugra-mcp")
+    monkeypatch.delenv("OTEL_RESOURCE_ATTRIBUTES", raising=False)
     for name in observability._TRACE_OVERRIDE_VARS:
         monkeypatch.delenv(name, raising=False)
 

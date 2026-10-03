@@ -121,6 +121,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, ParamSpec, TypeVar
 
+from . import __version__
 from .errors import is_error_payload
 
 logger = logging.getLogger("sugra_mcp.observability")
@@ -840,6 +841,23 @@ def _drop_trace_overrides() -> None:
             logger.warning("%s is set; removed so that every tool span is exported.", name)
 
 
+def _add_service_version() -> None:
+    """Add service.version=<package version> to OTEL_RESOURCE_ATTRIBUTES.
+
+    The SDK reads the variable through its resource detector, and the exporter
+    sends service.version as the application version (application_Version in
+    App Insights). An operator's own service.version there wins, and the other
+    attributes the operator set stay; only empty items are dropped.
+    """
+    raw = os.environ.get("OTEL_RESOURCE_ATTRIBUTES", "")
+    items = [item for item in raw.split(",") if item.strip()]
+    for item in items:
+        key, sep, _value = item.partition("=")
+        if sep and key.strip() == "service.version":
+            return
+    os.environ["OTEL_RESOURCE_ATTRIBUTES"] = ",".join([*items, f"service.version={__version__}"])
+
+
 def setup_observability(connection_string: str | None = None) -> bool:
     """Configure Azure Monitor OpenTelemetry if a connection string is available.
 
@@ -885,6 +903,8 @@ def setup_observability(connection_string: str | None = None) -> bool:
         # via Resource auto-detector. setdefault preserves any operator
         # override in /etc/systemd unit or .env.
         os.environ.setdefault("OTEL_SERVICE_NAME", "sugra-mcp")
+        # The package version reaches the resource the same way.
+        _add_service_version()
         _drop_trace_overrides()
 
         configure_azure_monitor(

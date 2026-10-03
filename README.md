@@ -517,6 +517,12 @@ passes `SUGRA_API_KEY` and the optional overrides (`SUGRA_API_BASE`,
 `http://localhost:8001/health`. Reverse-proxy and OAuth operator settings are
 documented in [docs/self-hosting.md](docs/self-hosting.md).
 
+Every HTTP response, errors included, carries the header
+`Server: sugra-api-mcp`. Set `SUGRA_MCP_SERVER_VERSION=1` (or `true`, `yes`,
+`on`) in the server's environment to add the package version to that header
+(`sugra-api-mcp/<version>`) and to the `/health` response, which leaves the
+version out otherwise.
+
 A note on auth: no environment variable is baked into the image and none is
 required for the container to start. In HTTP mode clients authenticate per
 request with `Authorization: Bearer sugra_...`, so `SUGRA_API_KEY` on the
