@@ -8,15 +8,21 @@ from typing import Any
 from ._countries import COUNTRY_QUERY_TERMS
 from .aliases import (
     CENTRAL_BANK_PREFIX_BOOSTS,
+    COMPOUND_NAMED_OPERATIONS,
+    FX_CONVERT_OPERATION,
     SOURCE_COUNTRY_PREFIXES,
     detect_currency_pairs,
+    detect_fx_request,
+    detect_named_operations,
     detect_network_terms,
     detect_query_countries,
     detect_tickers,
     detect_us_macro_query,
+    detect_weather_request,
     matching_aliases,
     matching_central_bank_prefixes,
     query_has_equity_context,
+    topic_default_operations,
 )
 from .models import Catalog, Endpoint
 
@@ -40,12 +46,12 @@ _PROPER_NAME_COMPOUNDS: tuple[str, ...] = (
 # filler tokens "the"/"for"/"has", and the alphabetical operation_id tie-break
 # then surfaced the logo PNG.
 #
-# LENGTH >= 3 ONLY, on purpose: 2-letter tokens collide with ISO country codes
-# (in=India, it=Italy, is=Iceland, be=Belgium, at=Austria) and short tickers
-# (SO, IT, IP), so stripping them could drop the one meaningful token of a
-# query. The NVDA tie was created entirely by 3+ letter filler ("the"/"for"/
-# "has"), so the >=3 floor fixes it without any 2-letter risk. The filter below
-# also guards on len explicitly, so adding a 2-letter word here would be inert.
+# LENGTH >= 3 ONLY in this set, on purpose: 2-letter tokens collide with ISO
+# country codes (in=India, it=Italy, is=Iceland, be=Belgium, at=Austria) and
+# short tickers (SO, IT, IP), so stripping them blindly could drop the one
+# meaningful token of a query; they go through the case-aware
+# _TWO_LETTER_FILLER below instead. The filter also guards on len explicitly,
+# so adding a 2-letter word here would be inert.
 # 3-letter ticker collisions (HAS=Hasbro, CAN=Canaan) still route correctly
 # because detect_tickers runs on the RAW query, independent of this filter.
 _QUERY_STOPWORDS: frozenset[str] = frozenset({
@@ -60,8 +66,19 @@ _QUERY_STOPWORDS: frozenset[str] = frozenset({
     "from", "with", "for", "about", "into", "over", "under", "against",
 })
 
+# Two-letter function words go only when the raw query writes them in
+# lowercase: "dollar to yen" and "rates going up in the US" ranked operations
+# that matched nothing but "to", "up" and "in". In capitals ("IN GDP", "IT
+# sector") the word is a country code or a ticker and stays. "us" is never
+# filler: in lowercase it names the United States as often as the pronoun.
+_TWO_LETTER_FILLER: frozenset[str] = frozenset({
+    "to", "in", "is", "so", "of", "on", "at", "by", "an", "or", "as", "be",
+    "do", "if", "it", "me", "my", "no", "up", "we", "he", "am", "go",
+})
+_UPPERCASE_TWO_LETTER_RE = re.compile(r"\b[A-Z]{2}\b")
+
 # Boosts (additive on top of token-level score). Tuned empirically against
-# tests/test_search_relevance_benchmark.py — see that file for the target queries.
+# tests/test_search_relevance.py - see that file for the target queries.
 ALIAS_PHRASE_BOOST = 10
 TICKER_MARKETS_TOOLSET_BOOST = 12
 TICKER_QUOTES_SYMBOL_BOOST = 25
@@ -118,6 +135,13 @@ KEYWORD_FIELD_WEIGHT = 4
 # an endpoint that matches the topic earns it - otherwise every
 # country-scoped endpoint would surface for every country query.
 COUNTRY_PARAM_BOOST = 6
+# - NAMED OPERATION: the query names a benchmark, waterway, port or measure
+#   whose operation the catalog text never spells out (Brent, TTF, Suez,
+#   Rotterdam, trucking - aliases.detect_named_operations), joins two
+#   currencies as a conversion, or asks an everyday weather question
+#   (aliases.detect_weather_request). The name is the user's whole intent, so
+#   it outweighs any one field match.
+NAMED_OPERATION_BOOST = 15
 
 
 def _tokens(value: str) -> list[str]:
@@ -278,6 +302,8 @@ def _score(
     query_countries: set[str],
     coverage_excluded: frozenset[str] = frozenset(),
     country_terms: frozenset[str] = frozenset(),
+    penalty_countries: set[str] | None = None,
+    named_operations: dict[str, str] | None = None,
 ) -> tuple[int, list[str]]:
     alias_terms = [term for terms in aliases.values() for term in terms]
     all_terms = [*query_terms, *_tokens(" ".join(alias_terms))]
@@ -299,6 +325,12 @@ def _score(
             # 'exchange rate' lifted CB converters over the forex namespace).
             alias_consumed.update(_tokens(phrase))
             break
+
+    named = (named_operations or {}).get(endpoint.operation_id)
+    if named is not None:
+        score += NAMED_OPERATION_BOOST
+        topic_hit = True
+        why.append(f"name:{named}")
 
     # Pattern-detection boosts: tilt the ranking toward the right domain when the
     # query has a distinctive shape (ticker symbol, currency pair, central bank
@@ -367,8 +399,16 @@ def _score(
             score += US_MACRO_FED_BOOST
             why.append("pattern:us-macro->fed")
 
+    # A compound-named operation answers the compound's last word only beside
+    # its first: "space weather" is solar activity, not the weather in Paris.
+    silenced = {
+        tail for prefix, (head, tail) in COMPOUND_NAMED_OPERATIONS.items()
+        if endpoint.operation_id.startswith(prefix) and head not in query_terms
+    }
     matched_query_terms: set[str] = set()
     for term in all_terms:
+        if term in silenced:
+            continue
         hit = False
         if term in profile.operation_id:
             score += 5
@@ -435,15 +475,19 @@ def _score(
             break
 
     # Geography: the query names a country; a NATIONAL source of a
-    # different country is a silent substitution, never a top answer.
-    if query_countries:
+    # different country is a silent substitution, never a top answer. The
+    # places a query names without naming a country - a currency's issuer, a
+    # benchmark's market, a port's country - count here too.
+    penalized = query_countries if penalty_countries is None else penalty_countries
+    if penalized:
         for prefix, country in SOURCE_COUNTRY_PREFIXES.items():
             if endpoint.operation_id.startswith(prefix):
-                if country not in query_countries:
+                if country not in penalized:
                     score -= WRONG_COUNTRY_PENALTY
                     why.append(f"geo-mismatch:{country}")
                 break
 
+    if query_countries:
         # A generic country-parameterized endpoint can answer for WHATEVER
         # country the query names (it is not fixed to one nation the way a
         # national source is), so it earns a positive boost rather than the
@@ -547,10 +591,15 @@ def search_catalog(
     # a query that is ALL stopwords ("what is the") yields an empty term list
     # here and falls through to pattern-only matching, returning no results when
     # no ticker/fx/central-bank/us-macro pattern fires (those detectors read the
-    # raw `query`, so "what is AAPL" still routes via the ticker boost). The
-    # explicit len guard keeps 2-letter tokens (ISO codes, short tickers) intact
-    # regardless of the stopword set.
-    terms = [term for term in terms if len(term) < 3 or term not in _QUERY_STOPWORDS]
+    # raw `query`, so "what is AAPL" still routes via the ticker boost). A
+    # 2-letter token goes only as lowercase _TWO_LETTER_FILLER, so ISO codes and
+    # short tickers written in capitals stay.
+    capitalized = {word.lower() for word in _UPPERCASE_TWO_LETTER_RE.findall(query)}
+    terms = [
+        term for term in terms
+        if (len(term) < 3 or term not in _QUERY_STOPWORDS)
+        and (term not in _TWO_LETTER_FILLER or term in capitalized)
+    ]
     aliases = matching_aliases(query)
 
     # Pattern detection runs against the raw query (preserves uppercase) so
@@ -605,7 +654,22 @@ def search_catalog(
         boost_quotes_symbol = True
 
     boost_markets_toolset = boost_quotes_symbol
-    boost_forex = bool(currency_pairs)
+    # Everyday names: a currency named in words, and the benchmarks, waterways,
+    # ports and measures of detect_named_operations. Crypto context keeps
+    # "convert bitcoin to dollars" a crypto price. A pair asks for a
+    # conversion unless the query asks for the rate over time. A weather
+    # question asked in weather, time and place words alone names the
+    # forecast (the National Weather Service's for the United States), or the
+    # history when it asks about the past.
+    fx = None if has_crypto_context else detect_fx_request(query)
+    named = detect_named_operations(query)
+    named_operations = dict(named.operations)
+    if fx is not None and fx.pair and not fx.over_time:
+        named_operations.setdefault(FX_CONVERT_OPERATION, "currency pair")
+    weather = detect_weather_request(query, terms)
+    if weather is not None:
+        named_operations.setdefault(weather.operation, weather.name)
+    boost_forex = bool(currency_pairs) or fx is not None
     boost_crypto = has_crypto_context
     boost_us_macro = detect_us_macro_query(query)
     query_countries = detect_query_countries(query)
@@ -635,6 +699,15 @@ def search_catalog(
     for compound in _PROPER_NAME_COMPOUNDS:
         if f" {compound} " in normalized_query:
             consumed.update(compound.split())
+    # Currency and other names are consumed too: their boost IS their
+    # contribution, and their places join the geography penalty below.
+    consumed.update(named.words)
+    if weather is not None:
+        consumed.update(weather.words)
+    penalty_countries = set(query_countries) | named.countries
+    if fx is not None:
+        consumed.update(fx.words)
+        penalty_countries |= fx.issuer_countries
     # Country tokens are NOT consumed: consuming them would strip the CORRECT
     # national source of the coverage credit for the country the user typed.
     # The country-param boost reads them separately, to tell a query that is
@@ -663,6 +736,8 @@ def search_catalog(
             query_countries=query_countries,
             coverage_excluded=coverage_excluded,
             country_terms=country_terms,
+            penalty_countries=penalty_countries,
+            named_operations=named_operations,
         )
         if score > 0:
             scored.append((score, endpoint, why))
@@ -683,7 +758,12 @@ def search_catalog(
                              [*why, f"clamped-below:{endpoint.replaced_by}"])
 
     scored = [item for item in scored if item[0] > 0]
-    scored.sort(key=lambda item: (-item[0], item[1].operation_id))
+    # Equal scores: the default operation of a topic word the query names
+    # comes first ("weather" -> the worldwide forecast), then operation_id.
+    defaults = topic_default_operations(query)
+    scored.sort(key=lambda item: (
+        -item[0], item[1].operation_id not in defaults, item[1].operation_id,
+    ))
     return [
         {
             "operation_id": endpoint.operation_id,

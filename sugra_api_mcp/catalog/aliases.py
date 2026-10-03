@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
+from dataclasses import dataclass
+from functools import lru_cache
+from itertools import pairwise
 
 ALIASES: dict[str, list[str]] = {
     "nasdaq futures": ["cot", "financial futures", "index futures", "nasdaq"],
@@ -147,6 +151,9 @@ _NON_TICKER_WORDS: frozenset[str] = frozenset({
     # Energy / grid: ENTSO-E and regional grid codes are not
     # equity tickers; keep them out of quotes_symbol_* boosts.
     "ENTSO", "AEMO", "NESO", "NEM",
+    # Commodity benchmarks: "TTF gas price" asked for the Dutch gas hub and
+    # was read as a ticker through the word "price".
+    "TTF", "WTI",
 })
 
 # The ticker gate is INVERTED. The old default-allow
@@ -192,7 +199,9 @@ SOURCE_COUNTRY_PREFIXES: dict[str, str] = {
     "central_banks_bcra_": "AR",
     "central_banks_bcrp_": "PE",
     "central_banks_sarb_": "ZA",
-    "forex_cbr_": "RU",
+    # No trailing underscore: "forex_cbr_" missed forex_cbr itself, the
+    # latest Bank of Russia rates.
+    "forex_cbr": "RU",
     "nbp_": "PL", "cnb_": "CZ", "bnm_": "MY",
     "statistical_agencies_stat_estonia_": "EE",
     "fred_": "US", "fed_": "US", "worldbank_bls_": "US", "bea_": "US",
@@ -223,6 +232,11 @@ SOURCE_COUNTRY_PREFIXES: dict[str, str] = {
     "usaspending_last_": "US", "usaspending_spending_": "US", "weather_nws_aviation_": "US",
     "weather_nws_forecast_": "US", "weather_nws_office_": "US", "weather_nws_point": "US",
     "weather_nws_zones": "US", "weather_us_alerts": "US", "weather_us_forecast_": "US",
+    # Port and vessel sources of one country: Fintraffic Portnet covers
+    # Finnish ports only, and the NOAA AIS history (the successor of
+    # maritime_history_) covers United States waters only. Untagged, Portnet
+    # ranked first for ship calls at Rotterdam.
+    "transport_ports_port_calls": "FI", "transport_vessels_history_": "US",
 }
 # The dead-prefix test (tests/test_search_relevance.py) guards this map: every
 # entry must match at least one bundled operation, so a source rename or
@@ -399,13 +413,523 @@ _KNOWN_CURRENCIES: frozenset[str] = frozenset({
 })
 
 
+@lru_cache(maxsize=4096)
+def _phrase_forms(phrase: str) -> tuple[tuple[str, str, str], ...]:
+    """Each word of a vocabulary phrase with the plurals a query token may take.
+
+    Cached: every search reads the same fixed vocabularies, and building these
+    forms anew for every query token doubled the time of a 64-term search.
+    """
+    return tuple(
+        (word, f"{word}s", f"{word}es") for word in _WORD_TOKEN_RE.findall(phrase.lower())
+    )
+
+
+def _phrase_spans(tokens: list[str], phrase: str) -> list[tuple[int, int]]:
+    """Token-index spans where the phrase occurs as consecutive query tokens.
+
+    Each phrase word matches a whole token, plural-tolerant: "exchange rates"
+    holds "exchange rate" and "ports" holds "port".
+    """
+    forms = _phrase_forms(phrase)
+    if not forms:
+        return []
+    width = len(forms)
+    first = forms[0]
+    return [
+        (start, start + width)
+        for start in range(len(tokens) - width + 1)
+        if tokens[start] in first
+        and all(tokens[start + k] in forms[k] for k in range(1, width))
+    ]
+
+
+def _blank(tokens: list[str], phrases: Iterable[str]) -> list[str]:
+    """The tokens with every occurrence of the phrases blanked out."""
+    out = list(tokens)
+    for phrase in phrases:
+        for start, end in _phrase_spans(tokens, phrase):
+            out[start:end] = [""] * (end - start)
+    return out
+
+
+def _claim_names(tokens: list[str], names: Iterable[str]) -> list[tuple[int, int, str]]:
+    """Non-overlapping name spans in query order, the longest name claiming first.
+
+    "turkish lira" claims both of its tokens before "lira" can, so a qualified
+    name never also reads as the bare one.
+    """
+    claimed = [False] * len(tokens)
+    found: list[tuple[int, int, str]] = []
+    for name in sorted(names, key=lambda name: (-len(_phrase_forms(name)), name)):
+        for start, end in _phrase_spans(tokens, name):
+            if any(claimed[start:end]):
+                continue
+            claimed[start:end] = [True] * (end - start)
+            found.append((start, end, name))
+    return sorted(found)
+
+
 def matching_aliases(query: str) -> dict[str, list[str]]:
-    normalized = " ".join(query.lower().split())
+    """Alias phrases the query names as whole words.
+
+    The phrase or one of its expansions must occur as consecutive query
+    tokens, plural-tolerant. A substring test fired "cot" on "cotton",
+    "currency" on "cryptocurrency", "environment" on "environmental" and
+    "aqi" on "Iraqi".
+    """
+    tokens = _WORD_TOKEN_RE.findall(query.lower())
     return {
         phrase: expansions
         for phrase, expansions in ALIASES.items()
-        if phrase in normalized or any(expansion in normalized for expansion in expansions)
+        if any(_phrase_spans(tokens, term) for term in (phrase, *expansions))
     }
+
+
+# Everyday currency names -> ISO 4217 code. A bare word that is also common
+# English or names several currencies ("real", "won", "peso", "krone", "sol")
+# counts only with its qualifier.
+CURRENCY_NAMES: dict[str, str] = {
+    "dollar": "USD", "us dollar": "USD", "u s dollar": "USD", "american dollar": "USD",
+    "greenback": "USD",
+    "canadian dollar": "CAD", "australian dollar": "AUD", "aussie dollar": "AUD",
+    "new zealand dollar": "NZD", "hong kong dollar": "HKD", "singapore dollar": "SGD",
+    "taiwan dollar": "TWD", "new taiwan dollar": "TWD",
+    "euro": "EUR",
+    "yen": "JPY", "japanese yen": "JPY",
+    "pound": "GBP", "pound sterling": "GBP", "sterling": "GBP", "british pound": "GBP",
+    "franc": "CHF", "swiss franc": "CHF",
+    "yuan": "CNY", "chinese yuan": "CNY", "renminbi": "CNY", "rmb": "CNY",
+    "rupee": "INR", "indian rupee": "INR",
+    "ruble": "RUB", "rouble": "RUB", "russian ruble": "RUB", "russian rouble": "RUB",
+    "rand": "ZAR", "south african rand": "ZAR",
+    "brazilian real": "BRL", "brazilian reais": "BRL",
+    "mexican peso": "MXN", "argentine peso": "ARS", "argentinian peso": "ARS",
+    "chilean peso": "CLP", "colombian peso": "COP", "philippine peso": "PHP",
+    "krona": "SEK", "kronor": "SEK", "swedish krona": "SEK", "swedish kronor": "SEK",
+    "norwegian krone": "NOK", "norwegian kroner": "NOK",
+    "danish krone": "DKK", "danish kroner": "DKK",
+    "zloty": "PLN", "polish zloty": "PLN",
+    "forint": "HUF", "hungarian forint": "HUF",
+    "koruna": "CZK", "czech koruna": "CZK",
+    "lira": "TRY", "turkish lira": "TRY",
+    "korean won": "KRW", "south korean won": "KRW",
+    "baht": "THB", "thai baht": "THB",
+    "rupiah": "IDR", "indonesian rupiah": "IDR",
+    "ringgit": "MYR", "malaysian ringgit": "MYR",
+    "shekel": "ILS", "israeli shekel": "ILS",
+    "dirham": "AED", "uae dirham": "AED",
+    "riyal": "SAR", "saudi riyal": "SAR",
+    "hryvnia": "UAH", "tenge": "KZT", "naira": "NGN", "lari": "GEL", "dram": "AMD",
+    "peruvian sol": "PEN",
+}
+
+# The country a currency belongs to: a national source of another country is
+# never the answer to its exchange-rate question. "EU" is no source's
+# country, so for the euro every national source steps down.
+_CURRENCY_ISSUERS: dict[str, str] = {
+    "USD": "US", "EUR": "EU", "JPY": "JP", "GBP": "GB", "CHF": "CH", "CNY": "CN",
+    "INR": "IN", "RUB": "RU", "ZAR": "ZA", "BRL": "BR", "MXN": "MX", "ARS": "AR",
+    "CLP": "CL", "COP": "CO", "PHP": "PH", "PEN": "PE", "SEK": "SE", "NOK": "NO",
+    "DKK": "DK", "PLN": "PL", "HUF": "HU", "CZK": "CZ", "TRY": "TR", "KRW": "KR",
+    "THB": "TH", "IDR": "ID", "MYR": "MY", "ILS": "IL", "AED": "AE", "SAR": "SA",
+    "UAH": "UA", "KZT": "KZ", "NGN": "NG", "GEL": "GE", "AMD": "AM",
+    "CAD": "CA", "AUD": "AU", "NZD": "NZ", "HKD": "HK", "SGD": "SG", "TWD": "TW",
+}
+
+# ISO codes that are also English words when written in lowercase.
+_LOWERCASE_CODE_WORDS: frozenset[str] = frozenset({"try", "php", "cad", "sar", "rub"})
+
+# Weight, not sterling: "a pound of coffee", "price per pound".
+_CURRENCY_NAME_BLOCKERS: tuple[str, ...] = ("pound of", "per pound")
+
+# Words that make a named currency an exchange-rate question. So does "rate"
+# right after the currency ("Indian rupee rate"), in the singular only:
+# "euro rates" also names the euro interest rates.
+_FX_CUES: tuple[str, ...] = (
+    "exchange rate", "convert", "converting", "conversion", "converter",
+    "forex", "fx", "currency", "currencies",
+)
+
+# Words that may stand between two currencies joined as a conversion:
+# "dollar to yen", "lira for one US dollar", "yen is a dollar". Not "and":
+# "dollar and euro" lists two currencies without converting one to the other.
+_PAIR_CONNECTIVES: frozenset[str] = frozenset({
+    "to", "for", "in", "into", "per", "vs", "versus", "against",
+    "one", "a", "an", "the", "is", "are", "worth",
+})
+
+# The conversion operation, and the wording that asks for a rate over time,
+# which the history operation answers instead.
+FX_CONVERT_OPERATION = "forex_convert"
+_FX_HISTORY_WORDS: tuple[str, ...] = (
+    "history", "historical", "trend", "chart", "past", "since", "ago",
+    "over time", "last", "year", "month", "week",
+)
+
+
+@dataclass(frozen=True)
+class FxRequest:
+    """An exchange-rate question asked in everyday words."""
+
+    currencies: tuple[str, ...]  # ISO codes, query order, each once
+    pair: bool                   # two currencies joined as a conversion
+    over_time: bool              # asks for the rate over a period
+    words: frozenset[str]        # the query tokens that named a currency
+
+    @property
+    def issuer_countries(self) -> frozenset[str]:
+        return frozenset(
+            _CURRENCY_ISSUERS[code] for code in self.currencies if code in _CURRENCY_ISSUERS
+        )
+
+
+def detect_fx_request(query: str) -> FxRequest | None:
+    """The exchange-rate question the query asks, or None.
+
+    A query asks one when it joins two different currencies as a conversion
+    ("dollar to yen", "Turkish lira for one US dollar", "EUR/USD") or names a
+    currency beside an exchange-rate cue ("euro exchange rate"). A currency
+    named alone ("coffee price in dollars") asks nothing. Crypto queries are
+    the caller's to exclude: "convert bitcoin to dollars" is a crypto price.
+    """
+    raw_tokens = re.findall(r"[A-Za-z0-9]+", query)
+    tokens = _blank([token.lower() for token in raw_tokens], _CURRENCY_NAME_BLOCKERS)
+    mentions = [
+        (start, end, CURRENCY_NAMES[name])
+        for start, end, name in _claim_names(tokens, CURRENCY_NAMES)
+    ]
+    named = {index for start, end, _ in mentions for index in range(start, end)}
+    for index, raw in enumerate(raw_tokens):
+        code = raw.upper()
+        if (index not in named and tokens[index] and code in _KNOWN_CURRENCIES
+                and (raw.isupper() or tokens[index] not in _LOWERCASE_CODE_WORDS)):
+            mentions.append((index, index + 1, code))
+    mentions.sort()
+    iso_pairs = detect_currency_pairs(query)
+
+    pair = bool(iso_pairs)
+    for (_, end, first), (start, _, second) in pairwise(mentions):
+        if first != second and all(
+            token in _PAIR_CONNECTIVES or token.isdigit() for token in tokens[end:start]
+        ):
+            pair = True
+    currencies = tuple(dict.fromkeys(
+        [code for _, _, code in mentions] + [code for found in iso_pairs for code in found]
+    ))
+    cue = any(_phrase_spans(tokens, word) for word in _FX_CUES) or any(
+        tokens[end:end + 1] == ["rate"] for _, end, _ in mentions
+    )
+    if not (pair or (currencies and cue)):
+        return None
+    return FxRequest(
+        currencies=currencies,
+        pair=pair,
+        over_time=any(_phrase_spans(tokens, word) for word in _FX_HISTORY_WORDS),
+        words=frozenset(
+            [tokens[index] for start, end, _ in mentions for index in range(start, end)]
+            + [code.lower() for found in iso_pairs for code in found]
+        ),
+    )
+
+
+# Everyday names of a benchmark, waterway or measure -> the operations that
+# answer it. The catalog spells these names inside prose ("Crude oil prices
+# (Brent & WTI)"), as a parameter example ("chokepoint1 for Suez Canal") or
+# not at all (TTF is the World Bank's "Natural gas, Europe" series), so the
+# token score alone never finds them. A product points to its price only
+# with the word price: "crude oil" alone also opens questions about
+# pipelines, tankers and stocks.
+NAMED_OPERATIONS: dict[str, tuple[str, ...]] = {
+    "oil price": ("commodities_energy_petroleum",),
+    "price of oil": ("commodities_energy_petroleum",),
+    "crude price": ("commodities_energy_petroleum",),
+    "price of crude": ("commodities_energy_petroleum",),
+    "brent": ("commodities_energy_petroleum",),
+    "wti": ("commodities_energy_petroleum",),
+    "henry hub": ("commodities_energy_natural_gas",),
+    "ttf": ("commodities_commodity_id",),
+    "title transfer facility": ("commodities_commodity_id",),
+    "dutch gas": ("commodities_commodity_id",),
+    "european gas": ("commodities_commodity_id",),
+    "european natural gas": ("commodities_commodity_id",),
+    "eu gas": ("commodities_commodity_id",),
+    "europe gas": ("commodities_commodity_id",),
+    "natural gas europe": ("commodities_commodity_id",),
+    "gas price europe": ("commodities_commodity_id",),
+    "gas price in europe": ("commodities_commodity_id",),
+    "suez": ("maritime_chokepoints_activity",),
+    "red sea": ("maritime_chokepoints_activity", "maritime_chokepoints_jmic_advisory"),
+    "bab el mandeb": ("maritime_chokepoints_activity", "maritime_chokepoints_jmic_advisory"),
+    "bab al mandab": ("maritime_chokepoints_activity", "maritime_chokepoints_jmic_advisory"),
+    "mandeb": ("maritime_chokepoints_activity", "maritime_chokepoints_jmic_advisory"),
+    "hormuz": (
+        "maritime_chokepoints_activity", "maritime_chokepoints_hormuz_transits",
+        "maritime_chokepoints_jmic_advisory",
+    ),
+    "panama canal": ("maritime_chokepoints_activity", "maritime_chokepoints_panama_transits"),
+    "malacca": ("maritime_chokepoints_activity", "maritime_chokepoints_malacca_throughput"),
+    "bosphorus": ("maritime_chokepoints_activity",),
+    "bosporus": ("maritime_chokepoints_activity",),
+    "turkish straits": ("maritime_chokepoints_activity",),
+    "dardanelles": ("maritime_chokepoints_activity",),
+    # FRED holds these under series codes only (PCU484121484121, the
+    # producer price index of general freight trucking).
+    "trucking": ("fred_series_series_id",),
+    "truckload": ("fred_series_series_id",),
+    "truck freight": ("fred_series_series_id",),
+}
+
+# Other oils: "palm oil price" is not a crude oil question.
+_NAME_BLOCKERS: tuple[str, ...] = (
+    "palm oil", "palm kernel oil", "olive oil", "soybean oil", "soy oil", "sunflower oil",
+    "rapeseed oil", "canola oil", "coconut oil", "vegetable oil", "cooking oil",
+    "fish oil", "linseed oil", "cottonseed oil", "groundnut oil", "peanut oil",
+    "corn oil", "heating oil",
+)
+
+# Wording that asks for something besides the spot price, where a name that
+# points to a commodities_ price operation stays silent. Futures ("WTI
+# futures", "Brent futures curve") answer from the futures operations, which
+# carry the benchmark names as keywords; stocks, output and trade ("US crude
+# oil inventory", "European gas storage") answer from their own operations.
+_NOT_SPOT_PRICE_WORDS: tuple[str, ...] = (
+    "futures", "contract", "front month", "curve", "expiry",
+    "inventory", "inventories", "stock", "stockpile", "storage", "reserve",
+    "production", "output", "export", "import", "consumption", "demand", "supply",
+    "rig count",
+)
+
+# The market a benchmark is priced in. A national source of another country is
+# never its answer; "EU" is no source's country, so for a European benchmark
+# every national source steps down.
+NAMED_PLACES: dict[str, str] = {
+    "ttf": "NL", "title transfer facility": "NL", "dutch gas": "NL",
+    "european gas": "EU", "european natural gas": "EU", "eu gas": "EU",
+    "europe gas": "EU", "natural gas europe": "EU", "gas price europe": "EU",
+    "gas price in europe": "EU",
+    "henry hub": "US",
+}
+
+# Major container ports -> ISO2 country. A port named beside a shipping cue
+# asks for port activity, and the single-country port source of another
+# country is never its answer.
+PORT_COUNTRIES: dict[str, str] = {
+    "rotterdam": "NL", "antwerp": "BE", "hamburg": "DE", "bremerhaven": "DE",
+    "felixstowe": "GB", "le havre": "FR", "valencia": "ES", "algeciras": "ES",
+    "barcelona": "ES", "piraeus": "GR", "genoa": "IT", "gdansk": "PL",
+    "tanger med": "MA", "tangier": "MA", "jebel ali": "AE", "dubai": "AE",
+    "jeddah": "SA", "colombo": "LK", "mumbai": "IN", "nhava sheva": "IN",
+    "durban": "ZA", "mombasa": "KE",
+    "shanghai": "CN", "ningbo": "CN", "shenzhen": "CN", "qingdao": "CN",
+    "tianjin": "CN", "guangzhou": "CN", "xiamen": "CN", "dalian": "CN",
+    "hong kong": "HK", "singapore": "SG", "busan": "KR", "kaohsiung": "TW",
+    "port klang": "MY", "klang": "MY", "tanjung pelepas": "MY", "laem chabang": "TH",
+    "yokohama": "JP", "tokyo": "JP",
+    "los angeles": "US", "long beach": "US", "savannah": "US", "houston": "US",
+    "new york": "US", "santos": "BR", "vancouver": "CA", "callao": "PE",
+}
+PORT_OPERATIONS: tuple[str, ...] = ("transport_ports_congestion",)
+_PORT_CUES: tuple[str, ...] = (
+    "port", "seaport", "harbor", "harbour", "ship", "shipping", "shipment",
+    "vessel", "container", "cargo", "berth", "teu", "maritime", "tanker",
+)
+_PORT_ACTIVITY_WORDS: tuple[str, ...] = (
+    "busy", "busiest", "congested", "congestion", "throughput", "backlog", "queue",
+    "waiting",
+)
+
+
+@dataclass(frozen=True)
+class NamedRequest:
+    """The operations a query names in everyday words."""
+
+    operations: dict[str, str]   # operation_id -> the name that points to it
+    countries: frozenset[str]    # where the named benchmark or port is
+    words: frozenset[str]        # the query tokens of those names
+
+
+def detect_named_operations(query: str) -> NamedRequest:
+    """Benchmarks, waterways, measures and ports the query names.
+
+    A port counts only beside a shipping cue ("ship calls at Rotterdam"),
+    because most of these ports are also cities: "weather in Rotterdam" and
+    "traffic congestion in Los Angeles" name no port. A shipping cue beside an
+    activity word asks for port activity without a name ("port congestion",
+    "how busy are ports"); "busy airports" asks nothing of a seaport.
+    """
+    tokens = _blank(_WORD_TOKEN_RE.findall(query.lower()), _NAME_BLOCKERS)
+    not_spot = any(_phrase_spans(tokens, word) for word in _NOT_SPOT_PRICE_WORDS)
+    operations: dict[str, str] = {}
+    countries: set[str] = set()
+    words: set[str] = set()
+    for start, end, name in _claim_names(tokens, NAMED_OPERATIONS):
+        targets = [op for op in NAMED_OPERATIONS[name]
+                   if not (not_spot and op.startswith("commodities_"))]
+        if not targets:
+            continue
+        for op in targets:
+            operations.setdefault(op, name)
+        if name in NAMED_PLACES:
+            countries.add(NAMED_PLACES[name])
+        words.update(tokens[start:end])
+
+    ports = _claim_names(tokens, PORT_COUNTRIES)
+    cue = any(_phrase_spans(tokens, word) for word in _PORT_CUES)
+    activity = any(_phrase_spans(tokens, word) for word in _PORT_ACTIVITY_WORDS)
+    if cue and (ports or activity):
+        for op in PORT_OPERATIONS:
+            operations.setdefault(op, ports[0][2] if ports else "port")
+        for start, end, name in ports:
+            countries.add(PORT_COUNTRIES[name])
+            words.update(tokens[start:end])
+    return NamedRequest(operations, frozenset(countries), frozenset(words))
+
+
+# The operation a topic word means when the query asks nothing narrower:
+# "weather in Paris" and "Paris weather" ask for the forecast. It comes first
+# among the operations the query's words score equally - the word "weather"
+# alone scores nine operations equally, and their operation_id order put the
+# Hong Kong Observatory first.
+TOPIC_DEFAULT_OPERATIONS: dict[str, str] = {"weather": "v2_weather_forecast"}
+
+# Operations named by a compound whose last word is an everyday topic of its
+# own: "space weather" is solar activity, so the word "weather" finds these
+# operations only when the query also says "space".
+COMPOUND_NAMED_OPERATIONS: dict[str, tuple[str, str]] = {
+    "space_weather_": ("space", "weather"),
+}
+
+
+def topic_default_operations(query: str) -> frozenset[str]:
+    """The default operations of the topic words the query names."""
+    tokens = _WORD_TOKEN_RE.findall(query.lower())
+    return frozenset(
+        operation for word, operation in TOPIC_DEFAULT_OPERATIONS.items()
+        if _phrase_spans(tokens, word)
+    )
+
+
+# An everyday weather question names the worldwide forecast, or the history
+# when it asks about the past: "temperature in Dubai", "will it rain in Rome
+# tomorrow", "past weather in London". Its words alone found NOAA water
+# temperature, a climate projection, the Hong Kong Observatory ("current
+# weather") and the forecast's past_days parameter first. A query asks one
+# only when it asks nothing else: each of its words is a weather, time or
+# question word or names a place, so "marine weather", "weather alerts in
+# Texas" and "temperature anomaly" keep their own operations. "weather" asks
+# by itself; the other weather words ask only beside a place or a time.
+# "forecast" and "wind" ask nothing by themselves: they also name an economic
+# forecast ("forecast for Germany") and wind power ("wind in Germany").
+WEATHER_FORECAST_OPERATION = "v2_weather_forecast"
+WEATHER_HISTORY_OPERATION = "v2_weather_history"
+_WEATHER_WORDS: tuple[str, ...] = (
+    "weather", "temperature", "rain", "raining", "rainy", "rainfall",
+    "snow", "snowing", "snowy", "snowfall", "windy", "wind speed",
+    "sunny", "cloudy", "foggy", "humid", "humidity", "precipitation",
+    "hot", "cold", "warm", "freezing",
+)
+_WEATHER_TIME_WORDS: tuple[str, ...] = (
+    "now", "right now", "today", "tonight", "tomorrow", "current", "currently",
+    "morning", "afternoon", "evening", "night", "day", "week", "weekend",
+    "next", "coming", "few days", "hourly", "daily",
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+)
+_WEATHER_PAST_WORDS: tuple[str, ...] = (
+    "past", "yesterday", "history", "historical", "ago",
+    "last night", "last week", "last weekend", "last month", "last year",
+)
+_WEATHER_QUESTION_WORDS: tuple[str, ...] = (
+    "forecast", "like", "conditions", "outlook", "report", "going", "chance", "expected",
+)
+# A word of three letters or more right after one of these names a place,
+# capitalized or not ("in berlin"); a shorter one is more often a state or a
+# code ("in NY") than a town.
+_PLACE_PREPOSITIONS: frozenset[str] = frozenset({"in", "at", "for"})
+# Countries with a weather service of their own among the catalog's sources,
+# the Hong Kong Observatory and the US National Weather Service: a question
+# that names one of them is that service's to answer. The Observatory's own
+# words find it ("Hong Kong weather"); the Weather Service's do not ("weather
+# in USA" found port congestion first), so a US question names its forecast.
+# "us" names the United States here, as in the search filler rule. The past
+# is the worldwide history's in every country.
+NATIONAL_WEATHER_COUNTRIES: frozenset[str] = frozenset({"HK", "US"})
+US_WEATHER_OPERATION = "weather_us_forecast"
+
+
+@dataclass(frozen=True)
+class WeatherRequest:
+    """A weather question asked in everyday words."""
+
+    operation: str               # the forecast, the history, or the US forecast
+    name: str                    # what the question asks, for the search reason
+    words: frozenset[str]        # the query tokens of its weather and time words
+
+
+def detect_weather_request(query: str, terms: Iterable[str]) -> WeatherRequest | None:
+    """The everyday weather question the query asks, or None.
+
+    ``terms`` are the query's search terms, its filler words already dropped;
+    each must be a weather, time or question word or name a place. A place is
+    a country, a port city, a word of three letters or more right after "in",
+    "at" or "for", or a capitalized word. A capital marks a place only beside
+    lowercase words: in a query written all in capitals or all in title case
+    ("Weather Station Observations") it marks nothing.
+    """
+    raw_tokens = re.findall(r"[A-Za-z0-9]+", query)
+    tokens = [token.lower() for token in raw_tokens]
+    term_set = set(terms)
+
+    def covered(phrases: Iterable[str]) -> set[int]:
+        return {
+            index
+            for phrase in phrases
+            for start, end in _phrase_spans(tokens, phrase)
+            for index in range(start, end)
+        }
+
+    weather = covered(_WEATHER_WORDS)
+    times = covered(_WEATHER_TIME_WORDS)
+    past = covered(_WEATHER_PAST_WORDS)
+    known = weather | times | past | covered(_WEATHER_QUESTION_WORDS)
+    names = _claim_names(tokens, (*COUNTRY_QUERY_TERMS, *PORT_COUNTRIES))
+    places = {index for start, end, _ in names for index in range(start, end)}
+    us_places = {
+        index
+        for start, end, name in names if COUNTRY_QUERY_TERMS.get(name) == "US"
+        for index in range(start, end)
+    }
+    us_places.update(index for index, token in enumerate(tokens) if token == "us")
+    places |= us_places
+    places.update(
+        index for index in range(1, len(tokens))
+        if tokens[index - 1] in _PLACE_PREPOSITIONS
+        and tokens[index].isalpha() and len(tokens[index]) >= 3
+        and tokens[index] in term_set
+    )
+    if any(raw.islower() and len(raw) >= 3 for raw in raw_tokens):
+        places.update(
+            index for index, raw in enumerate(raw_tokens)
+            if raw[0].isupper() and raw[1:].islower() and tokens[index] in term_set
+        )
+    places -= known
+    if not weather or not term_set <= {tokens[index] for index in known | places}:
+        return None
+    if not (places or times or past or _phrase_spans(tokens, "weather")):
+        return None
+    words = frozenset(tokens[index] for index in known)
+    if past:
+        return WeatherRequest(WEATHER_HISTORY_OPERATION, "past weather", words)
+    national = detect_query_countries(query) & NATIONAL_WEATHER_COUNTRIES
+    if us_places:
+        national |= {"US"}
+    if "HK" in national:
+        return None
+    # The United States alone; beside another place ("South America weather",
+    # "weather in Miami USA") the worldwide forecast answers.
+    if national and places <= us_places:
+        return WeatherRequest(US_WEATHER_OPERATION, "US weather", words)
+    return WeatherRequest(WEATHER_FORECAST_OPERATION, "weather", words)
 
 
 def detect_tickers(query: str) -> list[str]:

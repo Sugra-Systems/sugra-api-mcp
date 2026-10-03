@@ -1201,3 +1201,464 @@ def test_endpoint_without_keywords_gets_no_keyword_boost() -> None:
     # The only possible hit is the summary field (weight 3); no coverage
     # bonus applies for a single matched term.
     assert score == 3
+
+
+# ---- Everyday names: currencies, benchmarks, waterways, ports ---------------
+# People ask for "dollar to yen" or "ships through Suez", not for an
+# operation_id. Before these names counted, each query below ranked an
+# unrelated operation first on a shared word ("to", "in", "sea", "rates").
+
+_SCORE_FLAGS = dict(
+    boost_quotes_symbol=False, boost_markets_toolset=False,
+    boost_symbol_input=False, boost_forex=False, boost_crypto=False,
+    boost_us_macro=False, central_bank_prefixes=[], query_countries=set(),
+)
+
+EVERYDAY_NAME_TOP_1 = [
+    ("dollar to yen exchange rate", "forex_convert"),
+    ("How many Turkish lira for one US dollar", "forex_convert"),
+    ("EUR/USD", "forex_convert"),
+    ("usd to jpy", "forex_convert"),
+    ("How much is 100 euros in dollars", "forex_convert"),
+    ("euro exchange rate", "forex_rates"),
+    ("Indian rupee rate", "forex_rates"),
+    ("dollar to yen history", "forex_history"),
+    ("EUR/USD history", "forex_history"),
+    ("oil price today", "commodities_energy_petroleum"),
+    ("oil price", "commodities_energy_petroleum"),
+    ("Brent crude oil price", "commodities_energy_petroleum"),
+    ("WTI crude oil price", "commodities_energy_petroleum"),
+    ("Henry Hub natural gas", "commodities_energy_natural_gas"),
+    ("European natural gas price TTF this winter", "commodities_commodity_id"),
+    ("US crude oil inventory", "commodities_energy_petroleum_stocks"),
+    ("are trucking freight rates going up in the US", "fred_series_series_id"),
+    ("how many ships are going through the Suez Canal and Red Sea now",
+     "maritime_chokepoints_activity"),
+    ("Strait of Hormuz transits", "maritime_chokepoints_hormuz_transits"),
+    ("Panama Canal transits", "maritime_chokepoints_panama_transits"),
+    ("Malacca strait throughput", "maritime_chokepoints_malacca_throughput"),
+    ("port congestion", "transport_ports_congestion"),
+    ("how busy are ports", "transport_ports_congestion"),
+    ("ship calls at Rotterdam", "transport_ports_congestion"),
+    ("Rotterdam port", "transport_ports_congestion"),
+    ("Finnish port calls", "transport_ports_port_calls"),
+]
+
+
+@pytest.mark.parametrize("query,expected", EVERYDAY_NAME_TOP_1)
+def test_everyday_names_land_their_operation_top_1(catalog, query: str, expected: str) -> None:
+    results = search_catalog(catalog, query, limit=5)
+    assert results and results[0]["operation_id"] == expected, (
+        f"{query!r}: top-5 {[(r['operation_id'], r['score']) for r in results]}")
+
+
+@pytest.mark.parametrize("query,expected_prefix", [
+    # Futures have operations of their own, which carry the benchmark names.
+    ("WTI crude oil futures", "futures_root_"),
+    # "euro rates" also names the euro interest rates: no exchange-rate question.
+    ("euro rates", "riksbank_euro_rates_"),
+    # Crypto context keeps a conversion into dollars a crypto price.
+    ("convert bitcoin to dollars", "onchain_bitcoin_price"),
+])
+def test_everyday_names_leave_narrower_questions_alone(
+    catalog, query: str, expected_prefix: str,
+) -> None:
+    top = search_catalog(catalog, query, limit=1)[0]["operation_id"]
+    assert top.startswith(expected_prefix), f"{query!r}: top-1 {top}"
+
+
+def test_an_exchange_rate_question_ranks_no_central_bank_of_another_country(catalog) -> None:
+    """Before currencies counted, "dollar to yen exchange rate" ranked the
+    central banks of Peru, South Africa, Argentina and Malaysia first."""
+    top_5 = [r["operation_id"] for r in search_catalog(catalog, "dollar to yen exchange rate", limit=5)]
+    assert all(op.startswith("forex_") for op in top_5), top_5
+
+
+def test_container_shipping_question_ranks_no_filler_match(catalog) -> None:
+    """No operation answers container freight rates, and the short-sale
+    fails-to-deliver operation ranked first on the word "to" alone."""
+    results = search_catalog(
+        catalog, "how much does it cost to ship a container from China to Europe", limit=5)
+    assert "short_side_fails_to_deliver" not in [r["operation_id"] for r in results]
+
+
+def test_lowercase_two_letter_words_are_filler_and_capitals_stay(catalog) -> None:
+    """"to", "up" and "in" ranked operations that matched nothing else. In
+    capitals the same word is a country code or a ticker and still counts,
+    and "us" names the United States as often as the pronoun."""
+    from sugra_api_mcp.catalog.search import _TWO_LETTER_FILLER
+
+    assert all(len(word) == 2 and word.islower() for word in _TWO_LETTER_FILLER)
+    assert "us" not in _TWO_LETTER_FILLER
+
+    def reason_words(query: str) -> set[str]:
+        return {reason.rsplit(":", 1)[-1]
+                for result in search_catalog(catalog, query, limit=50)
+                for reason in result["why"]}
+
+    trucking = reason_words("are trucking freight rates going up in the US")
+    assert not trucking & {"up", "in"}, trucking
+    assert "us" in trucking
+    assert "to" not in reason_words("dollar to yen")
+    assert "in" in reason_words("IN GDP")
+
+
+@pytest.mark.parametrize("query,absent", [
+    ("cotton price", "cot"),
+    ("cryptocurrency exchange", "exchange rate"),
+    ("environmental data", "air quality"),
+    ("Iraqi oil exports", "air quality"),
+])
+def test_alias_phrases_match_whole_words_only(query: str, absent: str) -> None:
+    from sugra_api_mcp.catalog.aliases import matching_aliases
+
+    assert absent not in matching_aliases(query)
+
+
+@pytest.mark.parametrize("query,present", [
+    ("exchange rates", "exchange rate"),
+    ("currency list", "exchange rate"),
+    ("COT report", "cot"),
+    ("air quality Beijing", "air quality"),
+])
+def test_alias_phrases_still_match_their_own_words(query: str, present: str) -> None:
+    from sugra_api_mcp.catalog.aliases import matching_aliases
+
+    assert present in matching_aliases(query)
+
+
+@pytest.mark.parametrize("query", [
+    "TTF gas price", "European natural gas price TTF this winter", "WTI crude oil price",
+])
+def test_commodity_benchmarks_are_not_tickers(query: str) -> None:
+    assert detect_tickers(query) == []
+
+
+@pytest.mark.parametrize("query,operation,name", [
+    ("oil price today", "commodities_energy_petroleum", "oil price"),
+    ("Brent crude", "commodities_energy_petroleum", "brent"),
+    ("TTF gas price", "commodities_commodity_id", "ttf"),
+    ("Henry Hub natural gas", "commodities_energy_natural_gas", "henry hub"),
+    ("ships through Suez", "maritime_chokepoints_activity", "suez"),
+    ("trucking freight rates", "fred_series_series_id", "trucking"),
+    ("port congestion", "transport_ports_congestion", "port"),
+])
+def test_everyday_names_point_to_their_operation(query: str, operation: str, name: str) -> None:
+    from sugra_api_mcp.catalog.aliases import detect_named_operations
+
+    assert detect_named_operations(query).operations.get(operation) == name
+
+
+@pytest.mark.parametrize("query", [
+    "palm oil price", "heating oil price", "olive oil price",
+    "crude oil", "crude oil pipelines",
+    "Brent inventories", "WTI crude oil futures", "TTF futures", "European gas storage",
+    "US crude oil inventory",
+])
+def test_no_price_name_without_a_spot_price_question(query: str) -> None:
+    """Other oils are not crude; "crude oil" alone also asks about pipelines
+    and stocks; futures, stocks and output have operations of their own."""
+    from sugra_api_mcp.catalog.aliases import detect_named_operations
+
+    operations = detect_named_operations(query).operations
+    assert not [op for op in operations if op.startswith("commodities_")], operations
+
+
+def test_a_named_port_asks_for_port_activity_in_its_country() -> None:
+    from sugra_api_mcp.catalog.aliases import detect_named_operations
+
+    named = detect_named_operations("ship calls at Rotterdam")
+    assert named.operations == {"transport_ports_congestion": "rotterdam"}
+    assert named.countries == {"NL"}
+    assert named.words == {"rotterdam"}
+
+
+@pytest.mark.parametrize("query", [
+    "weather in Rotterdam", "traffic congestion in Los Angeles", "busy airports",
+    "hotels in Dubai",
+])
+def test_a_city_without_a_shipping_cue_names_no_port(query: str) -> None:
+    from sugra_api_mcp.catalog.aliases import detect_named_operations
+
+    assert detect_named_operations(query).operations == {}
+
+
+def test_a_named_port_steps_the_single_country_port_source_down(catalog) -> None:
+    """Fintraffic Portnet covers Finnish ports only; untagged, it ranked
+    first for ship calls at Rotterdam."""
+    from sugra_api_mcp.catalog.search import WRONG_COUNTRY_PENALTY, _score
+
+    endpoint = catalog.get("transport_ports_port_calls")
+    plain, _ = _score(endpoint, ["port", "calls"], {}, **_SCORE_FLAGS)
+    stepped, _ = _score(endpoint, ["port", "calls"], {}, penalty_countries={"NL"}, **_SCORE_FLAGS)
+    assert plain - stepped == WRONG_COUNTRY_PENALTY
+    # `why` keeps six reasons; with no word matched the penalty is the only one.
+    _, why = _score(endpoint, [], {}, penalty_countries={"NL"}, **_SCORE_FLAGS)
+    assert why == ["geo-mismatch:FI"]
+
+
+@pytest.mark.parametrize("query,currencies,pair,over_time", [
+    ("dollar to yen", ("USD", "JPY"), True, False),
+    ("How many Turkish lira for one US dollar", ("TRY", "USD"), True, False),
+    ("EUR/USD", ("EUR", "USD"), True, False),
+    ("usd to jpy", ("USD", "JPY"), True, False),
+    ("How much is 100 euros in dollars", ("EUR", "USD"), True, False),
+    ("euro exchange rate", ("EUR",), False, False),
+    ("Indian rupee rate", ("INR",), False, False),
+    ("dollar to yen history", ("USD", "JPY"), True, True),
+    ("Japanese yen exchange rate history", ("JPY",), False, True),
+])
+def test_detect_fx_request(
+    query: str, currencies: tuple[str, ...], pair: bool, over_time: bool,
+) -> None:
+    from sugra_api_mcp.catalog.aliases import detect_fx_request
+
+    fx = detect_fx_request(query)
+    assert fx is not None
+    assert (fx.currencies, fx.pair, fx.over_time) == (currencies, pair, over_time)
+
+
+@pytest.mark.parametrize("query", [
+    "price of coffee per pound in dollars",
+    "how much is a pound of beef in euros",
+    "coffee price in dollars",
+    "dollar and euro",
+    "euro rates",
+    "try again later",
+])
+def test_detect_fx_request_asks_nothing_without_a_rate_question(query: str) -> None:
+    from sugra_api_mcp.catalog.aliases import detect_fx_request
+
+    assert detect_fx_request(query) is None
+
+
+def test_fx_request_names_its_words_and_issuers() -> None:
+    from sugra_api_mcp.catalog.aliases import detect_fx_request
+
+    fx = detect_fx_request("dollar to yen")
+    assert fx is not None
+    assert fx.words == {"dollar", "yen"}
+    assert fx.issuer_countries == {"US", "JP"}
+
+
+def test_every_detectable_currency_has_an_issuer() -> None:
+    from sugra_api_mcp.catalog.aliases import _CURRENCY_ISSUERS, _KNOWN_CURRENCIES, CURRENCY_NAMES
+
+    codes = set(CURRENCY_NAMES.values()) | _KNOWN_CURRENCIES
+    assert codes <= set(_CURRENCY_ISSUERS), sorted(codes - set(_CURRENCY_ISSUERS))
+
+
+def test_every_named_target_is_a_bundled_operation(catalog) -> None:
+    """A renamed or removed operation would silently disarm the name that
+    points to it; fail loudly instead, like the country-prefix map."""
+    import re
+
+    from sugra_api_mcp.catalog.aliases import (
+        COMPOUND_NAMED_OPERATIONS,
+        FX_CONVERT_OPERATION,
+        NAMED_OPERATIONS,
+        NAMED_PLACES,
+        PORT_OPERATIONS,
+        TOPIC_DEFAULT_OPERATIONS,
+        US_WEATHER_OPERATION,
+        WEATHER_FORECAST_OPERATION,
+        WEATHER_HISTORY_OPERATION,
+    )
+
+    ids = {endpoint.operation_id for endpoint in catalog.endpoints}
+    targets = {op for ops in NAMED_OPERATIONS.values() for op in ops}
+    targets |= {*PORT_OPERATIONS, FX_CONVERT_OPERATION, *TOPIC_DEFAULT_OPERATIONS.values()}
+    targets |= {WEATHER_FORECAST_OPERATION, WEATHER_HISTORY_OPERATION, US_WEATHER_OPERATION}
+    assert targets <= ids, f"names pointing to no bundled operation: {sorted(targets - ids)}"
+    dead = [prefix for prefix in COMPOUND_NAMED_OPERATIONS
+            if not any(op.startswith(prefix) for op in ids)]
+    assert not dead, f"compound prefixes matching no bundled operation: {dead}"
+    for head, tail in COMPOUND_NAMED_OPERATIONS.values():
+        assert re.fullmatch(r"[a-z0-9]+", head) and re.fullmatch(r"[a-z0-9]+", tail)
+    assert set(NAMED_PLACES) <= set(NAMED_OPERATIONS)
+
+
+# ---- Weather: the topic default and the space-weather compound ---------------
+
+WEATHER_TOP_1 = [
+    ("Paris weather", "v2_weather_forecast"),
+    ("weather in Paris", "v2_weather_forecast"),
+    ("weather in Rotterdam", "v2_weather_forecast"),
+    ("weather today", "v2_weather_forecast"),
+    ("weather forecast Paris", "v2_weather_forecast"),
+    ("weather history in London", "v2_weather_history"),
+    ("weather alerts in Texas", "weather_us_alerts"),
+    ("Hong Kong weather", "data_gov_hk_hko_current_weather"),
+    ("space weather alerts", "space_weather_alerts"),
+    ("Kp index", "space_weather_kp_index"),
+    # Everyday words: the Hong Kong Observatory ("current"), NOAA water
+    # temperature, a climate projection, the forecast's past_days parameter and
+    # a deprecated operation's "New York" example answered these first.
+    ("current weather in Berlin", "v2_weather_forecast"),
+    ("current weather in berlin", "v2_weather_forecast"),
+    ("temperature in Dubai", "v2_weather_forecast"),
+    ("will it rain in Rome tomorrow", "v2_weather_forecast"),
+    ("is it raining in London", "v2_weather_forecast"),
+    ("weather in New York", "v2_weather_forecast"),
+    ("past weather in London", "v2_weather_history"),
+    ("weather in USA", "weather_us_forecast"),
+    ("temperature in US", "weather_us_forecast"),
+    ("sea level forecast", "weather_marine_sea_level"),
+    ("Weather Station Observations", "weather_nws_station_station_id_observations"),
+]
+
+
+@pytest.mark.parametrize("query,expected", WEATHER_TOP_1)
+def test_weather_questions_land_their_operation_top_1(catalog, query: str, expected: str) -> None:
+    results = search_catalog(catalog, query, limit=5)
+    assert results and results[0]["operation_id"] == expected, (
+        f"{query!r}: top-5 {[(r['operation_id'], r['score']) for r in results]}")
+
+
+def test_space_weather_still_answers_space_weather(catalog) -> None:
+    top_3 = [r["operation_id"] for r in search_catalog(catalog, "space weather", limit=3)]
+    assert all(op.startswith("space_weather_") for op in top_3), top_3
+
+
+def test_equal_scores_put_the_topic_default_operation_first() -> None:
+    """The word "weather" alone scores nine operations equally, and the
+    operation_id order put the Hong Kong Observatory first for Paris. "Paris
+    weather" now names the forecast outright; a question that names nothing
+    ("weather data") still ties."""
+    from sugra_api_mcp.catalog.aliases import topic_default_operations
+    from sugra_api_mcp.catalog.models import Catalog, Endpoint
+
+    def endpoint(operation_id: str) -> Endpoint:
+        return Endpoint(operation_id=operation_id, method="GET", path="/x",
+                        summary="Weather report", toolset="environment")
+
+    two = Catalog(source="test", endpoints=[endpoint("a_weather"), endpoint("v2_weather_forecast")])
+    ranked = [(r["operation_id"], r["score"]) for r in search_catalog(two, "weather data", limit=5)]
+    assert [op for op, _ in ranked] == ["v2_weather_forecast", "a_weather"]
+    assert ranked[0][1] == ranked[1][1]
+    # Without the topic word the tie stays in operation_id order.
+    ranked = [r["operation_id"] for r in search_catalog(two, "report", limit=5)]
+    assert ranked == ["a_weather", "v2_weather_forecast"]
+
+    assert topic_default_operations("Weather in Paris") == {"v2_weather_forecast"}
+    assert topic_default_operations("whether it rains") == frozenset()
+
+
+def test_a_compound_named_operation_answers_its_last_word_only_beside_its_first() -> None:
+    """"space weather" is solar activity: an operation named for it must not
+    answer the weather in Paris, and must still answer space weather."""
+    from sugra_api_mcp.catalog.models import Endpoint
+    from sugra_api_mcp.catalog.search import _score
+
+    def endpoint(operation_id: str) -> Endpoint:
+        return Endpoint(operation_id=operation_id, method="GET", path="/x",
+                        summary="Space weather scales", toolset="environment")
+
+    space = endpoint("space_weather_widget")
+    assert _score(space, ["paris", "weather"], {}, **_SCORE_FLAGS) == (0, [])
+    _, why = _score(space, ["space", "weather"], {}, **_SCORE_FLAGS)
+    assert {"summary:space", "summary:weather"} <= set(why), why
+    # Only the compound's operations go quiet on the word.
+    _, why = _score(endpoint("v2_weather_widget"), ["paris", "weather"], {}, **_SCORE_FLAGS)
+    assert "summary:weather" in why
+
+
+# ---- Weather questions in everyday words ---------------------------------------
+# The terms below are what search_catalog passes: the query's words with its
+# filler ("will", "it", "in", "for") already dropped.
+
+def test_an_everyday_weather_question_names_the_forecast_or_the_history() -> None:
+    from sugra_api_mcp.catalog.aliases import (
+        WEATHER_FORECAST_OPERATION,
+        WEATHER_HISTORY_OPERATION,
+        detect_weather_request,
+    )
+
+    rome = detect_weather_request("will it rain in Rome tomorrow", ["rain", "rome", "tomorrow"])
+    assert rome is not None
+    assert rome.operation == WEATHER_FORECAST_OPERATION
+    # The weather and time words are consumed; the place stays a search term.
+    assert rome.words == {"rain", "tomorrow"}
+
+    past = detect_weather_request("past weather in London", ["past", "weather", "london"])
+    assert past is not None
+    assert (past.operation, past.name) == (WEATHER_HISTORY_OPERATION, "past weather")
+
+    # "weather" asks by itself; a word after "in" names a place in lowercase too.
+    for query, terms in [
+        ("weather", ["weather"]),
+        ("current weather in berlin", ["current", "weather", "berlin"]),
+        ("temperature in Dubai", ["temperature", "dubai"]),
+        ("weather forecast Paris", ["weather", "forecast", "paris"]),
+        ("South America weather", ["south", "america", "weather"]),
+    ]:
+        request = detect_weather_request(query, terms)
+        assert request is not None and request.operation == WEATHER_FORECAST_OPERATION, query
+
+
+def test_a_us_weather_question_names_the_national_weather_service() -> None:
+    from sugra_api_mcp.catalog.aliases import (
+        US_WEATHER_OPERATION,
+        WEATHER_FORECAST_OPERATION,
+        WEATHER_HISTORY_OPERATION,
+        detect_weather_request,
+    )
+
+    for query, terms in [
+        ("weather in USA", ["weather", "usa"]),
+        ("US weather", ["us", "weather"]),
+        ("temperature in US", ["temperature", "us"]),
+        ("weather in the United States", ["weather", "united", "states"]),
+    ]:
+        request = detect_weather_request(query, terms)
+        assert request is not None and request.operation == US_WEATHER_OPERATION, query
+    # Beside another place the worldwide forecast answers; the past is the
+    # worldwide history's; Hong Kong's own words find the Observatory.
+    miami = detect_weather_request("weather in Miami USA", ["weather", "miami", "usa"])
+    assert miami is not None and miami.operation == WEATHER_FORECAST_OPERATION
+    past = detect_weather_request("past weather in USA", ["past", "weather", "usa"])
+    assert past is not None and past.operation == WEATHER_HISTORY_OPERATION
+    assert detect_weather_request("Hong Kong weather", ["hong", "kong", "weather"]) is None
+
+
+@pytest.mark.parametrize("query,terms", [
+    ("marine weather", ["marine", "weather"]),
+    ("weather alerts in Texas", ["weather", "alerts", "texas"]),
+    ("temperature anomaly 2023", ["temperature", "anomaly", "2023"]),
+    ("water temperature in Miami", ["water", "temperature", "miami"]),
+    ("weather station observations", ["weather", "station", "observations"]),
+    # Capitals mark nothing in a query written all in title case.
+    ("Weather Station Observations", ["weather", "station", "observations"]),
+    # Another weather word needs a place or a time beside it.
+    ("temperature", ["temperature"]),
+    # "forecast" and "wind" also name an economic forecast and wind power.
+    ("forecast for Germany", ["forecast", "germany"]),
+    ("wind in Germany", ["wind", "germany"]),
+    # A two-letter word after "in" is no town.
+    ("weather in NY", ["weather", "ny"]),
+])
+def test_a_question_that_asks_something_else_is_no_weather_request(query: str, terms: list[str]) -> None:
+    from sugra_api_mcp.catalog.aliases import detect_weather_request
+
+    assert detect_weather_request(query, terms) is None
+
+
+def test_weather_questions_that_ask_something_else_keep_their_operations(catalog) -> None:
+    for query, prefix in [("marine weather", "weather_marine_"), ("US weather alerts", "weather_us_alerts")]:
+        top = search_catalog(catalog, query, limit=1)[0]["operation_id"]
+        assert top.startswith(prefix), (query, top)
+    top = search_catalog(catalog, "wind in Germany", limit=1)[0]["operation_id"]
+    assert top != "v2_weather_forecast"
+
+
+def test_the_national_weather_countries_are_those_of_the_weather_sources(catalog) -> None:
+    """A country whose own weather service joins the catalog joins the list,
+    or its questions go to the worldwide forecast."""
+    from sugra_api_mcp.catalog.aliases import NATIONAL_WEATHER_COUNTRIES, SOURCE_COUNTRY_PREFIXES
+
+    ids = [endpoint.operation_id for endpoint in catalog.endpoints]
+    countries = {
+        country for prefix, country in SOURCE_COUNTRY_PREFIXES.items()
+        if any(op.startswith(prefix) and "weather" in op for op in ids)
+    }
+    assert countries == NATIONAL_WEATHER_COUNTRIES
