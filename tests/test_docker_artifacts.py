@@ -31,6 +31,7 @@ PASSTHROUGH_ENV_VARS = [
     "SUGRA_MCP_ALLOWED_ORIGINS",
     "SUGRA_MCP_ALLOWED_HOSTS",
     "SUGRA_MCP_UI_WIDGETS",
+    "SUGRA_MCP_SERVER_VERSION",
 ]
 
 
@@ -124,6 +125,12 @@ def test_compose_environment_is_bare_name_passthrough() -> None:
         assert name in env, f"{name} must pass through from the shell environment"
     for entry in env:
         assert "=" not in entry, f"no baked values in compose environment: {entry}"
+
+
+def test_self_hosting_guide_names_every_passthrough_variable() -> None:
+    guide = (REPO_ROOT / "docs" / "self-hosting.md").read_text(encoding="utf-8")
+    for name in PASSTHROUGH_ENV_VARS:
+        assert f"`{name}`" in guide, f"docs/self-hosting.md must name {name}"
 
 
 def test_compose_healthcheck_hits_health_route() -> None:

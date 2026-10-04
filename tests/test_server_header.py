@@ -1,4 +1,4 @@
-"""The Server response header: one stable value on every answer, the version only on request.
+"""The Server response header: one stable value, the version only on request.
 
 The HTTP tests serve the app the entry point builds on a real uvicorn, bound to
 a free port on 127.0.0.1 and configured with the parameters the entry point
@@ -206,10 +206,11 @@ def _attributes_the_exporter_reads(monkeypatch, operator_value: str | None) -> s
     monkeypatch.setenv("OTEL_SERVICE_NAME", "sugra-mcp")
     for name in observability._TRACE_OVERRIDE_VARS:
         monkeypatch.delenv(name, raising=False)
+    # setenv records the variable either way, so monkeypatch puts back what the
+    # process had; delenv alone records nothing when the variable is absent.
+    monkeypatch.setenv("OTEL_RESOURCE_ATTRIBUTES", operator_value or "")
     if operator_value is None:
-        monkeypatch.delenv("OTEL_RESOURCE_ATTRIBUTES", raising=False)
-    else:
-        monkeypatch.setenv("OTEL_RESOURCE_ATTRIBUTES", operator_value)
+        monkeypatch.delenv("OTEL_RESOURCE_ATTRIBUTES")
     assert observability.setup_observability() is True
     return seen["attributes"]
 

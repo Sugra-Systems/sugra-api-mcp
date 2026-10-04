@@ -45,11 +45,13 @@ def _add_server_args(parser: argparse.ArgumentParser) -> None:
 def uvicorn_settings(host: str, port: int) -> dict[str, Any]:
     """The parameters the HTTP transport passes to uvicorn.run.
 
-    uvicorn writes its default headers into every response, its own 500
-    included and, under the httptools parser the http extra installs, its own
-    400 for a request it cannot parse. With server_header off it adds no
-    `server: uvicorn` of its own, so a response carries exactly the one Server
-    header given here. SUGRA_MCP_SERVER_VERSION is read once, at start.
+    uvicorn writes its default headers into each response the app sends to an
+    HTTP request and into its own 500, and, under the httptools parser the http
+    extra installs, into its own 400 for a request it cannot parse. With
+    server_header off it adds no `server: uvicorn` of its own, so those
+    responses carry exactly the one Server header given here. The header is
+    computed once, when the server starts; /health reads
+    SUGRA_MCP_SERVER_VERSION on every request.
     """
     from .config import server_header_value
 

@@ -520,9 +520,12 @@ passes `SUGRA_API_KEY` and the optional overrides (`SUGRA_API_BASE`,
 `http://localhost:8001/health`. Reverse-proxy and OAuth operator settings are
 documented in [docs/self-hosting.md](docs/self-hosting.md).
 
-Every HTTP response, errors included, carries the header
-`Server: sugra-api-mcp`. Set `SUGRA_MCP_SERVER_VERSION=1` (or `true`, `yes`,
-`on`) in the server's environment to add the package version to that header
+Every response the application sends, errors included, carries the header
+`Server: sugra-api-mcp`. So does uvicorn's own 400 for a request it cannot
+parse under the httptools parser, which the `http` extra installs and uvicorn
+picks by default; under the h11 parser that 400 goes out without the header.
+Set `SUGRA_MCP_SERVER_VERSION=1` (or `true`, `yes`, `on`) in the server's
+environment to add the package version to that header
 (`sugra-api-mcp/<version>`) and to the `/health` response, which leaves the
 version out otherwise.
 

@@ -24,7 +24,8 @@ fallback when no Bearer is present.
 
 Compose passes through (when set in the shell): `SUGRA_API_KEY`,
 `SUGRA_API_BASE`, `SUGRA_TIMEOUT`, `SUGRA_MCP_ALLOWED_ORIGINS`,
-`SUGRA_MCP_ALLOWED_HOSTS`, `SUGRA_MCP_UI_WIDGETS`. None are baked into the image.
+`SUGRA_MCP_ALLOWED_HOSTS`, `SUGRA_MCP_UI_WIDGETS`, `SUGRA_MCP_SERVER_VERSION`.
+None are baked into the image.
 
 `SUGRA_MCP_UI_WIDGETS` turns on the MCP Apps price-chart widget. Set it to
 `1`, `true`, `yes` or `on` to register `ui://sugra/price-chart.html` and
@@ -32,6 +33,14 @@ declare it on `call_endpoint`. The comparison ignores case and surrounding
 whitespace, so `TRUE` and ` on ` also turn it on; any other value, an empty
 value, or leaving it unset keeps the widget off. The value is read once at
 startup, so restart the container after changing it.
+
+`SUGRA_MCP_SERVER_VERSION` adds the package version to the `Server` response
+header (`sugra-api-mcp/<version>` instead of `sugra-api-mcp`) and to the
+`/health` response. It is off by default: set it to `1`, `true`, `yes` or `on`
+to turn it on. The comparison ignores case and surrounding whitespace; any
+other value, an empty value, or leaving it unset keeps the version out. The
+header is fixed when the server starts: after changing the value, run
+`docker compose up -d` again, which recreates the container with it.
 
 ## Reverse proxy and browser clients
 

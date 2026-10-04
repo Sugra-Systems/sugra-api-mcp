@@ -16,7 +16,7 @@ from starlette.testclient import TestClient
 
 from sugra_api_mcp import __version__, skills_index, web
 from sugra_api_mcp.auth import PUBLIC_GET_PATHS, Authenticator, AuthMiddleware
-from sugra_api_mcp.config import AuthConfig
+from sugra_api_mcp.config import SERVER_PRODUCT, AuthConfig
 from sugra_api_mcp.web import health, landing, skills_routes
 
 
@@ -297,6 +297,13 @@ def test_health_serves_json_unauthenticated(client: TestClient, monkeypatch) -> 
     monkeypatch.setenv("SUGRA_MCP_SERVER_VERSION", "1")
     body = client.get("/health").json()
     assert body == {"status": "ok", "service": "sugra-api-mcp", "version": __version__}
+
+
+def test_health_names_the_product_by_the_one_constant(client: TestClient, monkeypatch) -> None:
+    assert client.get("/health").json()["service"] == SERVER_PRODUCT
+    # /health takes the name from the constant web imports, not from a literal of its own.
+    monkeypatch.setattr(web, "SERVER_PRODUCT", "renamed-product")
+    assert client.get("/health").json()["service"] == "renamed-product"
 
 
 def test_unknown_path_still_requires_auth(client: TestClient) -> None:
