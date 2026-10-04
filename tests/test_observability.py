@@ -597,6 +597,18 @@ def test_exception_path_sets_status_error(monkeypatch) -> None:
     assert "ERROR" in repr(code)
 
 
+def _unset_recorded(monkeypatch, *names: str) -> None:
+    """Unset each variable so that monkeypatch puts back what the process had.
+
+    monkeypatch.delenv records nothing for a variable that is absent, so a value
+    setup_observability writes afterwards would outlast the test; setenv first
+    records the variable either way.
+    """
+    for name in names:
+        monkeypatch.setenv(name, "")
+        monkeypatch.delenv(name)
+
+
 def test_setup_sets_otel_service_name_default(monkeypatch) -> None:
     """The SDK's configure_azure_monitor takes **kwargs and silently drops
     unknown keys (verified empirically against azure-monitor-opentelemetry
@@ -609,8 +621,12 @@ def test_setup_sets_otel_service_name_default(monkeypatch) -> None:
         "APPLICATIONINSIGHTS_CONNECTION_STRING",
         "InstrumentationKey=00000000-0000-0000-0000-000000000000",
     )
-    monkeypatch.delenv("OTEL_SERVICE_NAME", raising=False)
-    monkeypatch.delenv("OTEL_RESOURCE_ATTRIBUTES", raising=False)
+    _unset_recorded(
+        monkeypatch,
+        "OTEL_SERVICE_NAME",
+        "OTEL_RESOURCE_ATTRIBUTES",
+        *observability._TRACE_OVERRIDE_VARS,
+    )
 
     captured_env: dict[str, str | None] = {}
 
@@ -641,7 +657,7 @@ def test_setup_preserves_operator_otel_service_name_override(monkeypatch) -> Non
         "InstrumentationKey=00000000-0000-0000-0000-000000000000",
     )
     monkeypatch.setenv("OTEL_SERVICE_NAME", "sugra-mcp-staging")
-    monkeypatch.delenv("OTEL_RESOURCE_ATTRIBUTES", raising=False)
+    _unset_recorded(monkeypatch, "OTEL_RESOURCE_ATTRIBUTES", *observability._TRACE_OVERRIDE_VARS)
 
     captured: dict[str, str | None] = {}
 
@@ -2611,7 +2627,7 @@ def _fake_azure_monitor(monkeypatch, captured: dict) -> None:
     # setup_observability edits os.environ directly; these records let
     # monkeypatch put back whatever the process had before the test.
     monkeypatch.setenv("OTEL_SERVICE_NAME", "sugra-mcp")
-    monkeypatch.delenv("OTEL_RESOURCE_ATTRIBUTES", raising=False)
+    _unset_recorded(monkeypatch, "OTEL_RESOURCE_ATTRIBUTES")
     for name in observability._TRACE_OVERRIDE_VARS:
         monkeypatch.delenv(name, raising=False)
 
