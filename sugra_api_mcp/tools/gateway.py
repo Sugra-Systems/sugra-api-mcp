@@ -17,11 +17,11 @@ from pydantic import Field
 from ..catalog.hints import hints_for
 from ..catalog.loader import load_catalog
 from ..catalog.place import place_gap
-from ..catalog.response import shape_response
+from ..catalog.response import ProjectionTooLargeError, compile_fields, shape_response
 from ..catalog.search import known_sources, known_toolsets, query_limit_error, search_catalog
 from ..catalog.toolsets import ordered_toolsets
 from ..client import _enforce_size_limit
-from ..errors import is_error_payload, server_busy_error
+from ..errors import is_error_payload, projection_too_large_error, server_busy_error
 from ..observability import trace_mcp_tool
 from ..server import current_caller, get_client, mcp, read_only
 
@@ -308,6 +308,247 @@ async def _search_off_loop(catalog: Any, query: str, **kwargs: Any) -> list[dict
         raise
     future.add_done_callback(lambda _future: _release_search_slot(caller))
     return await asyncio.wrap_future(future)
+
+
+# Response shaping (fields, limit and include_raw, then the size gate) is CPU
+# work that grows with the response, so it runs on its own pool of
+# SHAPING_WORKERS threads, never on the event loop and never on the default
+# executor. Admission mirrors the search queue above:
+# SHAPING_MAX_PENDING jobs running or queued in total and
+# SHAPING_MAX_PENDING_PER_CALLER for one caller. A job that finds a bound
+# reached waits in line, each slot given back goes at once to the oldest
+# waiting job it admits, and the slot is released by the pool's own done
+# callback. A job that has waited SHAPING_WAIT_SECONDS without a slot answers
+# server_busy with scope "shaping" or "caller_shaping". The line has no bound
+# of its own: every waiting job holds one tool-call slot of server.py, whose
+# in-flight caps (MAX_IN_FLIGHT_TOOL_CALLS 32, MAX_IN_FLIGHT_PER_CALLER 16)
+# bound it. A job refused here has already made its API request; only the
+# response is dropped.
+SHAPING_WORKERS = 2
+SHAPING_MAX_PENDING = 8
+SHAPING_MAX_PENDING_PER_CALLER = 4
+SHAPING_WAIT_SECONDS = 2.0
+_shaping_executor = ThreadPoolExecutor(max_workers=SHAPING_WORKERS, thread_name_prefix="response-shaping")
+_shaping_lock = threading.Lock()
+_shaping_pending = 0
+_shaping_pending_by_caller: dict[str, int] = {}
+
+
+class _ShapingWaiter(_SearchWaiter):
+    """A shaping job waiting in line for a slot: the same states as a waiting
+    search, with `state` and `future` read and written under _shaping_lock only."""
+
+    __slots__ = ()
+
+
+_shaping_waiters: deque[_ShapingWaiter] = deque()
+_shaping_waiting_by_caller: dict[str, int] = {}
+
+
+def shaping_pending(caller: str | None = None) -> int:
+    """Shaping jobs submitted to the pool that have not finished or been dropped.
+
+    Given a caller, only that caller's jobs are counted.
+    """
+    with _shaping_lock:
+        if caller is None:
+            return _shaping_pending
+        return _shaping_pending_by_caller.get(caller, 0)
+
+
+def shaping_waiting(caller: str | None = None) -> int:
+    """Shaping jobs waiting in line for a slot; given a caller, only that caller's."""
+    with _shaping_lock:
+        if caller is None:
+            return len(_shaping_waiters)
+        return _shaping_waiting_by_caller.get(caller, 0)
+
+
+def _shaping_full_bound(caller: str) -> str | None:
+    """The scope of the shaping bound that keeps caller out, or None. Hold _shaping_lock."""
+    if _shaping_pending >= SHAPING_MAX_PENDING:
+        return "shaping"
+    if _shaping_pending_by_caller.get(caller, 0) >= SHAPING_MAX_PENDING_PER_CALLER:
+        return "caller_shaping"
+    return None
+
+
+def _take_shaping_slot(caller: str) -> None:
+    """Count one shaping job in for caller. Hold _shaping_lock."""
+    global _shaping_pending
+    _shaping_pending += 1
+    _shaping_pending_by_caller[caller] = _shaping_pending_by_caller.get(caller, 0) + 1
+
+
+def _drop_shaping_slot(caller: str) -> None:
+    """Count one shaping job out for caller. Hold _shaping_lock."""
+    global _shaping_pending
+    _shaping_pending -= 1
+    held = _shaping_pending_by_caller.get(caller, 0) - 1
+    if held > 0:
+        _shaping_pending_by_caller[caller] = held
+    else:
+        _shaping_pending_by_caller.pop(caller, None)
+
+
+def _leave_shaping_line(waiter: _ShapingWaiter) -> None:
+    """Take waiter out of the shaping line. Hold _shaping_lock."""
+    _shaping_waiters.remove(waiter)
+    held = _shaping_waiting_by_caller.get(waiter.caller, 0) - 1
+    if held > 0:
+        _shaping_waiting_by_caller[waiter.caller] = held
+    else:
+        _shaping_waiting_by_caller.pop(waiter.caller, None)
+
+
+def _claim_shaping_slot(caller: str) -> str | None:
+    """Claim a shaping slot for caller: None when claimed, else the scope of the bound that is full."""
+    with _shaping_lock:
+        full = _shaping_full_bound(caller)
+        if full is None:
+            _take_shaping_slot(caller)
+        return full
+
+
+def _hand_off_shaping() -> list[tuple[_ShapingWaiter, Future[Any]]]:
+    """Hand free shaping slots to the oldest waiting jobs they admit, as _hand_off
+    does for searches, and return those jobs with their futures, to be started
+    once the lock is let go. Hold _shaping_lock."""
+    now = time.monotonic()
+    granted: list[tuple[_ShapingWaiter, Future[Any]]] = []
+    for waiter in list(_shaping_waiters):
+        if now >= waiter.deadline or waiter.loop.is_closed():
+            _leave_shaping_line(waiter)
+            waiter.state = "gone"
+            continue
+        if _shaping_full_bound(waiter.caller) is not None:
+            continue
+        try:
+            future = _shaping_executor.submit(waiter.call)
+        except RuntimeError:
+            # The pool is shut down (interpreter exit); the waiting jobs time out.
+            break
+        _leave_shaping_line(waiter)
+        _take_shaping_slot(waiter.caller)
+        waiter.future = future
+        waiter.state = "handed"
+        granted.append((waiter, future))
+    return granted
+
+
+def _start_handed_shaping(granted: list[tuple[_ShapingWaiter, Future[Any]]]) -> None:
+    """Tie each handed job's slot to its pool future and wake the job on its own
+    event loop. Outside _shaping_lock: a future already done runs the callback,
+    and so the release, at once."""
+    for waiter, future in granted:
+        future.add_done_callback(lambda _future, caller=waiter.caller: _release_shaping_slot(caller))
+        try:
+            waiter.loop.call_soon_threadsafe(_wake, waiter.woken)
+        except RuntimeError:
+            # Its event loop closed after the hand-off: nobody is left to read the answer.
+            future.cancel()
+
+
+def _release_shaping_slot(caller: str) -> None:
+    """Give caller's shaping slot back and hand it to the oldest waiting job it admits.
+
+    Runs on a shaping worker (the future's done callback) as well as on an
+    event loop thread, so the waiting job is woken through its own loop.
+    """
+    with _shaping_lock:
+        _drop_shaping_slot(caller)
+        granted = _hand_off_shaping()
+    _start_handed_shaping(granted)
+
+
+def _leave_shaping_wait(waiter: _ShapingWaiter) -> None:
+    """A waiting shaping job that stops waiting leaves the line, or cancels the
+    job a release already submitted for it, as a queued job is cancelled with
+    its caller."""
+    with _shaping_lock:
+        if waiter.state == "waiting":
+            _leave_shaping_line(waiter)
+        state, future, waiter.state = waiter.state, waiter.future, "gone"
+    if state == "handed":
+        future.cancel()
+
+
+def _admit_shaping(caller: str, started: float, call: Callable[[], Any]) -> _ShapingWaiter | None:
+    """None when caller's shaping job is admitted, else a waiter in line.
+
+    The line is served first, so a new job never takes a slot that a job
+    already waiting could take.
+    """
+    with _shaping_lock:
+        granted = _hand_off_shaping()
+        admitted: _ShapingWaiter | None = None
+        full = _shaping_full_bound(caller)
+        if full is None:
+            _take_shaping_slot(caller)
+        else:
+            admitted = _ShapingWaiter(caller, call, asyncio.get_running_loop(), started + SHAPING_WAIT_SECONDS, full)
+            _shaping_waiters.append(admitted)
+            _shaping_waiting_by_caller[caller] = _shaping_waiting_by_caller.get(caller, 0) + 1
+    _start_handed_shaping(granted)
+    return admitted
+
+
+async def _wait_for_shaping_slot(waiter: _ShapingWaiter, started: float) -> Future[Any] | dict[str, Any]:
+    """Wait until a release hands waiter a shaping slot: the future of the job
+    that release submitted, else the server_busy payload once the deadline has
+    passed without one."""
+    try:
+        await asyncio.wait((waiter.woken,), timeout=max(0.0, waiter.deadline - time.monotonic()))
+    except BaseException:
+        _leave_shaping_wait(waiter)
+        raise
+    with _shaping_lock:
+        if waiter.state == "handed":
+            return waiter.future
+        if waiter.state == "waiting":
+            _leave_shaping_line(waiter)
+            waiter.state = "gone"
+        full = _shaping_full_bound(waiter.caller) or waiter.scope
+    limit = SHAPING_MAX_PENDING if full == "shaping" else SHAPING_MAX_PENDING_PER_CALLER
+    return server_busy_error(full, limit, elapsed_ms=int((time.monotonic() - started) * 1000))
+
+
+async def _shape_off_loop(call: Callable[[], Any]) -> Any:
+    """Run call on the shaping pool, or return the server_busy payload.
+
+    The future's done callback releases the slot. A job the pool has already
+    started runs to completion and holds its slot until then, even when its
+    caller was cancelled meanwhile. A job still queued when its caller is
+    cancelled is cancelled with it: it never runs, and its slot is freed at
+    once. A job cancelled while it waits in line leaves the line; one cancelled
+    after a release handed it a slot is cancelled like a queued job, since
+    that release has already submitted it.
+    """
+    caller = current_caller()
+    started = time.monotonic()
+    admitted = _admit_shaping(caller, started, call)
+    if admitted is not None:
+        handed = await _wait_for_shaping_slot(admitted, started)
+        if isinstance(handed, dict):
+            return handed
+        return await asyncio.wrap_future(handed)
+    try:
+        future = _shaping_executor.submit(call)
+    except BaseException:
+        _release_shaping_slot(caller)
+        raise
+    future.add_done_callback(lambda _future: _release_shaping_slot(caller))
+    return await asyncio.wrap_future(future)
+
+
+def _shape_and_gate(
+    payload: Any, path: str, limit: int | None, fields: list[str] | None, include_raw: bool
+) -> dict[str, Any]:
+    """The job the shaping pool runs: shape the response, then apply the size gate."""
+    shaped = shape_response(payload, limit=limit, fields=fields, include_raw=include_raw)
+    # The unshaped payload lets the gate read the records' order as the
+    # API sent them, so it keeps the same end meta.shaped reports.
+    return _enforce_size_limit(shaped, path, unshaped=payload)
 
 
 def _resolve_path(path: str, params: dict[str, Any]) -> str:
@@ -652,6 +893,9 @@ async def call_endpoint(
         except KeyError:
             return {"error": "unknown_operation_id", "operation_id": operation_id}
 
+        # The count, length and depth of fields need no response: a request
+        # past one of them is refused here, before any request is made.
+        compile_fields(fields)
         clean_params = {key: value for key, value in (params or {}).items() if value is not None}
         # Checked before the required ones: a misnamed key is usually the
         # missing parameter itself, and did_you_mean names it.
@@ -732,6 +976,8 @@ async def call_endpoint(
         # size of the body it never returns. Applied on every return path,
         # including the structured-error one below, for parity with the
         # client's own unconditional enforcement on every other caller.
+        # With fields, the body before projection has its own, much higher
+        # bound (catalog.response.MAX_PROJECTION_RAW_CHARS).
         if is_error_payload(payload):
             # Structured error contract from SugraClient (transport failure
             # or HTTP 4xx/5xx). Return it untouched apart from the same size
@@ -742,10 +988,14 @@ async def call_endpoint(
             # partial payload with both keys still gets shaped normally.
             return _enforce_size_limit(payload, path)
 
-        shaped = shape_response(payload, limit=limit, fields=fields, include_raw=include_raw)
-        # The unshaped payload lets the gate read the records' order as the
-        # API sent them, so it keeps the same end meta.shaped reports.
-        return _enforce_size_limit(shaped, path, unshaped=payload)
+        # Shaping and the size gate run on the shaping pool, never on the
+        # event loop; a full pool answers server_busy.
+        return await _shape_off_loop(partial(_shape_and_gate, payload, path, limit, fields, include_raw))
+    except ProjectionTooLargeError as exc:
+        return projection_too_large_error(
+            exc.kind, exc.limit, exc.actual, exc.field_index, operation_id,
+            int((time.perf_counter() - start) * 1000),
+        )
     except Exception as exc:
         return {
             "error": "tool_execution_failed",
