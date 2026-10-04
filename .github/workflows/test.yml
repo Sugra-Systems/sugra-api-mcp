@@ -38,6 +38,15 @@ jobs:
         run: ruff check sugra_api_mcp tests
       - name: Pytest
         run: pytest
+      # The hosted server keeps the telemetry libraries it already has, older
+      # than the ones a fresh install resolves above: run the shutdown tests on
+      # those versions too, in a virtual environment of their own.
+      - name: Shutdown on the hosted telemetry versions
+        if: matrix.python-version == '3.13'
+        run: |
+          python -m venv "$RUNNER_TEMP/vm"
+          "$RUNNER_TEMP/vm/bin/pip" install -e ".[dev,http]" "azure-monitor-opentelemetry==1.8.8"
+          "$RUNNER_TEMP/vm/bin/pytest" tests/test_shutdown.py
       - name: Import check
         run: python -c "import sugra_api_mcp; from sugra_api_mcp import tools"
       # Nothing rebuilds the bundled catalog when API routes land, so it drifts
