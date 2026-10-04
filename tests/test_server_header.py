@@ -26,6 +26,7 @@ import uvicorn
 
 from sugra_api_mcp import __main__ as entry
 from sugra_api_mcp import __version__, config, gate, observability, server, web
+from sugra_api_mcp import client as client_module
 
 SETTING = "SUGRA_MCP_SERVER_VERSION"
 PRODUCT = "sugra-api-mcp"
@@ -75,11 +76,10 @@ def _built_by_the_entry_point(monkeypatch) -> tuple[Any, dict[str, Any]]:
 
     monkeypatch.setattr(observability, "setup_observability", lambda: False)
     monkeypatch.setattr(observability, "flush_telemetry", lambda timeout_s: True)
-    # The lifespan exit writes a summary and closes the cached API clients:
-    # here they are this test's own, never the ones other tests left behind.
+    # The lifespan exit writes a summary and closes the shared API connection
+    # pools: here they are this test's own, never the ones other tests left behind.
     monkeypatch.setattr(gate, "default_summary", gate.GateSummary())
-    monkeypatch.setattr(server, "_per_key_clients", {})
-    monkeypatch.setattr(server, "_shared_client", None)
+    monkeypatch.setattr(client_module, "_pools", {})
     monkeypatch.setattr(server.mcp, "_session_manager", None)
     monkeypatch.setattr(uvicorn, "run", run)
     monkeypatch.delenv("SUGRA_AGENT_INTERNAL_TOKEN", raising=False)

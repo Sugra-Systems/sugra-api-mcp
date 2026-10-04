@@ -21,7 +21,7 @@ from mcp.types import CallToolResult, Icon, TextContent, ToolAnnotations
 from mcp.types import Tool as MCPTool
 
 from . import __version__, gate, observability
-from .client import SugraClient
+from .client import SugraClient, close_shared_pools
 from .config import MISSING_API_KEY_HINT, Config, load_allowed_origins, load_config
 from .errors import is_error_payload
 
@@ -464,10 +464,6 @@ mcp = SugraFastMCP(
     max_request_body_size=MAX_REQUEST_BODY_BYTES,
 )
 
-_shared_client: SugraClient | None = None
-
-_per_key_clients: dict[str, SugraClient] = {}
-
 # Call-time key enforcement (keyless startup): the process must boot and
 # answer initialize / tools/list / prompts / resources without SUGRA_API_KEY -
 # directory evaluators and several MCP clients launch the server with no env
@@ -489,9 +485,9 @@ class _KeylessClient:
 
     Every network method returns the structured ``missing_api_key`` error
     instead of performing a request, so catalog-only tools keep working and
-    network-backed tools degrade to an actionable error. Not cached as the
-    shared client: if the environment gains a key later, the next
-    ``get_client()`` call builds a real client.
+    network-backed tools degrade to an actionable error. Never kept for
+    later calls: if the environment gains a key later, the next
+    ``get_client()`` call hands out a real client.
     """
 
     async def get(
@@ -653,14 +649,6 @@ def current_caller_facts() -> observability.CallerFacts | None:
     )
 
 
-def _client_for_key(api_key: str) -> SugraClient:
-    client = _per_key_clients.get(api_key)
-    if client is None:
-        client = _build_client(api_key)
-        _per_key_clients[api_key] = client
-    return client
-
-
 def get_client() -> SugraClient | _KeylessClient:
     """Return the downstream HTTP client for the current request.
 
@@ -668,14 +656,17 @@ def get_client() -> SugraClient | _KeylessClient:
     call, stored on its scope state by ``AuthMiddleware``. Without one the call
     gets the keyless stand-in: never the session opener's key and never the
     SUGRA_API_KEY fallback. A dispatch that belongs to the HTTP transport
-    (``http_transport_ctx``) but carries no request is refused the same way. We
-    cache one client per distinct key to keep the httpx.AsyncClient alive
-    across calls.
+    (``http_transport_ctx``) but carries no request is refused the same way.
 
     stdio transport / in-process callers: ``api_key_ctx`` when set, else
     SUGRA_API_KEY from env. When that is empty too, return the keyless stand-in
     whose network methods answer with the structured ``missing_api_key`` error -
     the key requirement is enforced here at call time, never at process startup.
+
+    A real client is built for each call and costs next to nothing: it holds
+    the call's key and sends through the connection pool every caller of the
+    API base shares on the serving event loop, with the key on each of its own
+    requests (client.shared_pool).
 
     Every real client handed out here is followed by exactly one request, so
     each one counts as a Sugra API request of the call being dispatched
@@ -691,42 +682,29 @@ def _resolve_client() -> SugraClient | _KeylessClient:
     """The client get_client hands out, by the rules its docstring states."""
     is_http_request, request_key = _dispatching_http_request()
     if is_http_request:
-        return _client_for_key(request_key) if request_key else _keyless_client
+        return _build_client(request_key) if request_key else _keyless_client
     if http_transport_ctx.get():
         return _keyless_client
 
     per_request_key = api_key_ctx.get()
     if per_request_key:
-        return _client_for_key(per_request_key)
+        return _build_client(per_request_key)
 
-    global _shared_client
-    if _shared_client is None:
-        config = load_config()
-        if not config.api_key:
-            return _keyless_client
-        _shared_client = SugraClient(config)
-    return _shared_client
+    config = load_config()
+    if not config.api_key:
+        return _keyless_client
+    return SugraClient(config)
 
 
 async def close_clients() -> None:
-    """Close every Sugra API client get_client built, and forget it.
+    """Close the shared Sugra API connection pools, and forget them.
 
     Run once the HTTP app has stopped serving: __main__ passes it to
-    gate.wrap_lifespan. Each client is closed even when another fails to
-    close, and the first failure is raised after the rest. A second call finds
-    nothing left to close, and a get_client after it builds a new client.
+    gate.wrap_lifespan, which runs it after the last gate summary and before
+    the telemetry flush, on the event loop that served every request and so
+    holds every pool (client.close_shared_pools closes the pools of the loop
+    it runs on). Each pool is closed even when another fails to close, and the
+    first failure is raised after the rest. A second call finds nothing left
+    to close, and a request after it goes out on a new pool.
     """
-    global _shared_client
-    clients = list(_per_key_clients.values())
-    _per_key_clients.clear()
-    if _shared_client is not None:
-        clients.append(_shared_client)
-        _shared_client = None
-    first_failure: Exception | None = None
-    for client in clients:
-        try:
-            await client.aclose()
-        except Exception as e:
-            first_failure = first_failure or e
-    if first_failure is not None:
-        raise first_failure
+    await close_shared_pools()
