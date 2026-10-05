@@ -46,10 +46,16 @@ are any:
     <site> <leaf> <host> <ua> <origin> <count>
 
 site is post, sse or get; leaf is closed, or broken when any leaf was a
-BrokenResourceError. At most MAX_LINES lines are written, the largest counts
-first; omitted is the sum of the counts left out. A line holds fixed classes
-and a count, never a header value, an id or exception text: a class outside
-the reducers' known labels is written as other.
+BrokenResourceError. Lines are written largest count first, at most MAX_LINES
+of them and only while the record stays within MAX_RECORD_CHARS; omitted is
+the sum of the counts of every line left out, so dropped always equals the
+written counts plus omitted. side is process_side(), or unknown when it is
+longer than MAX_SIDE_CHARS. A line holds fixed classes and a count, never a
+header value, an id or exception text: a class outside the reducers' known
+labels is written as other.
+
+There is one counter, the module's counter: the filter counts into it and the
+lifespan wrapper writes it. Neither takes another.
 
 Installed by the HTTP entry point only; the stdio server never loads it. Once
 /mcp runs without sessions this whole class of record is gone, and so should
@@ -83,10 +89,14 @@ RACE_MESSAGES: dict[str, str] = {
 }
 
 FLUSH_INTERVAL_SECONDS = 60.0
-# At most this many count lines in one record: a bound on lines, not on
-# characters. Every key part is a known label (_label), so a line is short and
-# a test pins the longest possible record under App Insights' 32,768.
+# A count record holds at most MAX_LINES lines and at most MAX_RECORD_CHARS
+# characters, header included: App Insights keeps 32,768 characters of a
+# message, and the rest is a reserve. _count_text stops adding lines at
+# whichever bound comes first and counts every line left out in omitted.
 MAX_LINES = 400
+MAX_RECORD_CHARS = 32_768 - 768
+# A longer side is written as unknown (process_side allows at most 128).
+MAX_SIDE_CHARS = 128
 # How much of an exception is read before the record is let through unread.
 MAX_LEAVES = 32
 MAX_GROUP_DEPTH = 4
@@ -186,7 +196,10 @@ def _transports_and_request(
     return transports, request, False
 
 
-# Every label the reducers can return; any other value is written as other.
+# Every label the reducers can return, each from the table the reducer itself
+# reads (_host_class returns a _CALLER_HOSTS entry verbatim, loopback or other);
+# any other value is written as other. A test calls the reducers over those
+# tables and pins each set to what they return.
 _HOST_LABELS = frozenset({*observability._CALLER_HOSTS, "loopback", "other"})
 _UA_LABELS = frozenset({*(label for label, _ in observability._UA_PATTERNS), "other"})
 _ORIGIN_LABELS = frozenset({*observability._ORIGIN_CLASSES.values(), "none", "other"})
@@ -287,34 +300,54 @@ class RaceCounter:
                         self._counts.pop(key, None)
 
 
+def _side() -> str:
+    side = observability.process_side()
+    return side if type(side) is str and 0 < len(side) <= MAX_SIDE_CHARS else _UNKNOWN
+
+
 def _count_text(counts: dict[Key, int]) -> str:
+    """The count record: the header, then lines largest first within MAX_LINES and MAX_RECORD_CHARS.
+
+    Every line left out, by either bound, is counted in omitted, so the
+    written counts plus omitted always equal dropped.
+    """
     ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
-    shown = ranked[:MAX_LINES]
-    omitted = sum(count for _, count in ranked[MAX_LINES:])
-    header = (
-        f"srace1 side={observability.process_side()} dropped={sum(counts.values())} "
-        f"lines={len(shown)} omitted={omitted}"
-    )
-    lines = [" ".join((*key, str(count))) for key, count in shown]
-    return "\n".join([header, *lines])
+    dropped = sum(counts.values())
+    prefix = f"srace1 side={_side()} dropped={dropped} "
+
+    def header(lines: int, omitted: int) -> str:
+        return f"{prefix}lines={lines} omitted={omitted}"
+
+    # The header's length with every count omitted bounds it from above: lines
+    # and omitted only shrink from there as lines are added.
+    used = len(header(MAX_LINES, dropped))
+    lines: list[str] = []
+    written = 0
+    for key, count in ranked:
+        if len(lines) >= MAX_LINES:
+            break
+        line = " ".join((*key, str(count)))
+        if used + 1 + len(line) > MAX_RECORD_CHARS:
+            break
+        lines.append(line)
+        used += 1 + len(line)
+        written += count
+    return "\n".join([header(len(lines), dropped - written), *lines])
 
 
-default_counter = RaceCounter()
+# The one counter: the filter counts into it, the lifespan wrapper writes it.
+counter = RaceCounter()
 
 
 class TeardownRaceFilter(logging.Filter):
-    """Drops a teardown race record and counts it; lets every other record through."""
-
-    def __init__(self, counter: RaceCounter) -> None:
-        super().__init__()
-        self.counter = counter
+    """Drops a teardown race record and counts it in the module's counter; lets every other record through."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         try:
             key = race_key(record)
             if key is None:
                 return True
-            self.counter.add(key)
+            counter.add(key)
         except Exception:
             return True
         return False
@@ -331,21 +364,13 @@ def installed_filter() -> TeardownRaceFilter | None:
 _install_lock = threading.Lock()
 
 
-def install(counter: RaceCounter | None = None) -> TeardownRaceFilter:
-    """Put the filter on the SDK transport logger once.
-
-    A second call with the same counter (no counter means default_counter)
-    returns the first filter. A second call with another counter raises
-    RuntimeError: its drops would be counted where nothing writes them.
-    """
-    wanted = counter if counter is not None else default_counter
+def install() -> TeardownRaceFilter:
+    """Put the filter on the SDK transport logger once; a second call returns the first filter."""
     with _install_lock:
         existing = installed_filter()
         if existing is not None:
-            if existing.counter is not wanted:
-                raise RuntimeError("the teardown race filter is installed with another counter")
             return existing
-        race_filter = TeardownRaceFilter(wanted)
+        race_filter = TeardownRaceFilter()
         logging.getLogger(SDK_LOGGER).addFilter(race_filter)
         return race_filter
 
@@ -359,49 +384,35 @@ def uninstall() -> None:
                 sdk_logger.removeFilter(candidate)
 
 
-def _installed_counter() -> RaceCounter:
-    race_filter = installed_filter()
-    return race_filter.counter if race_filter is not None else default_counter
-
-
-def _write_logged(counter: Callable[[], RaceCounter]) -> None:
-    """Write the counter that counter() names now; a failure is a warning, never a raise."""
+def _write_logged() -> None:
+    """Write the module's counter; a failure is a warning, never a raise."""
     try:
-        counter().write()
+        counter.write()
     except Exception as e:
         logger.warning("Session race count failed (%s).", type(e).__name__)
 
 
-async def _write_every(counter: Callable[[], RaceCounter], interval: float) -> None:
+async def _write_every(interval: float) -> None:
     while True:
         await asyncio.sleep(interval)
-        _write_logged(counter)
+        _write_logged()
 
 
 def wrap_lifespan(
     inner: Callable[[Any], contextlib.AbstractAsyncContextManager[Any]],
-    counter: RaceCounter | None = None,
     *,
     interval: float = FLUSH_INTERVAL_SECONDS,
 ) -> Callable[[Any], contextlib.AbstractAsyncContextManager[Any]]:
-    """The app lifespan inner, with the counts written every interval and once more on exit.
+    """The app lifespan inner, with the module's counter written every interval and once more on exit.
 
-    The last write runs after inner has exited, so the races of the sessions
-    ended at shutdown are in it; wrapped by gate.wrap_lifespan, it runs before
-    the telemetry flush. Without a counter each write takes the counter of the
-    filter installed at that moment, else default_counter, so a filter
-    installed or replaced while the app runs is written all the same.
+    It writes the one counter the filter counts into. The last write runs
+    after inner has exited, so the races of the sessions ended at shutdown are
+    in it; wrapped by gate.wrap_lifespan, it runs before the telemetry flush.
     """
-
-    def given() -> RaceCounter:
-        assert counter is not None
-        return counter
-
-    race_counter = given if counter is not None else _installed_counter
 
     @contextlib.asynccontextmanager
     async def race_lifespan(app: Any) -> AsyncIterator[Any]:
-        writer = asyncio.create_task(_write_every(race_counter, interval))
+        writer = asyncio.create_task(_write_every(interval))
         try:
             async with inner(app) as state:
                 yield state
@@ -409,6 +420,6 @@ def wrap_lifespan(
             writer.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await writer
-            _write_logged(race_counter)
+            _write_logged()
 
     return race_lifespan

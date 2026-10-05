@@ -16,6 +16,7 @@ import hashlib
 import inspect
 import json
 import logging
+import re
 import sys
 import threading
 import time
@@ -50,8 +51,10 @@ ExcInfo = tuple[type[BaseException], BaseException, TracebackType]
 
 
 @pytest.fixture(autouse=True)
-def _no_filter_left_behind() -> Iterator[None]:
+def _no_filter_left_behind(monkeypatch) -> Iterator[None]:
+    """No filter installed, and a fresh module counter, for every test."""
     teardown_filter.uninstall()
+    monkeypatch.setattr(teardown_filter, "counter", teardown_filter.RaceCounter())
     yield
     teardown_filter.uninstall()
 
@@ -178,8 +181,8 @@ async def test_the_real_race_logs_an_error_without_the_filter(sdk_records) -> No
 
 
 async def test_the_real_race_is_dropped_and_counted_by_client_class(sdk_records) -> None:
-    counter = teardown_filter.RaceCounter()
-    teardown_filter.install(counter)
+    counter = teardown_filter.counter
+    teardown_filter.install()
     deleted, answered = await _notification_meets_a_delete()
     assert (deleted, answered) == (200, 202)
     assert _race_records(sdk_records) == []
@@ -188,8 +191,8 @@ async def test_the_real_race_is_dropped_and_counted_by_client_class(sdk_records)
 
 async def test_the_real_race_on_an_sse_answer_is_dropped(monkeypatch, sdk_records) -> None:
     """The session is ended by a task that runs at the checkpoint inside the SDK's writer.send."""
-    counter = teardown_filter.RaceCounter()
-    teardown_filter.install(counter)
+    counter = teardown_filter.counter
+    teardown_filter.install()
     create = sh.StreamableHTTPServerTransport._create_session_message
 
     def ending_the_session(self: Any, *args: Any) -> Any:
@@ -284,26 +287,26 @@ def _record(msg: str, exc_info: ExcInfo | None, *, args: tuple[Any, ...] = (), l
     return logging.getLogger(SDK).makeRecord(SDK, level, "streamable_http.py", 1, msg, args, exc_info)
 
 
-def _passes(record: logging.LogRecord, counter: teardown_filter.RaceCounter | None = None) -> bool:
-    race_filter = teardown_filter.TeardownRaceFilter(counter or teardown_filter.RaceCounter())
-    return race_filter.filter(record) is True
+def _passes(record: logging.LogRecord) -> bool:
+    """Whether a filter lets the record through; a drop is counted in the module's (fresh) counter."""
+    return teardown_filter.TeardownRaceFilter().filter(record) is True
 
 
 @pytest.mark.parametrize("msg", ALL_MSGS)
 async def test_each_message_drops_a_closed_leaf_bare_or_in_a_group(msg) -> None:
-    counter = teardown_filter.RaceCounter()
+    counter = teardown_filter.counter
     bare = _raised_in_handler(anyio.ClosedResourceError(), _transport(True), _request())
     grouped = _raised_in_handler(await _group(anyio.ClosedResourceError()), _transport(True), _request())
-    assert not _passes(_record(msg, bare), counter)
-    assert not _passes(_record(msg, grouped), counter)
+    assert not _passes(_record(msg, bare))
+    assert not _passes(_record(msg, grouped))
     site = teardown_filter.RACE_MESSAGES[msg]
     assert counter._counts == {(site, "closed", "mcp.sugra.ai", "claude", "anthropic"): 2}
 
 
 @pytest.mark.parametrize("msg", ALL_MSGS)
 def test_a_closed_leaf_with_no_transport_visible_is_dropped_as_unknown(msg) -> None:
-    counter = teardown_filter.RaceCounter()
-    assert not _passes(_record(msg, _raised_in_handler(anyio.ClosedResourceError())), counter)
+    counter = teardown_filter.counter
+    assert not _passes(_record(msg, _raised_in_handler(anyio.ClosedResourceError())))
     site = teardown_filter.RACE_MESSAGES[msg]
     assert counter._counts == {(site, "closed", "unknown", "unknown", "unknown"): 1}
 
@@ -411,8 +414,8 @@ async def test_a_group_whose_context_is_its_own_leaf_is_dropped() -> None:
 
     group = await body(anyio.ClosedResourceError())
     assert group.__context__ is group.exceptions[0]
-    counter = teardown_filter.RaceCounter()
-    assert not _passes(_record(SSE_MSG, _raised_in_handler(group, _transport(True), _request())), counter)
+    counter = teardown_filter.counter
+    assert not _passes(_record(SSE_MSG, _raised_in_handler(group, _transport(True), _request())))
     assert counter._counts == {("sse", "closed", "mcp.sugra.ai", "claude", "anthropic"): 1}
     # The same shape whose leaf was raised while a real error was handled keeps the record.
     try:
@@ -461,14 +464,14 @@ def test_a_live_transport_below_the_frame_cap_keeps_the_record() -> None:
 
 def test_a_walk_that_reads_every_frame_up_to_the_cap_is_not_truncated() -> None:
     cap = teardown_filter.MAX_FRAMES
-    counter = teardown_filter.RaceCounter()
-    exactly = _raised_below(cap - 3, anyio.ClosedResourceError())
+    counter = teardown_filter.counter
+    exactly =_raised_below(cap - 3, anyio.ClosedResourceError())
     assert len(list(teardown_filter._frames(exactly[1]))) == cap
-    assert not _passes(_record(POST_MSG, exactly), counter)
+    assert not _passes(_record(POST_MSG, exactly))
     assert counter._counts == {("post", "closed", "unknown", "unknown", "unknown"): 1}
     one_more = _raised_below(cap - 2, anyio.ClosedResourceError())
     assert list(teardown_filter._frames(one_more[1]))[-1] is None
-    assert _passes(_record(POST_MSG, one_more), counter)
+    assert _passes(_record(POST_MSG, one_more))
 
 
 def _raised_through(exc: BaseException, *steps: object) -> ExcInfo:
@@ -522,11 +525,11 @@ def test_a_truncated_walk_keeps_the_record_even_after_an_ended_transport() -> No
 
 
 def test_every_transport_ended_within_the_cap_drops_the_record() -> None:
-    counter = teardown_filter.RaceCounter()
+    counter = teardown_filter.counter
     closed = _raised_through(anyio.ClosedResourceError(), _transport(True), 5, _transport(True))
     broken = _raised_through(anyio.BrokenResourceError(), _transport(True), _transport(True))
-    assert not _passes(_record(POST_MSG, closed), counter)
-    assert not _passes(_record(GET_MSG, broken), counter)
+    assert not _passes(_record(POST_MSG, closed))
+    assert not _passes(_record(GET_MSG, broken))
     assert counter._counts == {
         ("post", "closed", "unknown", "unknown", "unknown"): 1,
         ("get", "broken", "unknown", "unknown", "unknown"): 1,
@@ -535,8 +538,9 @@ def test_every_transport_ended_within_the_cap_drops_the_record() -> None:
 
 def _reachable_labels() -> tuple[set[str], set[str], set[str]]:
     """What the three reducers return for inputs that reach each of their classes."""
-    hosts = [*observability._CALLER_HOSTS, "app.sugra.ai:443", "localhost", "127.0.0.1:8000", "[::1]"]
-    hosts += ["evil.example", "[::1]x", "", None]
+    # Every caller host (bare and with a port), every loopback host, other text, and no Host.
+    hosts: list[object] = [*observability._CALLER_HOSTS, *(f"{h}:443" for h in observability._CALLER_HOSTS)]
+    hosts += [*observability._LOOPBACK_HOSTS, "evil.example", "[::1]x", "", None]
     uas = [
         "sugra-playground/1", "sugra-api-mcp/0.6", "claude-user", "ChatGPT-User/1.0", "grok-agent",
         "cursor", "openbb", "python-httpx/0.27", "curl/8.0", "node-fetch/3", "Mozilla/5.0", "x", "", None,
@@ -561,9 +565,8 @@ def test_the_label_whitelists_are_what_the_reducers_return() -> None:
     assert teardown_filter._label("evil.example", teardown_filter._HOST_LABELS) == "other"
 
 
-def test_the_longest_record_stays_under_the_app_insights_limit(caplog, monkeypatch) -> None:
-    monkeypatch.setenv("CONTAINER_APP_REVISION", "a" * 128)
-    caplog.set_level(logging.INFO, logger=teardown_filter.COUNTER_LOGGER)
+def _every_key() -> list[tuple[str, ...]]:
+    """Every key the filter can count, longest first."""
     parts = (
         sorted(teardown_filter.RACE_MESSAGES.values()),
         ["closed", "broken"],
@@ -571,17 +574,68 @@ def test_the_longest_record_stays_under_the_app_insights_limit(caplog, monkeypat
         sorted({*teardown_filter._UA_LABELS, "none", "unknown"}),
         sorted({*teardown_filter._ORIGIN_LABELS, "unknown"}),
     )
-    keys = [()]
+    keys: list[tuple[str, ...]] = [()]
     for part in parts:
         keys = [(*key, label) for key in keys for label in part]
-    keys.sort(key=lambda key: -sum(map(len, key)))
+    return sorted(keys, key=lambda key: (-sum(map(len, key)), key))
+
+
+def _accounted(message: str) -> tuple[int, int, int, list[str]]:
+    """dropped, omitted, the sum of the written counts, and the lines of a count record."""
+    header, *lines = message.splitlines()
+    match = re.fullmatch(r"srace1 side=(\S+) dropped=(\d+) lines=(\d+) omitted=(\d+)", header)
+    assert match is not None, header
+    assert int(match.group(3)) == len(lines)
+    return int(match.group(2)), int(match.group(4)), sum(int(line.rsplit(" ", 1)[1]) for line in lines), lines
+
+
+def test_an_absurd_side_and_huge_counts_stay_within_the_budget(caplog, monkeypatch) -> None:
+    caplog.set_level(logging.INFO, logger=teardown_filter.COUNTER_LOGGER)
+    monkeypatch.setattr(observability, "process_side", lambda: "x" * 100_000)
+    keys = _every_key()
     assert len(keys) > teardown_filter.MAX_LINES
     counter = teardown_filter.RaceCounter()
-    counter._counts = {key: 10**15 for key in keys}  # type: ignore[misc]
+    counter._counts = {key: 10**30 + i for i, key in enumerate(keys)}  # type: ignore[misc]
     counter.write()
     [message] = _count_records(caplog)
-    assert len(message.splitlines()) == teardown_filter.MAX_LINES + 1
-    assert len(message) < 32_768
+    assert message.startswith("srace1 side=unknown ")
+    assert len(message) <= teardown_filter.MAX_RECORD_CHARS
+    dropped, omitted, written, lines = _accounted(message)
+    assert dropped == sum(10**30 + i for i in range(len(keys)))
+    assert written + omitted == dropped
+    assert 0 < len(lines) <= teardown_filter.MAX_LINES
+
+
+def test_the_character_budget_stops_the_lines_and_counts_the_rest_as_omitted(caplog, monkeypatch) -> None:
+    caplog.set_level(logging.INFO, logger=teardown_filter.COUNTER_LOGGER)
+    monkeypatch.setattr(teardown_filter, "MAX_LINES", 10**6)
+    keys = _every_key()
+    counts = {key: 10**30 + i for i, key in enumerate(keys)}
+    counter = teardown_filter.RaceCounter()
+    counter._counts = dict(counts)  # type: ignore[arg-type]
+    counter.write()
+    [message] = _count_records(caplog)
+    assert len(message) <= teardown_filter.MAX_RECORD_CHARS
+    dropped, omitted, written, lines = _accounted(message)
+    assert len(lines) < len(keys)
+    assert dropped == sum(counts.values()) and written + omitted == dropped
+    # It stopped at the budget: the next line, largest count first, would not fit.
+    ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    following = " ".join((*ranked[len(lines)][0], str(ranked[len(lines)][1])))
+    assert len(message) + 1 + len(following) > teardown_filter.MAX_RECORD_CHARS
+
+
+def test_the_record_stays_within_every_budget_size(monkeypatch) -> None:
+    """The header's own digits are counted: at no budget does the record pass it."""
+    counts = {key: 10**30 + i for i, key in enumerate(_every_key()[:40])}
+    for budget in range(60, 1_200):
+        monkeypatch.setattr(teardown_filter, "MAX_RECORD_CHARS", budget)
+        message = teardown_filter._count_text(counts)
+        # The header is always written; a line is added only when the whole record still fits.
+        if len(message.splitlines()) > 1:
+            assert len(message) <= budget, budget
+        dropped, omitted, written, _ = _accounted(message)
+        assert written + omitted == dropped == sum(counts.values())
 
 
 def test_a_class_outside_the_known_labels_is_counted_as_other(monkeypatch) -> None:
@@ -589,15 +643,15 @@ def test_a_class_outside_the_known_labels_is_counted_as_other(monkeypatch) -> No
     monkeypatch.setattr(observability, "_host_class", lambda value: leak)
     monkeypatch.setattr(observability, "_text_class", lambda value, patterns: leak)
     monkeypatch.setattr(observability, "_origin_class", lambda value: leak)
-    counter = teardown_filter.RaceCounter()
-    assert not _passes(_record(POST_MSG, _raised_in_handler(anyio.ClosedResourceError(), _transport(True), _request())), counter)
+    counter = teardown_filter.counter
+    assert not _passes(_record(POST_MSG, _raised_in_handler(anyio.ClosedResourceError(), _transport(True), _request())))
     assert counter._counts == {("post", "closed", "other", "other", "other"): 1}
 
 
 def test_a_request_without_user_agent_or_origin_is_counted() -> None:
     bare = Request({"type": "http", "method": "POST", "path": "/mcp", "headers": [(b"host", b"app.sugra.ai")]})
-    counter = teardown_filter.RaceCounter()
-    assert not _passes(_record(POST_MSG, _raised_in_handler(anyio.ClosedResourceError(), _transport(True), bare)), counter)
+    counter = teardown_filter.counter
+    assert not _passes(_record(POST_MSG, _raised_in_handler(anyio.ClosedResourceError(), _transport(True), bare)))
     assert counter._counts == {("post", "closed", "app.sugra.ai", "other", "none"): 1}
 
 
@@ -606,9 +660,9 @@ def test_a_class_that_is_not_text_is_counted_as_none(caplog, monkeypatch) -> Non
     monkeypatch.setattr(observability, "_host_class", lambda value: None)
     monkeypatch.setattr(observability, "_text_class", lambda value, patterns: None)
     monkeypatch.setattr(observability, "_origin_class", lambda value: None)
-    counter = teardown_filter.RaceCounter()
-    assert not _passes(_record(POST_MSG, _raised_in_handler(anyio.ClosedResourceError(), _transport(True), _request())), counter)
-    assert not _passes(_record(GET_MSG, _raised_in_handler(anyio.ClosedResourceError())), counter)
+    counter = teardown_filter.counter
+    assert not _passes(_record(POST_MSG, _raised_in_handler(anyio.ClosedResourceError(), _transport(True), _request())))
+    assert not _passes(_record(GET_MSG, _raised_in_handler(anyio.ClosedResourceError())))
     assert counter._counts == {
         ("post", "closed", "none", "none", "none"): 1,
         ("get", "closed", "unknown", "unknown", "unknown"): 1,
@@ -641,8 +695,8 @@ def test_an_error_inside_the_filter_lets_the_record_through() -> None:
             raise RuntimeError("unreadable")
 
     record = _record(POST_MSG, _raised_in_handler(anyio.ClosedResourceError(), Unreadable(mcp_session_id="s")))
-    counter = teardown_filter.RaceCounter()
-    assert _passes(record, counter)
+    counter = teardown_filter.counter
+    assert _passes(record)
     assert counter._counts == {}
 
 
@@ -768,54 +822,29 @@ def test_drops_counted_while_a_write_is_logged_stay_for_the_next(caplog) -> None
     assert message.splitlines()[1:] == ["post closed none other none 1"]
 
 
-async def test_the_lifespan_writes_the_installed_filters_counter(caplog) -> None:
+async def test_the_installed_filter_and_the_lifespan_share_the_one_counter(caplog) -> None:
     caplog.set_level(logging.INFO, logger=teardown_filter.COUNTER_LOGGER)
-    custom = teardown_filter.RaceCounter()
-    teardown_filter.install(custom)
+    race_filter = teardown_filter.install()
+    assert not hasattr(race_filter, "counter")
+    assert "counter" not in inspect.signature(teardown_filter.install).parameters
+    assert "counter" not in inspect.signature(teardown_filter.wrap_lifespan).parameters
 
     @contextlib.asynccontextmanager
     async def inner(app: object) -> AsyncIterator[None]:
         yield
 
     lifespan = teardown_filter.wrap_lifespan(inner, interval=3600)
-    custom.add(("post", "closed", "none", "other", "none"))
     async with lifespan(object()):
-        pass
+        record = _record(POST_MSG, _raised_in_handler(anyio.ClosedResourceError(), _transport(True), _request()))
+        assert race_filter.filter(record) is False
+        assert teardown_filter.counter._counts == {("post", "closed", "mcp.sugra.ai", "claude", "anthropic"): 1}
     [message] = _count_records(caplog)
-    assert message.splitlines()[1:] == ["post closed none other none 1"]
-    assert custom._counts == {}
-
-
-async def test_the_lifespan_writes_the_filter_installed_at_each_write(caplog) -> None:
-    caplog.set_level(logging.INFO, logger=teardown_filter.COUNTER_LOGGER)
-    first = teardown_filter.RaceCounter()
-    second = teardown_filter.RaceCounter()
-
-    @contextlib.asynccontextmanager
-    async def inner(app: object) -> AsyncIterator[None]:
-        yield
-
-    lifespan = teardown_filter.wrap_lifespan(inner, interval=0.02)
-    async with lifespan(object()):
-        # Installed after the lifespan started: the periodic write finds it.
-        teardown_filter.install(first)
-        first.add(("post", "closed", "none", "other", "none"))
-        deadline = time.monotonic() + 5
-        while first._counts and time.monotonic() < deadline:
-            await asyncio.sleep(0.01)
-        assert first._counts == {}
-        # Replaced before the exit: the last write finds the new one.
-        teardown_filter.uninstall()
-        teardown_filter.install(second)
-        second.add(("sse", "closed", "none", "other", "none"))
-        second.add(("sse", "closed", "none", "other", "none"))
-        caplog.clear()
-    assert second._counts == {}
-    assert any("sse closed none other none 2" in m.splitlines()[1:] for m in _count_records(caplog))
+    assert message.splitlines()[1:] == ["post closed mcp.sugra.ai claude anthropic 1"]
+    assert teardown_filter.counter._counts == {}
 
 
 async def test_the_lifespan_writes_every_interval_and_once_more_on_exit(monkeypatch) -> None:
-    counter = teardown_filter.RaceCounter()
+    counter = teardown_filter.counter
     writes: list[int] = []
     write = counter.write
 
@@ -830,7 +859,7 @@ async def test_the_lifespan_writes_every_interval_and_once_more_on_exit(monkeypa
         yield "state"
         counter.add(("post", "closed", "none", "other", "none"))
 
-    lifespan = teardown_filter.wrap_lifespan(inner, counter, interval=0.02)
+    lifespan = teardown_filter.wrap_lifespan(inner, interval=0.02)
     async with lifespan(object()) as state:
         assert state == "state"
         deadline = time.monotonic() + 5
@@ -881,7 +910,7 @@ def test_the_http_server_installs_the_filter_and_leaves_tools_list_as_it_was(mon
     before = _tools_list_digest()
     captured = _run_http(monkeypatch)
     race_filter = teardown_filter.installed_filter()
-    assert race_filter is not None and race_filter.counter is teardown_filter.default_counter
+    assert isinstance(race_filter, teardown_filter.TeardownRaceFilter)
     assert captured["app"].router.lifespan_context.__qualname__ == "wrap_lifespan.<locals>.lifespan"
     assert _tools_list_digest() == before
     # Installing twice leaves one filter.
@@ -898,19 +927,13 @@ def test_the_three_messages_and_the_logger_are_the_installed_sdks_own() -> None:
     assert sh.logger.name == teardown_filter.SDK_LOGGER
 
 
-def test_a_second_install_with_another_counter_raises() -> None:
-    counter = teardown_filter.RaceCounter()
-    first = teardown_filter.install(counter)
-    assert teardown_filter.install(counter) is first
-    with pytest.raises(RuntimeError):
-        teardown_filter.install(teardown_filter.RaceCounter())
-    with pytest.raises(RuntimeError):
-        teardown_filter.install()
+def test_install_is_idempotent_and_uninstall_removes_the_filter() -> None:
+    first = teardown_filter.install()
+    assert teardown_filter.install() is first
     assert teardown_filter.installed_filter() is first
     teardown_filter.uninstall()
-    default = teardown_filter.install()
-    assert teardown_filter.install() is default
-    assert teardown_filter.install(teardown_filter.default_counter) is default
+    assert teardown_filter.installed_filter() is None
+    assert teardown_filter.install() is not first
 
 
 def test_installs_at_the_same_time_leave_one_filter(monkeypatch) -> None:
