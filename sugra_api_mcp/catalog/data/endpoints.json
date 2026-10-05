@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-10-04T16:31:43Z",
+  "built_at": "2026-10-05T14:52:36Z",
   "endpoint_count": 1625,
   "endpoints": [
     {
@@ -76813,7 +76813,7 @@
       "toolset": "hedge_fund_intelligence"
     },
     {
-      "description": "Snapshot of the most recent reported month from the US Treasury TIC Major Foreign Holders table. A country whose own newest month is older than that period is omitted here; its history stays on the country route. Grand Total, Foreign Official, Treasury Bills, and T-Bonds and Notes are the figures for that same month.",
+      "description": "Snapshot of the most recent reported month from the US Treasury TIC Major Foreign Holders table. A country whose own newest month is older than that period is omitted here; its history stays on the country route. Grand Total, Foreign Official, Treasury Bills, T-Bonds and Notes, and All Other are the figures for that same month. A headline is null when that month is missing.",
       "method": "GET",
       "operation_id": "treasury_tic_mfh_latest",
       "parameters": [
@@ -93583,5 +93583,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "ae150a09cb73d718f52e4a91654d1315e2e260f26cfe7ce2020ec08f460f0487"
+  "spec_sha256": "4b0174a3892404aaea0b4c00d0ed3bae07cf35f1cf134bd02904289b3417a912"
 }
