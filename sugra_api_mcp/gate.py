@@ -289,11 +289,16 @@ def _answers_with_error(body: bytes) -> bool:
     return False
 
 
-async def served_tool_names() -> list[str]:
-    """The names tools/list serves: the server's own list_tools, the one its tools/list handler calls."""
-    from .server import mcp
-
-    return [tool.name for tool in await mcp.list_tools()]
+def _declared_length(scope: Scope) -> int | None:
+    """The request's Content-Length when it is one header of ASCII digits, else None."""
+    values = [value for key, value in scope.get("headers") or () if key.lower() == b"content-length"]
+    if len(values) != 1:
+        return None
+    value = values[0].strip()
+    # bytes.isdigit is ASCII only; the length cap keeps int() cheap.
+    if not value or len(value) > 19 or not value.isdigit():
+        return None
+    return int(value)
 
 
 class _DemandCapture:
@@ -327,10 +332,6 @@ class _DemandCapture:
         if message["type"] == "http.response.start":
             self.status = message.get("status")
 
-    def answered(self) -> bool:
-        status = self.status
-        return isinstance(status, int) and 200 <= status < 300
-
 
 class GateMiddleware:
     """ASGI middleware that gives each tracked POST a gate record and its summary line.
@@ -345,7 +346,8 @@ class GateMiddleware:
 
     A tracked POST to /mcp that is an initialize or a tools/list, or is
     answered before its body is read, is counted in the demand count with the
-    status it was sent, whatever that status is (_DemandCapture).
+    status it was sent, whatever that status is (_DemandCapture), unless its
+    body is known to be over the limit (_count).
     """
 
     def __init__(
@@ -435,15 +437,20 @@ class GateMiddleware:
     def _count(self, scope: Scope, capture: _DemandCapture, body_read: bool, body_too_large: bool) -> None:
         """Add the request to the demand count, or to its failures; never raises.
 
-        A body over the limit is never counted, read to its end or not: its
-        method is not known, and it is no initialize or tools/list the server
-        would serve.
+        A body known to be over the limit is never counted: one the gate saw
+        pass max_body_bytes, read to its end or not, and one whose valid
+        Content-Length (_declared_length) exceeds it. Such a body's method is
+        not known, and it is no initialize or tools/list the server would serve.
+        A body without a valid Content-Length (chunked) that was answered before
+        it was read is counted as unread: its size is not known without reading
+        it, which the gate never does on the app's behalf.
         """
         try:
             if capture.failed:
                 self.demand.add_failure()
                 return
-            if body_too_large:
+            declared = _declared_length(scope)
+            if body_too_large or (declared is not None and declared > self.max_body_bytes):
                 return
             # A body never read means an answer before it: its method is unknown.
             method = capture.method if body_read else demand.UNREAD
@@ -455,12 +462,7 @@ class GateMiddleware:
                 _first_header(scope, b"origin"),
             )
             client = capture.client if body_read else demand.NOT_APPLICABLE
-            tools = (
-                self.demand.served_digest
-                if method == demand.TOOLS_LIST and capture.answered()
-                else demand.NOT_APPLICABLE
-            )
-            self.demand.add((method, demand.status_of(capture.status), host, ua, origin, client, tools))
+            self.demand.add((method, demand.status_of(capture.status), host, ua, origin, client))
         except Exception:
             with contextlib.suppress(Exception):
                 self.demand.add_failure()
@@ -493,12 +495,9 @@ def wrap_lifespan(
     flush_timeout: float = FLUSH_TIMEOUT_SECONDS,
     on_exit: Iterable[Callable[[], Awaitable[None]]] = (),
     demand_counter: demand.DemandCounter | None = None,
-    served_tools: Callable[[], Awaitable[Iterable[str]]] = served_tool_names,
 ) -> Callable[[Any], contextlib.AbstractAsyncContextManager[Any]]:
     """The app lifespan inner, plus the summaries and the exit work around it.
 
-    Before inner starts, the demand count takes the digest of the served tool
-    names (served_tools) once; a failure leaves it demand.UNKNOWN_TOOLS.
     While the app runs, a summary and the demand count are written every
     interval seconds. On the way out, after inner has exited, it waits up to
     drain_seconds for tracked requests still finishing, writes the last
@@ -520,13 +519,6 @@ def wrap_lifespan(
 
     @contextlib.asynccontextmanager
     async def lifespan(app: Any) -> AsyncIterator[Any]:
-        # Once, before the app serves a request: every tool is registered by
-        # then, and the request path only reads the result.
-        try:
-            counter.served_digest = demand.tools_digest(await served_tools())
-        except Exception as e:
-            with contextlib.suppress(Exception):
-                demand.logger.warning("Served tools digest failed (%s).", type(e).__name__)
         writer = asyncio.create_task(_write_every(gate_summary, interval, counter))
         try:
             async with inner(app) as state:

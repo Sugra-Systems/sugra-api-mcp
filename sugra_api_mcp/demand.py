@@ -6,17 +6,21 @@ proxies; the gate tracks no other request) and that is an initialize or a
 tools/list, or was answered before its body was read. A POST to any other
 path, or without a valid request id, writes nothing at all: no line and no
 zero. Every SUMMARY_INTERVAL_SECONDS of the gate, and at shutdown, the counts
-since the previous write are logged at INFO on sugra_mcp.demand, only when
-there are any:
+since the previous write are logged at INFO on sugra_mcp.demand, when there
+are any or lost grew since the last record (such a record can read
+requests=0 lines=0 with only lost grown):
 
     sdemand1 side=<side> requests=<n> lines=<m> omitted=<o> failed=<f> lost=<l>
-    <method> <status> <host> <ua> <origin> <client> <tools> <count>
+    <method> <status> <host> <ua> <origin> <client> <count>
 
 method is initialize, tools/list, or unread: a request answered before its
 body was read, as the auth layer answers a bad bearer token (401), so which
-method it carried is not known. A batch, a body over the limit (read to its
-end or answered before that) and every other method (tools/call, ping,
-notifications) are not counted.
+method it carried is not known. A batch, a body known to be over the limit
+(the gate saw it pass the limit, read to its end or not, or its valid
+Content-Length exceeds it) and every other method (tools/call, ping,
+notifications) are not counted. A body without a valid Content-Length
+(chunked) answered before it was read is counted as unread: its size is not
+known without reading it.
 
 status is the HTTP status of the answer start that was sent to the client,
 or none when none was: no answer started, or its send failed.
@@ -32,21 +36,15 @@ client is the class of the initialize clientInfo name (_CLIENT_NAME_PATTERNS),
 none when an initialize names no client, and - for every other method: only
 initialize carries clientInfo.
 
-tools is, on a 2xx tools/list line, the digest of the served tool set: the
-first 8 hex of the sha256 of the names the server's own list_tools returns
-(the list its tools/list handler answers with), sorted and joined by newlines
-(tools_digest), taken once by gate.wrap_lifespan before the app serves, so a
-change to the served set shows as a new value. The answer itself is never
-read. It is unknown when that digest was never taken, and - on every other
-line.
-
 failed counts the requests whose demand step raised: such a request is in
 requests and in no line, and the answer it was sent is never touched by it.
 
 lost is the total, since the process started, of the requests in writes the
 logger raised on. Such a write's interval is dropped, never retried, so no
 request is ever written twice; a handler may still have taken the record
-before another raised.
+before another raised. A lost request is in no later requests total, so what
+a process counted is the sum of requests over the records it wrote plus the
+lost of its last record.
 
 Each line is a count since the previous write, per process, starting from zero
 when the process starts. At most MAX_LINES lines are written, the largest
@@ -62,10 +60,8 @@ names above, never a client name, a session id or a payload.
 from __future__ import annotations
 
 import contextlib
-import hashlib
 import logging
 import threading
-from collections.abc import Iterable
 
 from . import observability
 
@@ -85,8 +81,6 @@ SIDE_MAX = 128
 RECORD_MAX_CHARS = 32_000
 
 NOT_APPLICABLE = "-"
-# The tools field of a 2xx tools/list line when the served digest was never taken.
-UNKNOWN_TOOLS = "unknown"
 _NONE = "none"
 
 logger = logging.getLogger(COUNTER_LOGGER)
@@ -94,12 +88,7 @@ logger = logging.getLogger(COUNTER_LOGGER)
 # WARNING, which would drop every count (gate.py sets its logger the same way).
 logger.setLevel(logging.INFO)
 
-Key = tuple[str, str, str, str, str, str, str]
-
-
-def tools_digest(names: Iterable[str]) -> str:
-    """The first 8 hex of the sha256 of the tool names, sorted and joined by newlines."""
-    return hashlib.sha256("\n".join(sorted(names)).encode("utf-8")).hexdigest()[:8]
+Key = tuple[str, str, str, str, str, str]
 
 
 def request_facts(message: object) -> tuple[str | None, str]:
@@ -137,11 +126,9 @@ def status_of(status: object) -> str:
 
 
 class DemandCounter:
-    """Requests counted since the last write, by key, and the digest a 2xx tools/list line carries."""
+    """Requests counted since the last write, by key, and the requests lost to failed writes."""
 
     def __init__(self) -> None:
-        # Set once by gate.wrap_lifespan before the app serves; only read on the request path.
-        self.served_digest = UNKNOWN_TOOLS
         self._counts: dict[Key, int] = {}
         self._failed = 0
         self._lost = 0
