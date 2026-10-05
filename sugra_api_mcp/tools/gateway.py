@@ -20,7 +20,7 @@ from ..catalog.place import place_gap
 from ..catalog.response import ProjectionTooLargeError, compile_fields, shape_response
 from ..catalog.search import known_sources, known_toolsets, query_limit_error, search_catalog
 from ..catalog.toolsets import ordered_toolsets
-from ..client import _enforce_size_limit
+from ..client import _cut_on_pool, _enforce_size_limit
 from ..errors import is_error_payload, projection_too_large_error, server_busy_error
 from ..observability import trace_mcp_tool
 from ..server import current_caller, get_client, mcp, read_only
@@ -991,9 +991,13 @@ async def call_endpoint(
             return _enforce_size_limit(payload, path)
 
         # Shaping and the size gate run on the shaping pool, never on the
-        # event loop; a full pool answers server_busy.
-        return await _shape_off_loop(
-            partial(_shape_and_gate, payload, path, limit, fields, include_raw, endpoint=endpoint)
+        # event loop; a full pool answers server_busy. The wait is bounded
+        # by two clocks, the fields projection's and then the cut's, plus a
+        # grace; past it the plain size refusal answers (client._cut_on_pool).
+        return await _cut_on_pool(
+            partial(_shape_and_gate, payload, path, limit, fields, include_raw, endpoint=endpoint),
+            path,
+            clocks=2,
         )
     except ProjectionTooLargeError as exc:
         return projection_too_large_error(

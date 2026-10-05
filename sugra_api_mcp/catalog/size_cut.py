@@ -55,8 +55,9 @@ date and sizing scans, every list and record of the priority, replacement
 and notice passes, and around each measure of the rest of the response, of
 the hints and of the result. One record's serialise is bounded by that
 record's size, and one measure of the rest by the size of the rest. The
-hard bound for the fixed tools is the client's wait on the pool
-(``client._gate_off_loop``), which answers without the cut once the clock
+hard bound for the fixed tools and call_endpoint is the caller's wait on
+the pool (``client._cut_on_pool``), which answers without the cut once the
+clock, two clocks for call_endpoint whose fields projection has its own,
 and a short grace have passed.
 
 What is said: ``meta.truncated`` names the cut. Its ``original_count``,

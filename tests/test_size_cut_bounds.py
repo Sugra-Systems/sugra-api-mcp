@@ -9,11 +9,13 @@ and a refusal names a record only when that record is what leaves no room.
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import json
 import math
 import random
 import threading
+import time
 from datetime import date, timedelta
 
 import httpx
@@ -620,3 +622,119 @@ def test_the_priority_replacement_and_notice_passes_are_clocked(monkeypatch) -> 
     assert ("__init__", "int") in passes
     assert ("_with_lists", "NoneType") in passes
     assert ("_notice", "_List") in passes
+
+
+# ---- call_endpoint's wait on the pool is bounded too ----
+
+QUOTES = "quotes_symbol_historical"
+QUOTES_PARAMS = {"symbol": "AAPL"}
+
+
+def _cut_that_blocks(monkeypatch, seconds: float | None = None):
+    """Replace the cutter with one that blocks until released, or for seconds,
+    and record each time it runs."""
+    release = threading.Event()
+    runs: list[float] = []
+
+    def cutter(*args, **kwargs):
+        runs.append(time.monotonic())
+        if seconds is None:
+            release.wait(10)
+            return {"data": "late"}
+        time.sleep(seconds)
+        return {"data": "cut in time"}
+
+    monkeypatch.setattr(_module(), "cut_to_fit", cutter)
+    return release, runs
+
+
+async def _calls(monkeypatch, count: int) -> list:
+    """count call_endpoint calls at once over one mock client."""
+    from sugra_api_mcp.tools import gateway
+    from tests.size_cut_bodies import client_serving, quotes_history
+
+    # 2,000 bars are about three times the cap and quick to shape, so the
+    # time the tests read is the cutter's.
+    client = client_serving(quotes_history(2_000))
+    monkeypatch.setattr(gateway, "get_client", lambda: client)
+    try:
+        return await asyncio.gather(
+            *(gateway.call_endpoint(QUOTES, params=QUOTES_PARAMS) for _ in range(count))
+        )
+    finally:
+        await client.aclose()
+
+
+async def _pool_drained() -> int:
+    """The shaping jobs still held once the background workers have finished, at most 5 s on."""
+    from sugra_api_mcp.tools import gateway
+
+    deadline = time.monotonic() + 5
+    while gateway.shaping_pending() and time.monotonic() < deadline:
+        await asyncio.sleep(0.01)
+    return gateway.shaping_pending()
+
+
+async def test_a_call_endpoint_cut_that_blocks_is_answered_within_its_bound(monkeypatch) -> None:
+    from sugra_api_mcp.catalog import response as shaping
+
+    monkeypatch.setattr(shaping, "MAX_SHAPING_SECONDS", 0.2)
+    monkeypatch.setattr(client_module, "CUT_GRACE_SECONDS", 0.1)
+    release, runs = _cut_that_blocks(monkeypatch)
+    try:
+        started = time.monotonic()
+        (result,) = await _calls(monkeypatch, 1)
+        waited = time.monotonic() - started
+    finally:
+        release.set()
+
+    assert result["error"] == "response_too_large"
+    assert result["message"] == "Response is over the limit of 85,000 characters."
+    assert result["response_chars"] is None
+    # Two clocks and the grace are 0.5 s here; without the bound the answer
+    # would wait the ten seconds of the block.
+    assert waited < 2.0
+    # The worker finishes in the background and gives its slot back.
+    assert await _pool_drained() == 0
+    assert len(runs) == 1
+
+
+async def test_call_endpoint_waits_for_the_projection_clock_and_then_the_cut_clock(monkeypatch) -> None:
+    from sugra_api_mcp.catalog import response as shaping
+
+    monkeypatch.setattr(shaping, "MAX_SHAPING_SECONDS", 1.0)
+    monkeypatch.setattr(client_module, "CUT_GRACE_SECONDS", 0.1)
+    _cut_that_blocks(monkeypatch, seconds=1.5)
+
+    (result,) = await _calls(monkeypatch, 1)
+
+    # Past one clock and the grace (1.1 s), within two clocks and the grace
+    # (2.1 s): the job's own answer comes back.
+    assert result == {"data": "cut in time"}
+    assert await _pool_drained() == 0
+
+
+async def test_a_cut_queued_behind_busy_workers_answers_server_busy_and_never_runs(monkeypatch) -> None:
+    from sugra_api_mcp.catalog import response as shaping
+    from sugra_api_mcp.tools import gateway
+
+    monkeypatch.setattr(shaping, "MAX_SHAPING_SECONDS", 0.2)
+    monkeypatch.setattr(client_module, "CUT_GRACE_SECONDS", 0.1)
+    monkeypatch.setattr(gateway, "SHAPING_WAIT_SECONDS", 0.2)
+    release, runs = _cut_that_blocks(monkeypatch)
+    try:
+        # Each of these holds a worker past its own caller's bound.
+        held = await _calls(monkeypatch, gateway.SHAPING_WORKERS)
+        started = time.monotonic()
+        (queued,) = await _calls(monkeypatch, 1)
+        waited = time.monotonic() - started
+    finally:
+        release.set()
+
+    assert [result["error"] for result in held] == ["response_too_large"] * gateway.SHAPING_WORKERS
+    # Admitted to the pool but queued behind the held workers: refused once
+    # the wait in line and the grace are over, never run.
+    assert queued["error"] == "server_busy" and queued["scope"] == "shaping"
+    assert waited < 2.0
+    assert await _pool_drained() == 0
+    assert len(runs) == gateway.SHAPING_WORKERS
