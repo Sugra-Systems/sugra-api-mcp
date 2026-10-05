@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import re
 import time
@@ -24,8 +25,10 @@ from tests.test_request_credentials import HEADERS, INITIALIZE, _authenticator
 
 _HEADER = re.compile(
     r"sdemand1 side=(?P<side>\S+) requests=(?P<requests>\d+) "
-    r"lines=(?P<lines>\d+) omitted=(?P<omitted>\d+) failed=(?P<failed>\d+)"
+    r"lines=(?P<lines>\d+) omitted=(?P<omitted>\d+) failed=(?P<failed>\d+) lost=(?P<lost>\d+)"
 )
+# The served digest a test counter carries, apart from any answer's tools.
+_SERVED = demand.tools_digest(["served_a", "served_b"])
 _OAUTH = {"authorization": "Bearer jwt-demand"}
 _REVOKED = {"authorization": "Bearer revoked"}
 # A scanner that names itself after its vendor in neither pattern list.
@@ -126,6 +129,9 @@ async def _served(
 
     monkeypatch.setattr(authenticator, "resolve", resolve)
     app.add_middleware(AuthMiddleware, authenticator=authenticator)
+    if counter is not None:
+        # What gate.wrap_lifespan sets before the hosted app serves.
+        counter.served_digest = demand.tools_digest(await gate.served_tool_names())
     if gated:
         app.add_middleware(
             gate.GateMiddleware,
@@ -253,9 +259,9 @@ async def test_only_a_tracked_post_to_mcp_is_counted(written) -> None:
         await client.post("/token", json=tools_list, headers={"x-request-id": _rid(2)})
         await client.post("/mcp", json=[tools_list], headers={"x-request-id": _rid(3)})
         await client.post("/mcp", json=tools_list, headers={"x-request-id": _rid(4)})
-    # The answer {} lists no tools: unparsed, not the - of a request with no list to read.
+    # No lifespan ran, so the served digest was never taken.
     assert _counts(counter, written) == {
-        ("tools/list", "200", "loopback", "python", "none", "-", demand.TOOLS_UNPARSED): 1,
+        ("tools/list", "200", "loopback", "python", "none", "-", demand.UNKNOWN_TOOLS): 1,
     }
 
 
@@ -284,7 +290,7 @@ async def test_a_line_holds_classes_never_header_or_client_text(written) -> None
     assert counts == {
         ("initialize", "200", "other", "other", "other", "other", "-"): 1,
         ("initialize", "200", "other", "other", "other", "none", "-"): 1,
-        ("tools/list", "200", "other", "other", "other", "-", demand.tools_digest(["secret_tool_name"])): 1,
+        ("tools/list", "200", "other", "other", "other", "-", demand.UNKNOWN_TOOLS): 1,
     }
     assert marker not in "\n".join(written)
     assert "secret_tool_name" not in "\n".join(written)
@@ -309,8 +315,9 @@ async def test_the_tools_list_answer_is_byte_identical_behind_the_gate(monkeypat
     assert b'"tools"' in answers[0]
 
 
-async def test_a_long_tools_list_answer_passes_unchanged_and_is_digested(written) -> None:
+async def test_a_long_tools_list_answer_passes_unchanged_and_carries_the_served_digest(written) -> None:
     counter = demand.DemandCounter()
+    counter.served_digest = _SERVED
     names = [f"tool_{n:03d}" for n in range(40)]
     listed_tools = ",".join(
         f'{{"name":"{name}","description":"{"d" * 5000}","inputSchema":{{"type":"object"}}}}' for name in names
@@ -334,8 +341,9 @@ async def test_a_long_tools_list_answer_passes_unchanged_and_is_digested(written
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8002") as client:
         listed = await client.post("/mcp", json=_message(1, "tools/list", {}), headers={"x-request-id": _rid(1)})
     assert listed.content == whole
+    # The served digest, never one read from the answer.
     assert _counts(counter, written) == {
-        ("tools/list", "200", "loopback", "python", "none", "-", demand.tools_digest(names)): 1,
+        ("tools/list", "200", "loopback", "python", "none", "-", _SERVED): 1,
     }
 
 
@@ -348,54 +356,124 @@ async def test_the_digest_is_stable() -> None:
     assert demand.tools_digest(["a"]) != demand.tools_digest(["a", "b"])
 
 
-def test_the_digest_is_read_from_plain_json_and_sse_answers() -> None:
-    body = '{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"b"},{"name":"a"},{"title":"x"}]}}'
-    expected = demand.tools_digest(["a", "b"])
-    assert gate._listed_tools_digest(body.encode()) == expected
-    assert gate._listed_tools_digest(f"event: message\r\ndata: {body}\r\n\r\n".encode()) == expected
-    assert gate._listed_tools_digest(b'{"jsonrpc":"2.0","id":1,"error":{"code":-1}}') is None
-    assert gate._listed_tools_digest(b'{"truncated') is None
-    # An empty list is a list: its digest, never the class of a missing one.
-    assert gate._listed_tools_digest(b'{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}') == demand.tools_digest([])
-
-
 def _list_answer(names: list[str]) -> bytes:
     listed = ",".join(f'{{"name":"{name}","inputSchema":{{"type":"object"}}}}' for name in names)
     return f'{{"jsonrpc":"2.0","id":1,"result":{{"tools":[{listed}]}}}}'.encode()
 
 
-@pytest.mark.parametrize(
-    ("answer", "tools"),
-    [
-        (_list_answer(["a", "b"]), demand.tools_digest(["a", "b"])),
-        (_list_answer([f"tool_{n:03d}" for n in range(200)]), demand.TOOLS_OVER),
-        (b'{"jsonrpc":"2.0","id":1,"result":{}}', demand.TOOLS_UNPARSED),
-        (b"not json", demand.TOOLS_UNPARSED),
-    ],
-)
-async def test_an_answer_past_the_read_and_one_without_a_list_have_their_own_classes(
-    monkeypatch, written, answer: bytes, tools: str
-) -> None:
-    # The read cut small, so an answer past it stays cheap to build.
-    monkeypatch.setattr(gate, "_TOOLS_LIST_SCAN_BYTES", 1000)
+async def _answered_digest(client: httpx.AsyncClient, number: int) -> str:
+    """The digest of the tool names in a real tools/list answer of the app."""
+    session = await _open(client, number)
+    listed = await client.post(
+        "/mcp",
+        json=_message(number + 1, "tools/list", {}),
+        headers={**HEADERS, **_SCANNER, **session, "x-request-id": _rid(number + 1)},
+    )
+    assert listed.status_code == 200
+    text = listed.text
+    payload = text if text.lstrip().startswith("{") else gate._sse_data(text)[-1]
+    return demand.tools_digest(tool["name"] for tool in json.loads(payload)["result"]["tools"])
+
+
+async def _probe_tool() -> str:
+    return "probe"
+
+
+async def test_the_served_digest_is_that_of_a_real_tools_list_answer_and_moves_with_the_set(monkeypatch) -> None:
+    async with _served(monkeypatch, None) as client:
+        before = await _answered_digest(client, 1)
+        assert demand.tools_digest(await gate.served_tool_names()) == before
+        server.mcp.add_tool(_probe_tool, name="demand_probe_tool")
+        try:
+            after = await _answered_digest(client, 3)
+            assert demand.tools_digest(await gate.served_tool_names()) == after
+        finally:
+            server.mcp.remove_tool("demand_probe_tool")
+    assert after != before
+
+
+async def test_the_lifespan_takes_the_served_digest_once_before_the_app_serves(flushes) -> None:
     counter = demand.DemandCounter()
-    chunks = [answer[start : start + 300] for start in range(0, len(answer), 300)]
+    calls: list[str] = []
 
-    async def respond(request: Request) -> Response:
+    async def served() -> list[str]:
+        calls.append("served")
+        return ["b", "a"]
+
+    @contextlib.asynccontextmanager
+    async def inner(app: object) -> AsyncIterator[None]:
+        calls.append(f"app starts with {counter.served_digest}")
+        yield None
+
+    lifespan = gate.wrap_lifespan(
+        inner, gate.GateSummary(), interval=3600, drain_seconds=0, flush_timeout=1, demand_counter=counter,
+        served_tools=served,
+    )
+    async with lifespan(object()):
+        pass
+    assert calls == ["served", f"app starts with {demand.tools_digest(['a', 'b'])}"]
+
+
+async def test_a_failed_served_digest_leaves_unknown_and_the_app_still_starts(flushes, caplog) -> None:
+    counter = demand.DemandCounter()
+
+    async def served() -> list[str]:
+        raise RuntimeError("registry down")
+
+    lifespan = gate.wrap_lifespan(
+        _inner, gate.GateSummary(), interval=3600, drain_seconds=0, flush_timeout=1, demand_counter=counter,
+        served_tools=served,
+    )
+    async with lifespan(object()):
+        assert counter.served_digest == demand.UNKNOWN_TOOLS
+    assert "Served tools digest failed (RuntimeError)." in caplog.messages
+
+
+@pytest.mark.parametrize(("status", "tools"), [(200, _SERVED), (204, _SERVED), (404, "-"), (500, "-")])
+async def test_only_a_2xx_tools_list_line_carries_the_served_digest(written, status: int, tools: str) -> None:
+    counter = demand.DemandCounter()
+    counter.served_digest = _SERVED
+
+    async def answer(request: Request) -> Response:
         await request.body()
+        return Response(status_code=status)
 
-        async def stream() -> AsyncIterator[bytes]:
-            for chunk in chunks:
-                yield chunk
-
-        return StreamingResponse(stream(), media_type="application/json")
-
-    app = Starlette(routes=[Route("/mcp", respond, methods=["POST"])])
+    app = Starlette(routes=[Route("/mcp", answer, methods=["POST"])])
     app.add_middleware(gate.GateMiddleware, max_body_bytes=4096, summary=gate.GateSummary(), demand_counter=counter)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8002") as client:
-        listed = await client.post("/mcp", json=_message(1, "tools/list", {}), headers={"x-request-id": _rid(1)})
-    assert listed.content == answer
-    assert _counts(counter, written) == {("tools/list", "200", "loopback", "python", "none", "-", tools): 1}
+        await client.post("/mcp", json=_message(1, "tools/list", {}), headers={"x-request-id": _rid(1)})
+        await client.post("/mcp", json=INITIALIZE, headers={"x-request-id": _rid(2)})
+    assert _counts(counter, written) == {
+        ("tools/list", str(status), "loopback", "python", "none", "-", tools): 1,
+        ("initialize", str(status), "loopback", "python", "none", "other", "-"): 1,
+    }
+
+
+@pytest.mark.parametrize("read_to_end", [True, False])
+async def test_a_body_over_the_limit_is_never_counted(written, read_to_end: bool) -> None:
+    counter = demand.DemandCounter()
+    tools_list = b'{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"pad":"' + b"x" * 200 + b'"}}'
+
+    async def app(scope: dict[str, Any], receive: Any, send: Any) -> None:
+        # The server reads past its limit, or answers 413 at the first chunk over it.
+        while (await receive()).get("more_body", False) and read_to_end:
+            pass
+        await send({"type": "http.response.start", "status": 413 if not read_to_end else 200, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    chunks = [tools_list[:120], tools_list[120:]]
+
+    async def receive() -> dict[str, Any]:
+        chunk = chunks.pop(0)
+        return {"type": "http.request", "body": chunk, "more_body": bool(chunks)}
+
+    async def send(message: dict[str, Any]) -> None:
+        return None
+
+    middleware = gate.GateMiddleware(app, max_body_bytes=100, summary=gate.GateSummary(), demand_counter=counter)
+    scope = {"type": "http", "method": "POST", "path": "/mcp", "headers": [(b"x-request-id", _rid(1).encode())]}
+    await middleware(scope, receive, send)
+    assert _counts(counter, written) == {}
 
 
 # ---- The record ----
@@ -428,14 +506,19 @@ def test_a_record_holds_at_most_max_lines_largest_first(monkeypatch, written) ->
     assert lines == [" ".join((*keys[0], "3")), " ".join((*keys[2], "2"))]
 
 
-def test_a_record_stays_inside_the_app_insights_bound_whatever_the_fields_hold(monkeypatch, written) -> None:
-    # The widest side process_side can return.
-    monkeypatch.setattr(observability, "process_side", lambda: "a" * 128)
+@pytest.mark.parametrize("side_chars", [128, 5000])
+def test_a_record_stays_inside_the_app_insights_bound_whatever_the_fields_hold(
+    monkeypatch, written, side_chars: int
+) -> None:
+    # An absurd side, absurd fields and counts of 10**30: the header grows with
+    # the count digits, and the lines left must still fit beside it.
+    monkeypatch.setattr(observability, "process_side", lambda: "a" * side_chars)
     counter = demand.DemandCounter()
     for number in range(demand.MAX_LINES + 50):
         key = tuple(f"{number:04d}{field}" + "x" * 300 for field in range(7))
-        counter._counts[key] = 10**18 + number
-    counter.add_failure()
+        counter._counts[key] = 10**30 + number
+    counter._failed = 10**30
+    counter._lost = 10**30
     written.clear()
     counter.write()
     (message,) = written
@@ -443,6 +526,7 @@ def test_a_record_stays_inside_the_app_insights_bound_whatever_the_fields_hold(m
     header, *lines = message.split("\n")
     match = _HEADER.fullmatch(header)
     assert match is not None
+    assert match["side"] == "a" * min(side_chars, demand.SIDE_MAX)
     assert 0 < len(lines) == int(match["lines"]) < demand.MAX_LINES
     for line in lines:
         *fields, _count = line.split(" ")
@@ -450,7 +534,9 @@ def test_a_record_stays_inside_the_app_insights_bound_whatever_the_fields_hold(m
         assert all(len(field) == demand.FIELD_MAX for field in fields)
     shown = sum(int(line.rsplit(" ", 1)[1]) for line in lines)
     assert int(match["requests"]) == shown + int(match["omitted"]) + int(match["failed"])
-    assert int(match["failed"]) == 1
+    assert int(match["failed"]) == int(match["lost"]) == 10**30
+    # The room is measured, not a fixed reserve: at most a line or two short of the bound.
+    assert len(message) + 2 * (len(line) + 1) > demand.RECORD_MAX_CHARS
 
 
 class _Raising(logging.Handler):
@@ -475,7 +561,12 @@ def _broken_demand_logger() -> Any:
         demand.logger.removeHandler(handler)
 
 
-def test_a_write_the_logger_fails_on_keeps_its_counts_for_the_next_one(written) -> None:
+def _lost(written: list[str]) -> list[int]:
+    """The lost total of every record written."""
+    return [int(_HEADER.fullmatch(message.split("\n")[0])["lost"]) for message in written]
+
+
+def test_a_write_the_logger_fails_on_is_dropped_and_reported_as_lost(written) -> None:
     counter = demand.DemandCounter()
     key = ("tools/list", "200", "app.sugra.ai", "other", "openai", "-", "0badc0de")
     counter.add(key)
@@ -484,10 +575,29 @@ def test_a_write_the_logger_fails_on_keeps_its_counts_for_the_next_one(written) 
     with _broken_demand_logger():
         with pytest.raises(OSError):
             counter.write()
-        # Counted while the write was failing, kept beside the detached counts.
+        # Counted while the write was failing: the next interval's own.
         counter.add(key)
-    assert _record(counter, written) == ({key: 3}, 1)
+    # Never the dropped two again: the next record holds the new request only.
+    assert _record(counter, written) == ({key: 1}, 0)
+    assert _lost(written) == [3]
+    # Nothing new and lost already reported: nothing is written.
     assert _record(counter, written) == ({}, 0)
+    assert written == []
+
+
+def test_a_lost_interval_with_no_new_request_is_still_reported(written) -> None:
+    counter = demand.DemandCounter()
+    counter.add(("initialize", "200", "none", "other", "none", "none", "-"))
+    with _broken_demand_logger(), pytest.raises(OSError):
+        counter.write()
+    assert _record(counter, written) == ({}, 0)
+    assert _lost(written) == [1]
+    assert _record(counter, written) == ({}, 0)
+    assert written == []
+    # Lost is a total since the process started, carried on every later record.
+    counter.add(("initialize", "200", "none", "other", "none", "none", "-"))
+    _record(counter, written)
+    assert _lost(written) == [1]
 
 
 def test_writing_the_counts_never_raises_even_when_the_failure_report_fails(written) -> None:
@@ -498,7 +608,9 @@ def test_writing_the_counts_never_raises_even_when_the_failure_report_fails(writ
         demand.write_logged(counter)
     # The record and the warning about it both reached the broken handler.
     assert broken.calls == 2
-    assert _counts(counter, written) == {key: 1}
+    # Its request was dropped and reported, never written twice.
+    assert _counts(counter, written) == {}
+    assert _lost(written) == [1]
 
 
 @pytest.mark.parametrize("side", ["unknown", "app-vm"])
@@ -550,8 +662,10 @@ async def test_the_counts_are_written_every_interval_and_once_more_on_exit(writt
         deadline = time.monotonic() + 5
         while not written and time.monotonic() < deadline:
             await asyncio.sleep(0.01)
-        assert written == [f"sdemand1 side={observability.process_side()} requests=1 lines=1 omitted=0 failed=0\n"
-                           f"{' '.join(key)} 1"]
+        assert written == [
+            f"sdemand1 side={observability.process_side()} requests=1 lines=1 omitted=0 failed=0 lost=0\n"
+            f"{' '.join(key)} 1"
+        ]
     written.clear()
     on_exit_only = gate.wrap_lifespan(
         _inner, gate.GateSummary(), interval=3600, drain_seconds=0, flush_timeout=1, demand_counter=counter
@@ -627,8 +741,9 @@ async def test_the_periodic_writer_survives_a_logger_that_always_raises(monkeypa
     assert len(summaries) >= 4
     assert broken.calls >= 6
     assert flushes == [1]
-    # And the count itself was kept through every failed write.
-    assert _counts(counter, written) == {key: 1}
+    # The count was dropped once, never retried, and the next record reports it.
+    assert _counts(counter, written) == {}
+    assert _lost(written) == [1]
 
 
 async def test_a_failed_count_is_logged_and_the_summary_still_runs(monkeypatch, caplog, flushes) -> None:
@@ -652,6 +767,83 @@ async def test_a_failed_count_is_logged_and_the_summary_still_runs(monkeypatch, 
     assert "Demand count failed (OSError)." in caplog.messages
     assert "user@example.com" not in caplog.text
     assert flushes == [1]
+
+
+class _Interrupting(logging.Handler):
+    """A handler that raises a BaseException that is no Exception on every record."""
+
+    def __init__(self, raised: type[BaseException]) -> None:
+        super().__init__(logging.DEBUG)
+        self.raised = raised
+
+    def emit(self, record: logging.LogRecord) -> None:
+        raise self.raised()
+
+
+def _exit_with_interrupt(monkeypatch, raised: type[BaseException]) -> list[str]:
+    """Run a lifespan whose exit-time demand writes raise `raised`; the exit steps it ran."""
+    events: list[str] = []
+    counter = demand.DemandCounter()
+    counter.add(("initialize", "200", "none", "other", "none", "none", "-"))
+    monkeypatch.setattr(observability, "flush_telemetry", lambda timeout_s: events.append("flush") or True)
+
+    async def closing() -> None:
+        events.append("close")
+
+    lifespan = gate.wrap_lifespan(
+        _inner, gate.GateSummary(), interval=3600, drain_seconds=0, flush_timeout=1, on_exit=(closing,),
+        demand_counter=counter, served_tools=lambda: _no_tools(),
+    )
+
+    async def run() -> None:
+        handler = _Interrupting(raised)
+        demand.logger.addHandler(handler)
+        try:
+            async with lifespan(object()):
+                events.append("serving")
+        finally:
+            demand.logger.removeHandler(handler)
+
+    try:
+        asyncio.run(run())
+    except BaseException as e:
+        events.append(f"raised {type(e).__name__}")
+    return events
+
+
+async def _no_tools() -> list[str]:
+    return []
+
+
+@pytest.mark.parametrize("raised", [SystemExit, KeyboardInterrupt])
+def test_an_interrupt_from_an_exit_write_is_raised_after_the_closers_and_the_flush(
+    monkeypatch, raised: type[BaseException]
+) -> None:
+    assert _exit_with_interrupt(monkeypatch, raised) == ["serving", "close", "flush", f"raised {raised.__name__}"]
+
+
+def test_any_other_base_exception_from_an_exit_write_is_dropped(monkeypatch) -> None:
+    class _Odd(BaseException):
+        pass
+
+    assert _exit_with_interrupt(monkeypatch, _Odd) == ["serving", "close", "flush"]
+
+
+def test_the_exit_write_hands_an_interrupt_back_and_drops_the_rest(monkeypatch) -> None:
+    counter = demand.DemandCounter()
+    interrupt = KeyboardInterrupt()
+
+    def interrupted() -> None:
+        raise interrupt
+
+    monkeypatch.setattr(counter, "write", interrupted)
+    assert gate._write_at_exit(counter) is interrupt
+
+    def cancelled() -> None:
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(counter, "write", cancelled)
+    assert gate._write_at_exit(counter) is None
 
 
 async def test_a_failing_count_never_fails_the_request(monkeypatch, written) -> None:
@@ -705,11 +897,11 @@ async def test_a_raising_capture_leaves_the_answer_intact_and_counts_a_failure(m
 
 @pytest.mark.parametrize(
     ("failing", "status", "tools"),
-    [(None, "200", demand.tools_digest(["a"])), ("http.response.start", "none", "-"),
-     ("http.response.body", "200", demand.TOOLS_UNPARSED)],
+    [(None, "200", _SERVED), ("http.response.start", "none", "-"), ("http.response.body", "200", _SERVED)],
 )
 async def test_a_failed_send_is_not_counted_as_sent(written, failing: str | None, status: str, tools: str) -> None:
     counter = demand.DemandCounter()
+    counter.served_digest = _SERVED
 
     async def app(scope: dict[str, Any], receive: Any, send: Any) -> None:
         await receive()
