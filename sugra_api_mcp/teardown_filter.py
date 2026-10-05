@@ -19,7 +19,9 @@ read, or any error in the filter itself, lets the record through unchanged.
     - its message is one of the three above, matched as text, with no args;
     - every leaf of its exception (the exception itself, or every exception
       inside an exception group) is anyio ClosedResourceError or
-      BrokenResourceError, and no leaf carries a cause or a context;
+      BrokenResourceError, and no exception in the tree - a leaf, a group
+      or the record's own exception - carries a cause or a context that
+      is not itself in the tree;
     - when a transport is visible in the traceback frames, it reports
       is_terminated, and a BrokenResourceError leaf needs that transport.
 
@@ -94,10 +96,20 @@ Key = tuple[str, str, str, str, str]
 
 
 def _leaves(exc: BaseException) -> list[BaseException] | None:
-    """Every leaf of an exception or exception group, or None when there are too many to read."""
+    """Every leaf of an exception or exception group.
+
+    None when there are too many to read, or when any exception in the tree,
+    a group or the top exception included, carries a cause or a context
+    outside the tree. A chain into the tree itself is no chain: anyio raises
+    a task group's error while the body's exception is in flight, so the
+    group's context is that same exception, already one of its leaves and
+    read as one. Any other chain may lead to a real error.
+    """
     leaves: list[BaseException] = []
+    nodes: list[BaseException] = []
 
     def walk(e: BaseException, depth: int) -> bool:
+        nodes.append(e)
         if isinstance(e, BaseExceptionGroup):
             if depth >= MAX_GROUP_DEPTH:
                 return False
@@ -105,7 +117,14 @@ def _leaves(exc: BaseException) -> list[BaseException] | None:
         leaves.append(e)
         return len(leaves) <= MAX_LEAVES
 
-    return leaves if walk(exc, 0) and leaves else None
+    if not walk(exc, 0) or not leaves:
+        return None
+    in_tree = {id(node) for node in nodes}
+    for node in nodes:
+        for chained in (node.__cause__, node.__context__):
+            if chained is not None and id(chained) not in in_tree:
+                return None
+    return leaves
 
 
 def _tracebacks(exc: BaseException) -> Iterator[TracebackType]:
@@ -152,14 +171,23 @@ def _transport_and_request(
     return transport, request
 
 
+def _label(value: object) -> str:
+    """A class as a count key part: the class itself when it is text, else none.
+
+    A key part that is not a string would break the sort and the join of the
+    next write, so nothing else ever reaches the counter.
+    """
+    return value if type(value) is str and value else "none"
+
+
 def _request_classes(request: Request | None) -> tuple[str, str, str]:
     """Host, User-Agent and Origin classes of the request, unknown when none is visible."""
     if request is None:
         return _UNKNOWN, _UNKNOWN, _UNKNOWN
     headers = request.headers
-    host = observability._host_class(headers.get("host")) or "none"
-    ua = observability._text_class(headers.get("user-agent"), observability._UA_PATTERNS)
-    origin = observability._origin_class(headers.get("origin"))
+    host = _label(observability._host_class(headers.get("host")))
+    ua = _label(observability._text_class(headers.get("user-agent"), observability._UA_PATTERNS))
+    origin = _label(observability._origin_class(headers.get("origin")))
     return host, ua, origin
 
 
@@ -178,8 +206,6 @@ def race_key(record: logging.LogRecord) -> Key | None:
         return None
     for leaf in leaves:
         if not isinstance(leaf, (anyio.ClosedResourceError, anyio.BrokenResourceError)):
-            return None
-        if leaf.__cause__ is not None or leaf.__context__ is not None:
             return None
     transport, request = _transport_and_request(exc)
     terminated = transport.is_terminated is True if transport is not None else None
@@ -204,20 +230,29 @@ class RaceCounter:
             self._counts[key] = self._counts.get(key, 0) + 1
 
     def write(self) -> None:
-        """Log the counts since the last write, if there are any, and start again from zero."""
+        """Log the counts since the last write, if there are any, and start again from zero.
+
+        The text is made before the counts are reset, so a write that fails
+        keeps them for the next one.
+        """
         with self._lock:
-            counts, self._counts = self._counts, {}
-        if not counts:
-            return
-        ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
-        shown = ranked[:MAX_LINES]
-        omitted = sum(count for _, count in ranked[MAX_LINES:])
-        header = (
-            f"srace1 side={observability.process_side()} dropped={sum(counts.values())} "
-            f"lines={len(shown)} omitted={omitted}"
-        )
-        lines = [" ".join((*key, str(count))) for key, count in shown]
-        logger.info("%s", "\n".join([header, *lines]))
+            if not self._counts:
+                return
+            text = _count_text(self._counts)
+            self._counts = {}
+        logger.info("%s", text)
+
+
+def _count_text(counts: dict[Key, int]) -> str:
+    ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    shown = ranked[:MAX_LINES]
+    omitted = sum(count for _, count in ranked[MAX_LINES:])
+    header = (
+        f"srace1 side={observability.process_side()} dropped={sum(counts.values())} "
+        f"lines={len(shown)} omitted={omitted}"
+    )
+    lines = [" ".join((*key, str(count))) for key, count in shown]
+    return "\n".join([header, *lines])
 
 
 default_counter = RaceCounter()
@@ -249,22 +284,35 @@ def installed_filter() -> TeardownRaceFilter | None:
     return None
 
 
+_install_lock = threading.Lock()
+
+
 def install(counter: RaceCounter | None = None) -> TeardownRaceFilter:
-    """Put the filter on the SDK transport logger once; a second call returns the first filter."""
-    existing = installed_filter()
-    if existing is not None:
-        return existing
-    race_filter = TeardownRaceFilter(counter if counter is not None else default_counter)
-    logging.getLogger(SDK_LOGGER).addFilter(race_filter)
-    return race_filter
+    """Put the filter on the SDK transport logger once.
+
+    A second call with the same counter (no counter means default_counter)
+    returns the first filter. A second call with another counter raises
+    RuntimeError: its drops would be counted where nothing writes them.
+    """
+    wanted = counter if counter is not None else default_counter
+    with _install_lock:
+        existing = installed_filter()
+        if existing is not None:
+            if existing.counter is not wanted:
+                raise RuntimeError("the teardown race filter is installed with another counter")
+            return existing
+        race_filter = TeardownRaceFilter(wanted)
+        logging.getLogger(SDK_LOGGER).addFilter(race_filter)
+        return race_filter
 
 
 def uninstall() -> None:
     """Take every filter of this module off the SDK transport logger."""
-    sdk_logger = logging.getLogger(SDK_LOGGER)
-    for candidate in list(sdk_logger.filters):
-        if isinstance(candidate, TeardownRaceFilter):
-            sdk_logger.removeFilter(candidate)
+    with _install_lock:
+        sdk_logger = logging.getLogger(SDK_LOGGER)
+        for candidate in list(sdk_logger.filters):
+            if isinstance(candidate, TeardownRaceFilter):
+                sdk_logger.removeFilter(candidate)
 
 
 def _write_logged(counter: RaceCounter) -> None:

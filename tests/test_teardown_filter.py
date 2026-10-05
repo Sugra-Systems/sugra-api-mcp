@@ -13,9 +13,11 @@ import argparse
 import asyncio
 import contextlib
 import hashlib
+import inspect
 import json
 import logging
 import sys
+import threading
 import time
 from collections.abc import AsyncIterator, Callable, Iterator
 from types import TracebackType
@@ -362,6 +364,89 @@ def test_a_leaf_with_a_cause_or_a_context_passes() -> None:
         assert _passes(_record(POST_MSG, _raised_in_handler(e, _transport(True))))
 
 
+async def _group_raised_while_handling(error: BaseException) -> BaseExceptionGroup[BaseException]:
+    """A real task group failing while error is being handled: error becomes the group's context."""
+    try:
+        raise error
+    except BaseException:
+        return await _group(anyio.ClosedResourceError())
+
+
+def _group_raised_from(cause: BaseException) -> BaseExceptionGroup[BaseException]:
+    try:
+        raise BaseExceptionGroup("g", [anyio.ClosedResourceError()]) from cause
+    except BaseExceptionGroup as group:
+        return group
+
+
+async def test_the_records_own_group_with_a_cause_or_a_context_passes() -> None:
+    with_context = await _group_raised_while_handling(KeyError("real"))
+    assert isinstance(with_context.__context__, KeyError) and with_context.__cause__ is None
+    with_cause = _group_raised_from(OSError("real"))
+    assert isinstance(with_cause.__cause__, OSError)
+    for group in (with_context, with_cause):
+        assert all(leaf.__cause__ is None and leaf.__context__ is None for leaf in group.exceptions)
+        for msg in ALL_MSGS:
+            assert _passes(_record(msg, _raised_in_handler(group, _transport(True), _request())))
+
+
+async def test_a_group_inside_the_tree_with_a_cause_or_a_context_passes() -> None:
+    for inner in (await _group_raised_while_handling(KeyError("real")), _group_raised_from(OSError("real"))):
+        nested = BaseExceptionGroup("outer", [inner, anyio.ClosedResourceError()])
+        assert nested.__cause__ is None and nested.__context__ is None
+        assert _passes(_record(SSE_MSG, _raised_in_handler(nested, _transport(True))))
+
+
+async def test_a_group_whose_context_is_its_own_leaf_is_dropped() -> None:
+    """anyio's own shape: the body's error is both a leaf of the group and the group's context."""
+
+    async def body(leaf: BaseException) -> BaseExceptionGroup[BaseException]:
+        try:
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(anyio.sleep, 1)
+                raise leaf
+        except BaseExceptionGroup as group:
+            return group
+        raise AssertionError("the task group did not fail")
+
+    group = await body(anyio.ClosedResourceError())
+    assert group.__context__ is group.exceptions[0]
+    counter = teardown_filter.RaceCounter()
+    assert not _passes(_record(SSE_MSG, _raised_in_handler(group, _transport(True), _request())), counter)
+    assert counter._counts == {("sse", "closed", "mcp.sugra.ai", "claude", "anthropic"): 1}
+    # The same shape whose leaf was raised while a real error was handled keeps the record.
+    try:
+        raise KeyError("real")
+    except KeyError:
+        chained = await body(anyio.ClosedResourceError())
+    assert isinstance(chained.exceptions[0].__context__, KeyError)
+    assert _passes(_record(SSE_MSG, _raised_in_handler(chained, _transport(True))))
+
+
+def test_a_request_without_user_agent_or_origin_is_counted() -> None:
+    bare = Request({"type": "http", "method": "POST", "path": "/mcp", "headers": [(b"host", b"app.sugra.ai")]})
+    counter = teardown_filter.RaceCounter()
+    assert not _passes(_record(POST_MSG, _raised_in_handler(anyio.ClosedResourceError(), _transport(True), bare)), counter)
+    assert counter._counts == {("post", "closed", "app.sugra.ai", "other", "none"): 1}
+
+
+def test_a_class_that_is_not_text_is_counted_as_none(caplog, monkeypatch) -> None:
+    caplog.set_level(logging.INFO, logger=teardown_filter.COUNTER_LOGGER)
+    monkeypatch.setattr(observability, "_host_class", lambda value: None)
+    monkeypatch.setattr(observability, "_text_class", lambda value, patterns: None)
+    monkeypatch.setattr(observability, "_origin_class", lambda value: None)
+    counter = teardown_filter.RaceCounter()
+    assert not _passes(_record(POST_MSG, _raised_in_handler(anyio.ClosedResourceError(), _transport(True), _request())), counter)
+    assert not _passes(_record(GET_MSG, _raised_in_handler(anyio.ClosedResourceError())), counter)
+    assert counter._counts == {
+        ("post", "closed", "none", "none", "none"): 1,
+        ("get", "closed", "unknown", "unknown", "unknown"): 1,
+    }
+    counter.write()
+    [message] = _count_records(caplog)
+    assert message.splitlines()[1:] == ["get closed unknown unknown unknown 1", "post closed none none none 1"]
+
+
 def test_args_another_message_another_level_or_no_exception_pass() -> None:
     def info() -> ExcInfo:
         return _raised_in_handler(anyio.ClosedResourceError(), _transport(True))
@@ -428,6 +513,28 @@ def test_the_count_keeps_the_largest_lines_and_sums_the_rest(caplog, monkeypatch
     [message] = _count_records(caplog)
     assert message.splitlines()[0].endswith("dropped=4 lines=1 omitted=1")
     assert message.splitlines()[1:] == ["post closed none other none 3"]
+
+
+def test_a_write_that_fails_keeps_the_counts_for_the_next_one(caplog, monkeypatch) -> None:
+    caplog.set_level(logging.INFO, logger=teardown_filter.COUNTER_LOGGER)
+    counter = teardown_filter.RaceCounter()
+    key = ("post", "closed", "none", "other", "none")
+    counter.add(key)
+    counter.add(key)
+
+    def unreadable() -> str:
+        raise RuntimeError("side")
+
+    monkeypatch.setattr(observability, "process_side", unreadable)
+    with pytest.raises(RuntimeError):
+        counter.write()
+    assert counter._counts == {key: 2}
+    assert _count_records(caplog) == []
+    monkeypatch.undo()
+    counter.write()
+    [message] = _count_records(caplog)
+    assert message.splitlines()[1:] == ["post closed none other none 2"]
+    assert counter._counts == {}
 
 
 async def test_the_lifespan_writes_every_interval_and_once_more_on_exit(monkeypatch) -> None:
@@ -504,6 +611,56 @@ def test_the_http_server_installs_the_filter_and_leaves_tools_list_as_it_was(mon
     teardown_filter.install()
     sdk_filters = logging.getLogger(SDK).filters
     assert sum(isinstance(f, teardown_filter.TeardownRaceFilter) for f in sdk_filters) == 1
+
+
+def test_the_three_messages_and_the_logger_are_the_installed_sdks_own() -> None:
+    """A changed text in the SDK would let every race through again; this fails first."""
+    source = inspect.getsource(sh)
+    for msg in teardown_filter.RACE_MESSAGES:
+        assert f'logger.exception("{msg}")' in source, msg
+    assert sh.logger.name == teardown_filter.SDK_LOGGER
+
+
+def test_a_second_install_with_another_counter_raises() -> None:
+    counter = teardown_filter.RaceCounter()
+    first = teardown_filter.install(counter)
+    assert teardown_filter.install(counter) is first
+    with pytest.raises(RuntimeError):
+        teardown_filter.install(teardown_filter.RaceCounter())
+    with pytest.raises(RuntimeError):
+        teardown_filter.install()
+    assert teardown_filter.installed_filter() is first
+    teardown_filter.uninstall()
+    default = teardown_filter.install()
+    assert teardown_filter.install() is default
+    assert teardown_filter.install(teardown_filter.default_counter) is default
+
+
+def test_installs_at_the_same_time_leave_one_filter(monkeypatch) -> None:
+    look = teardown_filter.installed_filter
+
+    def slow_look() -> teardown_filter.TeardownRaceFilter | None:
+        found = look()
+        time.sleep(0.02)
+        return found
+
+    monkeypatch.setattr(teardown_filter, "installed_filter", slow_look)
+    start = threading.Barrier(8)
+    results: list[teardown_filter.TeardownRaceFilter] = []
+
+    def run() -> None:
+        start.wait()
+        results.append(teardown_filter.install())
+
+    threads = [threading.Thread(target=run) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(10)
+    sdk_filters = [f for f in logging.getLogger(SDK).filters if isinstance(f, teardown_filter.TeardownRaceFilter)]
+    assert len(results) == 8
+    assert len(sdk_filters) == 1
+    assert all(result is sdk_filters[0] for result in results)
 
 
 def test_the_stdio_server_never_installs_the_filter(monkeypatch) -> None:
