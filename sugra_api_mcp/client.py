@@ -43,12 +43,14 @@ retry strategy (field-test defect D2).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import http.cookiejar
 import json
 import re
 import ssl
 import threading
 import time
+from collections.abc import Callable
 from functools import partial
 from typing import Any
 
@@ -442,9 +444,10 @@ def _enforce_size_limit(
     records' order but may drop the date key it is read from, and it is the
     very read ``meta.shaped`` reports, so the two agree on the end kept.
 
-    ``endpoint`` is the catalog entry of the operation call_endpoint or
-    fetch_data called: the hints name its parameters and those tools' own
-    arguments. Without it the hints name none.
+    ``endpoint`` is the catalog entry of the operation called, passed by
+    call_endpoint only: the hints name its parameters and that tool's own
+    arguments, and its operation id selects the nearest rule. fetch_data
+    and the fixed tools pass None, so their hints name no parameter.
     """
     if response_chars_within(payload, MAX_RESPONSE_CHARS) is not None:
         return payload
@@ -458,17 +461,72 @@ def _enforce_size_limit(
     )
 
 
+# How long past the cut's own clock (catalog.response.MAX_SHAPING_SECONDS)
+# the client waits for a cut on the shaping pool before it answers without it.
+CUT_GRACE_SECONDS = 0.5
+
+
+def _set_started(started: asyncio.Future[None]) -> None:
+    if not started.done():
+        started.set_result(None)
+
+
 async def _gate_off_loop(payload: Any, url: str) -> Any:
-    """The size gate for a response the client returns as it came: measured
-    on the event loop only up to the cap, and when over it measured and cut
-    on the shaping pool, as call_endpoint's are; a full pool answers
-    server_busy."""
+    """The size gate for a response the client returns as it came, a success
+    or a failure: measured on the event loop only up to the cap, and when
+    over it measured and cut on the shaping pool, as call_endpoint's are; a
+    full pool answers server_busy.
+
+    The wait is bounded. Once the cut has started on a worker, the client
+    waits for it at most MAX_SHAPING_SECONDS plus CUT_GRACE_SECONDS and then
+    answers ``response_too_large`` with the size message alone. The cut's
+    own clock is cooperative, read between records, so a single record or
+    key can hold a worker past it; the bound here is what holds for the
+    caller whatever the cut does. A worker that is still running then
+    finishes in the background, its result dropped, and keeps its pool slot
+    until then: the pool's SHAPING_WORKERS bound how many such cuts can run
+    at once, and its pending bounds how many more wait.
+    """
     if response_chars_within(payload, MAX_RESPONSE_CHARS) is not None:
         return payload
-    # Imported here, not at the top: the gateway module imports this one.
+    return await _cut_on_pool(partial(_enforce_size_limit, payload, url), url)
+
+
+async def _cut_on_pool(call: Callable[[], Any], url: str) -> Any:
+    """Run a size-gating job on the shaping pool and wait for it within the
+    bound _gate_off_loop describes; server_busy when the pool is full."""
+    # Imported here, not at the top: the gateway module and the catalog
+    # package import this one.
+    from .catalog import response as shaping
+    from .catalog.size_cut import refuse_unmeasured
     from .tools.gateway import _shape_off_loop
 
-    return await _shape_off_loop(partial(_enforce_size_limit, payload, url))
+    loop = asyncio.get_running_loop()
+    started: asyncio.Future[None] = loop.create_future()
+
+    def job() -> Any:
+        # A RuntimeError: the caller's loop has closed, nobody is left to read the answer.
+        with contextlib.suppress(RuntimeError):
+            loop.call_soon_threadsafe(_set_started, started)
+        return call()
+
+    task = asyncio.ensure_future(_shape_off_loop(job))
+    try:
+        # First until the job starts or the pool answers without it
+        # (server_busy after its own wait in line), then the bounded wait.
+        await asyncio.wait((task, started), return_when=asyncio.FIRST_COMPLETED)
+        if not task.done():
+            await asyncio.wait((task,), timeout=shaping.MAX_SHAPING_SECONDS + CUT_GRACE_SECONDS)
+    except BaseException:
+        task.cancel()
+        raise
+    finally:
+        started.cancel()
+    if task.done():
+        return task.result()
+    # Cancelling the wait cannot stop a running worker; it only drops the result.
+    task.cancel()
+    return refuse_unmeasured(url, MAX_RESPONSE_CHARS)
 
 
 class SugraClient:
@@ -586,8 +644,9 @@ class SugraClient:
         # (gateway.call_endpoint) passes enforce_size=False and gates it
         # itself once its own `fields` / `limit` projection has run, so the
         # raw, unprojected body is never what gets measured for it. A failure
-        # dict is answered as built.
-        if not enforce_size or response.status_code >= 300:
+        # dict is gated the same way: it carries the API's error text, which
+        # has no bound of its own.
+        if not enforce_size:
             return result
         return await _gate_off_loop(result, str(response.request.url))
 

@@ -43,16 +43,21 @@ or first records and their hints name no parameter.
 Where it runs and for how long: only off the event loop, on the shaping
 pool. call_endpoint runs it there after shaping
 (``tools.gateway._shape_and_gate``), and ``SugraClient.request`` sends an
-oversized response of the fixed tools there (``client._gate_off_loop``).
-The error payloads call_endpoint returns as they came are gated on the
-event loop, where one over the cap is refused (``refuse_unmeasured``)
-without being walked. A cut has a MAX_SHAPING_SECONDS clock of its own,
-started before it measures anything, and past it the response is refused
-with ``response_too_large``. The bound is cooperative, between records: the
-clock is read before every record of the sizing, order and date scans and
-around each measure of the rest of the response, of the hints and of the
-result. One record's serialise is bounded by that record's size, and one
-measure of the rest by the size of the rest.
+oversized response of the fixed tools there (``client._gate_off_loop``),
+a success or a failure. The error payloads call_endpoint returns as they
+came are gated on the event loop, where one over the cap is refused
+(``refuse_unmeasured``) without being walked. A cut has a
+MAX_SHAPING_SECONDS clock of its own, started before it measures anything,
+and past it the response is refused with ``response_too_large``. That
+clock is cooperative and best effort, between items: it is read before
+every key of the objects searched for lists, every record of the order,
+date and sizing scans, every list and record of the priority, replacement
+and notice passes, and around each measure of the rest of the response, of
+the hints and of the result. One record's serialise is bounded by that
+record's size, and one measure of the rest by the size of the rest. The
+hard bound for the fixed tools is the client's wait on the pool
+(``client._gate_off_loop``), which answers without the cut once the clock
+and a short grace have passed.
 
 What is said: ``meta.truncated`` names the cut. Its ``original_count``,
 ``kept_count``, ``order`` and ``kept_end`` describe the primary list, the
@@ -185,7 +190,7 @@ def _date_key(records: list[Any], tick: Tick) -> str | None:
     return present[0] if len(present) == 1 else None
 
 
-def _nearest_priority(days: list[date], today: date, order: str) -> list[int]:
+def _nearest_priority(days: list[date], today: date, order: str, tick: Tick) -> list[int]:
     """The indexes of a dated list in the order the nearest rule keeps them:
     the record nearest today, the ones after it in time, then the ones
     before it. In an ascending list the first record dated today or later
@@ -193,9 +198,13 @@ def _nearest_priority(days: list[date], today: date, order: str) -> list[int]:
     record is."""
     count = len(days)
     if order == ORDER_ASC:
-        start = next((index for index, day in enumerate(days) if day >= today), count - 1)
+        start = next(
+            (index for index, day in enumerate(_each(days, tick)) if day >= today), count - 1
+        )
         return [*range(start, count), *range(start - 1, -1, -1)]
-    stop = next((index for index in range(count - 1, -1, -1) if days[index] >= today), 0)
+    stop = next(
+        (index for index in _each(range(count - 1, -1, -1), tick) if days[index] >= today), 0
+    )
     return [*range(stop, -1, -1), *range(stop + 1, count)]
 
 
@@ -235,8 +244,8 @@ class _List:
         priority: list[int] | None = None
         if today is not None and self.order in (ORDER_ASC, ORDER_DESC) and self.dated is not None:
             days = [_day(record[self.date_key]) for record in _each(self.dated, tick)]
-            if all(day is not None for day in days):
-                priority = _nearest_priority(days, today, self.order)
+            if all(day is not None for day in _each(days, tick)):
+                priority = _nearest_priority(days, today, self.order, tick)
                 self.kept_end = KEPT_NEAREST
         sizes = [response_chars(record) for record in _each(records, tick)]
         self.largest = max(sizes)
@@ -248,7 +257,7 @@ class _List:
         # ", " between them, inside brackets already counted in the shell.
         self.prefix = [0]
         total = 0
-        for position, index in enumerate(priority):
+        for position, index in enumerate(_each(priority, tick)):
             total += sizes[index] + (2 if position else 0)
             self.prefix.append(total)
 
@@ -283,8 +292,9 @@ def _root(payload: Any) -> tuple[Any, tuple[str, ...]]:
     return payload, ()
 
 
-def _find_lists(payload: Any) -> list[tuple[tuple[str, ...], list[Any]]]:
-    """Every non-empty list at most two levels under the root, in order."""
+def _find_lists(payload: Any, tick: Tick) -> list[tuple[tuple[str, ...], list[Any]]]:
+    """Every non-empty list at most two levels under the root, in order. The
+    clock is read before every key, of the root and of each object in it."""
     if not isinstance(payload, dict):
         return []
     root, prefix = _root(payload)
@@ -293,14 +303,14 @@ def _find_lists(payload: Any) -> list[tuple[tuple[str, ...], list[Any]]]:
     if not isinstance(root, dict):
         return []
     found: list[tuple[tuple[str, ...], list[Any]]] = []
-    for key, value in root.items():
+    for key, value in _each(root.items(), tick):
         if not prefix and key in _PROVENANCE_KEYS:
             continue
         if isinstance(value, list):
             if value:
                 found.append(((*prefix, key), value))
         elif isinstance(value, dict):
-            for sub_key, sub_value in value.items():
+            for sub_key, sub_value in _each(value.items(), tick):
                 if isinstance(sub_value, list) and sub_value:
                     found.append(((*prefix, key, sub_key), sub_value))
     return found
@@ -319,12 +329,14 @@ def _unshaped_at(unshaped: Any, path: tuple[str, ...]) -> list[Any] | None:
     return node if isinstance(node, list) else None
 
 
-def _with_lists(payload: dict[str, Any], replacements: dict[tuple[str, ...], list[Any]]) -> dict[str, Any]:
+def _with_lists(
+    payload: dict[str, Any], replacements: dict[tuple[str, ...], list[Any]], tick: Tick
+) -> dict[str, Any]:
     """A copy of payload with the lists at the given paths replaced. Only the
     objects on those paths are copied; the payload itself is never changed."""
     out = dict(payload)
     copies: dict[tuple[str, ...], dict[str, Any]] = {(): out}
-    for path, value in replacements.items():
+    for path, value in _each(replacements.items(), tick):
         node = out
         for depth in range(1, len(path)):
             prefix = path[:depth]
@@ -379,15 +391,17 @@ def _is_records_list(payload: Any, path: tuple[str, ...]) -> bool:
     return False
 
 
-def _uncut_lists(payload: Any, cut: list[_List], kept: dict[tuple[str, ...], int]) -> list[str]:
+def _uncut_lists(
+    payload: Any, cut: list[_List], kept: dict[tuple[str, ...], int], tick: Tick
+) -> list[str]:
     """Keys of the root holding a list that stayed whole, when every cut list
     sits under another key of the root: fields naming them leave the cut out."""
     root, prefix = _root(payload)
     if not isinstance(root, dict):
         return []
-    cut_keys = {lst.path[len(prefix)] for lst in cut if len(lst.path) > len(prefix)}
+    cut_keys = {lst.path[len(prefix)] for lst in _each(cut, tick) if len(lst.path) > len(prefix)}
     names = []
-    for key, value in root.items():
+    for key, value in _each(root.items(), tick):
         path = (*prefix, key)
         if key in cut_keys or not isinstance(value, list) or not value:
             continue
@@ -416,6 +430,7 @@ def _cut_hint(
     primary: _List,
     cut: list[_List],
     kept: dict[tuple[str, ...], int],
+    tick: Tick,
 ) -> str:
     hint = _shown(primary, kept[primary.path])
     if len(cut) > 1:
@@ -442,7 +457,7 @@ def _cut_hint(
         and _is_records_list(payload, primary.path)
     ):
         levers.append(f"limit={kept[primary.path]} beside params")
-    whole = _uncut_lists(payload, cut, kept)
+    whole = _uncut_lists(payload, cut, kept, tick)
     if whole:
         levers.append(f"fields={json.dumps(whole)} for the lists kept whole")
     if levers:
@@ -612,7 +627,7 @@ def cut_to_fit(
         payload = {"data": payload}
     size: int | None = None
     try:
-        found = _find_lists(payload)
+        found = _find_lists(payload, tick)
         if not found:
             tick()
             size = response_chars(original)
@@ -624,19 +639,19 @@ def cut_to_fit(
         for path, records in found:
             tick()
             lists.append(_List(path, records, _unshaped_at(unshaped, path), day, tick))
-        shell_payload = _with_lists(payload, {lst.path: [] for lst in lists})
+        shell_payload = _with_lists(payload, {lst.path: [] for lst in _each(lists, tick)}, tick)
         tick()
         shell = response_chars(shell_payload)
         tick()
-        size = shell + sum(lst.chars for lst in lists) - (_WRAP_CHARS if wrapped else 0)
+        size = shell + sum(lst.chars for lst in _each(lists, tick)) - (_WRAP_CHARS if wrapped else 0)
         if size <= cap:
             return original
 
         def total(ceiling: int) -> int:
-            return shell + sum(lst.prefix[lst.keep(ceiling)] for lst in lists)
+            return shell + sum(lst.prefix[lst.keep(ceiling)] for lst in _each(lists, tick))
 
         def ceiling_for(target: int) -> int:
-            low, high = 0, max(lst.chars for lst in lists)
+            low, high = 0, max(lst.chars for lst in _each(lists, tick))
             if total(0) > target:
                 return 0
             while low < high:
@@ -649,18 +664,21 @@ def cut_to_fit(
 
         # The notice is estimated from one written as if nothing were cut;
         # the verification below measures the real one.
-        biggest = max(lists, key=lambda lst: lst.chars)
-        estimate = {lst.path: lst.n for lst in lists}
-        reserve = response_chars(
-            _notice(payload, endpoint, biggest, lists, estimate, size=size, kept_chars=cap, cap=cap)
-        ) + 25
+        biggest = max(_each(lists, tick), key=lambda lst: lst.chars)
+        estimate = {lst.path: lst.n for lst in _each(lists, tick)}
+        estimated = _notice(
+            payload, endpoint, biggest, lists, estimate, size=size, kept_chars=cap, cap=cap, tick=tick
+        )
+        tick()
+        reserve = response_chars(estimated) + 25
+        tick()
         target = cap - reserve
         ceiling = ceiling_for(target)
         previous: dict[tuple[str, ...], int] | None = None
         for _ in range(MAX_SHRINK_PASSES):
             tick()
-            kept = {lst.path: lst.keep(ceiling) for lst in lists}
-            cut = [lst for lst in lists if kept[lst.path] < lst.n]
+            kept = {lst.path: lst.keep(ceiling) for lst in _each(lists, tick)}
+            cut = [lst for lst in _each(lists, tick) if kept[lst.path] < lst.n]
             if not cut:
                 break
             if kept == previous:
@@ -669,13 +687,15 @@ def cut_to_fit(
                 ceiling = ceiling * 9 // 10
                 continue
             previous = kept
-            primary = max(cut, key=lambda lst: lst.chars)
+            primary = max(_each(cut, tick), key=lambda lst: lst.chars)
             replacements = {}
-            for lst in cut:
+            for lst in _each(cut, tick):
                 low, high = lst.window(kept[lst.path])
                 replacements[lst.path] = lst.records[low:high]
-            result = _with_lists(payload, replacements)
-            notice = _notice(payload, endpoint, primary, cut, kept, size=size, kept_chars=0, cap=cap)
+            result = _with_lists(payload, replacements, tick)
+            notice = _notice(
+                payload, endpoint, primary, cut, kept, size=size, kept_chars=0, cap=cap, tick=tick
+            )
             _with_notice(result, notice)
             # kept_chars is written as 0 and measured; the true value has
             # more digits, so solve for it instead of measuring twice.
@@ -720,6 +740,7 @@ def _notice(
     size: int,
     kept_chars: int,
     cap: int,
+    tick: Tick,
 ) -> dict[str, Any]:
     notice: dict[str, Any] = {
         "reason": CUT_REASON,
@@ -731,11 +752,11 @@ def _notice(
         "original_chars": size,
         "kept_chars": kept_chars,
         "cap_chars": cap,
-        "retry_hint": _cut_hint(payload, endpoint, primary, cut, kept),
+        "retry_hint": _cut_hint(payload, endpoint, primary, cut, kept, tick),
     }
     if len(cut) > 1:
         entries = []
-        for lst in cut:
+        for lst in _each(cut, tick):
             entry: dict[str, Any] = {
                 "path": _dotted(lst.path),
                 "original_count": lst.n,

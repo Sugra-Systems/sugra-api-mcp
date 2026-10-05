@@ -485,3 +485,138 @@ def test_a_record_that_does_not_fit_beside_the_rest_is_named_with_both_sizes() -
         f"One record at data, about {chars(row):,} characters, does not fit beside "
         f"the rest of the response, about {shell:,} characters."
     )
+
+
+# ---- a fixed tool's failure is gated too ----
+
+
+async def test_an_oversized_fixed_tool_error_is_gated_off_the_loop(monkeypatch) -> None:
+    client = _serving_bytes(json.dumps({"error": "x" * 300_000}).encode(), status=500)
+    seen = _spy_dumps(monkeypatch)
+    try:
+        result = await client.get("/api/v2/quotes/AAPL/historical")
+    finally:
+        await client.aclose()
+    monkeypatch.undo()
+
+    assert result["error"] == "response_too_large"
+    assert result["response_chars"] > CAP
+    assert "Most of it is at error" in result["message"]
+    assert _fits(result)
+    assert [entry for entry in seen if entry[0] and entry[2] > CAP] == []
+    assert any(name.startswith("response-shaping") for _, name, _ in seen)
+
+
+async def test_a_fixed_tool_error_that_fits_is_answered_as_built() -> None:
+    client = _serving_bytes(json.dumps({"error": "not found"}).encode(), status=404)
+    try:
+        result = await client.get("/api/v2/quotes/NOPE/historical")
+    finally:
+        await client.aclose()
+
+    assert result["error"] == "not found"
+    assert result["status_code"] == 404
+
+
+# ---- the caller's wait is the hard bound ----
+
+
+async def test_a_cut_that_blocks_past_its_clock_is_answered_within_the_grace(monkeypatch) -> None:
+    import time
+
+    from sugra_api_mcp.catalog import response as shaping
+    from sugra_api_mcp.tools import gateway
+
+    release = threading.Event()
+    entered = threading.Event()
+
+    def blocking(*args, **kwargs):
+        entered.set()
+        release.wait(10)
+        return {"data": "late"}
+
+    monkeypatch.setattr(_module(), "cut_to_fit", blocking)
+    monkeypatch.setattr(shaping, "MAX_SHAPING_SECONDS", 0.2)
+    monkeypatch.setattr(client_module, "CUT_GRACE_SECONDS", 0.1)
+    body = {"data": {"symbol": "AAPL", "data": bars(30_000)}, "meta": {}}
+    client = _serving_bytes(json.dumps(body).encode())
+    try:
+        started = time.monotonic()
+        result = await client.get("/api/v2/quotes/AAPL/historical")
+        waited = time.monotonic() - started
+    finally:
+        release.set()
+        await client.aclose()
+
+    assert entered.is_set()
+    assert result["error"] == "response_too_large"
+    assert result["message"] == "Response is over the limit of 85,000 characters."
+    assert result["response_chars"] is None
+    # The clock plus the grace, and the request and the fit check around it;
+    # without the bound the answer would wait the ten seconds of the block.
+    assert waited < 2.0
+    # The worker finishes in the background and gives its slot back.
+    deadline = time.monotonic() + 5
+    while gateway.shaping_pending() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert gateway.shaping_pending() == 0
+
+
+# ---- a dict with many keys is clocked key by key ----
+
+
+class _CountingDict(dict):
+    """A dict that counts the items its items() has handed out."""
+
+    visited = 0
+
+    def items(self):
+        for key, value in super().items():
+            type(self).visited += 1
+            yield key, value
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_a_clock_that_runs_out_among_many_keys_stops_the_search_for_lists(
+    monkeypatch, nested
+) -> None:
+    module = _module()
+    many = _CountingDict((f"k{i}", i) for i in range(200_000))
+    _CountingDict.visited = 0
+    data = {"inner": many} if nested else many
+    clock = _Clock(1_000)
+    monkeypatch.setattr(module, "_clock", clock)
+
+    result = module.cut_to_fit({"data": data}, "test://keys", cap=CAP)
+
+    assert clock.expired
+    assert "could not be cut in time" in result["message"]
+    assert _CountingDict.visited < 1_100
+
+
+def test_the_priority_replacement_and_notice_passes_are_clocked(monkeypatch) -> None:
+    import sys
+
+    from tests.size_cut_bodies import market_calendar
+
+    module = _module()
+    real = module._each
+    passes: set[tuple[str, str]] = set()
+
+    def spy(items, tick):
+        assert tick is not None
+        first = items[0] if isinstance(items, list) and items else None
+        passes.add((sys._getframe(1).f_code.co_name, type(first).__name__))
+        return real(items, tick)
+
+    monkeypatch.setattr(module, "_each", spy)
+    body = market_calendar(TODAY - timedelta(days=2), 8)
+    result = module.cut_to_fit(body, "test://passes", cap=CAP, endpoint=_Endpoint("market_calendar"), today=TODAY)
+
+    assert len(notice(result)["lists"]) > 1
+    # The nearest priority, the prefix sums over it, the replacements and
+    # the per-list entries of the notice each read the clock.
+    assert ("_nearest_priority", "date") in passes
+    assert ("__init__", "int") in passes
+    assert ("_with_lists", "NoneType") in passes
+    assert ("_notice", "_List") in passes
