@@ -540,6 +540,9 @@ async def test_a_cut_that_blocks_past_its_clock_is_answered_within_the_grace(mon
     monkeypatch.setattr(_module(), "cut_to_fit", blocking)
     monkeypatch.setattr(shaping, "MAX_SHAPING_SECONDS", 0.2)
     monkeypatch.setattr(client_module, "CUT_GRACE_SECONDS", 0.1)
+    # The first wait (0.2 s) shorter than the run bound (0.3 s), as the
+    # shipped numbers have it.
+    monkeypatch.setattr(gateway, "SHAPING_WAIT_SECONDS", 0.1)
     body = {"data": {"symbol": "AAPL", "data": bars(30_000)}, "meta": {}}
     client = _serving_bytes(json.dumps(body).encode())
     try:
@@ -630,22 +633,43 @@ QUOTES = "quotes_symbol_historical"
 QUOTES_PARAMS = {"symbol": "AAPL"}
 
 
-def _cut_that_blocks(monkeypatch, seconds: float | None = None):
-    """Replace the cutter with one that blocks until released, or for seconds,
-    and record each time it runs."""
-    release = threading.Event()
-    runs: list[float] = []
+class _Cutter:
+    """A cutter that sleeps for seconds, or else blocks until released (only
+    its first `blocked` runs, when given), counting its runs and the most
+    that ran at once."""
 
-    def cutter(*args, **kwargs):
-        runs.append(time.monotonic())
-        if seconds is None:
-            release.wait(10)
-            return {"data": "late"}
-        time.sleep(seconds)
-        return {"data": "cut in time"}
+    def __init__(self, seconds: float | None, blocked: int | None) -> None:
+        self.release = threading.Event()
+        self.seconds = seconds
+        self.blocked = blocked
+        self.runs = 0
+        self.running = 0
+        self.peak = 0
+        self._lock = threading.Lock()
 
+    def __call__(self, *args, **kwargs):
+        with self._lock:
+            self.runs += 1
+            run = self.runs
+            self.running += 1
+            self.peak = max(self.peak, self.running)
+        try:
+            if self.seconds is not None:
+                time.sleep(self.seconds)
+                return {"data": "cut in time"}
+            if self.blocked is None or run <= self.blocked:
+                self.release.wait(10)
+                return {"data": "late"}
+            return {"data": "cut in time"}
+        finally:
+            with self._lock:
+                self.running -= 1
+
+
+def _cut_that_blocks(monkeypatch, seconds: float | None = None, blocked: int | None = None) -> _Cutter:
+    cutter = _Cutter(seconds, blocked)
     monkeypatch.setattr(_module(), "cut_to_fit", cutter)
-    return release, runs
+    return cutter
 
 
 async def _calls(monkeypatch, count: int) -> list:
@@ -675,35 +699,38 @@ async def _pool_drained() -> int:
     return gateway.shaping_pending()
 
 
-async def test_a_call_endpoint_cut_that_blocks_is_answered_within_its_bound(monkeypatch) -> None:
+def _bounds(monkeypatch, clock: float, grace: float, wait: float) -> None:
     from sugra_api_mcp.catalog import response as shaping
+    from sugra_api_mcp.tools import gateway
 
-    monkeypatch.setattr(shaping, "MAX_SHAPING_SECONDS", 0.2)
-    monkeypatch.setattr(client_module, "CUT_GRACE_SECONDS", 0.1)
-    release, runs = _cut_that_blocks(monkeypatch)
+    monkeypatch.setattr(shaping, "MAX_SHAPING_SECONDS", clock)
+    monkeypatch.setattr(client_module, "CUT_GRACE_SECONDS", grace)
+    monkeypatch.setattr(gateway, "SHAPING_WAIT_SECONDS", wait)
+
+
+async def test_a_call_endpoint_cut_that_blocks_is_answered_within_its_bound(monkeypatch) -> None:
+    # First wait 0.2 s; run bound two clocks and the grace, 0.5 s.
+    _bounds(monkeypatch, clock=0.2, grace=0.1, wait=0.1)
+    cutter = _cut_that_blocks(monkeypatch)
     try:
         started = time.monotonic()
         (result,) = await _calls(monkeypatch, 1)
         waited = time.monotonic() - started
     finally:
-        release.set()
+        cutter.release.set()
 
     assert result["error"] == "response_too_large"
     assert result["message"] == "Response is over the limit of 85,000 characters."
     assert result["response_chars"] is None
-    # Two clocks and the grace are 0.5 s here; without the bound the answer
-    # would wait the ten seconds of the block.
+    # Without the bound the answer would wait the ten seconds of the block.
     assert waited < 2.0
     # The worker finishes in the background and gives its slot back.
     assert await _pool_drained() == 0
-    assert len(runs) == 1
+    assert cutter.runs == 1
 
 
 async def test_call_endpoint_waits_for_the_projection_clock_and_then_the_cut_clock(monkeypatch) -> None:
-    from sugra_api_mcp.catalog import response as shaping
-
-    monkeypatch.setattr(shaping, "MAX_SHAPING_SECONDS", 1.0)
-    monkeypatch.setattr(client_module, "CUT_GRACE_SECONDS", 0.1)
+    _bounds(monkeypatch, clock=1.0, grace=0.1, wait=0.1)
     _cut_that_blocks(monkeypatch, seconds=1.5)
 
     (result,) = await _calls(monkeypatch, 1)
@@ -714,27 +741,162 @@ async def test_call_endpoint_waits_for_the_projection_clock_and_then_the_cut_clo
     assert await _pool_drained() == 0
 
 
+async def test_a_started_jobs_bound_counts_from_its_start(monkeypatch) -> None:
+    # First wait 0.6 s, run bound 1.5 s from the start: a job of 1.8 s is
+    # past it, and would be within it counted from the end of the first wait.
+    _bounds(monkeypatch, clock=0.6, grace=0.3, wait=0.3)
+    cutter = _cut_that_blocks(monkeypatch, seconds=1.8)
+
+    (result,) = await _calls(monkeypatch, 1)
+
+    assert result["error"] == "response_too_large"
+    assert await _pool_drained() == 0
+    assert cutter.runs == 1
+
+
 async def test_a_cut_queued_behind_busy_workers_answers_server_busy_and_never_runs(monkeypatch) -> None:
-    from sugra_api_mcp.catalog import response as shaping
     from sugra_api_mcp.tools import gateway
 
-    monkeypatch.setattr(shaping, "MAX_SHAPING_SECONDS", 0.2)
-    monkeypatch.setattr(client_module, "CUT_GRACE_SECONDS", 0.1)
-    monkeypatch.setattr(gateway, "SHAPING_WAIT_SECONDS", 0.2)
-    release, runs = _cut_that_blocks(monkeypatch)
+    _bounds(monkeypatch, clock=0.2, grace=0.1, wait=0.2)
+    cutter = _cut_that_blocks(monkeypatch)
     try:
         # Each of these holds a worker past its own caller's bound.
         held = await _calls(monkeypatch, gateway.SHAPING_WORKERS)
         started = time.monotonic()
         (queued,) = await _calls(monkeypatch, 1)
         waited = time.monotonic() - started
+        # Its slot is freed at once, while the held workers still run.
+        deadline = time.monotonic() + 1
+        while gateway.shaping_pending() > gateway.SHAPING_WORKERS and time.monotonic() < deadline:
+            await asyncio.sleep(0.01)
+        pending_after_busy = gateway.shaping_pending()
     finally:
-        release.set()
+        cutter.release.set()
 
     assert [result["error"] for result in held] == ["response_too_large"] * gateway.SHAPING_WORKERS
     # Admitted to the pool but queued behind the held workers: refused once
-    # the wait in line and the grace are over, never run.
+    # the first wait is over, and never run, even once the workers are free.
     assert queued["error"] == "server_busy" and queued["scope"] == "shaping"
     assert waited < 2.0
+    assert pending_after_busy == gateway.SHAPING_WORKERS
     assert await _pool_drained() == 0
-    assert len(runs) == gateway.SHAPING_WORKERS
+    assert cutter.runs == gateway.SHAPING_WORKERS
+    assert cutter.peak <= gateway.SHAPING_WORKERS
+
+
+async def test_a_job_that_starts_as_its_first_wait_ends_is_waited_for_as_started(monkeypatch) -> None:
+    from sugra_api_mcp.tools import gateway
+
+    _bounds(monkeypatch, clock=0.2, grace=0.1, wait=0.2)
+    cutter = _cut_that_blocks(monkeypatch, blocked=gateway.SHAPING_WORKERS)
+    real_abandon = client_module._StartGate.abandon
+    pending_at_start: list[int] = []
+
+    def abandon(gate):
+        if gate.started_at is None:
+            # The queued job's first wait is over. Free the held workers and
+            # let it start before its caller asks: the order the race allows.
+            cutter.release.set()
+            deadline = time.monotonic() + 5
+            while gate.started_at is None and time.monotonic() < deadline:
+                time.sleep(0.001)
+            pending_at_start.append(gateway.shaping_pending())
+        return real_abandon(gate)
+
+    monkeypatch.setattr(client_module._StartGate, "abandon", abandon)
+    try:
+        held = await _calls(monkeypatch, gateway.SHAPING_WORKERS)
+        (raced,) = await _calls(monkeypatch, 1)
+    finally:
+        cutter.release.set()
+
+    assert [result["error"] for result in held] == ["response_too_large"] * gateway.SHAPING_WORKERS
+    # Started: no busy answer, the job's own one.
+    assert raced == {"data": "cut in time"}
+    # The started job held its slot while it ran, and gave it back at its end.
+    assert len(pending_at_start) == 1 and pending_at_start[0] >= 1
+    assert await _pool_drained() == 0
+    assert cutter.runs == gateway.SHAPING_WORKERS + 1
+    assert cutter.peak <= gateway.SHAPING_WORKERS
+
+
+async def test_a_job_a_worker_picks_up_after_its_caller_gave_up_never_runs(monkeypatch) -> None:
+    from sugra_api_mcp.tools import gateway
+
+    _bounds(monkeypatch, clock=0.2, grace=0.1, wait=0.2)
+    cutter = _cut_that_blocks(monkeypatch, blocked=gateway.SHAPING_WORKERS)
+    real_abandon = client_module._StartGate.abandon
+    real_enter = client_module._StartGate.enter
+    entered: list = []
+
+    def enter(gate):
+        entered.append(gate)
+        return real_enter(gate)
+
+    def abandon(gate):
+        started_at = real_abandon(gate)
+        if started_at is None:
+            # The caller has given up. Free the held workers and let one pick
+            # the job up before the caller cancels it, so that cancel cannot
+            # stop it: only the gate can.
+            cutter.release.set()
+            deadline = time.monotonic() + 5
+            while gate not in entered and time.monotonic() < deadline:
+                time.sleep(0.001)
+        return started_at
+
+    monkeypatch.setattr(client_module._StartGate, "enter", enter)
+    monkeypatch.setattr(client_module._StartGate, "abandon", abandon)
+    try:
+        held = await _calls(monkeypatch, gateway.SHAPING_WORKERS)
+        (late,) = await _calls(monkeypatch, 1)
+    finally:
+        cutter.release.set()
+
+    assert [result["error"] for result in held] == ["response_too_large"] * gateway.SHAPING_WORKERS
+    assert late["error"] == "server_busy" and late["scope"] == "shaping"
+    assert len(entered) == gateway.SHAPING_WORKERS + 1
+    assert await _pool_drained() == 0
+    # The worker took the job and the gate kept the call from running.
+    assert cutter.runs == gateway.SHAPING_WORKERS
+    assert cutter.peak <= gateway.SHAPING_WORKERS
+
+
+def test_the_start_gate_lets_exactly_one_side_win() -> None:
+    started = client_module._StartGate()
+    assert started.enter() is True
+    assert started.started_at is not None
+    assert started.abandon() == started.started_at
+    given_up = client_module._StartGate()
+    assert given_up.abandon() is None
+    assert given_up.enter() is False
+    assert given_up.started_at is None
+
+
+# ---- a nearest cut offers no count ----
+
+
+class _Param:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.schema_: dict = {}
+
+
+@pytest.mark.parametrize(
+    ("operation_id", "offered"), [("market_calendar_earnings", False), ("earnings_list", True)]
+)
+def test_a_count_parameter_is_offered_only_off_the_nearest_end(operation_id, offered) -> None:
+    from tests.size_cut_bodies import earnings_calendar
+
+    endpoint = _Endpoint(operation_id)
+    endpoint.parameters = [_Param("limit"), _Param("from"), _Param("to")]
+    result = _module().cut_to_fit(
+        earnings_calendar(TODAY, 8, 300), "test://count", cap=CAP, endpoint=endpoint, today=TODAY
+    )
+
+    hint = notice(result)["retry_hint"]
+    assert (notice(result)["kept_end"] == "nearest") is not offered
+    # A count keeps the newest end: past the nearest one it would keep the
+    # farthest records, not the ones the cut kept.
+    assert ("params.limit=" in hint) is offered
+    assert "a narrower params.from to params.to" in hint

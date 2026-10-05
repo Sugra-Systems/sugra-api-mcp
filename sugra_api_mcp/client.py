@@ -43,7 +43,6 @@ retry strategy (field-test defect D2).
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import http.cookiejar
 import json
 import re
@@ -468,9 +467,34 @@ def _enforce_size_limit(
 CUT_GRACE_SECONDS = 0.5
 
 
-def _set_started(started: asyncio.Future[None]) -> None:
-    if not started.done():
-        started.set_result(None)
+class _StartGate:
+    """The one decision between a worker starting a job and the job's caller
+    giving up on the start, taken under a lock: whichever comes first wins,
+    so a job is either started or never runs."""
+
+    __slots__ = ("_lock", "abandoned", "started_at")
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.abandoned = False
+        self.started_at: float | None = None
+
+    def enter(self) -> bool:
+        """On the worker, before the job: True, with the start time noted,
+        unless the caller has given up first."""
+        with self._lock:
+            if self.abandoned:
+                return False
+            self.started_at = time.monotonic()
+            return True
+
+    def abandon(self) -> float | None:
+        """On the caller: None when the job had not started, and now never
+        will, else the time it started."""
+        with self._lock:
+            if self.started_at is None:
+                self.abandoned = True
+            return self.started_at
 
 
 async def _gate_off_loop(payload: Any, url: str) -> Any:
@@ -490,24 +514,29 @@ async def _cut_on_pool(call: Callable[[], Any], url: str, *, clocks: int = 1) ->
     """Run a size-gating job on the shaping pool and wait for it within a
     bound; server_busy when the pool is full.
 
-    The wait is bounded in both of its parts. Until the job starts on a
-    worker, the client waits at most SHAPING_WAIT_SECONDS plus
-    CUT_GRACE_SECONDS: a job in the pool's line answers server_busy at
-    SHAPING_WAIT_SECONDS itself, and a job admitted but queued behind busy
-    workers is cancelled, never runs, and answers server_busy here. Once it
-    has started, the client waits at most ``clocks`` times
-    MAX_SHAPING_SECONDS plus CUT_GRACE_SECONDS and then answers
-    ``response_too_large`` with the size message alone. ``clocks`` counts
-    the clocks the job runs one after the other: one for a cut alone, two
-    for call_endpoint, whose fields projection runs on its own
-    MAX_SHAPING_SECONDS clock before the cut starts its own.
+    The client first waits SHAPING_WAIT_SECONDS plus CUT_GRACE_SECONDS for
+    the job's answer; a job in the pool's line answers server_busy itself
+    at SHAPING_WAIT_SECONDS. Past that wait the client asks the job's
+    _StartGate whether the job has started on a worker. Not started: the
+    gate keeps it from ever running the call, and the client answers
+    server_busy. Started: the client waits until ``clocks`` times
+    MAX_SHAPING_SECONDS plus CUT_GRACE_SECONDS after the start and then
+    answers ``response_too_large`` with the size message alone. ``clocks``
+    counts the clocks the job runs one after the other: one for a cut
+    alone, two for call_endpoint, whose fields projection runs on its own
+    MAX_SHAPING_SECONDS clock before the cut starts its own. So the client
+    waits at most the longer of the first wait and that run bound after
+    the start; with the shipped numbers (2.5 s, then 5.5 s or 10.5 s from
+    the start) the run bound is always the longer.
 
-    Those clocks are cooperative, read between records, so a single record
+    The clocks are cooperative, read between records, so a single record
     or key can hold a worker past them; the bound here is what holds for
-    the caller whatever the job does. A worker that is still running then
-    finishes in the background, its result dropped, and keeps its pool slot
-    until then: the pool's SHAPING_WORKERS bound how many such jobs can run
-    at once, and its pending bounds how many more wait.
+    the caller whatever the job does. What happens to the job when the
+    client stops waiting is the pool's (tools.gateway._shape_off_loop): a
+    job still queued is cancelled with its waiting task and frees its slot,
+    and one already running finishes in the background, its result
+    dropped, holding its slot until its future is done. The pool's
+    SHAPING_WORKERS threads are the most that run at once.
     """
     # Imported here, not at the top: the gateway module and the catalog
     # package import this one.
@@ -516,45 +545,34 @@ async def _cut_on_pool(call: Callable[[], Any], url: str, *, clocks: int = 1) ->
     from .errors import server_busy_error
     from .tools import gateway as pool
 
-    loop = asyncio.get_running_loop()
-    started: asyncio.Future[None] = loop.create_future()
+    gate = _StartGate()
 
     def job() -> Any:
-        # A RuntimeError: the caller's loop has closed, nobody is left to read the answer.
-        with contextlib.suppress(RuntimeError):
-            loop.call_soon_threadsafe(_set_started, started)
+        if not gate.enter():
+            # Its caller has answered server_busy: the call never runs.
+            return None
         return call()
 
     begun = time.monotonic()
+    run_bound = clocks * shaping.MAX_SHAPING_SECONDS + CUT_GRACE_SECONDS
     task = asyncio.ensure_future(pool._shape_off_loop(job))
-    ran = False
     try:
-        # First until the job starts or the pool answers without it, then
-        # the bounded wait for the job itself.
-        await asyncio.wait(
-            (task, started),
-            timeout=pool.SHAPING_WAIT_SECONDS + CUT_GRACE_SECONDS,
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-        ran = started.done()
-        if ran and not task.done():
-            await asyncio.wait(
-                (task,), timeout=clocks * shaping.MAX_SHAPING_SECONDS + CUT_GRACE_SECONDS
-            )
+        await asyncio.wait((task,), timeout=pool.SHAPING_WAIT_SECONDS + CUT_GRACE_SECONDS)
+        if not task.done():
+            started_at = gate.abandon()
+            if started_at is None:
+                task.cancel()
+                return server_busy_error(
+                    "shaping", pool.SHAPING_WORKERS, elapsed_ms=int((time.monotonic() - begun) * 1000)
+                )
+            await asyncio.wait((task,), timeout=max(0.0, started_at + run_bound - time.monotonic()))
     except BaseException:
         task.cancel()
         raise
-    finally:
-        started.cancel()
     if task.done():
         return task.result()
-    # Cancelling a job still queued keeps it from running and frees its slot;
-    # cancelling the wait on a running one only drops its result.
+    # Cancelling the wait on a running job only drops its result.
     task.cancel()
-    if not ran:
-        return server_busy_error(
-            "shaping", pool.SHAPING_WORKERS, elapsed_ms=int((time.monotonic() - begun) * 1000)
-        )
     return refuse_unmeasured(url, MAX_RESPONSE_CHARS)
 
 

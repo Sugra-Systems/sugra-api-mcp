@@ -443,14 +443,15 @@ def _cut_hint(
         return hint + " The source returns this whole dataset in one response."
     levers: list[str] = []
     count_param = next((name for name in _COUNT_PARAMS if name in params), None)
-    if count_param is not None:
+    # A count, the operation's or the tool's own limit, keeps the end the
+    # cut keeps, except the nearest one: there it would keep the farthest
+    # records instead, so neither is offered.
+    if count_param is not None and primary.kept_end != KEPT_NEAREST:
         value = _clamped(params[count_param], kept[primary.path])
         levers.append(f"params.{count_param}={value}")
     window = _window_lever(params)
     if window is not None:
         levers.append(window)
-    # The tool's own limit keeps the end the cut keeps, except the nearest
-    # one: there it would keep the farthest records instead.
     if (
         count_param is None
         and len(cut) == 1
