@@ -1,4 +1,8 @@
-"""The demand count: initialize and tools/list at the gate, by caller class and status."""
+"""The demand count: every tracked POST to /mcp at the gate, by caller class and status.
+
+Each is counted once, by its method bucket (initialize, tools/list, other,
+batch or unread), in failed, or in lost.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +10,7 @@ import asyncio
 import contextlib
 import logging
 import re
+import threading
 import time
 from collections.abc import AsyncIterator
 from typing import Any
@@ -610,6 +615,108 @@ def test_the_reported_lost_is_recorded_under_the_lock(written) -> None:
     assert _lost(written) == [1]
     # Set while the lock is still held, never after its last release.
     assert watched.seen_at_release[-1] == 1
+
+
+class _HeldLog:
+    """Stands in for demand._log: the first call waits until released, every call records what it emits."""
+
+    def __init__(self) -> None:
+        self.entered = threading.Event()
+        self.release = threading.Event()
+        self.calls = 0
+        self.emitted: list[tuple[int, int, int]] = []
+        self._calls_lock = threading.Lock()
+
+    def __call__(self, counts: dict, failed: int, lost: int) -> None:
+        with self._calls_lock:
+            self.calls += 1
+            first = self.calls == 1
+        if first:
+            self.entered.set()
+            assert self.release.wait(5)
+        self.emitted.append((sum(counts.values()), failed, lost))
+
+
+def _started(target) -> threading.Thread:
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    return thread
+
+
+def _second_log_call_within(held: _HeldLog, seconds: float) -> bool:
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if held.calls >= 2:
+            return True
+        time.sleep(0.01)
+    return False
+
+
+_LATE = ("tools/list", "200", "none", "other", "none", "-")
+
+
+def test_two_writers_started_together_report_one_growth_of_lost_once(monkeypatch) -> None:
+    counter = demand.DemandCounter()
+    counter.close()
+    counter.add(_LATE)
+    held = _HeldLog()
+    monkeypatch.setattr(demand, "_log", held)
+    first = _started(counter.write)
+    try:
+        assert held.entered.wait(5)
+        second = _started(counter.write)
+        # Serialised, the second writer waits for the first instead of logging the same lost.
+        assert not _second_log_call_within(held, 0.5)
+    finally:
+        held.release.set()
+    first.join(5)
+    second.join(5)
+    assert not first.is_alive() and not second.is_alive()
+    assert held.emitted == [(0, 0, 1)]
+
+
+def test_an_older_snapshot_is_never_written_after_a_newer_one(monkeypatch) -> None:
+    counter = demand.DemandCounter()
+    counter.close()
+    counter.add(_LATE)
+    held = _HeldLog()
+    monkeypatch.setattr(demand, "_log", held)
+    first = _started(counter.write)
+    try:
+        assert held.entered.wait(5)
+        # lost grows while the first write is in its log call; a second writer starts.
+        counter.add(_LATE)
+        second = _started(counter.write)
+        _second_log_call_within(held, 0.5)
+    finally:
+        held.release.set()
+    first.join(5)
+    second.join(5)
+    assert not first.is_alive() and not second.is_alive()
+    # The second writer saw the first one's state: lost 1, then 2, never back.
+    assert held.emitted == [(0, 0, 1), (0, 0, 2)]
+    counter.write()
+    assert held.emitted == [(0, 0, 1), (0, 0, 2)]
+
+
+def test_a_count_is_never_held_up_by_a_write_in_its_log_call(monkeypatch) -> None:
+    counter = demand.DemandCounter()
+    counter.add(_LATE)
+    held = _HeldLog()
+    monkeypatch.setattr(demand, "_log", held)
+    first = _started(counter.write)
+    try:
+        assert held.entered.wait(5)
+        adder = _started(lambda: counter.add(_LATE))
+        adder.join(1)
+        assert not adder.is_alive()
+    finally:
+        held.release.set()
+    first.join(5)
+    assert not first.is_alive()
+    # The count taken during the write is the next interval's.
+    counter.write()
+    assert held.emitted == [(1, 0, 0), (1, 0, 0)]
 
 
 def test_writing_the_counts_never_raises_even_when_the_failure_report_fails(written) -> None:

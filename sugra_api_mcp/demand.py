@@ -135,7 +135,14 @@ def status_of(status: object) -> str:
 
 
 class DemandCounter:
-    """Requests counted since the last write, by key, and the requests lost to failed writes."""
+    """Requests counted since the last write, by key, and the requests counted into no line.
+
+    lost has two sources: the requests of a write the logger raised on, and a
+    count taken after close (a request still running after the exit drain).
+    _lock guards the counts and is all add and add_failure take, so a request
+    never waits on a log write. _write_lock serialises whole writes, taken
+    before _lock and never inside it.
+    """
 
     def __init__(self) -> None:
         self._counts: dict[Key, int] = {}
@@ -144,6 +151,7 @@ class DemandCounter:
         self._lost_written = 0
         self._closed = False
         self._lock = threading.Lock()
+        self._write_lock = threading.Lock()
 
     def add(self, key: Key) -> None:
         with self._lock:
@@ -177,8 +185,15 @@ class DemandCounter:
         logger raises, its requests are dropped, never put back, and added to
         the lost total the next header reports; the error is raised. A record
         is written when the interval holds a request or lost grew since the
-        last record.
+        last record. A whole write runs under the write lock, from the
+        snapshot to the record of the lost it reported, so two writers never
+        report one growth of lost twice and an older snapshot is never
+        written after a newer one.
         """
+        with self._write_lock:
+            self._write()
+
+    def _write(self) -> None:
         with self._lock:
             counts, self._counts = self._counts, {}
             failed, self._failed = self._failed, 0

@@ -530,8 +530,10 @@ def wrap_lifespan(
                     logger.warning("Shutdown step failed (%s).", type(e).__name__)
             # A request still open past the drain can finish while the closers
             # run; write once more so its count goes out with the flush. The
-            # counter closes first: a count after this snapshot goes to lost,
-            # which this process does not report (demand.py, lost).
+            # counter closes first: a count taken after close() goes to lost,
+            # and one taken before this final write is in its lost. Only a
+            # count after this final write is not reported by this process
+            # (demand.py, lost).
             counter.close()
             interrupt = _write_at_exit(counter) or interrupt
             await asyncio.to_thread(observability.flush_telemetry, flush_timeout)
