@@ -289,18 +289,6 @@ def _answers_with_error(body: bytes) -> bool:
     return False
 
 
-def _declared_length(scope: Scope) -> int | None:
-    """The request's Content-Length when it is one header of ASCII digits, else None."""
-    values = [value for key, value in scope.get("headers") or () if key.lower() == b"content-length"]
-    if len(values) != 1:
-        return None
-    value = values[0].strip()
-    # bytes.isdigit is ASCII only; the length cap keeps int() cheap.
-    if not value or len(value) > 19 or not value.isdigit():
-        return None
-    return int(value)
-
-
 class _DemandCapture:
     """What the demand count keeps of one request: its method and client class, and the status sent.
 
@@ -344,10 +332,10 @@ class GateMiddleware:
     every other middleware, so it is the outermost layer and sees the status
     the client was sent.
 
-    A tracked POST to /mcp that is an initialize or a tools/list, or is
-    answered before its body is read, is counted in the demand count with the
-    status it was sent, whatever that status is (_DemandCapture), unless its
-    body is known to be over the limit (_count).
+    A tracked POST to /mcp that is an initialize or a tools/list, or whose
+    body the gate did not parse (answered before its end, or over the limit),
+    is counted once in the demand count with the status it was sent, whatever
+    that status is (_DemandCapture, _count).
     """
 
     def __init__(
@@ -432,28 +420,23 @@ class GateMiddleware:
                 except Exception as e:
                     logger.warning("Gate line failed (%s).", type(e).__name__)
             if capture is not None:
-                self._count(scope, capture, body_read, body_too_large)
+                self._count(scope, capture, body_read and not body_too_large)
 
-    def _count(self, scope: Scope, capture: _DemandCapture, body_read: bool, body_too_large: bool) -> None:
-        """Add the request to the demand count, or to its failures; never raises.
+    def _count(self, scope: Scope, capture: _DemandCapture, parsed: bool) -> None:
+        """Add the request to the demand count once, or to its failures; never raises.
 
-        A body known to be over the limit is never counted: one the gate saw
-        pass max_body_bytes, read to its end or not, and one whose valid
-        Content-Length (_declared_length) exceeds it. Such a body's method is
-        not known, and it is no initialize or tools/list the server would serve.
-        A body without a valid Content-Length (chunked) that was answered before
-        it was read is counted as unread: its size is not known without reading
-        it, which the gate never does on the app's behalf.
+        A request whose demand step raised is counted in failed and nowhere
+        else. Any other is counted by its method: a parsed body's initialize or
+        tools/list (other methods are not counted), and unread for a body the
+        gate did not parse, answered before its end or over max_body_bytes,
+        whatever its size. Its status tells those cases apart (an auth 401, the
+        server's 413); no header is parsed to guess a size.
         """
         try:
             if capture.failed:
                 self.demand.add_failure()
                 return
-            declared = _declared_length(scope)
-            if body_too_large or (declared is not None and declared > self.max_body_bytes):
-                return
-            # A body never read means an answer before it: its method is unknown.
-            method = capture.method if body_read else demand.UNREAD
+            method = capture.method if parsed else demand.UNREAD
             if method is None:
                 return
             host, ua, origin = demand.caller_classes(
@@ -461,7 +444,7 @@ class GateMiddleware:
                 _first_header(scope, b"user-agent"),
                 _first_header(scope, b"origin"),
             )
-            client = capture.client if body_read else demand.NOT_APPLICABLE
+            client = capture.client if parsed else demand.NOT_APPLICABLE
             self.demand.add((method, demand.status_of(capture.status), host, ua, origin, client))
         except Exception:
             with contextlib.suppress(Exception):

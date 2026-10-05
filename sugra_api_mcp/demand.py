@@ -13,14 +13,13 @@ requests=0 lines=0 with only lost grown):
     sdemand1 side=<side> requests=<n> lines=<m> omitted=<o> failed=<f> lost=<l>
     <method> <status> <host> <ua> <origin> <client> <count>
 
-method is initialize, tools/list, or unread: a request answered before its
-body was read, as the auth layer answers a bad bearer token (401), so which
-method it carried is not known. A batch, a body known to be over the limit
-(the gate saw it pass the limit, read to its end or not, or its valid
-Content-Length exceeds it) and every other method (tools/call, ping,
-notifications) are not counted. A body without a valid Content-Length
-(chunked) answered before it was read is counted as unread: its size is not
-known without reading it.
+method is initialize, tools/list, or unread: a request whose body the gate
+did not parse, so which method it carried is not known. That is a request
+answered before its body was read, as the auth layer answers a bad bearer
+token (401), and a body over the server's limit, whatever its size (the
+server's 413); the status tells them apart. A batch and every other method
+(tools/call, ping, notifications) are not counted. Each request is counted
+once: by its method, or in failed.
 
 status is the HTTP status of the answer start that was sent to the client,
 or none when none was: no answer started, or its send failed.

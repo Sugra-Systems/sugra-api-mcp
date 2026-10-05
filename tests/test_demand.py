@@ -334,19 +334,20 @@ def _list_answer(names: list[str]) -> bytes:
     return f'{{"jsonrpc":"2.0","id":1,"result":{{"tools":[{listed}]}}}}'.encode()
 
 
-@pytest.mark.parametrize("read_to_end", [True, False])
-async def test_a_body_over_the_limit_is_never_counted(written, read_to_end: bool) -> None:
-    counter = demand.DemandCounter()
-    tools_list = b'{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"pad":"' + b"x" * 200 + b'"}}'
+_OVER_LIMIT_LIST = b'{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"pad":"' + b"x" * 200 + b'"}}'
+
+
+async def _over_the_limit(counter: demand.DemandCounter, *, read_to_end: bool) -> None:
+    """A tools/list body of 2 chunks past a 100-byte limit that the app answers with 413."""
 
     async def app(scope: dict[str, Any], receive: Any, send: Any) -> None:
         # The server reads past its limit, or answers 413 at the first chunk over it.
         while (await receive()).get("more_body", False) and read_to_end:
             pass
-        await send({"type": "http.response.start", "status": 413 if not read_to_end else 200, "headers": []})
+        await send({"type": "http.response.start", "status": 413, "headers": []})
         await send({"type": "http.response.body", "body": b""})
 
-    chunks = [tools_list[:120], tools_list[120:]]
+    chunks = [_OVER_LIMIT_LIST[:120], _OVER_LIMIT_LIST[120:]]
 
     async def receive() -> dict[str, Any]:
         chunk = chunks.pop(0)
@@ -358,11 +359,22 @@ async def test_a_body_over_the_limit_is_never_counted(written, read_to_end: bool
     middleware = gate.GateMiddleware(app, max_body_bytes=100, summary=gate.GateSummary(), demand_counter=counter)
     scope = {"type": "http", "method": "POST", "path": "/mcp", "headers": [(b"x-request-id", _rid(1).encode())]}
     await middleware(scope, receive, send)
-    assert _counts(counter, written) == {}
 
 
-async def _answered_unread(written: list[str], length_headers: list[bytes]) -> dict[tuple[str, ...], int]:
-    """A POST to /mcp the app refuses with 401 before reading any of its body."""
+@pytest.mark.parametrize("read_to_end", [True, False])
+async def test_a_body_over_the_limit_is_counted_as_unread_with_its_413(written, read_to_end: bool) -> None:
+    # The gate never parsed it, so its method (a tools/list here) is not known.
+    counter = demand.DemandCounter()
+    await _over_the_limit(counter, read_to_end=read_to_end)
+    assert _counts(counter, written) == {("unread", "413", "none", "other", "none", "-"): 1}
+
+
+@pytest.mark.parametrize("lengths", [[b"9" * 20], [b"101"], [b"5000", b"5000"], []])
+async def test_a_content_length_of_any_shape_is_never_read_and_the_request_is_counted_once(
+    written, lengths: list[bytes]
+) -> None:
+    # Twenty digits, over the limit, two headers or none: the count reads no
+    # size, so each is one unread line with the status it was sent.
     counter = demand.DemandCounter()
 
     async def app(scope: dict[str, Any], receive: Any, send: Any) -> None:
@@ -376,28 +388,25 @@ async def _answered_unread(written: list[str], length_headers: list[bytes]) -> d
         return None
 
     middleware = gate.GateMiddleware(app, max_body_bytes=100, summary=gate.GateSummary(), demand_counter=counter)
-    headers = [(b"x-request-id", _rid(1).encode()), *((b"content-length", value) for value in length_headers)]
+    headers = [(b"x-request-id", _rid(1).encode()), *((b"content-length", value) for value in lengths)]
     await middleware({"type": "http", "method": "POST", "path": "/mcp", "headers": headers}, receive, send)
-    return _counts(counter, written)
+    assert _counts(counter, written) == {("unread", "401", "none", "other", "none", "-"): 1}
 
 
-@pytest.mark.parametrize("length", [b"101", b"5000", b" 5000 "])
-async def test_an_unread_body_whose_valid_length_is_over_the_limit_is_not_counted(written, length: bytes) -> None:
-    assert await _answered_unread(written, [length]) == {}
+@pytest.mark.parametrize("read_to_end", [True, False])
+async def test_a_request_whose_capture_failed_is_counted_once_in_failed(monkeypatch, written, read_to_end: bool) -> None:
+    # A body over the limit is never parsed, so the failing step is the send's.
+    counter = demand.DemandCounter()
 
+    def fail(self: object, value: object) -> None:
+        raise MemoryError
 
-@pytest.mark.parametrize(
-    "lengths",
-    [
-        [], [b"100"], [b"0"], [b"5000", b"5000"], [b"5e3"], [b"-5000"], [b""], [b"9" * 20],
-        # 5000 in ARABIC-INDIC digits, UTF-8: digits to str.isdigit, not to bytes.isdigit.
-        [b"\xd9\xa5\xd9\xa0\xd9\xa0\xd9\xa0"],
-    ],
-)
-async def test_an_unread_body_of_unknown_or_allowed_size_is_counted_as_unread(written, lengths: list[bytes]) -> None:
-    # Chunked (no Content-Length), within the limit, or a Content-Length that is
-    # not one header of ASCII digits: the size is not known to be over the limit.
-    assert await _answered_unread(written, lengths) == {("unread", "401", "none", "other", "none", "-"): 1}
+    monkeypatch.setattr(gate._DemandCapture, "sent", fail)
+    await _over_the_limit(counter, read_to_end=read_to_end)
+    written.clear()
+    counter.write()
+    (record,) = written
+    assert record == f"sdemand1 side={observability.process_side()} requests=1 lines=0 omitted=0 failed=1 lost=0"
 
 
 # ---- The record ----
