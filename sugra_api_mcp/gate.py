@@ -32,7 +32,9 @@ A line holds the request id, a class and two integers. Never a tool name, an
 argument, a header or a payload.
 
 Every tracked POST to /mcp feeds the demand count (demand.py), named by its
-method bucket: initialize, tools/list, other, batch or unread. The count is
+method bucket: initialize, tools/list, other, batch or unread. A POST to /mcp
+is one whose path equals /mcp once trailing slashes are removed, the same
+test auth.py uses. The count is
 written beside each summary on its own logger, in a step of its own that
 never changes what the client is sent.
 """
@@ -336,7 +338,8 @@ class GateMiddleware:
     every other middleware, so it is the outermost layer and sees the status
     the client was sent.
 
-    Every tracked POST to /mcp is counted exactly once in the demand count,
+    Every tracked POST to /mcp (its path equal to /mcp once trailing slashes
+    are removed, as auth.py tests it) is counted exactly once in the demand count,
     by its method bucket with the status it was sent, whatever that status
     is, in failed, or in lost (_DemandCapture, _count; lost in demand.py).
     """

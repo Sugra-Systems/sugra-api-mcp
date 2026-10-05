@@ -3,8 +3,11 @@
 GateMiddleware counts every request that reaches the gate as a POST to /mcp
 whose first X-Request-Id is a valid request id (nginx gives one to every
 request it proxies; the gate tracks no other request), exactly once: by its
-method bucket, in failed, or in lost. A POST to any other path, or without a valid
-request id, writes nothing at all: no line and no zero. Every SUMMARY_INTERVAL_SECONDS of the gate, and at shutdown, the counts
+method bucket, in failed, or in lost. A POST to /mcp is one whose path equals
+/mcp once trailing slashes are removed, the same test auth.py uses to decide
+what /mcp is, so /mcp/ is one and /mcpx, /mcp/x and /api/mcp are not. A POST
+to any other path, or without a valid request id, writes nothing at all: no
+line and no zero. Every SUMMARY_INTERVAL_SECONDS of the gate, and at shutdown, the counts
 since the previous write are logged at INFO on sugra_mcp.demand, when there
 are any or lost grew since the last record (such a record can read
 requests=0 lines=0 with only lost grown):

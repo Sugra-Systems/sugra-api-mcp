@@ -263,6 +263,36 @@ async def test_only_a_tracked_post_to_mcp_is_counted(written) -> None:
     }
 
 
+async def _answer_any_path(scope: dict, receive: Any, send: Any) -> None:
+    """A raw ASGI app answering 200 at every path, so no route or redirect decides."""
+    while (await receive()).get("more_body"):
+        pass
+    await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
+    await send({"type": "http.response.body", "body": b"{}"})
+
+
+@pytest.mark.parametrize(
+    ("path", "counted"),
+    [
+        ("/mcp", True),
+        ("/mcp/", True),
+        ("/mcp//", True),
+        ("/mcpx", False),
+        ("/mcp/x", False),
+        ("/api/mcp", False),
+    ],
+)
+async def test_the_path_counted_is_mcp_once_trailing_slashes_are_removed(written, path: str, counted: bool) -> None:
+    # The same test auth.py applies to decide what /mcp is.
+    counter = demand.DemandCounter()
+    app = gate.GateMiddleware(_answer_any_path, max_body_bytes=1024, summary=gate.GateSummary(), demand_counter=counter)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8002") as client:
+        response = await client.post(path, json=_message(1, "tools/list", {}), headers={"x-request-id": _rid(1)})
+    assert response.status_code == 200
+    expected = {("tools/list", "200", "loopback", "python", "none", "-"): 1} if counted else {}
+    assert _counts(counter, written) == expected
+
+
 async def _posted_raw(written: list[str], body: bytes) -> dict[tuple[str, ...], int]:
     """One tracked POST to /mcp of these body bytes, read whole and answered 200."""
     counter = demand.DemandCounter()
