@@ -1,0 +1,509 @@
+"""The demand count: initialize and tools/list at the gate, by caller class and status."""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import logging
+import re
+import time
+from collections.abc import AsyncIterator
+from typing import Any
+
+import httpx
+import pytest
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response, StreamingResponse
+from starlette.routing import Route
+
+import sugra_api_mcp.tools  # noqa: F401  (registers the tools on server.mcp)
+from sugra_api_mcp import demand, gate, observability, server
+from sugra_api_mcp.auth import AuthError, AuthMiddleware, ResolvedAuth
+from tests.test_request_credentials import HEADERS, INITIALIZE, _authenticator
+
+_HEADER = re.compile(
+    r"sdemand1 side=(?P<side>\S+) requests=(?P<requests>\d+) "
+    r"lines=(?P<lines>\d+) omitted=(?P<omitted>\d+)"
+)
+_OAUTH = {"authorization": "Bearer jwt-demand"}
+_REVOKED = {"authorization": "Bearer revoked"}
+# A scanner that names itself after its vendor in neither pattern list.
+_SCANNER = {
+    "host": "app.sugra.ai",
+    "user-agent": "openai-mcp/1.0",
+    "origin": "https://chatgpt.com",
+}
+_SCANNER_INITIALIZE = {
+    **INITIALIZE,
+    "params": {**INITIALIZE["params"], "clientInfo": {"name": "openai-mcp", "version": "1.0.0"}},
+}
+
+
+def _rid(number: int) -> str:
+    """A request id as nginx writes it: 32 lowercase hex."""
+    return f"{number:02x}" + "cd" * 15
+
+
+def _message(number: int, method: str, params: dict[str, Any]) -> dict[str, Any]:
+    return {"jsonrpc": "2.0", "id": number, "method": method, "params": params}
+
+
+class _Collect(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__(logging.DEBUG)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+
+@pytest.fixture
+def written():
+    """Every message the demand logger writes during the test."""
+    handler = _Collect()
+    demand.logger.addHandler(handler)
+    try:
+        yield handler.messages
+    finally:
+        demand.logger.removeHandler(handler)
+
+
+def _counts(counter: demand.DemandCounter, written: list[str]) -> dict[tuple[str, ...], int]:
+    """Write the counter and read its record back as {key: count}."""
+    written.clear()
+    counter.write()
+    counts: dict[tuple[str, ...], int] = {}
+    for message in written:
+        header, *lines = message.split("\n")
+        match = _HEADER.fullmatch(header)
+        assert match is not None, header
+        assert int(match["lines"]) == len(lines)
+        for line in lines:
+            *key, count = line.split(" ")
+            assert len(key) == 7, line
+            counts[tuple(key)] = int(count)
+        assert int(match["requests"]) == sum(counts.values()) + int(match["omitted"])
+    return counts
+
+
+async def _listed_names() -> list[str]:
+    return [tool.name for tool in await server.mcp.list_tools()]
+
+
+@contextlib.asynccontextmanager
+async def _served(
+    monkeypatch, counter: demand.DemandCounter | None, *, gated: bool = True
+) -> AsyncIterator[httpx.AsyncClient]:
+    """The real app, auth and the SDK session manager, behind the gate when gated."""
+    monkeypatch.setattr(server.mcp, "_session_manager", None)
+    # The hosted server admits its public host and the connector origins
+    # (SUGRA_MCP_ALLOWED_HOSTS); the test admits every host, so the classes
+    # under test can be the hosted ones.
+    monkeypatch.setattr(server.mcp.settings, "transport_security", None)
+    app = server.mcp.streamable_http_app()
+    authenticator = _authenticator()
+
+    async def resolve(token: str) -> ResolvedAuth:
+        if token == "revoked":
+            raise AuthError("token revoked")
+        return ResolvedAuth(
+            api_key="sugra_dummy",
+            user_id=42,
+            access_token_id=token.strip(),
+            method="oauth",
+            platform="openai",
+        )
+
+    monkeypatch.setattr(authenticator, "resolve", resolve)
+    app.add_middleware(AuthMiddleware, authenticator=authenticator)
+    if gated:
+        app.add_middleware(
+            gate.GateMiddleware,
+            max_body_bytes=server.mcp.settings.max_request_body_size,
+            summary=gate.GateSummary(),
+            demand_counter=counter,
+        )
+    try:
+        async with server.mcp.session_manager.run():
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:8002") as client:
+                yield client
+    finally:
+        await authenticator.aclose()
+
+
+async def _open(client: httpx.AsyncClient, number: int) -> dict[str, str]:
+    opened = await client.post(
+        "/mcp",
+        json=_SCANNER_INITIALIZE,
+        headers={**HEADERS, **_SCANNER, "x-request-id": _rid(number)},
+    )
+    assert opened.status_code == 200
+    return {"mcp-session-id": opened.headers["mcp-session-id"]}
+
+
+# ---- What is counted, and as what ----
+
+
+async def test_initialize_and_tools_list_are_counted_by_their_real_classes(monkeypatch, written) -> None:
+    counter = demand.DemandCounter()
+    async with _served(monkeypatch, counter) as client:
+        session = await _open(client, 1)
+        headers = {**HEADERS, **_SCANNER, **session}
+        notified = await client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "method": "notifications/initialized"},
+            headers={**headers, "x-request-id": _rid(2)},
+        )
+        listed = await client.post(
+            "/mcp", json=_message(3, "tools/list", {}), headers={**headers, "x-request-id": _rid(3)}
+        )
+        listed_again = await client.post(
+            "/mcp", json=_message(4, "tools/list", {}), headers={**headers, "x-request-id": _rid(4)}
+        )
+    assert (notified.status_code, listed.status_code, listed_again.status_code) == (202, 200, 200)
+    digest = demand.tools_digest(await _listed_names())
+    # The User-Agent names no class (other); the clientInfo name does (chatgpt).
+    assert _counts(counter, written) == {
+        ("initialize", "200", "app.sugra.ai", "other", "openai", "chatgpt", "-"): 1,
+        ("tools/list", "200", "app.sugra.ai", "other", "openai", "-", digest): 2,
+    }
+
+
+async def test_a_tool_call_is_not_counted_as_a_list(monkeypatch, written) -> None:
+    counter = demand.DemandCounter()
+    async with _served(monkeypatch, counter) as client:
+        session = await _open(client, 1)
+        called = await client.post(
+            "/mcp",
+            json=_message(2, "tools/call", {"name": "list_toolsets", "arguments": {}}),
+            headers={**HEADERS, **_SCANNER, **_OAUTH, **session, "x-request-id": _rid(2)},
+        )
+        pinged = await client.post(
+            "/mcp",
+            json=_message(3, "ping", {}),
+            headers={**HEADERS, **_SCANNER, **session, "x-request-id": _rid(3)},
+        )
+    assert (called.status_code, pinged.status_code) == (200, 200)
+    counts = _counts(counter, written)
+    assert [key[0] for key in counts] == ["initialize"]
+
+
+async def test_a_refused_request_is_counted_with_its_status(monkeypatch, written) -> None:
+    counter = demand.DemandCounter()
+    tools_list = _message(2, "tools/list", {})
+    async with _served(monkeypatch, counter) as client:
+        session = await _open(client, 1)
+        # A dead token: the auth layer answers before it reads the body.
+        revoked = await client.post(
+            "/mcp", json=tools_list, headers={**HEADERS, **_SCANNER, **_REVOKED, **session, "x-request-id": _rid(2)}
+        )
+        # A session the server does not know.
+        unknown_session = await client.post(
+            "/mcp",
+            json=tools_list,
+            headers={**HEADERS, **_SCANNER, **_OAUTH, "mcp-session-id": "f" * 32, "x-request-id": _rid(3)},
+        )
+        # No session at all: the SDK reads the body and then refuses it.
+        no_session = await client.post(
+            "/mcp", json=tools_list, headers={**HEADERS, **_SCANNER, **_OAUTH, "x-request-id": _rid(4)}
+        )
+        wrong_accept = await client.post(
+            "/mcp",
+            json=tools_list,
+            headers={**HEADERS, **_SCANNER, **session, "accept": "text/html", "x-request-id": _rid(5)},
+        )
+    statuses = [r.status_code for r in (revoked, unknown_session, no_session, wrong_accept)]
+    assert statuses == [401, 404, 400, 406]
+    counts = _counts(counter, written)
+    caller = ("app.sugra.ai", "other", "openai")
+    assert counts == {
+        ("initialize", "200", *caller, "chatgpt", "-"): 1,
+        ("unread", "401", *caller, "-", "-"): 1,
+        ("tools/list", "404", *caller, "-", "-"): 1,
+        ("tools/list", "400", *caller, "-", "-"): 1,
+        ("tools/list", "406", *caller, "-", "-"): 1,
+    }
+
+
+async def test_only_a_tracked_post_to_mcp_is_counted(written) -> None:
+    counter = demand.DemandCounter()
+
+    async def answer(request: Request) -> JSONResponse:
+        await request.body()
+        return JSONResponse({})
+
+    app = Starlette(routes=[Route("/mcp", answer, methods=["GET", "POST"]), Route("/token", answer, methods=["POST"])])
+    app.add_middleware(gate.GateMiddleware, max_body_bytes=1024, summary=gate.GateSummary(), demand_counter=counter)
+    tools_list = _message(1, "tools/list", {})
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8002") as client:
+        await client.post("/mcp", json=tools_list)
+        await client.post("/mcp", json=tools_list, headers={"x-request-id": "not-a-request-id"})
+        await client.get("/mcp", headers={"x-request-id": _rid(1)})
+        await client.post("/token", json=tools_list, headers={"x-request-id": _rid(2)})
+        await client.post("/mcp", json=[tools_list], headers={"x-request-id": _rid(3)})
+        await client.post("/mcp", json=tools_list, headers={"x-request-id": _rid(4)})
+    assert _counts(counter, written) == {
+        ("tools/list", "200", "loopback", "python", "none", "-", "-"): 1,
+    }
+
+
+async def test_a_line_holds_classes_never_header_or_client_text(written) -> None:
+    counter = demand.DemandCounter()
+
+    async def answer(request: Request) -> JSONResponse:
+        await request.body()
+        return JSONResponse({"jsonrpc": "2.0", "id": 1, "result": {"tools": [{"name": "secret_tool_name"}]}})
+
+    app = Starlette(routes=[Route("/mcp", answer, methods=["POST"])])
+    app.add_middleware(gate.GateMiddleware, max_body_bytes=4096, summary=gate.GateSummary(), demand_counter=counter)
+    secret = "user-secret-1234"
+    initialize = {
+        **INITIALIZE,
+        "params": {**INITIALIZE["params"], "clientInfo": {"name": f"tool {secret}", "version": "1"}},
+    }
+    headers = {"x-request-id": _rid(1), "host": f"{secret}.example", "user-agent": secret, "origin": f"https://{secret}"}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8002") as client:
+        await client.post("/mcp", json=initialize, headers=headers)
+        await client.post("/mcp", json=_message(2, "tools/list", {}), headers=headers)
+        await client.post(
+            "/mcp", json={**INITIALIZE, "params": {"clientInfo": {"version": "1"}}}, headers=headers
+        )
+    counts = _counts(counter, written)
+    assert counts == {
+        ("initialize", "200", "other", "other", "other", "other", "-"): 1,
+        ("initialize", "200", "other", "other", "other", "none", "-"): 1,
+        ("tools/list", "200", "other", "other", "other", "-", demand.tools_digest(["secret_tool_name"])): 1,
+    }
+    assert secret not in "\n".join(written)
+    assert "secret_tool_name" not in "\n".join(written)
+
+
+# ---- The tool list ----
+
+
+async def test_the_tools_list_answer_is_byte_identical_behind_the_gate(monkeypatch, written) -> None:
+    answers: list[bytes] = []
+    for gated in (False, True):
+        async with _served(monkeypatch, demand.DemandCounter(), gated=gated) as client:
+            session = await _open(client, 1)
+            listed = await client.post(
+                "/mcp",
+                json=_message(2, "tools/list", {}),
+                headers={**HEADERS, **_SCANNER, **session, "x-request-id": _rid(2)},
+            )
+            assert listed.status_code == 200
+            answers.append(listed.content)
+    assert answers[0] == answers[1]
+    assert b'"tools"' in answers[0]
+
+
+async def test_a_long_tools_list_answer_passes_unchanged_and_is_digested(written) -> None:
+    counter = demand.DemandCounter()
+    names = [f"tool_{n:03d}" for n in range(40)]
+    listed_tools = ",".join(
+        f'{{"name":"{name}","description":"{"d" * 5000}","inputSchema":{{"type":"object"}}}}' for name in names
+    )
+    whole = f'{{"jsonrpc":"2.0","id":1,"result":{{"tools":[{listed_tools}]}}}}'.encode()
+    # Well past the 64 KiB read for an error answer, in many chunks.
+    assert len(whole) > 3 * gate._ANSWER_SCAN_BYTES
+    chunks = [whole[start : start + 7000] for start in range(0, len(whole), 7000)]
+
+    async def answer(request: Request) -> Response:
+        await request.body()
+
+        async def stream() -> AsyncIterator[bytes]:
+            for chunk in chunks:
+                yield chunk
+
+        return StreamingResponse(stream(), media_type="application/json")
+
+    app = Starlette(routes=[Route("/mcp", answer, methods=["POST"])])
+    app.add_middleware(gate.GateMiddleware, max_body_bytes=4096, summary=gate.GateSummary(), demand_counter=counter)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8002") as client:
+        listed = await client.post("/mcp", json=_message(1, "tools/list", {}), headers={"x-request-id": _rid(1)})
+    assert listed.content == whole
+    assert _counts(counter, written) == {
+        ("tools/list", "200", "loopback", "python", "none", "-", demand.tools_digest(names)): 1,
+    }
+
+
+async def test_the_digest_is_stable() -> None:
+    names = await _listed_names()
+    assert demand.tools_digest(names) == demand.tools_digest(reversed(names))
+    assert re.fullmatch(r"[0-9a-f]{8}", demand.tools_digest(names))
+    # sha256 of "a\nb", pinned: the digest is a published dimension.
+    assert demand.tools_digest(["b", "a"]) == "7e18f737"
+    assert demand.tools_digest(["a"]) != demand.tools_digest(["a", "b"])
+
+
+def test_the_digest_is_read_from_plain_json_and_sse_answers() -> None:
+    body = '{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"b"},{"name":"a"},{"title":"x"}]}}'
+    expected = demand.tools_digest(["a", "b"])
+    assert gate._listed_tools_digest(body.encode()) == expected
+    assert gate._listed_tools_digest(f"event: message\r\ndata: {body}\r\n\r\n".encode()) == expected
+    assert gate._listed_tools_digest(b'{"jsonrpc":"2.0","id":1,"error":{"code":-1}}') == "-"
+    assert gate._listed_tools_digest(b'{"truncated') == "-"
+
+
+# ---- The record ----
+
+
+def test_each_write_carries_the_counts_since_the_last_one(written) -> None:
+    counter = demand.DemandCounter()
+    key = ("tools/list", "200", "app.sugra.ai", "other", "openai", "-", "0badc0de")
+    counter.add(key)
+    counter.add(key)
+    assert _counts(counter, written) == {key: 2}
+    assert _counts(counter, written) == {}
+    assert written == []
+    counter.add(key)
+    assert _counts(counter, written) == {key: 1}
+
+
+def test_a_record_holds_at_most_max_lines_largest_first(monkeypatch, written) -> None:
+    monkeypatch.setattr(demand, "MAX_LINES", 2)
+    counter = demand.DemandCounter()
+    keys = [("tools/list", str(status), "none", "other", "none", "-", "-") for status in (400, 401, 404)]
+    for times, key in zip((3, 1, 2), keys, strict=True):
+        for _ in range(times):
+            counter.add(key)
+    written.clear()
+    counter.write()
+    header, *lines = written[0].split("\n")
+    assert _HEADER.fullmatch(header)["omitted"] == "1"
+    assert _HEADER.fullmatch(header)["requests"] == "6"
+    assert lines == [" ".join((*keys[0], "3")), " ".join((*keys[2], "2"))]
+
+
+@pytest.mark.parametrize("side", ["unknown", "app-vm"])
+def test_the_header_names_the_side(monkeypatch, written, side: str) -> None:
+    monkeypatch.setattr(observability, "process_side", lambda: side)
+    counter = demand.DemandCounter()
+    counter.add(("initialize", "200", "none", "other", "none", "none", "-"))
+    written.clear()
+    counter.write()
+    assert _HEADER.fullmatch(written[0].split("\n")[0])["side"] == side
+
+
+def test_the_demand_logger_writes_info_on_its_own() -> None:
+    assert demand.logger.name == "sugra_mcp.demand"
+    assert demand.logger.level == logging.INFO
+
+
+@pytest.mark.parametrize(
+    ("status", "text"),
+    [(200, "200"), (404, "404"), (None, "none"), (True, "none"), (99, "none"), ("200", "none")],
+)
+def test_the_status_is_digits_or_none(status: object, text: str) -> None:
+    assert demand.status_of(status) == text
+
+
+# ---- When it is written ----
+
+
+@contextlib.asynccontextmanager
+async def _inner(app: object) -> AsyncIterator[None]:
+    yield None
+
+
+@pytest.fixture
+def flushes(monkeypatch) -> list[float]:
+    calls: list[float] = []
+    monkeypatch.setattr(observability, "flush_telemetry", lambda timeout_s: calls.append(timeout_s) or True)
+    return calls
+
+
+async def test_the_counts_are_written_every_interval_and_once_more_on_exit(written, flushes) -> None:
+    counter = demand.DemandCounter()
+    key = ("tools/list", "200", "none", "other", "none", "-", "-")
+    periodic = gate.wrap_lifespan(
+        _inner, gate.GateSummary(), interval=0.02, drain_seconds=0, flush_timeout=1, demand_counter=counter
+    )
+    async with periodic(object()):
+        counter.add(key)
+        deadline = time.monotonic() + 5
+        while not written and time.monotonic() < deadline:
+            await asyncio.sleep(0.01)
+        assert written == [f"sdemand1 side={observability.process_side()} requests=1 lines=1 omitted=0\n"
+                           f"{' '.join(key)} 1"]
+    written.clear()
+    on_exit_only = gate.wrap_lifespan(
+        _inner, gate.GateSummary(), interval=3600, drain_seconds=0, flush_timeout=1, demand_counter=counter
+    )
+    async with on_exit_only(object()):
+        counter.add(key)
+        counter.add(key)
+        assert written == []
+    assert written[0].split("\n")[1:] == [f"{' '.join(key)} 2"]
+    assert flushes == [1, 1]
+
+
+async def test_the_last_count_follows_the_last_summary_and_precedes_the_exit_work(monkeypatch, flushes) -> None:
+    events: list[str] = []
+    summary = gate.GateSummary()
+    counter = demand.DemandCounter()
+    monkeypatch.setattr(summary, "write", lambda: events.append("summary"))
+    monkeypatch.setattr(counter, "write", lambda: events.append("demand"))
+
+    async def closing() -> None:
+        events.append("close")
+
+    lifespan = gate.wrap_lifespan(
+        _inner, summary, interval=3600, drain_seconds=0, flush_timeout=1, on_exit=(closing,), demand_counter=counter
+    )
+    async with lifespan(object()):
+        events.append("serving")
+    assert events == ["serving", "summary", "demand", "close"]
+    assert flushes == [1]
+
+
+async def test_a_failed_count_is_logged_and_the_summary_still_runs(monkeypatch, caplog, flushes) -> None:
+    summary = gate.GateSummary()
+    counter = demand.DemandCounter()
+    summaries: list[int] = []
+    monkeypatch.setattr(summary, "write", lambda: summaries.append(1))
+
+    def fail() -> None:
+        raise OSError("handler failed for user@example.com")
+
+    monkeypatch.setattr(counter, "write", fail)
+    lifespan = gate.wrap_lifespan(
+        _inner, summary, interval=0.02, drain_seconds=0, flush_timeout=1, demand_counter=counter
+    )
+    async with lifespan(object()):
+        deadline = time.monotonic() + 5
+        while len(summaries) < 2 and time.monotonic() < deadline:
+            await asyncio.sleep(0.01)
+    assert len(summaries) >= 3
+    assert "Demand count failed (OSError)." in caplog.messages
+    assert "user@example.com" not in caplog.text
+    assert flushes == [1]
+
+
+async def test_a_failing_count_never_fails_the_request(monkeypatch, caplog) -> None:
+    counter = demand.DemandCounter()
+
+    def fail(key: demand.Key) -> None:
+        raise RuntimeError("count failed")
+
+    monkeypatch.setattr(counter, "add", fail)
+
+    async def answer(request: Request) -> JSONResponse:
+        await request.body()
+        return JSONResponse({"ok": True})
+
+    app = Starlette(routes=[Route("/mcp", answer, methods=["POST"])])
+    app.add_middleware(gate.GateMiddleware, max_body_bytes=1024, summary=gate.GateSummary(), demand_counter=counter)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8002") as client:
+        answered = await client.post("/mcp", json=_message(1, "tools/list", {}), headers={"x-request-id": _rid(1)})
+    assert answered.status_code == 200
+    assert answered.json() == {"ok": True}
+    assert "Demand count failed (RuntimeError)." in caplog.messages
+
+
+def test_the_hosted_server_counts_through_the_gate_defaults(monkeypatch) -> None:
+    """The entry point passes no counter: the middleware and the lifespan share the default one."""
+    middleware = gate.GateMiddleware(lambda scope, receive, send: None, max_body_bytes=1)
+    assert middleware.demand is demand.default_counter

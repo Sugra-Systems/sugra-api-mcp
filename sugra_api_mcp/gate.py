@@ -30,6 +30,9 @@ malformed before any tool saw it, which reads 0 0.
 
 A line holds the request id, a class and two integers. Never a tool name, an
 argument, a header or a payload.
+
+The same requests feed the demand count (demand.py), written beside each
+summary on its own logger.
 """
 
 from __future__ import annotations
@@ -48,7 +51,7 @@ from typing import Any
 from mcp.types import CallToolResult
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from . import observability
+from . import demand, observability
 
 logger = logging.getLogger("sugra_mcp.gate")
 # Set here, not inherited: on the hosted server the Azure Monitor handler is
@@ -79,6 +82,10 @@ AUTH_REFUSED = "auth_refused"
 # The most of an answer that is read for a JSON-RPC error; an error answer is
 # far shorter.
 _ANSWER_SCAN_BYTES = 64 * 1024
+# The most of a tools/list answer that is read for its tool names (the demand
+# count's digest); the served list is far shorter.
+_TOOLS_LIST_SCAN_BYTES = 1024 * 1024
+_MCP_PATH = "/mcp"
 _SSE_LINE_BREAK = re.compile(r"\r\n|\r|\n")
 
 
@@ -242,11 +249,14 @@ def _first_header(scope: Scope, name: bytes) -> str | None:
     return None
 
 
-def _carries_tool_call(body: bytes) -> bool:
+def _parsed(body: bytes) -> object:
     try:
-        message = json.loads(body)
+        return json.loads(body)
     except (ValueError, RecursionError):
-        return False
+        return None
+
+
+def _is_tool_call(message: object) -> bool:
     return isinstance(message, dict) and message.get("method") == "tools/call"
 
 
@@ -281,6 +291,24 @@ def _answers_with_error(body: bytes) -> bool:
     return False
 
 
+def _listed_tools_digest(body: bytes) -> str:
+    """demand.tools_digest of the tools a tools/list answer, plain JSON or SSE, listed; - without one."""
+    text = body.decode("utf-8", errors="replace")
+    candidates = [text] if text.lstrip().startswith("{") else _sse_data(text)
+    for candidate in candidates:
+        try:
+            message = json.loads(candidate)
+        except (ValueError, RecursionError):
+            continue
+        result = message.get("result") if isinstance(message, dict) else None
+        tools = result.get("tools") if isinstance(result, dict) else None
+        if isinstance(tools, list):
+            return demand.tools_digest(
+                tool["name"] for tool in tools if isinstance(tool, dict) and type(tool.get("name")) is str
+            )
+    return demand.NOT_APPLICABLE
+
+
 class GateMiddleware:
     """ASGI middleware that gives each tracked POST a gate record and its summary line.
 
@@ -288,17 +316,24 @@ class GateMiddleware:
     request id (observability.request_id_of); every other request passes
     through untouched. The request body, up to max_body_bytes (the server's
     own body limit, so nothing larger is ever answered with a 2xx), is read as
-    it streams past to learn whether it carries a tools/call. Added after
-    every other middleware, so it is the outermost layer and sees the status
-    the client was sent.
+    it streams past to learn whether it carries a tools/call, and a tracked
+    POST to /mcp is counted in the demand count whatever its status. Added
+    after every other middleware, so it is the outermost layer and sees the
+    status the client was sent.
     """
 
     def __init__(
-        self, app: ASGIApp, *, max_body_bytes: int, summary: GateSummary | None = None
+        self,
+        app: ASGIApp,
+        *,
+        max_body_bytes: int,
+        summary: GateSummary | None = None,
+        demand_counter: demand.DemandCounter | None = None,
     ) -> None:
         self.app = app
         self.max_body_bytes = max_body_bytes
         self.summary = summary if summary is not None else default_summary
+        self.demand = demand_counter if demand_counter is not None else demand.default_counter
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or scope.get("method") != "POST":
@@ -316,9 +351,13 @@ class GateMiddleware:
         body_too_large = False
         status: int | None = None
         answer = bytearray()
+        answer_limit = _ANSWER_SCAN_BYTES
+        counted = scope.get("path", "").rstrip("/") == _MCP_PATH
+        demand_method: str | None = None
+        demand_client = demand.NOT_APPLICABLE
 
         async def gate_receive() -> Message:
-            nonlocal body_read, body_too_large
+            nonlocal body_read, body_too_large, answer_limit, demand_method, demand_client
             message = await receive()
             if message["type"] == "http.request" and not body_read:
                 chunk = message.get("body", b"")
@@ -330,7 +369,12 @@ class GateMiddleware:
                 if not message.get("more_body", False):
                     body_read = True
                     if not body_too_large:
-                        record.carries_tool_call = _carries_tool_call(bytes(body))
+                        request_message = _parsed(bytes(body))
+                        record.carries_tool_call = _is_tool_call(request_message)
+                        if counted:
+                            demand_method, demand_client = demand.request_facts(request_message)
+                            if demand_method == demand.TOOLS_LIST:
+                                answer_limit = _TOOLS_LIST_SCAN_BYTES
                     body.clear()
             return message
 
@@ -341,9 +385,9 @@ class GateMiddleware:
             elif (
                 message["type"] == "http.response.body"
                 and not record.is_tool_call()
-                and len(answer) < _ANSWER_SCAN_BYTES
+                and len(answer) < answer_limit
             ):
-                answer.extend(message.get("body", b"")[: _ANSWER_SCAN_BYTES - len(answer)])
+                answer.extend(message.get("body", b"")[: answer_limit - len(answer)])
             await send(message)
 
         self.summary.open_requests += 1
@@ -361,15 +405,42 @@ class GateMiddleware:
                     self.summary.add(line)
                 except Exception as e:
                     logger.warning("Gate line failed (%s).", type(e).__name__)
+            # A body never read means an answer before it: its method is unknown.
+            method = demand_method if body_read else demand.UNREAD
+            if counted and method is not None:
+                try:
+                    self.demand.add(self._demand_key(scope, method, demand_client, status, answer))
+                except Exception as e:
+                    demand.logger.warning("Demand count failed (%s).", type(e).__name__)
+
+    @staticmethod
+    def _demand_key(
+        scope: Scope, method: str, client: str, status: int | None, answer: bytearray
+    ) -> demand.Key:
+        host, ua, origin = demand.caller_classes(
+            _first_header(scope, b"host"),
+            _first_header(scope, b"user-agent"),
+            _first_header(scope, b"origin"),
+        )
+        answered = isinstance(status, int) and 200 <= status < 300
+        tools = (
+            _listed_tools_digest(bytes(answer))
+            if method == demand.TOOLS_LIST and answered
+            else demand.NOT_APPLICABLE
+        )
+        return (method, demand.status_of(status), host, ua, origin, client, tools)
 
 
-async def _write_every(summary: GateSummary, interval: float) -> None:
+async def _write_every(
+    summary: GateSummary, interval: float, demand_counter: demand.DemandCounter
+) -> None:
     while True:
         await asyncio.sleep(interval)
         try:
             summary.write()
         except Exception as e:
             logger.warning("Gate summary failed (%s).", type(e).__name__)
+        demand.write_logged(demand_counter)
 
 
 async def _drain(summary: GateSummary, seconds: float) -> None:
@@ -386,12 +457,14 @@ def wrap_lifespan(
     drain_seconds: float = DRAIN_SECONDS,
     flush_timeout: float = FLUSH_TIMEOUT_SECONDS,
     on_exit: Iterable[Callable[[], Awaitable[None]]] = (),
+    demand_counter: demand.DemandCounter | None = None,
 ) -> Callable[[Any], contextlib.AbstractAsyncContextManager[Any]]:
     """The app lifespan inner, plus the summaries and the exit work around it.
 
-    While the app runs, a summary is written every interval seconds. On the
-    way out, after inner has exited, it waits up to drain_seconds for tracked
-    requests still finishing, writes the last summary, awaits each on_exit
+    While the app runs, a summary and the demand count are written every
+    interval seconds. On the way out, after inner has exited, it waits up to
+    drain_seconds for tracked requests still finishing, writes the last
+    summary and the last demand count, awaits each on_exit
     callable in order (anything else that must close before the process
     does; a failure is logged by its class and the rest still run), and then
     flushes buffered telemetry for at most flush_timeout seconds
@@ -402,11 +475,12 @@ def wrap_lifespan(
     only on a forced exit (a second SIGINT).
     """
     gate_summary = summary if summary is not None else default_summary
+    counter = demand_counter if demand_counter is not None else demand.default_counter
     closers = tuple(on_exit)
 
     @contextlib.asynccontextmanager
     async def lifespan(app: Any) -> AsyncIterator[Any]:
-        writer = asyncio.create_task(_write_every(gate_summary, interval))
+        writer = asyncio.create_task(_write_every(gate_summary, interval, counter))
         try:
             async with inner(app) as state:
                 yield state
@@ -419,6 +493,7 @@ def wrap_lifespan(
                 gate_summary.write()
             except Exception as e:
                 logger.warning("Gate summary failed (%s).", type(e).__name__)
+            demand.write_logged(counter)
             for close in closers:
                 try:
                     await close()
