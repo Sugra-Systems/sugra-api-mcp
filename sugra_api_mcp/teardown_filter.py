@@ -11,9 +11,12 @@ mcp.server.streamable_http, at one of three sites:
 
 The answer has already gone to the client and nothing is lost, but the Azure
 Monitor exporter turns each such record into a server exception. This module
-drops exactly those records and counts them instead. It is fail-open: a record
-is dropped only when every condition below holds, and anything that cannot be
-read, or any error in the filter itself, lets the record through unchanged.
+drops the records that meet every condition below and counts them instead;
+every other record is kept unchanged. It is fail-open: a record whose
+exception chains to anything outside its own tree, a walk that hits a cap
+(MAX_LEAVES, MAX_GROUP_DEPTH, or MAX_FRAMES before any transport was seen),
+anything that cannot be read, and any error in the filter itself all keep the
+record.
 
     - the record is ERROR, from mcp.server.streamable_http;
     - its message is one of the three above, matched as text, with no args;
@@ -44,7 +47,8 @@ are any:
 site is post, sse or get; leaf is closed, or broken when any leaf was a
 BrokenResourceError. At most MAX_LINES lines are written, the largest counts
 first; omitted is the sum of the counts left out. A line holds fixed classes
-and a count, never a header value, an id or exception text.
+and a count, never a header value, an id or exception text: a class outside
+the reducers' known labels is written as other.
 
 Installed by the HTTP entry point only; the stdio server never loads it. Once
 /mcp runs without sessions this whole class of record is gone, and so should
@@ -138,12 +142,14 @@ def _tracebacks(exc: BaseException) -> Iterator[TracebackType]:
             pending.extend(current.exceptions)
 
 
-def _frames(exc: BaseException) -> Iterator[FrameType]:
+def _frames(exc: BaseException) -> Iterator[FrameType | None]:
+    """The traceback frames, at most MAX_FRAMES of them, then None once if any were left unread."""
     seen = 0
     for tb in _tracebacks(exc):
         current: TracebackType | None = tb
         while current is not None:
             if seen >= MAX_FRAMES:
+                yield None
                 return
             seen += 1
             yield current.tb_frame
@@ -152,11 +158,17 @@ def _frames(exc: BaseException) -> Iterator[FrameType]:
 
 def _transport_and_request(
     exc: BaseException,
-) -> tuple[StreamableHTTPServerTransport | None, Request | None]:
-    """The first SDK transport (a frame's self) and Starlette request in the traceback frames."""
+) -> tuple[StreamableHTTPServerTransport | None, Request | None, bool]:
+    """The first SDK transport (a frame's self) and Starlette request in the traceback frames.
+
+    The third value is True when the walk reached MAX_FRAMES with frames left
+    unread, so an absent transport may only be one that was not read.
+    """
     transport: StreamableHTTPServerTransport | None = None
     request: Request | None = None
     for frame in _frames(exc):
+        if frame is None:
+            return transport, request, True
         local_vars = frame.f_locals
         if transport is None:
             candidate = local_vars.get("self")
@@ -168,16 +180,25 @@ def _transport_and_request(
                 request = found
         if transport is not None and request is not None:
             break
-    return transport, request
+    return transport, request, False
 
 
-def _label(value: object) -> str:
-    """A class as a count key part: the class itself when it is text, else none.
+# Every label the reducers can return; any other value is written as other.
+_HOST_LABELS = frozenset({*observability._CALLER_HOSTS, "loopback", "other"})
+_UA_LABELS = frozenset({*(label for label, _ in observability._UA_PATTERNS), "other"})
+_ORIGIN_LABELS = frozenset({*observability._ORIGIN_CLASSES.values(), "none", "other"})
+
+
+def _label(value: object, known: frozenset[str]) -> str:
+    """A class as a count key part: none without one, the class when it is a known label, else other.
 
     A key part that is not a string would break the sort and the join of the
-    next write, so nothing else ever reaches the counter.
+    next write, and a string that is not a known label could be header text,
+    so neither ever reaches the counter.
     """
-    return value if type(value) is str and value else "none"
+    if value is None or value == "":
+        return "none"
+    return value if type(value) is str and value in known else "other"
 
 
 def _request_classes(request: Request | None) -> tuple[str, str, str]:
@@ -185,9 +206,11 @@ def _request_classes(request: Request | None) -> tuple[str, str, str]:
     if request is None:
         return _UNKNOWN, _UNKNOWN, _UNKNOWN
     headers = request.headers
-    host = _label(observability._host_class(headers.get("host")))
-    ua = _label(observability._text_class(headers.get("user-agent"), observability._UA_PATTERNS))
-    origin = _label(observability._origin_class(headers.get("origin")))
+    host = _label(observability._host_class(headers.get("host")), _HOST_LABELS)
+    ua = _label(
+        observability._text_class(headers.get("user-agent"), observability._UA_PATTERNS), _UA_LABELS
+    )
+    origin = _label(observability._origin_class(headers.get("origin")), _ORIGIN_LABELS)
     return host, ua, origin
 
 
@@ -207,7 +230,9 @@ def race_key(record: logging.LogRecord) -> Key | None:
     for leaf in leaves:
         if not isinstance(leaf, (anyio.ClosedResourceError, anyio.BrokenResourceError)):
             return None
-    transport, request = _transport_and_request(exc)
+    transport, request, truncated = _transport_and_request(exc)
+    if transport is None and truncated:
+        return None
     terminated = transport.is_terminated is True if transport is not None else None
     if terminated is False:
         return None
@@ -224,23 +249,35 @@ class RaceCounter:
     def __init__(self) -> None:
         self._counts: dict[Key, int] = {}
         self._lock = threading.Lock()
+        # One write at a time, so two writers never log the same counts.
+        self._write_lock = threading.Lock()
 
     def add(self, key: Key) -> None:
         with self._lock:
             self._counts[key] = self._counts.get(key, 0) + 1
 
     def write(self) -> None:
-        """Log the counts since the last write, if there are any, and start again from zero.
+        """Log the counts since the last write, if there are any, and take them off.
 
-        The text is made before the counts are reset, so a write that fails
-        keeps them for the next one.
+        The counts written are taken off only after the record was logged, so
+        a write that fails, in the text or in a handler, keeps them for the
+        next one. The counter lock is not held while the record is logged:
+        drops counted meanwhile, even by a handler, stay for the next write.
         """
-        with self._lock:
-            if not self._counts:
-                return
-            text = _count_text(self._counts)
-            self._counts = {}
-        logger.info("%s", text)
+        with self._write_lock:
+            with self._lock:
+                if not self._counts:
+                    return
+                written = dict(self._counts)
+            text = _count_text(written)
+            logger.info("%s", text)
+            with self._lock:
+                for key, count in written.items():
+                    left = self._counts.get(key, 0) - count
+                    if left > 0:
+                        self._counts[key] = left
+                    else:
+                        self._counts.pop(key, None)
 
 
 def _count_text(counts: dict[Key, int]) -> str:
@@ -315,6 +352,11 @@ def uninstall() -> None:
                 sdk_logger.removeFilter(candidate)
 
 
+def _installed_counter() -> RaceCounter:
+    race_filter = installed_filter()
+    return race_filter.counter if race_filter is not None else default_counter
+
+
 def _write_logged(counter: RaceCounter) -> None:
     try:
         counter.write()
@@ -338,12 +380,13 @@ def wrap_lifespan(
 
     The last write runs after inner has exited, so the races of the sessions
     ended at shutdown are in it; wrapped by gate.wrap_lifespan, it runs before
-    the telemetry flush.
+    the telemetry flush. Without a counter it writes the installed filter's
+    counter, read when the lifespan starts, else default_counter.
     """
-    race_counter = counter if counter is not None else default_counter
 
     @contextlib.asynccontextmanager
     async def race_lifespan(app: Any) -> AsyncIterator[Any]:
+        race_counter = counter if counter is not None else _installed_counter()
         writer = asyncio.create_task(_write_every(race_counter, interval))
         try:
             async with inner(app) as state:

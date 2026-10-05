@@ -423,6 +423,64 @@ async def test_a_group_whose_context_is_its_own_leaf_is_dropped() -> None:
     assert _passes(_record(SSE_MSG, _raised_in_handler(chained, _transport(True))))
 
 
+def _raised_below(depth: int, exc: BaseException, transport: object = None) -> ExcInfo:
+    """exc raised depth calls below its handler, in a frame whose self is transport.
+
+    The traceback holds depth + 3 frames: the handler, depth + 1 calls of
+    down, then bottom.
+    """
+
+    def bottom(self: object) -> None:
+        raise exc
+
+    def down(n: int) -> None:
+        if n == 0:
+            bottom(transport)
+        else:
+            down(n - 1)
+
+    try:
+        down(depth)
+    except BaseException:
+        info = sys.exc_info()
+        assert info[0] is not None and info[1] is not None and info[2] is not None
+        return info  # type: ignore[return-value]
+    raise AssertionError("nothing was raised")
+
+
+def test_a_live_transport_below_the_frame_cap_keeps_the_record() -> None:
+    deep = teardown_filter.MAX_FRAMES + 5
+    # Within the cap the frame's transport is found and decides.
+    assert not _passes(_record(POST_MSG, _raised_below(10, anyio.ClosedResourceError(), _transport(True))))
+    assert _passes(_record(POST_MSG, _raised_below(10, anyio.ClosedResourceError(), _transport(False))))
+    # Below the cap it is never read: the record is kept, whatever the transport says.
+    assert _passes(_record(POST_MSG, _raised_below(deep, anyio.ClosedResourceError(), _transport(False))))
+    assert _passes(_record(POST_MSG, _raised_below(deep, anyio.ClosedResourceError(), _transport(True))))
+    assert _passes(_record(POST_MSG, _raised_below(deep, anyio.ClosedResourceError())))
+
+
+def test_a_walk_that_reads_every_frame_up_to_the_cap_is_not_truncated() -> None:
+    cap = teardown_filter.MAX_FRAMES
+    counter = teardown_filter.RaceCounter()
+    exactly = _raised_below(cap - 3, anyio.ClosedResourceError())
+    assert len(list(teardown_filter._frames(exactly[1]))) == cap
+    assert not _passes(_record(POST_MSG, exactly), counter)
+    assert counter._counts == {("post", "closed", "unknown", "unknown", "unknown"): 1}
+    one_more = _raised_below(cap - 2, anyio.ClosedResourceError())
+    assert list(teardown_filter._frames(one_more[1]))[-1] is None
+    assert _passes(_record(POST_MSG, one_more), counter)
+
+
+def test_a_class_outside_the_known_labels_is_counted_as_other(monkeypatch) -> None:
+    leak = "Bearer sk-not-a-class"
+    monkeypatch.setattr(observability, "_host_class", lambda value: leak)
+    monkeypatch.setattr(observability, "_text_class", lambda value, patterns: leak)
+    monkeypatch.setattr(observability, "_origin_class", lambda value: leak)
+    counter = teardown_filter.RaceCounter()
+    assert not _passes(_record(POST_MSG, _raised_in_handler(anyio.ClosedResourceError(), _transport(True), _request())), counter)
+    assert counter._counts == {("post", "closed", "other", "other", "other"): 1}
+
+
 def test_a_request_without_user_agent_or_origin_is_counted() -> None:
     bare = Request({"type": "http", "method": "POST", "path": "/mcp", "headers": [(b"host", b"app.sugra.ai")]})
     counter = teardown_filter.RaceCounter()
@@ -535,6 +593,84 @@ def test_a_write_that_fails_keeps_the_counts_for_the_next_one(caplog, monkeypatc
     [message] = _count_records(caplog)
     assert message.splitlines()[1:] == ["post closed none other none 2"]
     assert counter._counts == {}
+
+
+class _OnEmit(logging.Handler):
+    """A handler on the count logger that runs action for each record it is given."""
+
+    def __init__(self, action: Callable[[], None]) -> None:
+        super().__init__(level=logging.DEBUG)
+        self.action = action
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.action()
+
+
+@contextlib.contextmanager
+def _count_handler(action: Callable[[], None]) -> Iterator[None]:
+    count_logger = logging.getLogger(teardown_filter.COUNTER_LOGGER)
+    handler = _OnEmit(action)
+    count_logger.addHandler(handler)
+    try:
+        yield
+    finally:
+        count_logger.removeHandler(handler)
+
+
+def test_a_handler_that_raises_keeps_the_counts_for_the_next_write(caplog) -> None:
+    caplog.set_level(logging.INFO, logger=teardown_filter.COUNTER_LOGGER)
+    counter = teardown_filter.RaceCounter()
+    key = ("post", "closed", "none", "other", "none")
+    counter.add(key)
+    counter.add(key)
+
+    def fail() -> None:
+        raise RuntimeError("handler")
+
+    with _count_handler(fail), pytest.raises(RuntimeError):
+        counter.write()
+    assert counter._counts == {key: 2}
+    caplog.clear()
+    counter.write()
+    [message] = _count_records(caplog)
+    assert message.splitlines()[1:] == ["post closed none other none 2"]
+    assert counter._counts == {}
+
+
+def test_drops_counted_while_a_write_is_logged_stay_for_the_next(caplog) -> None:
+    caplog.set_level(logging.INFO, logger=teardown_filter.COUNTER_LOGGER)
+    counter = teardown_filter.RaceCounter()
+    written = ("post", "closed", "none", "other", "none")
+    other = ("get", "closed", "unknown", "unknown", "unknown")
+    counter.add(written)
+
+    def count_meanwhile() -> None:
+        counter.add(written)
+        counter.add(other)
+
+    with _count_handler(count_meanwhile):
+        counter.write()
+    assert counter._counts == {written: 1, other: 1}
+    [message] = _count_records(caplog)
+    assert message.splitlines()[1:] == ["post closed none other none 1"]
+
+
+async def test_the_lifespan_writes_the_installed_filters_counter(caplog) -> None:
+    caplog.set_level(logging.INFO, logger=teardown_filter.COUNTER_LOGGER)
+    custom = teardown_filter.RaceCounter()
+    teardown_filter.install(custom)
+
+    @contextlib.asynccontextmanager
+    async def inner(app: object) -> AsyncIterator[None]:
+        yield
+
+    lifespan = teardown_filter.wrap_lifespan(inner, interval=3600)
+    custom.add(("post", "closed", "none", "other", "none"))
+    async with lifespan(object()):
+        pass
+    [message] = _count_records(caplog)
+    assert message.splitlines()[1:] == ["post closed none other none 1"]
+    assert custom._counts == {}
 
 
 async def test_the_lifespan_writes_every_interval_and_once_more_on_exit(monkeypatch) -> None:

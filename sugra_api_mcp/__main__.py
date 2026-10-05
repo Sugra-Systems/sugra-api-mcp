@@ -150,8 +150,10 @@ def _run_server(args: argparse.Namespace) -> None:
         # The summaries and the exit work run around the app's own lifespan,
         # which runs the MCP session manager. The exit work closes every Sugra
         # API client and the authenticator's connection pool after the last
-        # summary, before the telemetry flush. The race counts are written
-        # inside them, after the session manager has stopped.
+        # summary, before the telemetry flush. The race counts are written by
+        # the teardown_filter lifespan wrapper, which sits inside them: its
+        # last write runs after the session manager has stopped and before
+        # the exit work and the telemetry flush.
         app.router.lifespan_context = gate.wrap_lifespan(
             teardown_filter.wrap_lifespan(app.router.lifespan_context),
             on_exit=(close_clients, auth.aclose),
