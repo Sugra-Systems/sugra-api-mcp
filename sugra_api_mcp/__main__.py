@@ -91,11 +91,16 @@ def _run_server(args: argparse.Namespace) -> None:
         import uvicorn
         from starlette.middleware.cors import CORSMiddleware
 
-        from . import gate
+        from . import gate, teardown_filter
         from .auth import Authenticator, AuthMiddleware
         from .config import load_allowed_origins, load_auth_config
         from .server import close_clients
         from .tools.agent import register_agent_tools
+
+        # The SDK transport's session teardown races are counted, not logged
+        # as server errors (teardown_filter). HTTP only: stdio has no sessions
+        # to end.
+        teardown_filter.install()
 
         # Hosted-only Agent Context Layer tools: registered from the HTTP
         # branch ONLY (a stdio process never gets them even with the env var
@@ -145,9 +150,11 @@ def _run_server(args: argparse.Namespace) -> None:
         # The summaries and the exit work run around the app's own lifespan,
         # which runs the MCP session manager. The exit work closes every Sugra
         # API client and the authenticator's connection pool after the last
-        # summary, before the telemetry flush.
+        # summary, before the telemetry flush. The race counts are written
+        # inside them, after the session manager has stopped.
         app.router.lifespan_context = gate.wrap_lifespan(
-            app.router.lifespan_context, on_exit=(close_clients, auth.aclose)
+            teardown_filter.wrap_lifespan(app.router.lifespan_context),
+            on_exit=(close_clients, auth.aclose),
         )
         uvicorn.run(app, **uvicorn_settings(args.host, args.port))
 
