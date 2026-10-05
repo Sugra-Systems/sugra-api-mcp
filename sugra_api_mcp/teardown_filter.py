@@ -14,9 +14,8 @@ Monitor exporter turns each such record into a server exception. This module
 drops the records that meet every condition below and counts them instead;
 every other record is kept unchanged. It is fail-open: a record whose
 exception chains to anything outside its own tree, a walk that hits a cap
-(MAX_LEAVES, MAX_GROUP_DEPTH, or MAX_FRAMES before any transport was seen),
-anything that cannot be read, and any error in the filter itself all keep the
-record.
+(MAX_LEAVES, MAX_GROUP_DEPTH or MAX_FRAMES), anything that cannot be read,
+and any error in the filter itself all keep the record.
 
     - the record is ERROR, from mcp.server.streamable_http;
     - its message is one of the three above, matched as text, with no args;
@@ -25,14 +24,16 @@ record.
       BrokenResourceError, and no exception in the tree - a leaf, a group
       or the record's own exception - carries a cause or a context that
       is not itself in the tree;
-    - when a transport is visible in the traceback frames, it reports
-      is_terminated, and a BrokenResourceError leaf needs that transport.
+    - every traceback frame was read (at most MAX_FRAMES), every transport
+      visible in them reports is_terminated, and a BrokenResourceError leaf
+      needs at least one such transport.
 
 A ClosedResourceError means the session's own stream was closed, which at
 these sites only teardown does, so it is dropped even when no transport is
 visible. A BrokenResourceError means the other end was closed, which can also
 happen before the session is ended, so it is dropped only on a transport that
-says it was ended. A visible transport that was not ended keeps every record.
+says it was ended. Any visible transport that was not ended keeps the record,
+whatever the other transports say.
 
 Each drop is counted by site, leaf, and the host, User-Agent and Origin
 classes of the request found in the same frames (observability's reducers;
@@ -82,7 +83,9 @@ RACE_MESSAGES: dict[str, str] = {
 }
 
 FLUSH_INTERVAL_SECONDS = 60.0
-# A count record stays far inside App Insights' 32,768 characters.
+# At most this many count lines in one record: a bound on lines, not on
+# characters. Every key part is a known label (_label), so a line is short and
+# a test pins the longest possible record under App Insights' 32,768.
 MAX_LINES = 400
 # How much of an exception is read before the record is let through unread.
 MAX_LEAVES = 32
@@ -156,31 +159,31 @@ def _frames(exc: BaseException) -> Iterator[FrameType | None]:
             current = current.tb_next
 
 
-def _transport_and_request(
+def _transports_and_request(
     exc: BaseException,
-) -> tuple[StreamableHTTPServerTransport | None, Request | None, bool]:
-    """The first SDK transport (a frame's self) and Starlette request in the traceback frames.
+) -> tuple[list[StreamableHTTPServerTransport], Request | None, bool]:
+    """Every SDK transport (a frame's self) and the first Starlette request in the traceback frames.
 
-    The third value is True when the walk reached MAX_FRAMES with frames left
-    unread, so an absent transport may only be one that was not read.
+    Every frame is read, up to MAX_FRAMES, so a transport in a later frame is
+    never missed. The third value is True when frames were left unread: the
+    transports found are then not known to be all of them.
     """
-    transport: StreamableHTTPServerTransport | None = None
+    transports: list[StreamableHTTPServerTransport] = []
     request: Request | None = None
     for frame in _frames(exc):
         if frame is None:
-            return transport, request, True
+            return transports, request, True
         local_vars = frame.f_locals
-        if transport is None:
-            candidate = local_vars.get("self")
-            if isinstance(candidate, StreamableHTTPServerTransport):
-                transport = candidate
+        candidate = local_vars.get("self")
+        if isinstance(candidate, StreamableHTTPServerTransport) and all(
+            candidate is not seen for seen in transports
+        ):
+            transports.append(candidate)
         if request is None:
             found = local_vars.get("request")
             if isinstance(found, Request):
                 request = found
-        if transport is not None and request is not None:
-            break
-    return transport, request, False
+    return transports, request, False
 
 
 # Every label the reducers can return; any other value is written as other.
@@ -230,14 +233,14 @@ def race_key(record: logging.LogRecord) -> Key | None:
     for leaf in leaves:
         if not isinstance(leaf, (anyio.ClosedResourceError, anyio.BrokenResourceError)):
             return None
-    transport, request, truncated = _transport_and_request(exc)
-    if transport is None and truncated:
+    transports, request, truncated = _transports_and_request(exc)
+    if truncated:
         return None
-    terminated = transport.is_terminated is True if transport is not None else None
-    if terminated is False:
+    # Any visible transport that was not ended vetoes the drop.
+    if not all(transport.is_terminated is True for transport in transports):
         return None
     broken = any(isinstance(leaf, anyio.BrokenResourceError) for leaf in leaves)
-    if broken and terminated is not True:
+    if broken and not transports:
         return None
     host, ua, origin = _request_classes(request)
     return (RACE_MESSAGES[record.msg], "broken" if broken else "closed", host, ua, origin)
@@ -259,10 +262,14 @@ class RaceCounter:
     def write(self) -> None:
         """Log the counts since the last write, if there are any, and take them off.
 
-        The counts written are taken off only after the record was logged, so
-        a write that fails, in the text or in a handler, keeps them for the
-        next one. The counter lock is not held while the record is logged:
-        drops counted meanwhile, even by a handler, stay for the next write.
+        The counts written are taken off once logger.info has returned. An
+        exception that reaches write - from building the text, a filter, or a
+        handler that raises - keeps them for the next one. A handler that
+        catches its own error (logging.Handler.handleError, as the exporter's
+        emit does) returns normally, so those counts are taken off and lost
+        with that record. The counter lock is not held while the record is
+        logged: drops counted meanwhile, even by a handler, stay for the next
+        write.
         """
         with self._write_lock:
             with self._lock:
@@ -357,14 +364,15 @@ def _installed_counter() -> RaceCounter:
     return race_filter.counter if race_filter is not None else default_counter
 
 
-def _write_logged(counter: RaceCounter) -> None:
+def _write_logged(counter: Callable[[], RaceCounter]) -> None:
+    """Write the counter that counter() names now; a failure is a warning, never a raise."""
     try:
-        counter.write()
+        counter().write()
     except Exception as e:
         logger.warning("Session race count failed (%s).", type(e).__name__)
 
 
-async def _write_every(counter: RaceCounter, interval: float) -> None:
+async def _write_every(counter: Callable[[], RaceCounter], interval: float) -> None:
     while True:
         await asyncio.sleep(interval)
         _write_logged(counter)
@@ -380,13 +388,19 @@ def wrap_lifespan(
 
     The last write runs after inner has exited, so the races of the sessions
     ended at shutdown are in it; wrapped by gate.wrap_lifespan, it runs before
-    the telemetry flush. Without a counter it writes the installed filter's
-    counter, read when the lifespan starts, else default_counter.
+    the telemetry flush. Without a counter each write takes the counter of the
+    filter installed at that moment, else default_counter, so a filter
+    installed or replaced while the app runs is written all the same.
     """
+
+    def given() -> RaceCounter:
+        assert counter is not None
+        return counter
+
+    race_counter = given if counter is not None else _installed_counter
 
     @contextlib.asynccontextmanager
     async def race_lifespan(app: Any) -> AsyncIterator[Any]:
-        race_counter = counter if counter is not None else _installed_counter()
         writer = asyncio.create_task(_write_every(race_counter, interval))
         try:
             async with inner(app) as state:

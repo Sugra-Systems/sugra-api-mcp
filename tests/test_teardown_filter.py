@@ -471,6 +471,119 @@ def test_a_walk_that_reads_every_frame_up_to_the_cap_is_not_truncated() -> None:
     assert _passes(_record(POST_MSG, one_more), counter)
 
 
+def _raised_through(exc: BaseException, *steps: object) -> ExcInfo:
+    """exc raised below a handler through the given steps, outermost first.
+
+    A step that is an int is that many frames with no self; any other step is
+    one frame whose self it is.
+    """
+
+    def run(i: int) -> None:
+        if i == len(steps):
+            raise exc
+        step = steps[i]
+        if isinstance(step, int):
+            filler(step, i)
+        else:
+            framed(step, i)
+
+    def framed(self: object, i: int) -> None:
+        run(i + 1)
+
+    def filler(n: int, i: int) -> None:
+        if n <= 1:
+            run(i + 1)
+        else:
+            filler(n - 1, i)
+
+    try:
+        run(0)
+    except BaseException:
+        info = sys.exc_info()
+        assert info[0] is not None and info[1] is not None and info[2] is not None
+        return info  # type: ignore[return-value]
+    raise AssertionError("nothing was raised")
+
+
+def test_a_live_transport_after_an_ended_one_keeps_the_record() -> None:
+    within = _raised_through(anyio.ClosedResourceError(), _transport(True), _transport(False))
+    assert len(list(teardown_filter._frames(within[1]))) < teardown_filter.MAX_FRAMES
+    assert _passes(_record(POST_MSG, within))
+    past = _raised_through(
+        anyio.ClosedResourceError(), _transport(True), teardown_filter.MAX_FRAMES + 10, _transport(False)
+    )
+    assert list(teardown_filter._frames(past[1]))[-1] is None
+    assert _passes(_record(POST_MSG, past))
+
+
+def test_a_truncated_walk_keeps_the_record_even_after_an_ended_transport() -> None:
+    past = _raised_through(anyio.ClosedResourceError(), _transport(True), teardown_filter.MAX_FRAMES + 10)
+    assert _passes(_record(POST_MSG, past))
+
+
+def test_every_transport_ended_within_the_cap_drops_the_record() -> None:
+    counter = teardown_filter.RaceCounter()
+    closed = _raised_through(anyio.ClosedResourceError(), _transport(True), 5, _transport(True))
+    broken = _raised_through(anyio.BrokenResourceError(), _transport(True), _transport(True))
+    assert not _passes(_record(POST_MSG, closed), counter)
+    assert not _passes(_record(GET_MSG, broken), counter)
+    assert counter._counts == {
+        ("post", "closed", "unknown", "unknown", "unknown"): 1,
+        ("get", "broken", "unknown", "unknown", "unknown"): 1,
+    }
+
+
+def _reachable_labels() -> tuple[set[str], set[str], set[str]]:
+    """What the three reducers return for inputs that reach each of their classes."""
+    hosts = [*observability._CALLER_HOSTS, "app.sugra.ai:443", "localhost", "127.0.0.1:8000", "[::1]"]
+    hosts += ["evil.example", "[::1]x", "", None]
+    uas = [
+        "sugra-playground/1", "sugra-api-mcp/0.6", "claude-user", "ChatGPT-User/1.0", "grok-agent",
+        "cursor", "openbb", "python-httpx/0.27", "curl/8.0", "node-fetch/3", "Mozilla/5.0", "x", "", None,
+    ]
+    origins = [*observability._ORIGIN_CLASSES, "https://evil.example", "", None]
+    host_out = {observability._host_class(v) for v in hosts}
+    ua_out = {observability._text_class(v, observability._UA_PATTERNS) for v in uas}
+    origin_out = {observability._origin_class(v) for v in origins}
+    return (
+        {v for v in host_out if v is not None},
+        {v for v in ua_out if v is not None},
+        {v for v in origin_out if v is not None},
+    )
+
+
+def test_the_label_whitelists_are_what_the_reducers_return() -> None:
+    hosts, uas, origins = _reachable_labels()
+    assert hosts == teardown_filter._HOST_LABELS
+    assert uas == teardown_filter._UA_LABELS
+    assert origins == teardown_filter._ORIGIN_LABELS
+    # A Host header value is a label only where the reducer returns it as one.
+    assert teardown_filter._label("evil.example", teardown_filter._HOST_LABELS) == "other"
+
+
+def test_the_longest_record_stays_under_the_app_insights_limit(caplog, monkeypatch) -> None:
+    monkeypatch.setenv("CONTAINER_APP_REVISION", "a" * 128)
+    caplog.set_level(logging.INFO, logger=teardown_filter.COUNTER_LOGGER)
+    parts = (
+        sorted(teardown_filter.RACE_MESSAGES.values()),
+        ["closed", "broken"],
+        sorted({*teardown_filter._HOST_LABELS, "none", "unknown"}),
+        sorted({*teardown_filter._UA_LABELS, "none", "unknown"}),
+        sorted({*teardown_filter._ORIGIN_LABELS, "unknown"}),
+    )
+    keys = [()]
+    for part in parts:
+        keys = [(*key, label) for key in keys for label in part]
+    keys.sort(key=lambda key: -sum(map(len, key)))
+    assert len(keys) > teardown_filter.MAX_LINES
+    counter = teardown_filter.RaceCounter()
+    counter._counts = {key: 10**15 for key in keys}  # type: ignore[misc]
+    counter.write()
+    [message] = _count_records(caplog)
+    assert len(message.splitlines()) == teardown_filter.MAX_LINES + 1
+    assert len(message) < 32_768
+
+
 def test_a_class_outside_the_known_labels_is_counted_as_other(monkeypatch) -> None:
     leak = "Bearer sk-not-a-class"
     monkeypatch.setattr(observability, "_host_class", lambda value: leak)
@@ -671,6 +784,34 @@ async def test_the_lifespan_writes_the_installed_filters_counter(caplog) -> None
     [message] = _count_records(caplog)
     assert message.splitlines()[1:] == ["post closed none other none 1"]
     assert custom._counts == {}
+
+
+async def test_the_lifespan_writes_the_filter_installed_at_each_write(caplog) -> None:
+    caplog.set_level(logging.INFO, logger=teardown_filter.COUNTER_LOGGER)
+    first = teardown_filter.RaceCounter()
+    second = teardown_filter.RaceCounter()
+
+    @contextlib.asynccontextmanager
+    async def inner(app: object) -> AsyncIterator[None]:
+        yield
+
+    lifespan = teardown_filter.wrap_lifespan(inner, interval=0.02)
+    async with lifespan(object()):
+        # Installed after the lifespan started: the periodic write finds it.
+        teardown_filter.install(first)
+        first.add(("post", "closed", "none", "other", "none"))
+        deadline = time.monotonic() + 5
+        while first._counts and time.monotonic() < deadline:
+            await asyncio.sleep(0.01)
+        assert first._counts == {}
+        # Replaced before the exit: the last write finds the new one.
+        teardown_filter.uninstall()
+        teardown_filter.install(second)
+        second.add(("sse", "closed", "none", "other", "none"))
+        second.add(("sse", "closed", "none", "other", "none"))
+        caplog.clear()
+    assert second._counts == {}
+    assert any("sse closed none other none 2" in m.splitlines()[1:] for m in _count_records(caplog))
 
 
 async def test_the_lifespan_writes_every_interval_and_once_more_on_exit(monkeypatch) -> None:
