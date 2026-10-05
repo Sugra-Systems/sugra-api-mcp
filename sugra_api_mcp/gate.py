@@ -31,8 +31,9 @@ malformed before any tool saw it, which reads 0 0.
 A line holds the request id, a class and two integers. Never a tool name, an
 argument, a header or a payload.
 
-The same requests feed the demand count (demand.py), written beside each
-summary on its own logger.
+The initialize and tools/list requests among them that are POSTs to /mcp
+feed the demand count (demand.py), written beside each summary on its own
+logger, in a step of its own that never changes what the client is sent.
 """
 
 from __future__ import annotations
@@ -82,8 +83,9 @@ AUTH_REFUSED = "auth_refused"
 # The most of an answer that is read for a JSON-RPC error; an error answer is
 # far shorter.
 _ANSWER_SCAN_BYTES = 64 * 1024
-# The most of a tools/list answer that is read for its tool names (the demand
-# count's digest); the served list is far shorter.
+# The most of a tools/list answer that is kept for its tool names (the demand
+# count's digest); the served list is far shorter, and a longer answer is
+# counted as demand.TOOLS_OVER.
 _TOOLS_LIST_SCAN_BYTES = 1024 * 1024
 _MCP_PATH = "/mcp"
 _SSE_LINE_BREAK = re.compile(r"\r\n|\r|\n")
@@ -291,8 +293,8 @@ def _answers_with_error(body: bytes) -> bool:
     return False
 
 
-def _listed_tools_digest(body: bytes) -> str:
-    """demand.tools_digest of the tools a tools/list answer, plain JSON or SSE, listed; - without one."""
+def _listed_tools_digest(body: bytes) -> str | None:
+    """demand.tools_digest of the tools a tools/list answer, plain JSON or SSE, listed; None without one."""
     text = body.decode("utf-8", errors="replace")
     candidates = [text] if text.lstrip().startswith("{") else _sse_data(text)
     for candidate in candidates:
@@ -306,7 +308,57 @@ def _listed_tools_digest(body: bytes) -> str:
             return demand.tools_digest(
                 tool["name"] for tool in tools if isinstance(tool, dict) and type(tool.get("name")) is str
             )
-    return demand.NOT_APPLICABLE
+    return None
+
+
+class _DemandCapture:
+    """What the demand count keeps of one request: its method, and what was sent to the client.
+
+    Every step goes through attempt, which swallows any error and marks the
+    request failed, so the count can never change a byte the client is sent.
+    """
+
+    __slots__ = ("answer", "client", "failed", "method", "over", "status")
+
+    def __init__(self) -> None:
+        self.method: str | None = None
+        self.client = demand.NOT_APPLICABLE
+        self.status: object = None
+        self.answer = bytearray()
+        self.over = False
+        self.failed = False
+
+    def attempt(self, step: Callable[[Any], None], value: Any) -> None:
+        try:
+            step(value)
+        except Exception:
+            self.failed = True
+
+    def read(self, request_message: object) -> None:
+        """Keep the counted method and client class of the parsed request body."""
+        self.method, self.client = demand.request_facts(request_message)
+
+    def sent(self, message: Message) -> None:
+        """Keep the status, and a tools/list answer's bytes, of a message whose send completed."""
+        if message["type"] == "http.response.start":
+            self.status = message.get("status")
+        elif message["type"] == "http.response.body" and self.method == demand.TOOLS_LIST and not self.over:
+            chunk = message.get("body", b"")
+            if len(self.answer) + len(chunk) > _TOOLS_LIST_SCAN_BYTES:
+                self.over = True
+                self.answer = bytearray()
+            else:
+                self.answer.extend(chunk)
+
+    def tools(self) -> str:
+        """The tools field: a digest, over or unparsed on a 2xx tools/list answer, else -."""
+        status = self.status
+        if self.method != demand.TOOLS_LIST or not (isinstance(status, int) and 200 <= status < 300):
+            return demand.NOT_APPLICABLE
+        if self.over:
+            return demand.TOOLS_OVER
+        digest = _listed_tools_digest(bytes(self.answer))
+        return digest if digest is not None else demand.TOOLS_UNPARSED
 
 
 class GateMiddleware:
@@ -316,10 +368,13 @@ class GateMiddleware:
     request id (observability.request_id_of); every other request passes
     through untouched. The request body, up to max_body_bytes (the server's
     own body limit, so nothing larger is ever answered with a 2xx), is read as
-    it streams past to learn whether it carries a tools/call, and a tracked
-    POST to /mcp is counted in the demand count whatever its status. Added
-    after every other middleware, so it is the outermost layer and sees the
-    status the client was sent.
+    it streams past to learn whether it carries a tools/call. Added after
+    every other middleware, so it is the outermost layer and sees the status
+    the client was sent.
+
+    A tracked POST to /mcp that is an initialize or a tools/list, or is
+    answered before its body is read, is counted in the demand count with the
+    status it was sent, whatever that status is (_DemandCapture).
     """
 
     def __init__(
@@ -351,13 +406,10 @@ class GateMiddleware:
         body_too_large = False
         status: int | None = None
         answer = bytearray()
-        answer_limit = _ANSWER_SCAN_BYTES
-        counted = scope.get("path", "").rstrip("/") == _MCP_PATH
-        demand_method: str | None = None
-        demand_client = demand.NOT_APPLICABLE
+        capture = _DemandCapture() if scope.get("path", "").rstrip("/") == _MCP_PATH else None
 
         async def gate_receive() -> Message:
-            nonlocal body_read, body_too_large, answer_limit, demand_method, demand_client
+            nonlocal body_read, body_too_large
             message = await receive()
             if message["type"] == "http.request" and not body_read:
                 chunk = message.get("body", b"")
@@ -371,10 +423,8 @@ class GateMiddleware:
                     if not body_too_large:
                         request_message = _parsed(bytes(body))
                         record.carries_tool_call = _is_tool_call(request_message)
-                        if counted:
-                            demand_method, demand_client = demand.request_facts(request_message)
-                            if demand_method == demand.TOOLS_LIST:
-                                answer_limit = _TOOLS_LIST_SCAN_BYTES
+                        if capture is not None:
+                            capture.attempt(capture.read, request_message)
                     body.clear()
             return message
 
@@ -385,10 +435,13 @@ class GateMiddleware:
             elif (
                 message["type"] == "http.response.body"
                 and not record.is_tool_call()
-                and len(answer) < answer_limit
+                and len(answer) < _ANSWER_SCAN_BYTES
             ):
-                answer.extend(message.get("body", b"")[: answer_limit - len(answer)])
+                answer.extend(message.get("body", b"")[: _ANSWER_SCAN_BYTES - len(answer)])
             await send(message)
+            # Only after the send completed: a failed send is never counted as sent.
+            if capture is not None:
+                capture.attempt(capture.sent, message)
 
         self.summary.open_requests += 1
         try:
@@ -405,30 +458,30 @@ class GateMiddleware:
                     self.summary.add(line)
                 except Exception as e:
                     logger.warning("Gate line failed (%s).", type(e).__name__)
-            # A body never read means an answer before it: its method is unknown.
-            method = demand_method if body_read else demand.UNREAD
-            if counted and method is not None:
-                try:
-                    self.demand.add(self._demand_key(scope, method, demand_client, status, answer))
-                except Exception as e:
-                    demand.logger.warning("Demand count failed (%s).", type(e).__name__)
+            if capture is not None:
+                self._count(scope, capture, body_read)
 
-    @staticmethod
-    def _demand_key(
-        scope: Scope, method: str, client: str, status: int | None, answer: bytearray
-    ) -> demand.Key:
-        host, ua, origin = demand.caller_classes(
-            _first_header(scope, b"host"),
-            _first_header(scope, b"user-agent"),
-            _first_header(scope, b"origin"),
-        )
-        answered = isinstance(status, int) and 200 <= status < 300
-        tools = (
-            _listed_tools_digest(bytes(answer))
-            if method == demand.TOOLS_LIST and answered
-            else demand.NOT_APPLICABLE
-        )
-        return (method, demand.status_of(status), host, ua, origin, client, tools)
+    def _count(self, scope: Scope, capture: _DemandCapture, body_read: bool) -> None:
+        """Add the request to the demand count, or to its failures; never raises."""
+        try:
+            if capture.failed:
+                self.demand.add_failure()
+                return
+            # A body never read means an answer before it: its method is unknown.
+            method = capture.method if body_read else demand.UNREAD
+            if method is None:
+                return
+            host, ua, origin = demand.caller_classes(
+                _first_header(scope, b"host"),
+                _first_header(scope, b"user-agent"),
+                _first_header(scope, b"origin"),
+            )
+            client = capture.client if body_read else demand.NOT_APPLICABLE
+            tools = capture.tools() if body_read else demand.NOT_APPLICABLE
+            self.demand.add((method, demand.status_of(capture.status), host, ua, origin, client, tools))
+        except Exception:
+            with contextlib.suppress(Exception):
+                self.demand.add_failure()
 
 
 async def _write_every(
@@ -464,9 +517,10 @@ def wrap_lifespan(
     While the app runs, a summary and the demand count are written every
     interval seconds. On the way out, after inner has exited, it waits up to
     drain_seconds for tracked requests still finishing, writes the last
-    summary and the last demand count, awaits each on_exit
+    summary and the demand count, awaits each on_exit
     callable in order (anything else that must close before the process
-    does; a failure is logged by its class and the rest still run), and then
+    does; a failure is logged by its class and the rest still run), writes
+    the demand count once more for requests that finished meanwhile, and then
     flushes buffered telemetry for at most flush_timeout seconds
     (observability.flush_telemetry).
 
@@ -499,6 +553,9 @@ def wrap_lifespan(
                     await close()
                 except Exception as e:
                     logger.warning("Shutdown step failed (%s).", type(e).__name__)
+            # A request still open past the drain can finish while the closers
+            # run; write once more so its count goes out with the flush.
+            demand.write_logged(counter)
             await asyncio.to_thread(observability.flush_telemetry, flush_timeout)
 
     return lifespan
