@@ -258,12 +258,12 @@ async def test_a_line_holds_classes_never_header_or_client_text(written) -> None
 
     app = Starlette(routes=[Route("/mcp", answer, methods=["POST"])])
     app.add_middleware(gate.GateMiddleware, max_body_bytes=4096, summary=gate.GateSummary(), demand_counter=counter)
-    secret = "user-secret-1234"
+    marker = "user-marker-1234"
     initialize = {
         **INITIALIZE,
-        "params": {**INITIALIZE["params"], "clientInfo": {"name": f"tool {secret}", "version": "1"}},
+        "params": {**INITIALIZE["params"], "clientInfo": {"name": f"tool {marker}", "version": "1"}},
     }
-    headers = {"x-request-id": _rid(1), "host": f"{secret}.example", "user-agent": secret, "origin": f"https://{secret}"}
+    headers = {"x-request-id": _rid(1), "host": f"{marker}.example", "user-agent": marker, "origin": f"https://{marker}"}
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8002") as client:
         await client.post("/mcp", json=initialize, headers=headers)
         await client.post("/mcp", json=_message(2, "tools/list", {}), headers=headers)
@@ -276,7 +276,7 @@ async def test_a_line_holds_classes_never_header_or_client_text(written) -> None
         ("initialize", "200", "other", "other", "other", "none", "-"): 1,
         ("tools/list", "200", "other", "other", "other", "-", demand.tools_digest(["secret_tool_name"])): 1,
     }
-    assert secret not in "\n".join(written)
+    assert marker not in "\n".join(written)
     assert "secret_tool_name" not in "\n".join(written)
 
 
