@@ -31,9 +31,10 @@ malformed before any tool saw it, which reads 0 0.
 A line holds the request id, a class and two integers. Never a tool name, an
 argument, a header or a payload.
 
-The initialize and tools/list requests among them that are POSTs to /mcp
-feed the demand count (demand.py), written beside each summary on its own
-logger, in a step of its own that never changes what the client is sent.
+Every tracked POST to /mcp feeds the demand count (demand.py), named by its
+method bucket: initialize, tools/list, other, batch or unread. The count is
+written beside each summary on its own logger, in a step of its own that
+never changes what the client is sent.
 """
 
 from __future__ import annotations
@@ -337,7 +338,7 @@ class GateMiddleware:
 
     Every tracked POST to /mcp is counted exactly once in the demand count,
     by its method bucket with the status it was sent, whatever that status
-    is, or in failed (_DemandCapture, _count).
+    is, in failed, or in lost (_DemandCapture, _count; lost in demand.py).
     """
 
     def __init__(
@@ -492,8 +493,9 @@ def wrap_lifespan(
     finished meanwhile, and then flushes buffered telemetry for at most
     flush_timeout seconds (observability.flush_telemetry). A request counted
     after that final snapshot, so one still running after the drain, goes to
-    lost (demand.DemandCounter.close); the lifespan opens the counter again
-    when it starts. No error of an exit-time demand write
+    lost (demand.DemandCounter.close) and is NOT reported by the exiting
+    process: it shows only if the same counter serves again, since the
+    lifespan opens the counter again when it starts. No error of an exit-time demand write
     stops that sequence; an interrupt from one is raised after the flush.
 
     uvicorn runs the lifespan exit on SIGTERM and SIGINT once connections
@@ -528,7 +530,8 @@ def wrap_lifespan(
                     logger.warning("Shutdown step failed (%s).", type(e).__name__)
             # A request still open past the drain can finish while the closers
             # run; write once more so its count goes out with the flush. The
-            # counter closes first: a count after this snapshot goes to lost.
+            # counter closes first: a count after this snapshot goes to lost,
+            # which this process does not report (demand.py, lost).
             counter.close()
             interrupt = _write_at_exit(counter) or interrupt
             await asyncio.to_thread(observability.flush_telemetry, flush_timeout)

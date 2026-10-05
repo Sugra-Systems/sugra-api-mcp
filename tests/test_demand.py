@@ -582,6 +582,36 @@ def test_a_lost_interval_with_no_new_request_is_still_reported(written) -> None:
     assert _lost(written) == [1]
 
 
+class _WatchedLock:
+    """A real lock that records the counter's reported lost each time it is released."""
+
+    def __init__(self, counter: demand.DemandCounter) -> None:
+        self._inner = counter._lock
+        self._counter = counter
+        self.seen_at_release: list[int] = []
+
+    def __enter__(self) -> bool:
+        return self._inner.__enter__()
+
+    def __exit__(self, *exc: object) -> None:
+        self.seen_at_release.append(self._counter._lost_written)
+        self._inner.__exit__(*exc)
+
+
+def test_the_reported_lost_is_recorded_under_the_lock(written) -> None:
+    counter = demand.DemandCounter()
+    counter.add(("initialize", "200", "none", "other", "none", "none"))
+    with _broken_demand_logger(), pytest.raises(OSError):
+        counter.write()
+    written.clear()
+    watched = _WatchedLock(counter)
+    counter._lock = watched
+    counter.write()
+    assert _lost(written) == [1]
+    # Set while the lock is still held, never after its last release.
+    assert watched.seen_at_release[-1] == 1
+
+
 def test_writing_the_counts_never_raises_even_when_the_failure_report_fails(written) -> None:
     counter = demand.DemandCounter()
     key = ("initialize", "200", "none", "other", "none", "none")
@@ -682,7 +712,9 @@ async def test_the_last_count_follows_the_last_summary_and_precedes_the_exit_wor
     assert events == ["open", "serving", "summary", "demand", "close", "closed", "demand", "flush"]
 
 
-async def test_a_count_after_the_final_write_goes_to_lost_and_never_to_a_line(monkeypatch, written) -> None:
+async def test_a_loss_after_the_final_exit_write_is_not_reported_by_that_exit_only_when_the_counter_serves_again(
+    monkeypatch, written
+) -> None:
     counter = demand.DemandCounter()
     key = ("tools/list", "200", "none", "other", "none", "-")
     late: list[int] = []
@@ -701,11 +733,11 @@ async def test_a_count_after_the_final_write_goes_to_lost_and_never_to_a_line(mo
     )
     async with lifespan(object()):
         counter.add(key)
-    # The count from before the flush was written; the late ones are in no record yet.
+    # The count from before the flush was written; the exit reports no loss of the late ones.
     assert [message.split("\n")[1:] for message in written] == [[f"{' '.join(key)} 1"]]
     assert _lost(written) == [0]
     written.clear()
-    # While the process is alive, the next record reports them as lost, in no line.
+    # Only the same counter serving again reports them, as lost and in no line.
     async with lifespan(object()):
         pass
     assert written == [f"sdemand1 side={observability.process_side()} requests=0 lines=0 omitted=0 failed=0 lost=2"]

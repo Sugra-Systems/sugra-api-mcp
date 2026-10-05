@@ -3,7 +3,7 @@
 GateMiddleware counts every request that reaches the gate as a POST to /mcp
 whose first X-Request-Id is a valid request id (nginx gives one to every
 request it proxies; the gate tracks no other request), exactly once: by its
-method bucket, or in failed. A POST to any other path, or without a valid
+method bucket, in failed, or in lost. A POST to any other path, or without a valid
 request id, writes nothing at all: no line and no zero. Every SUMMARY_INTERVAL_SECONDS of the gate, and at shutdown, the counts
 since the previous write are logged at INFO on sugra_mcp.demand, when there
 are any or lost grew since the last record (such a record can read
@@ -37,19 +37,21 @@ initialize carries clientInfo.
 failed counts the requests whose demand step raised: such a request is in
 requests and in no line, and the answer it was sent is never touched by it.
 
-lost is the total, since the process started, of the requests in writes the
-logger raised on. Such a write's interval is dropped, never retried, so no
-request is ever written twice; a handler may still have taken the record
-before another raised. A lost request is in no later requests total, so what
-a process counted is the sum of requests over the records it wrote plus the
-lost of its last record.
+lost is the total, since the process started, of the requests counted into
+no line. It has two sources. The first is the requests of a write the logger
+raised on: such a write's interval is dropped, never retried, so no request
+is ever written twice; a handler may still have taken the record before
+another raised. The second is a request still running after the gate's exit
+drain: the exit sequence closes the counter (close) right before its final
+write, which comes right before the telemetry flush, and a request counted
+after close goes to lost. A lost request is in no later requests total, so
+what a process counted is the sum of requests over the records it wrote plus
+the lost of its last record, less a loss taken after that record.
 
-The exit sequence closes the counter (close) right before its final write,
-which comes right before the telemetry flush. A request counted after that
-is added to lost and never to a line: only a request still running after
-the gate's drain can be lost so, and it is reported as lost while the
-process is alive, by the next record if it writes again (a lifespan started
-again calls open); a process that exits writes no further record.
+A loss taken after the final exit write is NOT reported by the exiting
+process: it writes no further record. It shows only if the same counter
+serves again (a lifespan started again calls open), in the lost of its next
+record.
 
 Each line is a count since the previous write, per process, starting from zero
 when the process starts. At most MAX_LINES lines are written, the largest
@@ -189,7 +191,8 @@ class DemandCounter:
             with self._lock:
                 self._lost += sum(counts.values()) + failed
             raise
-        self._lost_written = lost
+        with self._lock:
+            self._lost_written = lost
 
 
 def _header(side: str, requests: int, lines: int, omitted: int, failed: int, lost: int) -> str:
