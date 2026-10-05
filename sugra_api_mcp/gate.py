@@ -247,11 +247,12 @@ def _first_header(scope: Scope, name: bytes) -> str | None:
     return None
 
 
-def _parsed(body: bytes) -> object:
+def _parsed(body: bytes) -> tuple[bool, object]:
+    """Whether the body decodes as JSON, and its value (None when it does not)."""
     try:
-        return json.loads(body)
+        return True, json.loads(body)
     except (ValueError, RecursionError):
-        return None
+        return False, None
 
 
 def _is_tool_call(message: object) -> bool:
@@ -300,7 +301,7 @@ class _DemandCapture:
     __slots__ = ("client", "failed", "method", "status")
 
     def __init__(self) -> None:
-        self.method: str | None = None
+        self.method = demand.UNREAD
         self.client = demand.NOT_APPLICABLE
         self.status: object = None
         self.failed = False
@@ -311,9 +312,11 @@ class _DemandCapture:
         except Exception:
             self.failed = True
 
-    def read(self, request_message: object) -> None:
-        """Keep the counted method and client class of the parsed request body."""
-        self.method, self.client = demand.request_facts(request_message)
+    def read(self, parsed: tuple[bool, object]) -> None:
+        """Keep the method bucket and client class of a decoded body; one that is not JSON stays unread."""
+        decoded, request_message = parsed
+        if decoded:
+            self.method, self.client = demand.request_facts(request_message)
 
     def sent(self, message: Message) -> None:
         """Keep the status of an answer start whose send completed."""
@@ -332,10 +335,9 @@ class GateMiddleware:
     every other middleware, so it is the outermost layer and sees the status
     the client was sent.
 
-    A tracked POST to /mcp that is an initialize or a tools/list, or whose
-    body the gate did not parse (answered before its end, or over the limit),
-    is counted once in the demand count with the status it was sent, whatever
-    that status is (_DemandCapture, _count).
+    Every tracked POST to /mcp is counted exactly once in the demand count,
+    by its method bucket with the status it was sent, whatever that status
+    is, or in failed (_DemandCapture, _count).
     """
 
     def __init__(
@@ -382,10 +384,10 @@ class GateMiddleware:
                 if not message.get("more_body", False):
                     body_read = True
                     if not body_too_large:
-                        request_message = _parsed(bytes(body))
-                        record.carries_tool_call = _is_tool_call(request_message)
+                        parsed = _parsed(bytes(body))
+                        record.carries_tool_call = _is_tool_call(parsed[1])
                         if capture is not None:
-                            capture.attempt(capture.read, request_message)
+                            capture.attempt(capture.read, parsed)
                     body.clear()
             return message
 
@@ -426,19 +428,18 @@ class GateMiddleware:
         """Add the request to the demand count once, or to its failures; never raises.
 
         A request whose demand step raised is counted in failed and nowhere
-        else. Any other is counted by its method: a parsed body's initialize or
-        tools/list (other methods are not counted), and unread for a body the
-        gate did not parse, answered before its end or over max_body_bytes,
-        whatever its size. Its status tells those cases apart (an auth 401, the
-        server's 413); no header is parsed to guess a size.
+        else. Any other is counted by its method bucket (demand.request_facts:
+        initialize, tools/list, other, batch), or as unread for a body the
+        gate did not decode: answered before its end, over max_body_bytes
+        whatever its size, or not JSON. Its status tells the unread cases
+        apart (an auth 401, the server's 413); no header is parsed to guess a
+        size.
         """
         try:
             if capture.failed:
                 self.demand.add_failure()
                 return
             method = capture.method if parsed else demand.UNREAD
-            if method is None:
-                return
             host, ua, origin = demand.caller_classes(
                 _first_header(scope, b"host"),
                 _first_header(scope, b"user-agent"),
@@ -486,10 +487,13 @@ def wrap_lifespan(
     drain_seconds for tracked requests still finishing, writes the last
     summary and the demand count, awaits each on_exit
     callable in order (anything else that must close before the process
-    does; a failure is logged by its class and the rest still run), writes
-    the demand count once more for requests that finished meanwhile, and then
-    flushes buffered telemetry for at most flush_timeout seconds
-    (observability.flush_telemetry). No error of an exit-time demand write
+    does; a failure is logged by its class and the rest still run), closes
+    the counter and writes the demand count a final time for requests that
+    finished meanwhile, and then flushes buffered telemetry for at most
+    flush_timeout seconds (observability.flush_telemetry). A request counted
+    after that final snapshot, so one still running after the drain, goes to
+    lost (demand.DemandCounter.close); the lifespan opens the counter again
+    when it starts. No error of an exit-time demand write
     stops that sequence; an interrupt from one is raised after the flush.
 
     uvicorn runs the lifespan exit on SIGTERM and SIGINT once connections
@@ -502,6 +506,7 @@ def wrap_lifespan(
 
     @contextlib.asynccontextmanager
     async def lifespan(app: Any) -> AsyncIterator[Any]:
+        counter.open()
         writer = asyncio.create_task(_write_every(gate_summary, interval, counter))
         try:
             async with inner(app) as state:
@@ -522,7 +527,9 @@ def wrap_lifespan(
                 except Exception as e:
                     logger.warning("Shutdown step failed (%s).", type(e).__name__)
             # A request still open past the drain can finish while the closers
-            # run; write once more so its count goes out with the flush.
+            # run; write once more so its count goes out with the flush. The
+            # counter closes first: a count after this snapshot goes to lost.
+            counter.close()
             interrupt = _write_at_exit(counter) or interrupt
             await asyncio.to_thread(observability.flush_telemetry, flush_timeout)
             if interrupt is not None:

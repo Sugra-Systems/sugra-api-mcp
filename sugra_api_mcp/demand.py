@@ -1,11 +1,10 @@
-"""Demand count: initialize and tools/list requests at the gate, by caller class and status.
+"""Demand count: requests at the gate by method bucket, caller class and status.
 
-GateMiddleware counts a request only when it is a POST to /mcp whose first
-X-Request-Id is a valid request id (nginx gives one to every request it
-proxies; the gate tracks no other request) and that is an initialize or a
-tools/list, or was answered before its body was read. A POST to any other
-path, or without a valid request id, writes nothing at all: no line and no
-zero. Every SUMMARY_INTERVAL_SECONDS of the gate, and at shutdown, the counts
+GateMiddleware counts every request that reaches the gate as a POST to /mcp
+whose first X-Request-Id is a valid request id (nginx gives one to every
+request it proxies; the gate tracks no other request), exactly once: by its
+method bucket, or in failed. A POST to any other path, or without a valid
+request id, writes nothing at all: no line and no zero. Every SUMMARY_INTERVAL_SECONDS of the gate, and at shutdown, the counts
 since the previous write are logged at INFO on sugra_mcp.demand, when there
 are any or lost grew since the last record (such a record can read
 requests=0 lines=0 with only lost grown):
@@ -13,13 +12,13 @@ requests=0 lines=0 with only lost grown):
     sdemand1 side=<side> requests=<n> lines=<m> omitted=<o> failed=<f> lost=<l>
     <method> <status> <host> <ua> <origin> <client> <count>
 
-method is initialize, tools/list, or unread: a request whose body the gate
-did not parse, so which method it carried is not known. That is a request
-answered before its body was read, as the auth layer answers a bad bearer
-token (401), and a body over the server's limit, whatever its size (the
-server's 413); the status tells them apart. A batch and every other method
-(tools/call, ping, notifications) are not counted. Each request is counted
-once: by its method, or in failed.
+method is initialize or tools/list; other for any other single JSON-RPC
+body (tools/call, ping, notifications, a body without a method); batch for a
+JSON array, counted once whatever it holds; or unread for a body the gate
+did not decode, so which method it carried is not known. That is a body
+answered before it was read, as the auth layer answers a bad bearer token
+(401), a body over the server's limit, whatever its size (the server's 413),
+and a body read whole that is not JSON; the status tells them apart.
 
 status is the HTTP status of the answer start that was sent to the client,
 or none when none was: no answer started, or its send failed.
@@ -45,6 +44,13 @@ before another raised. A lost request is in no later requests total, so what
 a process counted is the sum of requests over the records it wrote plus the
 lost of its last record.
 
+The exit sequence closes the counter (close) right before its final write,
+which comes right before the telemetry flush. A request counted after that
+is added to lost and never to a line: only a request still running after
+the gate's drain can be lost so, and it is reported as lost while the
+process is alive, by the next record if it writes again (a lifespan started
+again calls open); a process that exits writes no further record.
+
 Each line is a count since the previous write, per process, starting from zero
 when the process starts. At most MAX_LINES lines are written, the largest
 counts first, each field cut to FIELD_MAX characters and the side to
@@ -69,6 +75,8 @@ COUNTER_LOGGER = "sugra_mcp.demand"
 INITIALIZE = "initialize"
 TOOLS_LIST = "tools/list"
 UNREAD = "unread"
+OTHER = "other"
+BATCH = "batch"
 COUNTED_METHODS = frozenset({INITIALIZE, TOOLS_LIST})
 
 MAX_LINES = 400
@@ -90,13 +98,13 @@ logger.setLevel(logging.INFO)
 Key = tuple[str, str, str, str, str, str]
 
 
-def request_facts(message: object) -> tuple[str | None, str]:
-    """The counted method of a parsed request body and its client class, or (None, -)."""
-    if not isinstance(message, dict):
-        return None, NOT_APPLICABLE
-    method = message.get("method")
+def request_facts(message: object) -> tuple[str, str]:
+    """The method bucket of a decoded request body and its client class."""
+    if isinstance(message, list):
+        return BATCH, NOT_APPLICABLE
+    method = message.get("method") if isinstance(message, dict) else None
     if type(method) is not str or method not in COUNTED_METHODS:
-        return None, NOT_APPLICABLE
+        return OTHER, NOT_APPLICABLE
     if method != INITIALIZE:
         return method, NOT_APPLICABLE
     params = message.get("params")
@@ -132,16 +140,33 @@ class DemandCounter:
         self._failed = 0
         self._lost = 0
         self._lost_written = 0
+        self._closed = False
         self._lock = threading.Lock()
 
     def add(self, key: Key) -> None:
         with self._lock:
-            self._counts[key] = self._counts.get(key, 0) + 1
+            if self._closed:
+                self._lost += 1
+            else:
+                self._counts[key] = self._counts.get(key, 0) + 1
 
     def add_failure(self) -> None:
         """Count a request whose demand step raised."""
         with self._lock:
-            self._failed += 1
+            if self._closed:
+                self._lost += 1
+            else:
+                self._failed += 1
+
+    def close(self) -> None:
+        """From now on a count goes to lost: the final write is next."""
+        with self._lock:
+            self._closed = True
+
+    def open(self) -> None:
+        """Count into lines again (a lifespan starting)."""
+        with self._lock:
+            self._closed = False
 
     def write(self) -> None:
         """Log the counts since the last write and start again from zero.

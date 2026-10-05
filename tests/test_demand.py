@@ -171,11 +171,12 @@ async def test_initialize_and_tools_list_are_counted_by_their_real_classes(monke
     # The User-Agent names no class (other); the clientInfo name does (chatgpt).
     assert _counts(counter, written) == {
         ("initialize", "200", "app.sugra.ai", "other", "openai", "chatgpt"): 1,
+        ("other", "202", "app.sugra.ai", "other", "openai", "-"): 1,
         ("tools/list", "200", "app.sugra.ai", "other", "openai", "-"): 2,
     }
 
 
-async def test_a_tool_call_is_not_counted_as_a_list(monkeypatch, written) -> None:
+async def test_a_tool_call_counts_once_as_other(monkeypatch, written) -> None:
     counter = demand.DemandCounter()
     async with _served(monkeypatch, counter) as client:
         session = await _open(client, 1)
@@ -190,8 +191,11 @@ async def test_a_tool_call_is_not_counted_as_a_list(monkeypatch, written) -> Non
             headers={**HEADERS, **_SCANNER, **session, "x-request-id": _rid(3)},
         )
     assert (called.status_code, pinged.status_code) == (200, 200)
-    counts = _counts(counter, written)
-    assert [key[0] for key in counts] == ["initialize"]
+    caller = ("app.sugra.ai", "other", "openai")
+    assert _counts(counter, written) == {
+        ("initialize", "200", *caller, "chatgpt"): 1,
+        ("other", "200", *caller, "-"): 2,
+    }
 
 
 async def test_a_refused_request_is_counted_with_its_status(monkeypatch, written) -> None:
@@ -248,7 +252,52 @@ async def test_only_a_tracked_post_to_mcp_is_counted(written) -> None:
         await client.post("/token", json=tools_list, headers={"x-request-id": _rid(2)})
         await client.post("/mcp", json=[tools_list], headers={"x-request-id": _rid(3)})
         await client.post("/mcp", json=tools_list, headers={"x-request-id": _rid(4)})
-    assert _counts(counter, written) == {("tools/list", "200", "loopback", "python", "none", "-"): 1}
+    assert _counts(counter, written) == {
+        ("batch", "200", "loopback", "python", "none", "-"): 1,
+        ("tools/list", "200", "loopback", "python", "none", "-"): 1,
+    }
+
+
+async def _posted_raw(written: list[str], body: bytes) -> dict[tuple[str, ...], int]:
+    """One tracked POST to /mcp of these body bytes, read whole and answered 200."""
+    counter = demand.DemandCounter()
+
+    async def answer(request: Request) -> JSONResponse:
+        await request.body()
+        return JSONResponse({})
+
+    app = Starlette(routes=[Route("/mcp", answer, methods=["POST"])])
+    app.add_middleware(gate.GateMiddleware, max_body_bytes=1024, summary=gate.GateSummary(), demand_counter=counter)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8002") as client:
+        await client.post("/mcp", content=body, headers={"x-request-id": _rid(1), "content-type": "application/json"})
+    return _counts(counter, written)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b'[{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}},'
+        b'{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}]',
+        b"[]",
+    ],
+)
+async def test_a_batch_counts_once_as_batch(written, body: bytes) -> None:
+    # Whatever it holds, an initialize and a tools/list included: one line, count 1.
+    assert await _posted_raw(written, body) == {("batch", "200", "loopback", "python", "none", "-"): 1}
+
+
+@pytest.mark.parametrize(
+    ("body", "method"),
+    [
+        (b'{"jsonrpc":"2.0","id":1,"method":"tools/li', "unread"),
+        (b"\xff\xfe not json", "unread"),
+        (b'{"jsonrpc":"2.0","id":1}', "other"),
+        (b"null", "other"),
+    ],
+)
+async def test_a_body_read_whole_counts_once_by_whether_it_decodes(written, body: bytes, method: str) -> None:
+    # Not JSON is unread; JSON without a counted method, null included, is other.
+    assert await _posted_raw(written, body) == {(method, "200", "loopback", "python", "none", "-"): 1}
 
 
 async def test_a_line_holds_classes_never_header_or_client_text(written) -> None:
@@ -617,6 +666,8 @@ async def test_the_last_count_follows_the_last_summary_and_precedes_the_exit_wor
     counter = demand.DemandCounter()
     monkeypatch.setattr(summary, "write", lambda: events.append("summary"))
     monkeypatch.setattr(counter, "write", lambda: events.append("demand"))
+    monkeypatch.setattr(counter, "open", lambda: events.append("open"))
+    monkeypatch.setattr(counter, "close", lambda: events.append("closed"))
 
     async def closing() -> None:
         events.append("close")
@@ -627,7 +678,37 @@ async def test_the_last_count_follows_the_last_summary_and_precedes_the_exit_wor
     monkeypatch.setattr(observability, "flush_telemetry", lambda timeout_s: events.append("flush") or True)
     async with lifespan(object()):
         events.append("serving")
-    assert events == ["serving", "summary", "demand", "close", "demand", "flush"]
+    # The final snapshot (closed, then demand) comes right before the flush.
+    assert events == ["open", "serving", "summary", "demand", "close", "closed", "demand", "flush"]
+
+
+async def test_a_count_after_the_final_write_goes_to_lost_and_never_to_a_line(monkeypatch, written) -> None:
+    counter = demand.DemandCounter()
+    key = ("tools/list", "200", "none", "other", "none", "-")
+    late: list[int] = []
+
+    def flush(timeout_s: float) -> bool:
+        # A request still running after the drain finishes during the flush, once.
+        if not late:
+            late.append(1)
+            counter.add(key)
+            counter.add_failure()
+        return True
+
+    monkeypatch.setattr(observability, "flush_telemetry", flush)
+    lifespan = gate.wrap_lifespan(
+        _inner, gate.GateSummary(), interval=3600, drain_seconds=0, flush_timeout=1, demand_counter=counter
+    )
+    async with lifespan(object()):
+        counter.add(key)
+    # The count from before the flush was written; the late ones are in no record yet.
+    assert [message.split("\n")[1:] for message in written] == [[f"{' '.join(key)} 1"]]
+    assert _lost(written) == [0]
+    written.clear()
+    # While the process is alive, the next record reports them as lost, in no line.
+    async with lifespan(object()):
+        pass
+    assert written == [f"sdemand1 side={observability.process_side()} requests=0 lines=0 omitted=0 failed=0 lost=2"]
 
 
 async def test_a_request_that_finishes_during_the_closers_is_written_before_the_flush(monkeypatch, written) -> None:
