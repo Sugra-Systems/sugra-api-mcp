@@ -30,6 +30,13 @@ malformed before any tool saw it, which reads 0 0.
 
 A line holds the request id, a class and two integers. Never a tool name, an
 argument, a header or a payload.
+
+Every tracked POST to /mcp feeds the demand count (demand.py), named by its
+method bucket: initialize, tools/list, other, batch or unread. A POST to /mcp
+is one whose path equals /mcp once trailing slashes are removed, the same
+test auth.py uses. The count is
+written beside each summary on its own logger, in a step of its own that
+never changes what the client is sent.
 """
 
 from __future__ import annotations
@@ -48,7 +55,7 @@ from typing import Any
 from mcp.types import CallToolResult
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from . import observability
+from . import demand, observability
 
 logger = logging.getLogger("sugra_mcp.gate")
 # Set here, not inherited: on the hosted server the Azure Monitor handler is
@@ -79,6 +86,7 @@ AUTH_REFUSED = "auth_refused"
 # The most of an answer that is read for a JSON-RPC error; an error answer is
 # far shorter.
 _ANSWER_SCAN_BYTES = 64 * 1024
+_MCP_PATH = "/mcp"
 _SSE_LINE_BREAK = re.compile(r"\r\n|\r|\n")
 
 
@@ -242,11 +250,15 @@ def _first_header(scope: Scope, name: bytes) -> str | None:
     return None
 
 
-def _carries_tool_call(body: bytes) -> bool:
+def _parsed(body: bytes) -> tuple[bool, object]:
+    """Whether the body decodes as JSON, and its value (None when it does not)."""
     try:
-        message = json.loads(body)
+        return True, json.loads(body)
     except (ValueError, RecursionError):
-        return False
+        return False, None
+
+
+def _is_tool_call(message: object) -> bool:
     return isinstance(message, dict) and message.get("method") == "tools/call"
 
 
@@ -281,6 +293,40 @@ def _answers_with_error(body: bytes) -> bool:
     return False
 
 
+class _DemandCapture:
+    """What the demand count keeps of one request: its method and client class, and the status sent.
+
+    Every step goes through attempt, which swallows any error and marks the
+    request failed, so the count can never change a byte the client is sent.
+    It never reads the answer's body.
+    """
+
+    __slots__ = ("client", "failed", "method", "status")
+
+    def __init__(self) -> None:
+        self.method = demand.UNREAD
+        self.client = demand.NOT_APPLICABLE
+        self.status: object = None
+        self.failed = False
+
+    def attempt(self, step: Callable[[Any], None], value: Any) -> None:
+        try:
+            step(value)
+        except Exception:
+            self.failed = True
+
+    def read(self, parsed: tuple[bool, object]) -> None:
+        """Keep the method bucket and client class of a decoded body; one that is not JSON stays unread."""
+        decoded, request_message = parsed
+        if decoded:
+            self.method, self.client = demand.request_facts(request_message)
+
+    def sent(self, message: Message) -> None:
+        """Keep the status of an answer start whose send completed."""
+        if message["type"] == "http.response.start":
+            self.status = message.get("status")
+
+
 class GateMiddleware:
     """ASGI middleware that gives each tracked POST a gate record and its summary line.
 
@@ -291,14 +337,25 @@ class GateMiddleware:
     it streams past to learn whether it carries a tools/call. Added after
     every other middleware, so it is the outermost layer and sees the status
     the client was sent.
+
+    Every tracked POST to /mcp (its path equal to /mcp once trailing slashes
+    are removed, as auth.py tests it) is counted exactly once in the demand count,
+    by its method bucket with the status it was sent, whatever that status
+    is, in failed, or in lost (_DemandCapture, _count; lost in demand.py).
     """
 
     def __init__(
-        self, app: ASGIApp, *, max_body_bytes: int, summary: GateSummary | None = None
+        self,
+        app: ASGIApp,
+        *,
+        max_body_bytes: int,
+        summary: GateSummary | None = None,
+        demand_counter: demand.DemandCounter | None = None,
     ) -> None:
         self.app = app
         self.max_body_bytes = max_body_bytes
         self.summary = summary if summary is not None else default_summary
+        self.demand = demand_counter if demand_counter is not None else demand.default_counter
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or scope.get("method") != "POST":
@@ -316,6 +373,7 @@ class GateMiddleware:
         body_too_large = False
         status: int | None = None
         answer = bytearray()
+        capture = _DemandCapture() if scope.get("path", "").rstrip("/") == _MCP_PATH else None
 
         async def gate_receive() -> Message:
             nonlocal body_read, body_too_large
@@ -330,7 +388,10 @@ class GateMiddleware:
                 if not message.get("more_body", False):
                     body_read = True
                     if not body_too_large:
-                        record.carries_tool_call = _carries_tool_call(bytes(body))
+                        parsed = _parsed(bytes(body))
+                        record.carries_tool_call = _is_tool_call(parsed[1])
+                        if capture is not None:
+                            capture.attempt(capture.read, parsed)
                     body.clear()
             return message
 
@@ -345,6 +406,9 @@ class GateMiddleware:
             ):
                 answer.extend(message.get("body", b"")[: _ANSWER_SCAN_BYTES - len(answer)])
             await send(message)
+            # Only after the send completed: a failed send is never counted as sent.
+            if capture is not None:
+                capture.attempt(capture.sent, message)
 
         self.summary.open_requests += 1
         try:
@@ -361,15 +425,47 @@ class GateMiddleware:
                     self.summary.add(line)
                 except Exception as e:
                     logger.warning("Gate line failed (%s).", type(e).__name__)
+            if capture is not None:
+                self._count(scope, capture, body_read and not body_too_large)
+
+    def _count(self, scope: Scope, capture: _DemandCapture, parsed: bool) -> None:
+        """Add the request to the demand count once, or to its failures; never raises.
+
+        A request whose demand step raised is counted in failed and nowhere
+        else. Any other is counted by its method bucket (demand.request_facts:
+        initialize, tools/list, other, batch), or as unread for a body the
+        gate did not decode: answered before its end, over max_body_bytes
+        whatever its size, or not JSON. Its status tells the unread cases
+        apart (an auth 401, the server's 413); no header is parsed to guess a
+        size.
+        """
+        try:
+            if capture.failed:
+                self.demand.add_failure()
+                return
+            method = capture.method if parsed else demand.UNREAD
+            host, ua, origin = demand.caller_classes(
+                _first_header(scope, b"host"),
+                _first_header(scope, b"user-agent"),
+                _first_header(scope, b"origin"),
+            )
+            client = capture.client if parsed else demand.NOT_APPLICABLE
+            self.demand.add((method, demand.status_of(capture.status), host, ua, origin, client))
+        except Exception:
+            with contextlib.suppress(Exception):
+                self.demand.add_failure()
 
 
-async def _write_every(summary: GateSummary, interval: float) -> None:
+async def _write_every(
+    summary: GateSummary, interval: float, demand_counter: demand.DemandCounter
+) -> None:
     while True:
         await asyncio.sleep(interval)
         try:
             summary.write()
         except Exception as e:
             logger.warning("Gate summary failed (%s).", type(e).__name__)
+        demand.write_logged(demand_counter)
 
 
 async def _drain(summary: GateSummary, seconds: float) -> None:
@@ -386,27 +482,37 @@ def wrap_lifespan(
     drain_seconds: float = DRAIN_SECONDS,
     flush_timeout: float = FLUSH_TIMEOUT_SECONDS,
     on_exit: Iterable[Callable[[], Awaitable[None]]] = (),
+    demand_counter: demand.DemandCounter | None = None,
 ) -> Callable[[Any], contextlib.AbstractAsyncContextManager[Any]]:
     """The app lifespan inner, plus the summaries and the exit work around it.
 
-    While the app runs, a summary is written every interval seconds. On the
-    way out, after inner has exited, it waits up to drain_seconds for tracked
-    requests still finishing, writes the last summary, awaits each on_exit
+    While the app runs, a summary and the demand count are written every
+    interval seconds. On the way out, after inner has exited, it waits up to
+    drain_seconds for tracked requests still finishing, writes the last
+    summary and the demand count, awaits each on_exit
     callable in order (anything else that must close before the process
-    does; a failure is logged by its class and the rest still run), and then
-    flushes buffered telemetry for at most flush_timeout seconds
-    (observability.flush_telemetry).
+    does; a failure is logged by its class and the rest still run), closes
+    the counter and writes the demand count a final time for requests that
+    finished meanwhile, and then flushes buffered telemetry for at most
+    flush_timeout seconds (observability.flush_telemetry). A request counted
+    after that final snapshot, so one still running after the drain, goes to
+    lost (demand.DemandCounter.close) and is NOT reported by the exiting
+    process: it shows only if the same counter serves again, since the
+    lifespan opens the counter again when it starts. No error of an exit-time demand write
+    stops that sequence; an interrupt from one is raised after the flush.
 
     uvicorn runs the lifespan exit on SIGTERM and SIGINT once connections
     have finished or its graceful shutdown timeout has passed, and skips it
     only on a forced exit (a second SIGINT).
     """
     gate_summary = summary if summary is not None else default_summary
+    counter = demand_counter if demand_counter is not None else demand.default_counter
     closers = tuple(on_exit)
 
     @contextlib.asynccontextmanager
     async def lifespan(app: Any) -> AsyncIterator[Any]:
-        writer = asyncio.create_task(_write_every(gate_summary, interval))
+        counter.open()
+        writer = asyncio.create_task(_write_every(gate_summary, interval, counter))
         try:
             async with inner(app) as state:
                 yield state
@@ -419,11 +525,44 @@ def wrap_lifespan(
                 gate_summary.write()
             except Exception as e:
                 logger.warning("Gate summary failed (%s).", type(e).__name__)
+            interrupt = _write_at_exit(counter)
             for close in closers:
                 try:
                     await close()
                 except Exception as e:
                     logger.warning("Shutdown step failed (%s).", type(e).__name__)
+            # A request still open past the drain can finish while the closers
+            # run; write once more so its count goes out with the flush. The
+            # counter closes first: a count taken after close() goes to lost,
+            # and one taken before this final write is in its lost. Only a
+            # count after this final write is not reported by this process
+            # (demand.py, lost).
+            counter.close()
+            interrupt = _write_at_exit(counter) or interrupt
             await asyncio.to_thread(observability.flush_telemetry, flush_timeout)
+            if interrupt is not None:
+                raise interrupt
 
     return lifespan
+
+
+def _write_at_exit(counter: demand.DemandCounter) -> BaseException | None:
+    """demand.write_logged for the exit sequence, which nothing it raises may stop.
+
+    An interrupt (KeyboardInterrupt, SystemExit) is handed back, for the
+    lifespan to raise once the closers and the telemetry flush have run;
+    anything else is logged by its class and dropped. The report goes to the
+    logger that may be what failed, so it is held to the same rule.
+    """
+    try:
+        try:
+            demand.write_logged(counter)
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except BaseException as e:
+            demand.logger.warning("Demand count failed (%s).", type(e).__name__)
+    except (KeyboardInterrupt, SystemExit) as e:
+        return e
+    except BaseException:
+        pass
+    return None
