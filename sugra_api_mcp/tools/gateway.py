@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import difflib
+import math
 import threading
 import time
 from collections import deque
@@ -614,11 +615,9 @@ def _unknown_params_error(
         "unknown": unknown,
         "accepted": accepted,
     }
-    by_lower = {name.lower(): name for name in accepted}
     did_you_mean: dict[str, str] = {}
     for key in unknown:
-        match = by_lower.get(key.lower()) or next(
-            iter(difflib.get_close_matches(key, accepted, n=1, cutoff=0.6)), None)
+        match = _closest_declared(key, accepted)
         if match:
             did_you_mean[key] = match
     if did_you_mean:
@@ -629,6 +628,159 @@ def _unknown_params_error(
         "describe_endpoint(operation_id) lists every parameter."
     )
     return payload
+
+
+def _closest_declared(key: str, accepted: list[str]) -> str | None:
+    """The declared name a key misspells (did_you_mean), or None."""
+    by_lower = {name.lower(): name for name in accepted}
+    return by_lower.get(key.lower()) or next(
+        iter(difflib.get_close_matches(key, accepted, n=1, cutoff=0.6)), None)
+
+
+# fetch_data selection. The search window is wider than the candidate list the
+# payloads carry: "Bitcoin price history" with coin_id and days finds the
+# operation that declares both at rank 5.
+_SELECTION_WINDOW = 5
+_CANDIDATE_LIST = 3
+# A key at most this many operations declare is evidence of which operation
+# the caller means. A common one (limit, symbol, start_date) is not.
+_RARE_KEY_MAX_OPERATIONS = 5
+# Another hit runs only when it scores at least this share of the top match.
+_RESELECT_SCORE_FLOOR = 0.5
+_MAX_ALTERNATIVES = 3
+
+_key_counts: tuple[Any, dict[str, int]] | None = None
+
+
+def _operations_per_key(catalog: Any) -> dict[str, int]:
+    """How many operations declare each parameter name, cached per catalog."""
+    global _key_counts
+    cached = _key_counts
+    if cached is not None and cached[0] is catalog:
+        return cached[1]
+    counts: dict[str, int] = {}
+    for endpoint in getattr(catalog, "endpoints", None) or ():
+        for name in {parameter.name for parameter in endpoint.parameters}:
+            counts[name] = counts.get(name, 0) + 1
+    _key_counts = (catalog, counts)
+    return counts
+
+
+def _selectable(catalog: Any, operation_id: str, keys: Any) -> Any | None:
+    """The endpoint fetch_data may run instead of its top match, or None.
+
+    Only a GET operation that declares every sent key, and never an
+    open-query one, whose undeclared keys would pass as filters. The one place
+    that decides it, for the reselection and the refusal's alternatives alike.
+    """
+    if operation_id in _OPEN_QUERY_OPERATIONS:
+        return None
+    try:
+        endpoint = catalog.get(operation_id)
+    except KeyError:
+        return None
+    if endpoint.method != "GET":
+        return None
+    declared = {parameter.name for parameter in endpoint.parameters}
+    if not set(keys) <= declared:
+        return None
+    return endpoint
+
+
+def _hit_score(hit: Any) -> float | None:
+    """A hit's finite numeric score, or None: NaN and infinity never compare."""
+    score = hit.get("score") if isinstance(hit, dict) else None
+    if isinstance(score, bool) or not isinstance(score, (int, float)):
+        return None
+    if not math.isfinite(score):
+        return None
+    return score
+
+
+def _hit_operation_id(hit: Any) -> str | None:
+    """A hit's operation_id when it is a string, else None (the hit is skipped)."""
+    operation_id = hit.get("operation_id") if isinstance(hit, dict) else None
+    return operation_id if isinstance(operation_id, str) else None
+
+
+def _reselect(
+    catalog: Any,
+    results: list[dict[str, Any]],
+    top: Any,
+    params: dict[str, Any],
+    body: Any,
+) -> tuple[str, Any] | None:
+    """Another search hit to run when the params belong to it, or None.
+
+    Only when a sent key is foreign to the top match (undeclared there and not
+    a misspelling of one of its names) and rare, and a GET hit within the
+    window declares every sent key and scores at least half the top. The
+    first such hit in rank order wins; a mismatch on common keys only stays
+    with the top match and its unknown_parameters refusal.
+    """
+    if not params or body is not None or top.method != "GET":
+        return None
+    if results[0]["operation_id"] in _OPEN_QUERY_OPERATIONS:
+        return None
+    accepted = [parameter.name for parameter in top.parameters]
+    foreign = [
+        key for key in params
+        if key not in accepted and _closest_declared(key, accepted) is None
+    ]
+    if not foreign:
+        return None
+    counts = _operations_per_key(catalog)
+    if not any(counts.get(key, 0) <= _RARE_KEY_MAX_OPERATIONS for key in foreign):
+        return None
+    top_score = _hit_score(results[0])
+    if top_score is None or top_score <= 0:
+        return None
+    for hit in results[1:_SELECTION_WINDOW]:
+        operation_id = _hit_operation_id(hit)
+        score = _hit_score(hit)
+        if operation_id is None or score is None or score < _RESELECT_SCORE_FLOOR * top_score:
+            continue
+        endpoint = _selectable(catalog, operation_id, params)
+        if endpoint is not None:
+            return operation_id, endpoint
+    return None
+
+
+def _alternatives(
+    catalog: Any,
+    results: list[dict[str, Any]],
+    refused: str,
+    params: dict[str, Any],
+    unknown: Any,
+) -> list[str]:
+    """Up to three other GET hits in the window, never open-query ones, that
+    declare every sent key, the refused ones included; [] when no params were
+    sent or no key was refused."""
+    refused_keys = {key for key in unknown if isinstance(key, str)} if isinstance(
+        unknown, list) else set()
+    if not params or not refused_keys:
+        return []
+    keys = set(params) | refused_keys
+    found: list[str] = []
+    for hit in results[:_SELECTION_WINDOW]:
+        operation_id = _hit_operation_id(hit)
+        if operation_id is None or operation_id == refused:
+            continue
+        if _selectable(catalog, operation_id, keys) is not None:
+            found.append(operation_id)
+        if len(found) == _MAX_ALTERNATIVES:
+            break
+    return found
+
+
+def _with_fetch_meta(result: dict[str, Any], selection: dict[str, Any]) -> dict[str, Any]:
+    """The result with meta.fetch_data set, on copies; a non-dict meta is left as is."""
+    meta = result.get("meta")
+    if meta is None:
+        meta = {}
+    if not isinstance(meta, dict):
+        return result
+    return {**result, "meta": {**meta, "fetch_data": selection}}
 
 
 def _missing_required(
@@ -1159,7 +1311,7 @@ async def fetch_data(
         if refusal is not None:
             return refusal
         catalog = load_catalog()
-        results = await _search_off_loop(catalog, query, limit=3)
+        results = await _search_off_loop(catalog, query, limit=_SELECTION_WINDOW)
         if isinstance(results, dict):
             return results
 
@@ -1170,6 +1322,9 @@ async def fetch_data(
                 "hint": "Try a more specific query or use search_endpoints + describe_endpoint to explore the catalog manually.",
             }
 
+        # Every payload below lists the first three hits, as before the
+        # selection window grew to five.
+        candidates = results[:_CANDIDATE_LIST]
         top = results[0]
         operation_id = top["operation_id"]
 
@@ -1181,10 +1336,22 @@ async def fetch_data(
             return {
                 "error": "stale_search_result",
                 "operation_id": operation_id,
-                "candidate_endpoints": results,
+                "candidate_endpoints": candidates,
             }
 
         clean_params = {key: value for key, value in (params or {}).items() if value is not None}
+        # Params that belong to another hit run that hit, not the top match:
+        # the checks below and the call all use the selected operation.
+        reselected = _reselect(catalog, results, endpoint, clean_params, body)
+        if reselected is not None:
+            operation_id, endpoint = reselected
+        selection: dict[str, Any] = {
+            "operation_id": operation_id,
+            "selected_by": "params" if reselected is not None else "query",
+        }
+        if reselected is not None:
+            selection["top_match"] = top["operation_id"]
+
         missing = _missing_required(endpoint, clean_params, body)
         # A query that names a country must not run on the operation's
         # default place: that answered Germany with US figures.
@@ -1221,12 +1388,13 @@ async def fetch_data(
                 # "body" in missing means the agent must construct a JSON
                 # body - hand it the exact schema instead of letting it guess.
                 selected["request_body_schema"] = endpoint.request_body_schema
+            match = "selected" if reselected is not None else "top"
             needs: dict[str, Any] = {
                 "needs_params": missing,
                 "selected_endpoint": selected,
-                "candidate_endpoints": results,
+                "candidate_endpoints": candidates,
                 "hint": (
-                    f"The top match `{operation_id}` requires {missing}. "
+                    f"The {match} match `{operation_id}` requires {missing}. "
                     f"Retry as fetch_data(query, params={{...}}) with those keys filled in, "
                     f"or call describe_endpoint(operation_id) for full schema."
                 ),
@@ -1253,7 +1421,7 @@ async def fetch_data(
                          else "supply every parameter of at least one group"
                          + (" (groups are mutually exclusive)"
                             if endpoint.groups_mutually_exclusive else "")),
-                "candidate_endpoints": results,
+                "candidate_endpoints": candidates,
             }
 
         # All required params satisfied - delegate to the same call path as
@@ -1263,7 +1431,7 @@ async def fetch_data(
         # from kwargs only (a positional first argument is a raw query on
         # other tools). Passed positionally, every delegated failure was a
         # call_endpoint span with no operation at all.
-        return await call_endpoint(
+        result = await call_endpoint(
             operation_id=operation_id,
             params=clean_params,
             body=body,
@@ -1271,6 +1439,19 @@ async def fetch_data(
             fields=fields,
             include_raw=include_raw,
         )
+        if not isinstance(result, dict):
+            return result
+        if is_error_payload(result):
+            # The refusal comes from the delegate, so its span keeps the
+            # operation; the hits that would take every sent key are named.
+            if result.get("error") == "unknown_parameters":
+                alternatives = _alternatives(
+                    catalog, results, operation_id, clean_params, result.get("unknown"))
+                if alternatives:
+                    result = {**result, "alternatives": alternatives}
+            return result
+        # After the size gate: the selection adds a few dozen characters.
+        return _with_fetch_meta(result, selection)
     except Exception as exc:
         return {
             "error": "tool_execution_failed",
