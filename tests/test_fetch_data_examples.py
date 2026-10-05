@@ -1,8 +1,11 @@
 """The examples in fetch_data's description must run as written.
 
-fetch_data runs only the top search hit, and a param that operation does not
-declare returns unknown_parameters. A model that copies an example should get
-the operation the example names, with every param it passes declared there.
+fetch_data runs the top search hit unless a sent key is rare and foreign to
+it and a GET hit among the first five, scoring at least half the top,
+declares every sent key (test_fetch_data_selection.py); a param the operation
+that runs does not declare returns unknown_parameters. A model that copies an example should get
+the operation the example names as the top hit, with every param it passes
+declared there.
 Offline: the bundled catalog and the search, no HTTP.
 """
 
