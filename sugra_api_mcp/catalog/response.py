@@ -36,9 +36,9 @@ keeps the first N records, as limit always did. When a
 limit was applied to a records list, ``meta.shaped`` reports ``order``
 (``asc``, ``desc`` or ``unknown``) and ``kept_end`` (``newest`` or
 ``first``), as maps keyed by sibling name for sibling sub-series. The
-response size gate (``client._enforce_size_limit``) cuts an oversized
-``data`` list by this same rule and reports the same two keys in
-``meta.truncated``.
+response size gate (``client._enforce_size_limit``, ``size_cut``) cuts
+the lists of an oversized response by this same rule, whatever their key,
+and reports the same two keys in ``meta.truncated``.
 
 Shaping never empties a response: when no requested field matches, the
 target is returned unprojected and every field is reported unmatched.

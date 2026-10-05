@@ -542,13 +542,15 @@ async def _shape_off_loop(call: Callable[[], Any]) -> Any:
 
 
 def _shape_and_gate(
-    payload: Any, path: str, limit: int | None, fields: list[str] | None, include_raw: bool
+    payload: Any, path: str, limit: int | None, fields: list[str] | None, include_raw: bool,
+    *, endpoint: Any = None,
 ) -> dict[str, Any]:
     """The job the shaping pool runs: shape the response, then apply the size gate."""
     shaped = shape_response(payload, limit=limit, fields=fields, include_raw=include_raw)
     # The unshaped payload lets the gate read the records' order as the
-    # API sent them, so it keeps the same end meta.shaped reports.
-    return _enforce_size_limit(shaped, path, unshaped=payload)
+    # API sent them, so it keeps the same end meta.shaped reports; the
+    # endpoint lets its hints name the operation's own parameters.
+    return _enforce_size_limit(shaped, path, unshaped=payload, endpoint=endpoint)
 
 
 def _resolve_path(path: str, params: dict[str, Any]) -> str:
@@ -990,7 +992,9 @@ async def call_endpoint(
 
         # Shaping and the size gate run on the shaping pool, never on the
         # event loop; a full pool answers server_busy.
-        return await _shape_off_loop(partial(_shape_and_gate, payload, path, limit, fields, include_raw))
+        return await _shape_off_loop(
+            partial(_shape_and_gate, payload, path, limit, fields, include_raw, endpoint=endpoint)
+        )
     except ProjectionTooLargeError as exc:
         return projection_too_large_error(
             exc.kind, exc.limit, exc.actual, exc.field_index, operation_id,

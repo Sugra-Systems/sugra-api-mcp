@@ -56,9 +56,11 @@ import httpx
 from . import __version__
 from .config import Config
 
-# Anthropic Connectors Directory requires tool results <= 25 000 tokens.
-# Using ~4 chars per token as a conservative heuristic, we cap at 85 000 chars
-# (~21 000 tokens) to leave headroom for MCP envelope overhead.
+# Anthropic documents two limits for a connector's tool results: about
+# 150,000 characters in claude.ai and Claude Desktop, and 25,000 tokens in
+# Claude Code. The cap is set by the stricter one: at about 4 characters a
+# token, 85,000 characters (about 21,000 tokens) leaves room for the MCP
+# envelope. It is the same for every client.
 MAX_RESPONSE_CHARS = 85_000
 
 
@@ -306,90 +308,62 @@ def _unshaped_records(unshaped: Any) -> list[Any] | None:
     return None
 
 
-def _enforce_size_limit(payload: Any, url: str, *, unshaped: Any = None) -> Any:
-    """Trim payload to fit MCP token limits. Returns possibly-modified dict.
+def response_chars(value: Any) -> int:
+    """The size the cap measures: characters of ``json.dumps`` with
+    ``ensure_ascii=False`` and the default separators, so a non-ASCII
+    character counts once and an ASCII response measures as it always did."""
+    return len(json.dumps(value, ensure_ascii=False))
 
-    An oversized ``data`` list is cut by the rule ``limit`` uses
-    (``catalog.response._limit_records``): the newest end when the order of
-    the records can be read, the first records otherwise, and
-    ``meta.truncated`` reports ``order`` and ``kept_end``. When no trim fits
-    the cap (one record alone is larger, or the envelope around the list
-    is), the result is the ``response_too_large`` error an unknown shape
-    gets.
 
-    ``unshaped`` is the same response before shaping cut or projected its
-    ``data`` list, passed by a caller that shaped it (call_endpoint). The
-    order is then read from that list instead: a cut or a projection keeps
-    the records' order but may drop the date key it is read from, and it is
-    the very read ``meta.shaped`` reports, so the two agree on the end kept.
+def _on_event_loop() -> bool:
+    """Whether this thread runs an event loop: the shaping pool's threads do
+    not, the thread serving the tools does."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
+def _enforce_size_limit(
+    payload: Any, url: str, *, unshaped: Any = None, endpoint: Any = None
+) -> Any:
+    """Return payload whole when it fits MAX_RESPONSE_CHARS, else cut it to
+    fit, else the ``response_too_large`` refusal.
+
+    The cut (``catalog.size_cut.cut_to_fit``) takes any shape: every list at
+    most two levels under ``data``, a big list cut before small ones, each
+    keeping the end ``limit`` keeps (``catalog.response._limit_records``),
+    the newest when the order of the records can be read, the first records
+    otherwise. ``meta.truncated`` reports it. On the event loop only the
+    ``data`` list is cut, and only in a response that is not far larger than
+    the cap; the whole cut runs on the shaping pool.
+
+    ``unshaped`` is the same response before shaping cut or projected it,
+    passed by a caller that shaped it (call_endpoint). The order of a list is
+    then read from that response instead: a cut or a projection keeps the
+    records' order but may drop the date key it is read from, and it is the
+    very read ``meta.shaped`` reports, so the two agree on the end kept.
+
+    ``endpoint`` is the catalog entry of the operation call_endpoint or
+    fetch_data called: the hints name its parameters and those tools' own
+    arguments. Without it the hints name none.
     """
-    payload_str = json.dumps(payload)
-    if len(payload_str) <= MAX_RESPONSE_CHARS:
+    size = response_chars(payload)
+    if size <= MAX_RESPONSE_CHARS:
         return payload
+    # Imported here, not at the top: the catalog package imports this module.
+    from .catalog.size_cut import cut_to_fit
 
-    # Try to truncate a list inside `data` field (common envelope shape)
-    if isinstance(payload, dict) and isinstance(payload.get("data"), list):
-        data_list = payload["data"]
-        if data_list:
-            # Imported here, not at the top: catalog.response imports
-            # MAX_RESPONSE_CHARS from this module.
-            from .catalog.response import _limit_records, _records_order
-
-            empty_shell = {**payload, "data": []}
-            shell_size = len(json.dumps(empty_shell))
-            budget = MAX_RESPONSE_CHARS - shell_size - 500  # room for notice
-            avg_item = max(1, (len(payload_str) - shell_size) // len(data_list))
-            kept = max(1, min(len(data_list), budget // avg_item))
-            source = _unshaped_records(unshaped)
-            order = _records_order(source) if source is not None else None
-            kept_list, order, kept_end = _limit_records(data_list, kept, order=order)
-
-            def candidate(records):
-                truncated = {**payload, "data": records}
-                meta = dict(truncated.get("meta") or {})
-                meta["truncated"] = {
-                    "reason": "exceeds_mcp_25k_token_limit",
-                    "original_count": len(data_list),
-                    "kept_count": len(records),
-                    "order": order,
-                    "kept_end": kept_end,
-                    "retry_hint": "Add filters (country, date range, limit) to reduce response size.",
-                }
-                truncated["meta"] = meta
-                return truncated
-
-            # The count is estimated from the average record, but the records
-            # kept come from one end, which may run larger than the average
-            # (the newest points of a series often carry more digits). Shrink
-            # until the whole payload, notice included, really fits: the 500
-            # characters above only seed the estimate, the cap is measured.
-            truncated = candidate(kept_list)
-            size = len(json.dumps(truncated))
-            while kept > 1 and size > MAX_RESPONSE_CHARS:
-                kept_size = len(json.dumps(kept_list)) - 2
-                room = MAX_RESPONSE_CHARS - (size - kept_size)
-                kept = max(1, min(kept - 1, room * kept // kept_size))
-                kept_list, _, _ = _limit_records(data_list, kept, order=order)
-                truncated = candidate(kept_list)
-                size = len(json.dumps(truncated))
-            # When even one record does not fit, or the envelope around the
-            # list leaves no room, no trim can meet the cap: fall through to
-            # the structured error below instead of returning an over-cap
-            # payload.
-            if size <= MAX_RESPONSE_CHARS:
-                return truncated
-
-    # Unknown shape, or no trim of the data list fits - return a structured
-    # error the agent can act on
-    return {
-        "error": "response_too_large",
-        "message": (
-            f"Response exceeds MCP 25000 token limit (approx {len(payload_str) // 4} tokens). "
-            "Retry with narrower filters."
-        ),
-        "estimated_tokens": len(payload_str) // 4,
-        "url": url,
-    }
+    return cut_to_fit(
+        payload,
+        url,
+        size=size,
+        cap=MAX_RESPONSE_CHARS,
+        unshaped=unshaped,
+        endpoint=endpoint,
+        on_loop=_on_event_loop(),
+    )
 
 
 class SugraClient:
