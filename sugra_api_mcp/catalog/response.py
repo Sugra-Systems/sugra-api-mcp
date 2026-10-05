@@ -66,6 +66,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections.abc import Callable, Iterable, Iterator
 from copy import deepcopy
 from datetime import datetime
 from itertools import pairwise
@@ -447,7 +448,18 @@ def _string_template(value: str) -> str:
     return "".join("#" if char in _ASCII_DIGITS else char for char in value)
 
 
-def _order_keys(keys: list[Any]) -> list[Any] | None:
+def _each(items: Iterable[Any], tick: Callable[[], None] | None) -> Iterable[Any]:
+    """items, with tick called before each one when it is given."""
+    return items if tick is None else _ticking(items, tick)
+
+
+def _ticking(items: Iterable[Any], tick: Callable[[], None]) -> Iterator[Any]:
+    for item in items:
+        tick()
+        yield item
+
+
+def _order_keys(keys: list[Any], tick: Callable[[], None] | None = None) -> list[Any] | None:
     """The keys in a form whose natural order is date order, or None.
 
     Numbers compare numerically (years, epoch seconds). Strings must all
@@ -470,17 +482,17 @@ def _order_keys(keys: list[Any]) -> list[Any] | None:
     needs a convention the shape cannot show (month then day or day then
     month, a UTC offset), and fails the whole list.
     """
-    if all(_is_number(key) for key in keys):
+    if all(_is_number(key) for key in _each(keys, tick)):
         return keys
-    if not all(isinstance(key, str) for key in keys):
+    if not all(isinstance(key, str) for key in _each(keys, tick)):
         return None
     template = _string_template(keys[0])
     if not template.startswith("####"):
         return None
-    if not all(_string_template(key) == template for key in keys[1:]):
+    if not all(_string_template(key) == template for key in _each(keys[1:], tick)):
         return None
     if _iso_moment(keys[0]) is not None:
-        return _iso_moments(keys)
+        return _iso_moments(keys, tick)
     if _YEAR_AND_ONE_PART_SHAPE.fullmatch(template) is None:
         return None
     return keys
@@ -493,9 +505,9 @@ def _iso_moment(value: str) -> datetime | None:
         return None
 
 
-def _iso_moments(keys: list[str]) -> list[datetime] | None:
+def _iso_moments(keys: list[str], tick: Callable[[], None] | None = None) -> list[datetime] | None:
     moments = []
-    for key in keys:
+    for key in _each(keys, tick):
         moment = _iso_moment(key)
         if moment is None:
             return None
@@ -506,29 +518,33 @@ def _iso_moments(keys: list[str]) -> list[datetime] | None:
     return moments
 
 
-def _records_order(records: list[Any]) -> str:
+def _records_order(records: list[Any], *, tick: Callable[[], None] | None = None) -> str:
     """Read the order of a records list from its one date or period key.
 
     ``asc`` or ``desc`` only when exactly one known key is present and
     non-null on every record, its values are comparable, the first and last
     differ, and the whole list runs one way (ties allowed). Otherwise
     ``unknown``.
+
+    ``tick``, when given, is called before each record or key of every
+    pass over the list: the response size gate raises from it once its clock
+    runs out.
     """
-    if len(records) <= 1 or not all(isinstance(record, dict) for record in records):
+    if len(records) <= 1 or not all(isinstance(record, dict) for record in _each(records, tick)):
         return ORDER_UNKNOWN
     present = [
         key for key in _DATE_KEY_CANDIDATES
-        if all(record.get(key) is not None for record in records)
+        if all(record.get(key) is not None for record in _each(records, tick))
     ]
     if len(present) != 1:
         return ORDER_UNKNOWN
-    keys = _order_keys([record[present[0]] for record in records])
+    keys = _order_keys([record[present[0]] for record in _each(records, tick)], tick)
     if keys is None or keys[0] == keys[-1]:
         return ORDER_UNKNOWN
     pairs = list(pairwise(keys))
-    if all(earlier <= later for earlier, later in pairs):
+    if all(earlier <= later for earlier, later in _each(pairs, tick)):
         return ORDER_ASC
-    if all(earlier >= later for earlier, later in pairs):
+    if all(earlier >= later for earlier, later in _each(pairs, tick)):
         return ORDER_DESC
     return ORDER_UNKNOWN
 

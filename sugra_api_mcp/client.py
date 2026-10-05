@@ -49,6 +49,7 @@ import re
 import ssl
 import threading
 import time
+from functools import partial
 from typing import Any
 
 import httpx
@@ -60,7 +61,9 @@ from .config import Config
 # 150,000 characters in claude.ai and Claude Desktop, and 25,000 tokens in
 # Claude Code. The cap is set by the stricter one: at about 4 characters a
 # token, 85,000 characters (about 21,000 tokens) leaves room for the MCP
-# envelope. It is the same for every client.
+# envelope. It is the same for every client. The characters are counted with
+# ASCII escapes (response_chars), so a CJK character counts six and CJK text
+# stays inside the token limit as well.
 MAX_RESPONSE_CHARS = 85_000
 
 
@@ -309,10 +312,100 @@ def _unshaped_records(unshaped: Any) -> list[Any] | None:
 
 
 def response_chars(value: Any) -> int:
-    """The size the cap measures: characters of ``json.dumps`` with
-    ``ensure_ascii=False`` and the default separators, so a non-ASCII
-    character counts once and an ASCII response measures as it always did."""
-    return len(json.dumps(value, ensure_ascii=False))
+    """The size the cap measures: the length of ``json.dumps`` with its
+    defaults, ASCII escapes and the default separators. A non-ASCII
+    character counts as its escape, six characters, which keeps the cap
+    inside the token limit for CJK text too."""
+    return len(json.dumps(value))
+
+
+class _OverBudget(Exception):
+    """A bounded measure passed its budget."""
+
+
+# The C escape json.dumps itself uses for every string.
+_encode_string = json.encoder.encode_basestring_ascii
+
+
+def response_chars_within(value: Any, budget: int) -> int | None:
+    """``response_chars(value)`` when it is at most ``budget``, else None.
+
+    The value is walked in order and the walk stops as soon as the count
+    passes the budget, so the work is bounded by the budget, never by the
+    size of the value: a string longer than the room left is counted over
+    without being escaped. The count is exactly the one ``response_chars``
+    gives.
+    """
+    try:
+        return _chars_within(value, budget)
+    except _OverBudget:
+        return None
+
+
+def _float_text(value: float) -> str:
+    if value != value:
+        return "NaN"
+    if value == float("inf"):
+        return "Infinity"
+    if value == float("-inf"):
+        return "-Infinity"
+    return float.__repr__(value)
+
+
+def _key_chars(key: Any, room: int) -> int:
+    if isinstance(key, str):
+        if len(key) + 2 > room:
+            raise _OverBudget
+        return len(_encode_string(key))
+    if isinstance(key, float):
+        return len(_float_text(key)) + 2
+    if key is True or key is None:
+        return 6
+    if key is False:
+        return 7
+    if isinstance(key, int):
+        return len(int.__repr__(key)) + 2
+    # The error json.dumps raises for such a key.
+    return len(json.dumps({key: None}))
+
+
+def _chars_within(value: Any, room: int) -> int:
+    """The measure of value, raising _OverBudget once it passes room."""
+    if isinstance(value, str):
+        if len(value) + 2 > room:
+            raise _OverBudget
+        size = len(_encode_string(value))
+    elif value is None or value is True:
+        size = 4
+    elif value is False:
+        size = 5
+    elif isinstance(value, int):
+        size = len(int.__repr__(value))
+    elif isinstance(value, float):
+        size = len(_float_text(value))
+    elif isinstance(value, (list, tuple)):
+        size = 2
+        for index, item in enumerate(value):
+            if index:
+                size += 2
+            if size > room:
+                raise _OverBudget
+            size += _chars_within(item, room - size)
+    elif isinstance(value, dict):
+        size = 2
+        for index, (key, item) in enumerate(value.items()):
+            if index:
+                size += 2
+            size += _key_chars(key, room - size) + 2
+            if size > room:
+                raise _OverBudget
+            size += _chars_within(item, room - size)
+    else:
+        # The error json.dumps raises for what it cannot encode.
+        size = len(json.dumps(value))
+    if size > room:
+        raise _OverBudget
+    return size
 
 
 def _on_event_loop() -> bool:
@@ -331,13 +424,17 @@ def _enforce_size_limit(
     """Return payload whole when it fits MAX_RESPONSE_CHARS, else cut it to
     fit, else the ``response_too_large`` refusal.
 
-    The cut (``catalog.size_cut.cut_to_fit``) takes any shape: every list at
-    most two levels under ``data``, a big list cut before small ones, each
+    The fit is measured by ``response_chars_within``, which stops at the
+    cap, so a response far over it is never serialised whole here. The cut
+    (``catalog.size_cut.cut_to_fit``) takes any shape: every list at most
+    two levels under ``data``, a big list cut before small ones, each
     keeping the end ``limit`` keeps (``catalog.response._limit_records``),
     the newest when the order of the records can be read, the first records
-    otherwise. ``meta.truncated`` reports it. On the event loop only the
-    ``data`` list is cut, and only in a response that is not far larger than
-    the cap; the whole cut runs on the shaping pool.
+    otherwise. ``meta.truncated`` reports it. The cut runs only off the
+    event loop, on the shaping pool: ``SugraClient.request`` and
+    call_endpoint send an oversized response there. On the event loop,
+    where only the error payloads call_endpoint returns as they came are
+    gated, a response over the cap is refused without being walked.
 
     ``unshaped`` is the same response before shaping cut or projected it,
     passed by a caller that shaped it (call_endpoint). The order of a list is
@@ -349,21 +446,29 @@ def _enforce_size_limit(
     fetch_data called: the hints name its parameters and those tools' own
     arguments. Without it the hints name none.
     """
-    size = response_chars(payload)
-    if size <= MAX_RESPONSE_CHARS:
+    if response_chars_within(payload, MAX_RESPONSE_CHARS) is not None:
         return payload
     # Imported here, not at the top: the catalog package imports this module.
-    from .catalog.size_cut import cut_to_fit
+    from .catalog.size_cut import cut_to_fit, refuse_unmeasured
 
+    if _on_event_loop():
+        return refuse_unmeasured(url, MAX_RESPONSE_CHARS)
     return cut_to_fit(
-        payload,
-        url,
-        size=size,
-        cap=MAX_RESPONSE_CHARS,
-        unshaped=unshaped,
-        endpoint=endpoint,
-        on_loop=_on_event_loop(),
+        payload, url, cap=MAX_RESPONSE_CHARS, unshaped=unshaped, endpoint=endpoint
     )
+
+
+async def _gate_off_loop(payload: Any, url: str) -> Any:
+    """The size gate for a response the client returns as it came: measured
+    on the event loop only up to the cap, and when over it measured and cut
+    on the shaping pool, as call_endpoint's are; a full pool answers
+    server_busy."""
+    if response_chars_within(payload, MAX_RESPONSE_CHARS) is not None:
+        return payload
+    # Imported here, not at the top: the gateway module imports this one.
+    from .tools.gateway import _shape_off_loop
+
+    return await _shape_off_loop(partial(_enforce_size_limit, payload, url))
 
 
 class SugraClient:
@@ -475,7 +580,16 @@ class SugraClient:
                     "Retry once; if it persists, report the reason field."
                 ),
             )
-        return self._handle(response, elapsed_ms=_elapsed_ms(start), enforce_size=enforce_size)
+        result = self._handle(response, elapsed_ms=_elapsed_ms(start))
+        # Enforced HERE by default - the backstop every caller gets for free.
+        # A caller that shapes its own response after the fact
+        # (gateway.call_endpoint) passes enforce_size=False and gates it
+        # itself once its own `fields` / `limit` projection has run, so the
+        # raw, unprojected body is never what gets measured for it. A failure
+        # dict is answered as built.
+        if not enforce_size or response.status_code >= 300:
+            return result
+        return await _gate_off_loop(result, str(response.request.url))
 
     def _transport_error(
         self,
@@ -510,9 +624,7 @@ class SugraClient:
             return f"{self._config.api_base}{path}"
 
     @staticmethod
-    def _handle(
-        response: httpx.Response, *, elapsed_ms: int, enforce_size: bool = True
-    ) -> dict[str, Any]:
+    def _handle(response: httpx.Response, *, elapsed_ms: int) -> dict[str, Any]:
         try:
             payload = response.json()
         except ValueError:
@@ -551,15 +663,7 @@ class SugraClient:
             if request_id:
                 result["request_id"] = str(request_id)
             return result
-        # Enforced HERE by default - the backstop every caller gets for free.
-        # A caller that shapes its own response after the fact
-        # (gateway.call_endpoint) passes enforce_size=False and calls
-        # _enforce_size_limit itself once its own `fields` / `limit`
-        # projection has run, so the raw, unprojected body is never what
-        # gets measured for it.
-        if not enforce_size:
-            return payload
-        return _enforce_size_limit(payload, str(response.request.url))
+        return payload
 
     async def aclose(self) -> None:
         """Close the client built on a transport of this client's own.

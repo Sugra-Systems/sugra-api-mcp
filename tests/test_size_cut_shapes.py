@@ -197,17 +197,27 @@ async def test_a_list_under_a_key_outside_the_records_allowlist_is_cut(monkeypat
     assert 0 < len(result["data"]["prices"]) < 5000
 
 
-async def test_cjk_text_is_measured_in_characters(monkeypatch) -> None:
+async def test_cjk_text_is_measured_by_its_escapes() -> None:
     body = {"data": [{"date": f"2026-01-{i % 28 + 1:02d}", "text": "東京" * 500} for i in range(60)]}
-    assert chars(body) < MAX_RESPONSE_CHARS < len(json.dumps(body))
+    # Under the cap counted once a character, far over it as escapes: the
+    # escapes are what is enforced, as they always were.
+    assert len(json.dumps(body, ensure_ascii=False)) < MAX_RESPONSE_CHARS < chars(body)
 
-    assert _enforce_size_limit(body, "test://cjk") == body
+    direct = await asyncio.to_thread(_enforce_size_limit, body, "test://cjk")
     client = client_serving(body)
     try:
         fetched = await client.get("/api/v1/some/text")
     finally:
         await client.aclose()
-    assert fetched == body
+
+    for result in (direct, fetched):
+        cut = notice(result)
+        assert 1 <= cut["kept_count"] < 60
+        assert cut["original_chars"] == chars(body)
+        assert cut["kept_chars"] == chars(result) <= MAX_RESPONSE_CHARS
+        # The dates wrap around, so no order is read and the first are kept.
+        assert cut["kept_end"] == "first"
+        assert result["data"] == body["data"][: cut["kept_count"]]
 
 
 def test_an_ascii_response_meets_the_cap_where_it_always_did() -> None:
@@ -236,7 +246,7 @@ async def test_the_cut_past_its_clock_is_a_size_refusal_not_a_projection_error(m
     assert _fits(result)
 
 
-async def test_on_the_event_loop_a_far_larger_response_is_refused_unwalked(monkeypatch) -> None:
+async def test_on_the_event_loop_a_response_over_the_cap_is_refused_unwalked(monkeypatch) -> None:
     module = size_cut_module()
     assert module is not None
 
@@ -245,14 +255,16 @@ async def test_on_the_event_loop_a_far_larger_response_is_refused_unwalked(monke
 
     monkeypatch.setattr(module, "_find_lists", never)
     monkeypatch.setattr(module, "_List", never)
+    monkeypatch.setattr(client_module, "response_chars", never)
     body = {"data": bars(30_000)}
-    assert chars(body) > module.MAX_LOOP_CUT_CHARS
 
     result = _enforce_size_limit(body, "test://loop")
 
     assert result["error"] == "response_too_large"
     assert "retry_hint" not in result
-    assert result["response_chars"] == chars(body)
+    assert result["response_chars"] is None
+    assert result["message"] == "Response is over the limit of 85,000 characters."
+    assert _fits(result)
 
 
 async def test_off_the_loop_the_same_response_is_cut() -> None:
@@ -265,7 +277,7 @@ async def test_off_the_loop_the_same_response_is_cut() -> None:
     assert result["data"][-1] == body["data"][-1]
 
 
-async def test_on_the_event_loop_only_the_data_list_is_cut() -> None:
+async def test_the_client_cuts_any_shape_on_the_shaping_pool() -> None:
     nested = quotes_history(2000)
     flat = {"data": bars(2000), "meta": {}}
     bare = bars(2000)
@@ -277,9 +289,9 @@ async def test_on_the_event_loop_only_the_data_list_is_cut() -> None:
         finally:
             await client.aclose()
 
-    refused, cut_flat, cut_bare = results
-    assert refused["error"] == "response_too_large"
-    assert "Most of it is at data.data" in refused["message"]
+    cut_nested, cut_flat, cut_bare = results
+    assert notice(cut_nested)["path"] == "data.data" and _fits(cut_nested)
+    assert cut_nested["data"]["data"][-1] == nested["data"]["data"][-1]
     assert notice(cut_flat)["path"] == "data" and _fits(cut_flat)
     assert notice(cut_bare)["path"] == "data" and _fits(cut_bare)
     assert cut_bare["data"][-1] == bare[-1]
@@ -296,8 +308,9 @@ async def test_one_record_over_the_cap_is_refused_in_characters(monkeypatch) -> 
     assert result["cap_chars"] == MAX_RESPONSE_CHARS
     assert result["response_chars"] == chars(body)
     assert isinstance(result["estimated_tokens"], int)
+    record = chars(body["data"][0])
     assert result["retry_hint"] == (
-        "One record at data is larger than the limit by itself. "
+        f"One record at data is larger than the limit by itself, about {record:,} characters. "
         "Pass fields naming only the keys you need from each record."
     )
 
@@ -306,7 +319,7 @@ async def test_one_event_over_the_cap_names_its_list(monkeypatch) -> None:
     result = await call(monkeypatch, "predictions_events", events(1, 600))
 
     assert result["error"] == "response_too_large"
-    assert "One record at data.events is larger than the limit by itself." in result["message"]
+    assert "One record at data.events is larger than the limit by itself, about " in result["message"]
 
 
 async def test_a_text_document_refusal_names_the_fields_that_leave_the_text_out(monkeypatch) -> None:
@@ -392,12 +405,12 @@ def test_a_cut_never_returns_a_response_over_the_cap() -> None:
     outcomes = {"pass": 0, "cut": 0, "refused": 0}
     for trial in range(300):
         payload = _random_payload(rng)
-        before = json.dumps(payload, ensure_ascii=False)
+        before = json.dumps(payload)
         endpoint = rng.choice(endpoints)
 
         result = _enforce_size_limit(payload, "test://random", endpoint=endpoint)
 
-        assert json.dumps(payload, ensure_ascii=False) == before, trial
+        assert json.dumps(payload) == before, trial
         assert _fits(result), trial
         if result is payload:
             outcomes["pass"] += 1
@@ -416,17 +429,18 @@ def test_a_cut_never_returns_a_response_over_the_cap() -> None:
     assert all(outcomes.values()), outcomes
 
 
-async def test_the_input_payload_is_never_changed_by_a_cut(monkeypatch) -> None:
+def test_the_input_payload_is_never_changed_by_a_cut() -> None:
     body = market_calendar(TODAY, 8)
     snapshot = copy.deepcopy(body)
 
-    _enforce_size_limit(body, "test://same", endpoint=load_catalog().get("market_calendar"))
+    result = _enforce_size_limit(body, "test://same", endpoint=load_catalog().get("market_calendar"))
 
+    assert "truncated" in result["meta"]
     assert body == snapshot
 
 
 def test_measure_is_the_one_the_client_exports() -> None:
-    assert client_module.response_chars({"a": "東"}) == len('{"a": "東"}')
+    assert client_module.response_chars({"a": "東"}) == len('{"a": "\\u6771"}') == 15
 
 
 def test_a_bare_array_server_response_still_reaches_the_cut() -> None:

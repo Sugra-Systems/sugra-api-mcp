@@ -26,7 +26,8 @@ def size_cut_module() -> Any:
 
 
 def chars(value: Any) -> int:
-    return len(json.dumps(value, ensure_ascii=False))
+    """The measure the cap has always had: json.dumps with its defaults."""
+    return len(json.dumps(value))
 
 
 def notice(result: dict[str, Any]) -> dict[str, Any]:

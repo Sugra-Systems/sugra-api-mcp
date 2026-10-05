@@ -1,11 +1,13 @@
 """Cut an oversized response to the size cap, whatever its shape.
 
 The response size gate (``client._enforce_size_limit``) measures a response
-with ``client.response_chars``: the length of ``json.dumps(value,
-ensure_ascii=False)`` with the default separators. A CJK or accented
-character counts once instead of six times as an ASCII escape, and an ASCII
-response measures exactly as it always did. A response over the cap is cut
-here, and refused only when no cut can fit.
+with ``client.response_chars``: the length of ``json.dumps`` with its
+defaults, ASCII escapes and the default separators, exactly the measure the
+cap always had. A CJK or accented character counts as its six-character
+escape, which keeps the cap inside the token limit for such text too. The
+fit itself is measured by ``client.response_chars_within``, which stops at
+the cap. A response over the cap is cut here, and refused only when no cut
+can fit.
 
 What is cut: the lists of the response, at most two levels under its
 ``data``, or under the payload itself when it has no ``data`` (its ``meta``
@@ -17,30 +19,40 @@ calendar. A bare array is answered as ``{"data": [...]}``, as shaping
 answers it. A list inside a record is never cut, nor is a record itself, and
 a cut list keeps at least one record.
 
-How much: every record is measured once. A ceiling in characters is then
-found by binary search, so that each list larger than the ceiling keeps the
-records that fit under it, every smaller list stays whole, and the whole
-response with its notice fits the cap. A big list beside small ones (hourly
-beside daily) is the one cut; lists of like size are cut alike. The result is
-measured once more to verify it. When it is still over, because the notice is
-estimated before it is written, the ceiling is lowered and the result
-measured again, at most MAX_SHRINK_PASSES times.
+How much: every record is measured once, and the size of the response is
+the sum of its records and of the rest around them. A ceiling in characters
+is then found by binary search, so that each list larger than the ceiling
+keeps the records that fit under it, every smaller list stays whole, and the
+whole response with its notice fits the cap. A big list beside small ones
+(hourly beside daily) is the one cut; lists of like size are cut alike. The
+result is measured once more to verify it. When it is still over, because
+the notice is estimated before it is written, the ceiling is lowered and the
+result measured again, at most MAX_SHRINK_PASSES times.
 
 Which end is kept: the end ``limit`` keeps (``response._limit_records``),
 the newest when the order of the list can be read, else the first records.
-For the operations in NEAREST_END_OPERATIONS, forecasts and calendars, an
-ascending list whose records carry ISO 8601 dates keeps the records from the
-one nearest today onward, so a forecast keeps its next hours and not its
-last ones; ``kept_end`` is then ``nearest``. Today is the UTC date, and a
-caller may pass its own.
+For the operations in NEAREST_END_OPERATIONS, forecasts and calendars, a
+list in either order whose records carry ISO 8601 dates keeps the record
+nearest today and the ones after it in time, then, when room is left, the
+ones before it, so a forecast keeps its next hours and not its last ones;
+``kept_end`` is then ``nearest``. Today is the UTC date, and a caller may
+pass its own. The catalog entry this rule and the hints read is passed by
+call_endpoint only: fetch_data passes none yet, so its cuts keep the newest
+or first records and their hints name no parameter.
 
-Where it runs: the whole cut runs on the shaping pool
-(``tools.gateway._shape_and_gate``), within a MAX_SHAPING_SECONDS clock of
-its own; past it the response is refused with ``response_too_large``. On the
-event loop (the client's default path for the fixed tools, and the error
-payloads call_endpoint returns as they came) only the ``data`` list is cut,
-by the same measure and the same ceiling, and only in a response of at most
-MAX_LOOP_CUT_CHARS characters; a larger one is refused without being walked.
+Where it runs and for how long: only off the event loop, on the shaping
+pool. call_endpoint runs it there after shaping
+(``tools.gateway._shape_and_gate``), and ``SugraClient.request`` sends an
+oversized response of the fixed tools there (``client._gate_off_loop``).
+The error payloads call_endpoint returns as they came are gated on the
+event loop, where one over the cap is refused (``refuse_unmeasured``)
+without being walked. A cut has a MAX_SHAPING_SECONDS clock of its own,
+started before it measures anything, and past it the response is refused
+with ``response_too_large``. The bound is cooperative, between records: the
+clock is read before every record of the sizing, order and date scans and
+around each measure of the rest of the response, of the hints and of the
+result. One record's serialise is bounded by that record's size, and one
+measure of the rest by the size of the rest.
 
 What is said: ``meta.truncated`` names the cut. Its ``original_count``,
 ``kept_count``, ``order`` and ``kept_end`` describe the primary list, the
@@ -49,7 +61,9 @@ largest one cut, at ``path``; ``original_chars``, ``kept_chars`` and
 than one list was cut; ``retry_hint`` says what was kept and which arguments
 of the tool and parameters of the operation choose a smaller answer. A
 refusal says the size and the limit in characters and, when it can, where
-the size is and how to leave it out.
+the size is and how to leave it out. Every refusal is measured too: one
+that would itself be over the cap, through a very long URL or key, says the
+size alone, with the URL cut to _MAX_URL_CHARS.
 """
 
 from __future__ import annotations
@@ -57,18 +71,19 @@ from __future__ import annotations
 import json
 import time
 from bisect import bisect_right
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 from typing import Any
 
-from ..client import _unshaped_records, response_chars
+from ..client import _unshaped_records, response_chars, response_chars_within
 from .response import (
     _DATE_KEY_CANDIDATES,
     KEPT_FIRST,
     KEPT_NEWEST,
-    MAX_PROJECTION_RAW_CHARS,
     MAX_SHAPING_SECONDS,
     ORDER_ASC,
     ORDER_DESC,
+    _each,
     _records_key,
     _records_order,
 )
@@ -78,16 +93,16 @@ CUT_REASON = "exceeds_response_size_cap"
 
 # Verification passes after the first estimate of the notice.
 MAX_SHRINK_PASSES = 8
-# On the event loop a response above this is refused without being walked.
-# It is the bound a fields projection puts on the response before it, so no
-# path walks a larger one.
-MAX_LOOP_CUT_CHARS = MAX_PROJECTION_RAW_CHARS
-# Records measured between two reads of the clock.
-_CLOCK_EVERY = 256
+# The clock a cut reads; a test replaces it.
+_clock = time.monotonic
+# The URL a refusal over the cap keeps.
+_MAX_URL_CHARS = 300
+# What answering a bare array as {"data": [...]} adds to its size.
+_WRAP_CHARS = len('{"data": }')
 
-# Forward-looking operations: their ascending lists keep the records nearest
-# today onward, not the newest ones. A test checks every id against the
-# bundled catalog, so a resync that renames one fails it.
+# Forward-looking operations: their dated lists keep the records nearest
+# today, not the newest ones. A test checks every id against the bundled
+# catalog, so a resync that renames one fails it.
 NEAREST_END_OPERATIONS = frozenset(
     {
         "air_quality_forecast",
@@ -125,9 +140,21 @@ _WINDOW_SINGLES = ("forecast_days", "days", "range", "period", "recent_years")
 _MAX_NAMED_FIELDS = 6
 _PROVENANCE_KEYS = ("meta", "_meta")
 
+Tick = Callable[[], None]
+
 
 class _Expired(Exception):
     """The cut ran past its clock."""
+
+
+def _ticker(deadline: float) -> Tick:
+    """A tick that raises _Expired once the clock passes deadline."""
+
+    def tick() -> None:
+        if _clock() > deadline:
+            raise _Expired
+
+    return tick
 
 
 def _utc_today() -> date:
@@ -147,15 +174,29 @@ def _day(value: Any) -> date | None:
     return moment.date()
 
 
-def _date_key(records: list[Any]) -> str | None:
+def _date_key(records: list[Any], tick: Tick) -> str | None:
     """The one known date key every record carries, as _records_order reads it."""
-    if not records or not all(isinstance(record, dict) for record in records):
+    if not records or not all(isinstance(record, dict) for record in _each(records, tick)):
         return None
     present = [
         key for key in _DATE_KEY_CANDIDATES
-        if all(record.get(key) is not None for record in records)
+        if all(record.get(key) is not None for record in _each(records, tick))
     ]
     return present[0] if len(present) == 1 else None
+
+
+def _nearest_priority(days: list[date], today: date, order: str) -> list[int]:
+    """The indexes of a dated list in the order the nearest rule keeps them:
+    the record nearest today, the ones after it in time, then the ones
+    before it. In an ascending list the first record dated today or later
+    is the nearest, in a descending one the last; when none is, the newest
+    record is."""
+    count = len(days)
+    if order == ORDER_ASC:
+        start = next((index for index, day in enumerate(days) if day >= today), count - 1)
+        return [*range(start, count), *range(start - 1, -1, -1)]
+    stop = next((index for index in range(count - 1, -1, -1) if days[index] >= today), 0)
+    return [*range(stop, -1, -1), *range(stop + 1, count)]
 
 
 def _dotted(path: tuple[str, ...]) -> str:
@@ -172,46 +213,37 @@ class _List:
         records: list[Any],
         source: list[Any] | None,
         today: date | None,
-        deadline: float,
+        tick: Tick,
     ) -> None:
         self.path = path
         self.records = records
         self.n = len(records)
         # The order is read from the list as the API sent it when the caller
         # passed it: shaping may have projected the date key away.
-        self.order = _records_order(source if source is not None else records)
+        self.order = _records_order(source if source is not None else records, tick=tick)
         # The records the dates are read from: these, or the unshaped list
         # when it still matches them one for one.
         self.dated: list[Any] | None = None
         self.date_key: str | None = None
         for candidate in (records, source):
             if candidate is not None and len(candidate) == self.n:
-                key = _date_key(candidate)
+                key = _date_key(candidate, tick)
                 if key is not None:
                     self.dated, self.date_key = candidate, key
                     break
-        self.start: int | None = None
-        self.tail = self.order == ORDER_ASC
         self.kept_end = KEPT_NEWEST if self.order in (ORDER_ASC, ORDER_DESC) else KEPT_FIRST
-        if today is not None and self.order == ORDER_ASC and self.dated is not None:
-            days = [_day(record[self.date_key]) for record in self.dated]
+        priority: list[int] | None = None
+        if today is not None and self.order in (ORDER_ASC, ORDER_DESC) and self.dated is not None:
+            days = [_day(record[self.date_key]) for record in _each(self.dated, tick)]
             if all(day is not None for day in days):
-                self.start = next(
-                    (index for index, day in enumerate(days) if day is not None and day >= today),
-                    self.n - 1,
-                )
+                priority = _nearest_priority(days, today, self.order)
                 self.kept_end = KEPT_NEAREST
-        sizes: list[int] = []
-        for index, record in enumerate(records):
-            if index % _CLOCK_EVERY == 0 and time.monotonic() > deadline:
-                raise _Expired
-            sizes.append(response_chars(record))
-        if self.start is not None:
-            priority = [*range(self.start, self.n), *range(self.start - 1, -1, -1)]
-        elif self.tail:
-            priority = list(range(self.n - 1, -1, -1))
-        else:
-            priority = list(range(self.n))
+        sizes = [response_chars(record) for record in _each(records, tick)]
+        self.largest = max(sizes)
+        if priority is None:
+            # The newest end: the tail of an ascending list, else the head.
+            priority = list(range(self.n - 1, -1, -1)) if self.order == ORDER_ASC else list(range(self.n))
+        self.priority = priority
         # prefix[k]: the characters of the first k records kept with the
         # ", " between them, inside brackets already counted in the shell.
         self.prefix = [0]
@@ -232,13 +264,10 @@ class _List:
         return max(1, bisect_right(self.prefix, ceiling) - 1)
 
     def window(self, kept: int) -> tuple[int, int]:
-        if self.start is not None:
-            if kept <= self.n - self.start:
-                return self.start, self.start + kept
-            return self.n - kept, self.n
-        if self.tail:
-            return self.n - kept, self.n
-        return 0, kept
+        """The slice the first ``kept`` records in priority order fill: they
+        always run on, in the list's own order."""
+        chosen = self.priority[:kept]
+        return min(chosen), max(chosen) + 1
 
     def kept_range(self, kept: int) -> list[Any] | None:
         if self.dated is None or self.order not in (ORDER_ASC, ORDER_DESC):
@@ -254,14 +283,14 @@ def _root(payload: Any) -> tuple[Any, tuple[str, ...]]:
     return payload, ()
 
 
-def _find_lists(payload: Any, *, data_only: bool) -> list[tuple[tuple[str, ...], list[Any]]]:
+def _find_lists(payload: Any) -> list[tuple[tuple[str, ...], list[Any]]]:
     """Every non-empty list at most two levels under the root, in order."""
     if not isinstance(payload, dict):
         return []
     root, prefix = _root(payload)
     if isinstance(root, list):
         return [(prefix, root)] if root and prefix else []
-    if data_only or not isinstance(root, dict):
+    if not isinstance(root, dict):
         return []
     found: list[tuple[tuple[str, ...], list[Any]]] = []
     for key, value in root.items():
@@ -421,16 +450,18 @@ def _cut_hint(
     return hint
 
 
-def _heavy_hint(payload: Any, endpoint: Any) -> str:
+def _heavy_hint(payload: Any, endpoint: Any, tick: Tick) -> str:
     """Where most of a response without a cuttable list is, and the fields
     that leave it out."""
     root, prefix = _root(payload)
     if not isinstance(root, dict) or not root:
         return ""
-    sizes = {
-        key: response_chars(value) for key, value in root.items()
-        if prefix or key not in _PROVENANCE_KEYS
-    }
+    sizes = {}
+    for key, value in root.items():
+        if prefix or key not in _PROVENANCE_KEYS:
+            tick()
+            sizes[key] = response_chars(value)
+    tick()
     if not sizes:
         return ""
     heavy = max(sizes, key=lambda key: sizes[key])
@@ -439,7 +470,11 @@ def _heavy_hint(payload: Any, endpoint: Any) -> str:
     light = [key for key in sizes if key != heavy]
     inner = root[heavy]
     if isinstance(inner, dict) and inner:
-        inner_sizes = {key: response_chars(value) for key, value in inner.items()}
+        inner_sizes = {}
+        for key, value in inner.items():
+            tick()
+            inner_sizes[key] = response_chars(value)
+        tick()
         inner_heavy = max(inner_sizes, key=lambda key: inner_sizes[key])
         if inner_sizes[inner_heavy] * 2 >= heavy_chars:
             heavy_path = (*heavy_path, inner_heavy)
@@ -455,14 +490,38 @@ def _heavy_hint(payload: Any, endpoint: Any) -> str:
     return hint
 
 
-def _refusal(url: str, size: int, cap: int, hint: str) -> dict[str, Any]:
-    message = f"Response is about {size:,} characters; the limit is {cap:,} characters."
+def _rest_hint(shell_payload: dict[str, Any], shell: int, tick: Tick) -> str:
+    """Where most of the response outside its lists is: a key of the
+    payload, or of its ``data`` object. The lists are empty in
+    shell_payload, so a list is never what is named."""
+    parts: dict[str, int] = {}
+    for key, value in shell_payload.items():
+        if key == "data" and isinstance(value, dict):
+            for sub_key, sub_value in value.items():
+                tick()
+                parts[f"data.{sub_key}"] = response_chars(sub_value)
+        else:
+            tick()
+            parts[key] = response_chars(value)
+    tick()
+    hint = f"Outside its lists the response is about {shell:,} characters"
+    if parts:
+        heavy = max(parts, key=lambda key: parts[key])
+        hint += f"; most of it is at {heavy}, about {parts[heavy]:,} characters"
+    return hint + "."
+
+
+def _refusal_object(url: str, size: int | None, cap: int, hint: str) -> dict[str, Any]:
+    if size is None:
+        message = f"Response is over the limit of {cap:,} characters."
+    else:
+        message = f"Response is about {size:,} characters; the limit is {cap:,} characters."
     if hint:
         message += " " + hint
     refusal: dict[str, Any] = {
         "error": "response_too_large",
         "message": message,
-        "estimated_tokens": size // 4,
+        "estimated_tokens": None if size is None else size // 4,
         "response_chars": size,
         "cap_chars": cap,
         "url": url,
@@ -472,11 +531,48 @@ def _refusal(url: str, size: int, cap: int, hint: str) -> dict[str, Any]:
     return refusal
 
 
+def _refusal(url: str, size: int | None, cap: int, hint: str) -> dict[str, Any]:
+    """The ``response_too_large`` refusal, measured: when the URL or the hint
+    (which names keys of the response) would put it over the cap itself, it
+    says the size alone and keeps the first _MAX_URL_CHARS of the URL."""
+    refusal = _refusal_object(url, size, cap, hint)
+    if response_chars_within(refusal, cap) is not None:
+        return refusal
+    short = url if len(url) <= _MAX_URL_CHARS else url[:_MAX_URL_CHARS] + "..."
+    return _refusal_object(short, size, cap, "")
+
+
+def refuse_unmeasured(url: str, cap: int) -> dict[str, Any]:
+    """The refusal for a response over the cap that is not walked: on the
+    event loop, where no cut runs, its size is not measured past the cap."""
+    return _refusal(url, None, cap, "")
+
+
 def _refuse_for_record(
-    url: str, size: int, cap: int, payload: Any, endpoint: Any, lists: list[_List]
+    url: str,
+    size: int,
+    cap: int,
+    payload: Any,
+    endpoint: Any,
+    lists: list[_List],
+    shell_payload: dict[str, Any],
+    shell: int,
+    tick: Tick,
 ) -> dict[str, Any]:
-    worst = max(lists, key=lambda lst: lst.prefix[1])
-    hint = f"One record at {_dotted(worst.path)} is larger than the limit by itself."
+    """The refusal when no cut fits although the rest of the response does:
+    a record is named only when it alone leaves no room beside the rest,
+    else the rest of the response is."""
+    worst = max(lists, key=lambda lst: lst.largest)
+    if worst.largest <= cap - shell:
+        return _refusal(url, size, cap, _rest_hint(shell_payload, shell, tick))
+    where = _dotted(worst.path)
+    if worst.largest > cap:
+        hint = f"One record at {where} is larger than the limit by itself, about {worst.largest:,} characters."
+    else:
+        hint = (
+            f"One record at {where}, about {worst.largest:,} characters, does not fit beside "
+            f"the rest of the response, about {shell:,} characters."
+        )
     if endpoint is not None and _is_records_list(payload, worst.path):
         hint += " Pass fields naming only the keys you need from each record."
     return _refusal(url, size, cap, hint)
@@ -491,41 +587,50 @@ def cut_to_fit(
     payload: Any,
     url: str,
     *,
-    size: int,
     cap: int,
     unshaped: Any = None,
     endpoint: Any = None,
-    on_loop: bool = False,
     today: date | None = None,
 ) -> Any:
-    """Cut payload, which measures ``size`` characters, to fit ``cap``, or
-    return the ``response_too_large`` refusal when no cut fits.
+    """Cut payload to fit ``cap``, or return the ``response_too_large``
+    refusal when no cut fits. Run off the event loop only.
 
-    ``endpoint`` is the catalog entry of the operation called through
-    call_endpoint or fetch_data; its parameters, and those tools' own limit
-    and fields arguments, are what the hints may name. None (the fixed tools)
-    gives hints without any. ``on_loop`` selects the event-loop path: only
-    the ``data`` list, and only up to MAX_LOOP_CUT_CHARS.
+    The clock starts before anything is measured: the size of the response
+    is read from its records as they are measured, and the clock is read
+    between them. ``endpoint`` is the catalog entry of the operation called
+    through call_endpoint; its parameters, and that tool's own limit and
+    fields arguments, are what the hints may name, and its operation id
+    selects the nearest rule. None (fetch_data for now, and the fixed tools)
+    gives hints without any and keeps the newest or first records.
     """
-    if on_loop and size > MAX_LOOP_CUT_CHARS:
-        return _refusal(url, size, cap, "")
-    if isinstance(payload, list):
+    tick = _ticker(_clock() + MAX_SHAPING_SECONDS)
+    original = payload
+    wrapped = isinstance(payload, list)
+    if wrapped:
         # A bare array is answered as shaping answers it, as {"data": [...]},
-        # so it is cut on either path like a data list.
+        # so it is cut like a data list.
         payload = {"data": payload}
-    deadline = time.monotonic() + MAX_SHAPING_SECONDS
-    found = _find_lists(payload, data_only=on_loop)
-    if not found:
-        return _refusal(url, size, cap, _heavy_hint(payload, endpoint))
-    nearest = endpoint is not None and getattr(endpoint, "operation_id", None) in NEAREST_END_OPERATIONS
-    day = (today or _utc_today()) if nearest else None
+    size: int | None = None
     try:
+        found = _find_lists(payload)
+        if not found:
+            tick()
+            size = response_chars(original)
+            tick()
+            return _refusal(url, size, cap, _heavy_hint(payload, endpoint, tick))
+        nearest = endpoint is not None and getattr(endpoint, "operation_id", None) in NEAREST_END_OPERATIONS
+        day = (today or _utc_today()) if nearest else None
         lists = []
         for path, records in found:
-            if time.monotonic() > deadline:
-                raise _Expired
-            lists.append(_List(path, records, _unshaped_at(unshaped, path), day, deadline))
-        shell = response_chars(_with_lists(payload, {lst.path: [] for lst in lists}))
+            tick()
+            lists.append(_List(path, records, _unshaped_at(unshaped, path), day, tick))
+        shell_payload = _with_lists(payload, {lst.path: [] for lst in lists})
+        tick()
+        shell = response_chars(shell_payload)
+        tick()
+        size = shell + sum(lst.chars for lst in lists) - (_WRAP_CHARS if wrapped else 0)
+        if size <= cap:
+            return original
 
         def total(ceiling: int) -> int:
             return shell + sum(lst.prefix[lst.keep(ceiling)] for lst in lists)
@@ -553,8 +658,7 @@ def cut_to_fit(
         ceiling = ceiling_for(target)
         previous: dict[tuple[str, ...], int] | None = None
         for _ in range(MAX_SHRINK_PASSES):
-            if time.monotonic() > deadline:
-                raise _Expired
+            tick()
             kept = {lst.path: lst.keep(ceiling) for lst in lists}
             cut = [lst for lst in lists if kept[lst.path] < lst.n]
             if not cut:
@@ -575,7 +679,9 @@ def cut_to_fit(
             _with_notice(result, notice)
             # kept_chars is written as 0 and measured; the true value has
             # more digits, so solve for it instead of measuring twice.
+            tick()
             measured = response_chars(result)
+            tick()
             kept_chars = _solve_kept_chars(measured)
             if kept_chars <= cap:
                 notice["kept_chars"] = kept_chars
@@ -585,8 +691,8 @@ def cut_to_fit(
         # Nothing fits: either the response around its lists is too large
         # for any cut, or a record that has to stay is.
         if shell + reserve > cap:
-            return _refusal(url, size, cap, _heavy_hint(payload, endpoint))
-        return _refuse_for_record(url, size, cap, payload, endpoint, lists)
+            return _refusal(url, size, cap, _rest_hint(shell_payload, shell, tick))
+        return _refuse_for_record(url, size, cap, payload, endpoint, lists, shell_payload, shell, tick)
     except _Expired:
         hint = "The response could not be cut in time."
         if endpoint is not None:
