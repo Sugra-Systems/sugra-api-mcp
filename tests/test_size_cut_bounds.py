@@ -41,6 +41,13 @@ def _module():
     return module
 
 
+@pytest.fixture(autouse=True)
+def _fixed_today(monkeypatch):
+    module = size_cut_module()
+    if module is not None:
+        monkeypatch.setattr(module, "_utc_today", lambda: TODAY)
+
+
 class _Endpoint:
     """The two attributes of a catalog entry the cut reads."""
 
@@ -636,10 +643,13 @@ QUOTES_PARAMS = {"symbol": "AAPL"}
 class _Cutter:
     """A cutter that sleeps for seconds, or else blocks until released (only
     its first `blocked` runs, when given), counting its runs and the most
-    that ran at once."""
+    that ran at once. A run past the first `blocked` waits for `hold`, when
+    one is set, so a test can read the pool while that run still holds its
+    slot."""
 
     def __init__(self, seconds: float | None, blocked: int | None) -> None:
         self.release = threading.Event()
+        self.hold: threading.Event | None = None
         self.seconds = seconds
         self.blocked = blocked
         self.runs = 0
@@ -660,6 +670,8 @@ class _Cutter:
             if self.blocked is None or run <= self.blocked:
                 self.release.wait(10)
                 return {"data": "late"}
+            if self.hold is not None:
+                self.hold.wait(10)
             return {"data": "cut in time"}
         finally:
             with self._lock:
@@ -789,6 +801,9 @@ async def test_a_job_that_starts_as_its_first_wait_ends_is_waited_for_as_started
 
     _bounds(monkeypatch, clock=0.2, grace=0.1, wait=0.2)
     cutter = _cut_that_blocks(monkeypatch, blocked=gateway.SHAPING_WORKERS)
+    # The raced job stays in its run until its slot is read: run free, it
+    # can finish and give the slot back before the read.
+    cutter.hold = threading.Event()
     real_abandon = client_module._StartGate.abandon
     pending_at_start: list[int] = []
 
@@ -801,6 +816,7 @@ async def test_a_job_that_starts_as_its_first_wait_ends_is_waited_for_as_started
             while gate.started_at is None and time.monotonic() < deadline:
                 time.sleep(0.001)
             pending_at_start.append(gateway.shaping_pending())
+            cutter.hold.set()
         return real_abandon(gate)
 
     monkeypatch.setattr(client_module._StartGate, "abandon", abandon)
@@ -809,6 +825,7 @@ async def test_a_job_that_starts_as_its_first_wait_ends_is_waited_for_as_started
         (raced,) = await _calls(monkeypatch, 1)
     finally:
         cutter.release.set()
+        cutter.hold.set()
 
     assert [result["error"] for result in held] == ["response_too_large"] * gateway.SHAPING_WORKERS
     # Started: no busy answer, the job's own one.
