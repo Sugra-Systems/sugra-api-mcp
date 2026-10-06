@@ -49,6 +49,8 @@ import re
 import ssl
 import threading
 import time
+from collections.abc import Callable
+from functools import partial
 from typing import Any
 
 import httpx
@@ -56,9 +58,13 @@ import httpx
 from . import __version__
 from .config import Config
 
-# Anthropic Connectors Directory requires tool results <= 25 000 tokens.
-# Using ~4 chars per token as a conservative heuristic, we cap at 85 000 chars
-# (~21 000 tokens) to leave headroom for MCP envelope overhead.
+# Anthropic documents two limits for a connector's tool results: about
+# 150,000 characters in claude.ai and Claude Desktop, and 25,000 tokens in
+# Claude Code. The cap is set by the stricter one: at about 4 characters a
+# token, 85,000 characters (about 21,000 tokens) leaves room for the MCP
+# envelope. It is the same for every client. The characters are counted with
+# ASCII escapes (response_chars), so a CJK character counts six and CJK text
+# stays inside the token limit as well.
 MAX_RESPONSE_CHARS = 85_000
 
 
@@ -306,90 +312,268 @@ def _unshaped_records(unshaped: Any) -> list[Any] | None:
     return None
 
 
-def _enforce_size_limit(payload: Any, url: str, *, unshaped: Any = None) -> Any:
-    """Trim payload to fit MCP token limits. Returns possibly-modified dict.
+def response_chars(value: Any) -> int:
+    """The size the cap measures: the length of ``json.dumps`` with its
+    defaults, ASCII escapes and the default separators. A non-ASCII
+    character counts as its escape, six characters, which keeps the cap
+    inside the token limit for CJK text too."""
+    return len(json.dumps(value))
 
-    An oversized ``data`` list is cut by the rule ``limit`` uses
-    (``catalog.response._limit_records``): the newest end when the order of
-    the records can be read, the first records otherwise, and
-    ``meta.truncated`` reports ``order`` and ``kept_end``. When no trim fits
-    the cap (one record alone is larger, or the envelope around the list
-    is), the result is the ``response_too_large`` error an unknown shape
-    gets.
 
-    ``unshaped`` is the same response before shaping cut or projected its
-    ``data`` list, passed by a caller that shaped it (call_endpoint). The
-    order is then read from that list instead: a cut or a projection keeps
-    the records' order but may drop the date key it is read from, and it is
-    the very read ``meta.shaped`` reports, so the two agree on the end kept.
+class _OverBudget(Exception):
+    """A bounded measure passed its budget."""
+
+
+# The C escape json.dumps itself uses for every string.
+_encode_string = json.encoder.encode_basestring_ascii
+
+
+def response_chars_within(value: Any, budget: int) -> int | None:
+    """``response_chars(value)`` when it is at most ``budget``, else None.
+
+    The value is walked in order and the walk stops as soon as the count
+    passes the budget, so the work is bounded by the budget, never by the
+    size of the value: a string longer than the room left is counted over
+    without being escaped. The count is exactly the one ``response_chars``
+    gives.
     """
-    payload_str = json.dumps(payload)
-    if len(payload_str) <= MAX_RESPONSE_CHARS:
+    try:
+        return _chars_within(value, budget)
+    except _OverBudget:
+        return None
+
+
+def _float_text(value: float) -> str:
+    if value != value:
+        return "NaN"
+    if value == float("inf"):
+        return "Infinity"
+    if value == float("-inf"):
+        return "-Infinity"
+    return float.__repr__(value)
+
+
+def _key_chars(key: Any, room: int) -> int:
+    if isinstance(key, str):
+        if len(key) + 2 > room:
+            raise _OverBudget
+        return len(_encode_string(key))
+    if isinstance(key, float):
+        return len(_float_text(key)) + 2
+    if key is True or key is None:
+        return 6
+    if key is False:
+        return 7
+    if isinstance(key, int):
+        return len(int.__repr__(key)) + 2
+    # The error json.dumps raises for such a key.
+    return len(json.dumps({key: None}))
+
+
+def _chars_within(value: Any, room: int) -> int:
+    """The measure of value, raising _OverBudget once it passes room."""
+    if isinstance(value, str):
+        if len(value) + 2 > room:
+            raise _OverBudget
+        size = len(_encode_string(value))
+    elif value is None or value is True:
+        size = 4
+    elif value is False:
+        size = 5
+    elif isinstance(value, int):
+        size = len(int.__repr__(value))
+    elif isinstance(value, float):
+        size = len(_float_text(value))
+    elif isinstance(value, (list, tuple)):
+        size = 2
+        for index, item in enumerate(value):
+            if index:
+                size += 2
+            if size > room:
+                raise _OverBudget
+            size += _chars_within(item, room - size)
+    elif isinstance(value, dict):
+        size = 2
+        for index, (key, item) in enumerate(value.items()):
+            if index:
+                size += 2
+            size += _key_chars(key, room - size) + 2
+            if size > room:
+                raise _OverBudget
+            size += _chars_within(item, room - size)
+    else:
+        # The error json.dumps raises for what it cannot encode.
+        size = len(json.dumps(value))
+    if size > room:
+        raise _OverBudget
+    return size
+
+
+def _on_event_loop() -> bool:
+    """Whether this thread runs an event loop: the shaping pool's threads do
+    not, the thread serving the tools does."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
+def _enforce_size_limit(
+    payload: Any, url: str, *, unshaped: Any = None, endpoint: Any = None
+) -> Any:
+    """Return payload whole when it fits MAX_RESPONSE_CHARS, else cut it to
+    fit, else the ``response_too_large`` refusal.
+
+    The fit is measured by ``response_chars_within``, which stops at the
+    cap, so a response far over it is never serialised whole here. The cut
+    (``catalog.size_cut.cut_to_fit``) takes any shape: every list at most
+    two levels under ``data``, a big list cut before small ones, each
+    keeping the end ``limit`` keeps (``catalog.response._limit_records``),
+    the newest when the order of the records can be read, the first records
+    otherwise. ``meta.truncated`` reports it. The cut runs only off the
+    event loop, on the shaping pool: ``SugraClient.request`` and
+    call_endpoint send an oversized response there. On the event loop,
+    where only the error payloads call_endpoint returns as they came are
+    gated, a response over the cap is refused without being walked.
+
+    ``unshaped`` is the same response before shaping cut or projected it,
+    passed by a caller that shaped it (call_endpoint). The order of a list is
+    then read from that response instead: a cut or a projection keeps the
+    records' order but may drop the date key it is read from, and it is the
+    very read ``meta.shaped`` reports, so the two agree on the end kept.
+
+    ``endpoint`` is the catalog entry of the operation called, passed by
+    call_endpoint only: the hints name its parameters and that tool's own
+    arguments, and its operation id selects the nearest rule. fetch_data
+    and the fixed tools pass None, so their hints name no parameter.
+    """
+    if response_chars_within(payload, MAX_RESPONSE_CHARS) is not None:
         return payload
+    # Imported here, not at the top: the catalog package imports this module.
+    from .catalog.size_cut import cut_to_fit, refuse_unmeasured
 
-    # Try to truncate a list inside `data` field (common envelope shape)
-    if isinstance(payload, dict) and isinstance(payload.get("data"), list):
-        data_list = payload["data"]
-        if data_list:
-            # Imported here, not at the top: catalog.response imports
-            # MAX_RESPONSE_CHARS from this module.
-            from .catalog.response import _limit_records, _records_order
+    if _on_event_loop():
+        return refuse_unmeasured(url, MAX_RESPONSE_CHARS)
+    return cut_to_fit(
+        payload, url, cap=MAX_RESPONSE_CHARS, unshaped=unshaped, endpoint=endpoint
+    )
 
-            empty_shell = {**payload, "data": []}
-            shell_size = len(json.dumps(empty_shell))
-            budget = MAX_RESPONSE_CHARS - shell_size - 500  # room for notice
-            avg_item = max(1, (len(payload_str) - shell_size) // len(data_list))
-            kept = max(1, min(len(data_list), budget // avg_item))
-            source = _unshaped_records(unshaped)
-            order = _records_order(source) if source is not None else None
-            kept_list, order, kept_end = _limit_records(data_list, kept, order=order)
 
-            def candidate(records):
-                truncated = {**payload, "data": records}
-                meta = dict(truncated.get("meta") or {})
-                meta["truncated"] = {
-                    "reason": "exceeds_mcp_25k_token_limit",
-                    "original_count": len(data_list),
-                    "kept_count": len(records),
-                    "order": order,
-                    "kept_end": kept_end,
-                    "retry_hint": "Add filters (country, date range, limit) to reduce response size.",
-                }
-                truncated["meta"] = meta
-                return truncated
+# How long past the pool's wait in line (SHAPING_WAIT_SECONDS) the client
+# waits for a job to start, and past the job's own clocks
+# (catalog.response.MAX_SHAPING_SECONDS each) for it to finish, before it
+# answers without it.
+CUT_GRACE_SECONDS = 0.5
 
-            # The count is estimated from the average record, but the records
-            # kept come from one end, which may run larger than the average
-            # (the newest points of a series often carry more digits). Shrink
-            # until the whole payload, notice included, really fits: the 500
-            # characters above only seed the estimate, the cap is measured.
-            truncated = candidate(kept_list)
-            size = len(json.dumps(truncated))
-            while kept > 1 and size > MAX_RESPONSE_CHARS:
-                kept_size = len(json.dumps(kept_list)) - 2
-                room = MAX_RESPONSE_CHARS - (size - kept_size)
-                kept = max(1, min(kept - 1, room * kept // kept_size))
-                kept_list, _, _ = _limit_records(data_list, kept, order=order)
-                truncated = candidate(kept_list)
-                size = len(json.dumps(truncated))
-            # When even one record does not fit, or the envelope around the
-            # list leaves no room, no trim can meet the cap: fall through to
-            # the structured error below instead of returning an over-cap
-            # payload.
-            if size <= MAX_RESPONSE_CHARS:
-                return truncated
 
-    # Unknown shape, or no trim of the data list fits - return a structured
-    # error the agent can act on
-    return {
-        "error": "response_too_large",
-        "message": (
-            f"Response exceeds MCP 25000 token limit (approx {len(payload_str) // 4} tokens). "
-            "Retry with narrower filters."
-        ),
-        "estimated_tokens": len(payload_str) // 4,
-        "url": url,
-    }
+class _StartGate:
+    """The one decision between a worker starting a job and the job's caller
+    giving up on the start, taken under a lock: whichever comes first wins,
+    so a job is either started or never runs."""
+
+    __slots__ = ("_lock", "abandoned", "started_at")
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.abandoned = False
+        self.started_at: float | None = None
+
+    def enter(self) -> bool:
+        """On the worker, before the job: True, with the start time noted,
+        unless the caller has given up first."""
+        with self._lock:
+            if self.abandoned:
+                return False
+            self.started_at = time.monotonic()
+            return True
+
+    def abandon(self) -> float | None:
+        """On the caller: None when the job had not started, and now never
+        will, else the time it started."""
+        with self._lock:
+            if self.started_at is None:
+                self.abandoned = True
+            return self.started_at
+
+
+async def _gate_off_loop(payload: Any, url: str) -> Any:
+    """The size gate for a response the client returns as it came, a success
+    or a failure: measured on the event loop only up to the cap, and when
+    over it measured and cut on the shaping pool, as call_endpoint's are; a
+    full pool answers server_busy.
+
+    The wait is bounded, see _cut_on_pool.
+    """
+    if response_chars_within(payload, MAX_RESPONSE_CHARS) is not None:
+        return payload
+    return await _cut_on_pool(partial(_enforce_size_limit, payload, url), url)
+
+
+async def _cut_on_pool(call: Callable[[], Any], url: str, *, clocks: int = 1) -> Any:
+    """Run a size-gating job on the shaping pool and wait for it within a
+    bound; server_busy when the pool is full.
+
+    The client first waits SHAPING_WAIT_SECONDS plus CUT_GRACE_SECONDS for
+    the job's answer; a job in the pool's line answers server_busy itself
+    at SHAPING_WAIT_SECONDS. Past that wait the client asks the job's
+    _StartGate whether the job has started on a worker. Not started: the
+    gate keeps it from ever running the call, and the client answers
+    server_busy. Started: the client waits until ``clocks`` times
+    MAX_SHAPING_SECONDS plus CUT_GRACE_SECONDS after the start and then
+    answers ``response_too_large`` with the size message alone. ``clocks``
+    counts the clocks the job runs one after the other: one for a cut
+    alone, two for call_endpoint, whose fields projection runs on its own
+    MAX_SHAPING_SECONDS clock before the cut starts its own. So the client
+    waits at most the longer of the first wait and that run bound after
+    the start; with the shipped numbers (2.5 s, then 5.5 s or 10.5 s from
+    the start) the run bound is always the longer.
+
+    The clocks are cooperative, read between records, so a single record
+    or key can hold a worker past them; the bound here is what holds for
+    the caller whatever the job does. What happens to the job when the
+    client stops waiting is the pool's (tools.gateway._shape_off_loop): a
+    job still queued is cancelled with its waiting task and frees its slot,
+    and one already running finishes in the background, its result
+    dropped, holding its slot until its future is done. The pool's
+    SHAPING_WORKERS threads are the most that run at once.
+    """
+    # Imported here, not at the top: the gateway module and the catalog
+    # package import this one.
+    from .catalog import response as shaping
+    from .catalog.size_cut import refuse_unmeasured
+    from .errors import server_busy_error
+    from .tools import gateway as pool
+
+    gate = _StartGate()
+
+    def job() -> Any:
+        if not gate.enter():
+            # Its caller has answered server_busy: the call never runs.
+            return None
+        return call()
+
+    begun = time.monotonic()
+    run_bound = clocks * shaping.MAX_SHAPING_SECONDS + CUT_GRACE_SECONDS
+    task = asyncio.ensure_future(pool._shape_off_loop(job))
+    try:
+        await asyncio.wait((task,), timeout=pool.SHAPING_WAIT_SECONDS + CUT_GRACE_SECONDS)
+        if not task.done():
+            started_at = gate.abandon()
+            if started_at is None:
+                task.cancel()
+                return server_busy_error(
+                    "shaping", pool.SHAPING_WORKERS, elapsed_ms=int((time.monotonic() - begun) * 1000)
+                )
+            await asyncio.wait((task,), timeout=max(0.0, started_at + run_bound - time.monotonic()))
+    except BaseException:
+        task.cancel()
+        raise
+    if task.done():
+        return task.result()
+    # Cancelling the wait on a running job only drops its result.
+    task.cancel()
+    return refuse_unmeasured(url, MAX_RESPONSE_CHARS)
 
 
 class SugraClient:
@@ -501,7 +685,17 @@ class SugraClient:
                     "Retry once; if it persists, report the reason field."
                 ),
             )
-        return self._handle(response, elapsed_ms=_elapsed_ms(start), enforce_size=enforce_size)
+        result = self._handle(response, elapsed_ms=_elapsed_ms(start))
+        # Enforced HERE by default - the backstop every caller gets for free.
+        # A caller that shapes its own response after the fact
+        # (gateway.call_endpoint) passes enforce_size=False and gates it
+        # itself once its own `fields` / `limit` projection has run, so the
+        # raw, unprojected body is never what gets measured for it. A failure
+        # dict is gated the same way: it carries the API's error text, which
+        # has no bound of its own.
+        if not enforce_size:
+            return result
+        return await _gate_off_loop(result, str(response.request.url))
 
     def _transport_error(
         self,
@@ -536,9 +730,7 @@ class SugraClient:
             return f"{self._config.api_base}{path}"
 
     @staticmethod
-    def _handle(
-        response: httpx.Response, *, elapsed_ms: int, enforce_size: bool = True
-    ) -> dict[str, Any]:
+    def _handle(response: httpx.Response, *, elapsed_ms: int) -> dict[str, Any]:
         try:
             payload = response.json()
         except ValueError:
@@ -577,15 +769,7 @@ class SugraClient:
             if request_id:
                 result["request_id"] = str(request_id)
             return result
-        # Enforced HERE by default - the backstop every caller gets for free.
-        # A caller that shapes its own response after the fact
-        # (gateway.call_endpoint) passes enforce_size=False and calls
-        # _enforce_size_limit itself once its own `fields` / `limit`
-        # projection has run, so the raw, unprojected body is never what
-        # gets measured for it.
-        if not enforce_size:
-            return payload
-        return _enforce_size_limit(payload, str(response.request.url))
+        return payload
 
     async def aclose(self) -> None:
         """Close the client built on a transport of this client's own.
