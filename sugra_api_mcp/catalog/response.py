@@ -218,7 +218,7 @@ MAX_FIELD_PATH_PARTS = 16
 MAX_PROJECTION_ROWS = 100_000
 MAX_SHAPING_SECONDS = 5.0
 # The response before projection, measured as the size cap measures it (the
-# length of json.dumps). The 85,000-character cap (client.MAX_RESPONSE_CHARS)
+# length of json.dumps). The 18,000-character cap (client.MAX_RESPONSE_CHARS)
 # is measured after projection, so this bound sits far above it: the 16-day
 # forecast body in the tests is 294,847 characters before fields=["daily"]
 # cuts it to fit, and 2,000,000 is about 6.8 times that.

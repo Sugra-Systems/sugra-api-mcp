@@ -58,14 +58,17 @@ import httpx
 from . import __version__
 from .config import Config
 
-# Anthropic documents two limits for a connector's tool results: about
-# 150,000 characters in claude.ai and Claude Desktop, and 25,000 tokens in
-# Claude Code. The cap is set by the stricter one: at about 4 characters a
-# token, 85,000 characters (about 21,000 tokens) leaves room for the MCP
-# envelope. It is the same for every client. The characters are counted with
-# ASCII escapes (response_chars), so a CJK character counts six and CJK text
-# stays inside the token limit as well.
-MAX_RESPONSE_CHARS = 85_000
+# The cap counts characters: json.dumps with its spaces and ASCII escapes
+# (response_chars), so a CJK character counts six. Clients limit differently.
+# Claude Code writes a text result over 50,000 characters to a file
+# (https://code.claude.com/docs/en/mcp.md, "MCP output limits and warnings").
+# Codex CLI limits a tool output by tokens, about 10,000 by default and set by
+# the user, not by this server, and cuts the middle out beyond it. 18,000 kept
+# every shape measured on 2026-10-06 under Codex's default budget, the densest
+# included: records of small integers, about 2 characters a token. A denser
+# result, or a lower budget the user sets, can still be trimmed by the client.
+# The cap is the same for every client.
+MAX_RESPONSE_CHARS = 18_000
 
 
 _ssl_context: ssl.SSLContext | None = None

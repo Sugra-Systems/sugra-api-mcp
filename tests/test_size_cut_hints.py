@@ -95,7 +95,11 @@ async def test_an_operation_without_parameters_gets_no_filter_advice(monkeypatch
 
 async def test_a_count_parameter_is_clamped_to_its_maximum(monkeypatch) -> None:
     # page_size allows at most 200; more than 200 of these records fit.
-    result = await call(monkeypatch, "gleif_lei_search", lei_search(600))
+    body = lei_search(600, width=0)
+    body["data"]["records"] = [
+        {"lei": record["lei"], "legal_name": record["legal_name"]} for record in body["data"]["records"]
+    ]
+    result = await call(monkeypatch, "gleif_lei_search", body)
 
     cut = notice(result)
     assert cut["kept_count"] > 200
@@ -103,7 +107,7 @@ async def test_a_count_parameter_is_clamped_to_its_maximum(monkeypatch) -> None:
 
 
 async def test_a_limit_parameter_is_clamped_to_its_maximum(monkeypatch) -> None:
-    result = await call(monkeypatch, "predictions_events", events(1000, 1, 200))
+    result = await call(monkeypatch, "predictions_events", events(1000, 1, 10))
 
     cut = notice(result)
     assert cut["kept_count"] > 100
@@ -149,8 +153,8 @@ async def test_a_nearest_cut_does_not_offer_the_tool_limit(monkeypatch) -> None:
 
 
 async def test_the_weather_fields_hint_returns_a_response_that_fits(monkeypatch) -> None:
-    body = weather(TODAY, 16)
-    params = {"city": "Tokyo", "forecast_days": 16}
+    body = weather(TODAY, 14)
+    params = {"city": "Tokyo", "forecast_days": 14}
 
     result = await call(monkeypatch, "v2_weather_forecast", body, params)
 
