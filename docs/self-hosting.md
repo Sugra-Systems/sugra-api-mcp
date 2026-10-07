@@ -48,6 +48,36 @@ header is fixed when the server starts: after changing the value, run
 |---|---|---|---|
 | `SUGRA_MCP_ALLOWED_HOSTS` | Behind a reverse proxy | - | Comma-separated public hostnames FastMCP may accept (DNS rebinding protection). Example: `mcp.example.com,example.com`. |
 | `SUGRA_MCP_ALLOWED_ORIGINS` | For browser OAuth UIs | built-in list (chatgpt.com, claude.ai, cursor.sh, and related clients) | Comma-separated allowed Origins for the outer Starlette CORS layer and the inner FastMCP Origin check (kept in sync). `*` disables the inner Origin check (dev only); Bearer auth still gates tool calls. |
+| `SUGRA_MCP_TRUST_PROXY_HEADERS` | No | off | Read the caller's host from `X-Forwarded-Host` and its address from `X-Real-IP`. See below. |
+
+### Trusting proxy headers
+
+`SUGRA_MCP_TRUST_PROXY_HEADERS` is off by default. Set it to `1`, `true`, `yes`
+or `on` (case and surrounding whitespace ignored; any other value, an empty
+value or unset keeps it off). It is read on every request.
+
+Off, the server reads the `Host` header and the connection peer, as it always
+has, and ignores `X-Forwarded-Host` and `X-Real-IP`.
+
+On, the host class and the network prefix recorded for a request come from the
+two headers instead. A value that is not a single plain `host[:port]` or a
+single IP address is ignored and the `Host` header and the peer are used.
+`X-Forwarded-For` is never read, on or off.
+
+What the setting assumes: every request reaches this process through a reverse
+proxy of yours that sets `X-Real-IP` and `X-Forwarded-Host` itself on every
+request, replacing whatever the client sent (for nginx, `proxy_set_header
+X-Real-IP $remote_addr;` and `proxy_set_header X-Forwarded-Host $host;`), and
+the process accepts no connection from anywhere else. A load balancer or
+container ingress between that proxy and this process is fine as long as it
+passes both headers through unchanged; it does not set them itself. If the
+process is also reachable by other clients on the network, those clients can
+send both headers themselves and the recorded host and address are theirs to
+choose, so restrict access to the proxy's address first.
+
+The setting changes only what is recorded about a request. The host allow-list
+(`SUGRA_MCP_ALLOWED_HOSTS`) is always checked against the `Host` header itself,
+and `X-Forwarded-Host` never passes or fails it.
 
 ## OAuth authorization-server wiring
 

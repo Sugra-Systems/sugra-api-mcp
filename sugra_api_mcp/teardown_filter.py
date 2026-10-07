@@ -76,7 +76,7 @@ import anyio
 from mcp.server.streamable_http import StreamableHTTPServerTransport
 from starlette.requests import Request
 
-from . import observability
+from . import config, observability
 
 SDK_LOGGER = "mcp.server.streamable_http"
 COUNTER_LOGGER = "sugra_mcp.session_race"
@@ -222,7 +222,10 @@ def _request_classes(request: Request | None) -> tuple[str, str, str]:
     if request is None:
         return _UNKNOWN, _UNKNOWN, _UNKNOWN
     headers = request.headers
-    host = _label(observability._host_class(headers.get("host")), _HOST_LABELS)
+    host = _label(
+        observability._host_class(config.caller_host(headers.get("host"), headers.get("x-forwarded-host"))),
+        _HOST_LABELS,
+    )
     ua = _label(
         observability._text_class(headers.get("user-agent"), observability._UA_PATTERNS), _UA_LABELS
     )

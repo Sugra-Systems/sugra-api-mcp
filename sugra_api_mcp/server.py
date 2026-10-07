@@ -22,7 +22,14 @@ from mcp.types import Tool as MCPTool
 
 from . import __version__, gate, observability
 from .client import SugraClient, close_shared_pools
-from .config import MISSING_API_KEY_HINT, Config, load_allowed_origins, load_config
+from .config import (
+    MISSING_API_KEY_HINT,
+    Config,
+    caller_address,
+    caller_host,
+    load_allowed_origins,
+    load_config,
+)
 from .errors import is_error_payload
 
 api_key_ctx: ContextVar[str | None] = ContextVar("sugra_api_key", default=None)
@@ -631,10 +638,20 @@ def current_caller_facts() -> observability.CallerFacts | None:
     headers = getattr(request, "headers", None)
     peer = scope.get("client")
     client_addr = peer[0] if type(peer) in (tuple, list) and peer else None
+    # With SUGRA_MCP_TRUST_PROXY_HEADERS on, the host and address come from the
+    # proxy's headers (config.caller_host, config.caller_address); off, they are
+    # the Host header and the peer exactly as before.
+    client_addr, x_real_ip = caller_address(
+        client_addr, headers.get("x-real-ip") if headers is not None else None
+    )
     return observability.CallerFacts(
         transport="streamable_http",
         auth=principal.method if isinstance(principal, RequestPrincipal) else "none",
-        host=headers.get("host") if headers is not None else None,
+        host=(
+            caller_host(headers.get("host"), headers.get("x-forwarded-host"))
+            if headers is not None
+            else None
+        ),
         user_agent=headers.get("user-agent") if headers is not None else None,
         origin=headers.get("origin") if headers is not None else None,
         client_name=client_name,
@@ -644,7 +661,7 @@ def current_caller_facts() -> observability.CallerFacts | None:
         platform=principal.platform if isinstance(principal, RequestPrincipal) else None,
         session_id=headers.get("mcp-session-id") if headers is not None else None,
         client_addr=client_addr,
-        x_real_ip=headers.get("x-real-ip") if headers is not None else None,
+        x_real_ip=x_real_ip,
         request_id=headers.get("x-request-id") if headers is not None else None,
     )
 

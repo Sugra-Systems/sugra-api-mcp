@@ -55,7 +55,7 @@ from typing import Any
 from mcp.types import CallToolResult
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from . import demand, observability
+from . import config, demand, observability
 
 logger = logging.getLogger("sugra_mcp.gate")
 # Set here, not inherited: on the hosted server the Azure Monitor handler is
@@ -445,7 +445,7 @@ class GateMiddleware:
                 return
             method = capture.method if parsed else demand.UNREAD
             host, ua, origin = demand.caller_classes(
-                _first_header(scope, b"host"),
+                config.caller_host(_first_header(scope, b"host"), _first_header(scope, b"x-forwarded-host")),
                 _first_header(scope, b"user-agent"),
                 _first_header(scope, b"origin"),
             )

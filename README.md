@@ -369,7 +369,10 @@ Optional overrides (leave unset unless you need them):
 Operator-only settings for self-hosted Streamable HTTP (reverse proxy CORS/hosts,
 OAuth authorization-server wiring, and shared secrets) are documented in
 [docs/self-hosting.md](docs/self-hosting.md). Do not put operator secrets into
-public directory sandboxes.
+public directory sandboxes. `SUGRA_MCP_TRUST_PROXY_HEADERS` (off by default)
+makes the server read `X-Real-IP` and `X-Forwarded-Host`; set it only behind a
+reverse proxy that overwrites both on every request, and never where clients
+can reach the process directly (details in the same guide).
 
 ### HTTP transport with OAuth
 

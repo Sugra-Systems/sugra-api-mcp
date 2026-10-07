@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import ipaddress
 import math
 import os
+import re
 from dataclasses import dataclass
 
 from . import __version__
@@ -33,6 +35,11 @@ _TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
 # adds the package version to that header and to the /health response.
 SERVER_PRODUCT = "sugra-api-mcp"
 SERVER_VERSION_ENV = "SUGRA_MCP_SERVER_VERSION"
+
+# The opt-in switch that makes the caller's host and address come from the
+# X-Forwarded-Host and X-Real-IP headers a trusted proxy sets in front of the
+# server, instead of the Host header and the connection peer.
+TRUST_PROXY_HEADERS_ENV = "SUGRA_MCP_TRUST_PROXY_HEADERS"
 
 
 @dataclass(frozen=True)
@@ -193,6 +200,166 @@ def server_version_disclosed() -> bool:
     MCP initialize result and in `sugra-api-mcp doctor`.
     """
     return os.environ.get(SERVER_VERSION_ENV, "").strip().lower() in _TRUTHY_ENV_VALUES
+
+
+def proxy_headers_trusted() -> bool:
+    """Whether the caller's host and address are read from proxy headers.
+
+    On only when SUGRA_MCP_TRUST_PROXY_HEADERS is 1, true, yes or on, in any
+    case and with surrounding whitespace ignored. Unset, empty and every other
+    value mean off, and off is byte-for-byte the behaviour before the setting
+    existed: the Host header and the connection peer, nothing else.
+
+    On, the server believes X-Forwarded-Host and X-Real-IP, so turn it on only
+    where every request reaches the process through a proxy that overwrites
+    both headers on each request (the nginx of the hosted VM). X-Forwarded-For
+    is never read, on or off. Read on every request.
+    """
+    return os.environ.get(TRUST_PROXY_HEADERS_ENV, "").strip().lower() in _TRUTHY_ENV_VALUES
+
+
+# Longest host a proxy header may carry: a 253-character name, a colon and a
+# five-digit port. Anything longer is malformed.
+_FORWARDED_HOST_MAX = 259
+_DNS_NAME_MAX = 253
+# One DNS label: 1 to 63 ASCII letters, digits, hyphens or underscores, neither
+# starting nor ending with a hyphen. The underscore is allowed on purpose: the
+# previous character check allowed it and internal service names use it.
+_DNS_LABEL = re.compile(r"(?!-)[A-Za-z0-9_-]{1,63}(?<!-)")
+_PORT = re.compile(r"[0-9]{1,5}")
+
+
+def _valid_port(text: str) -> bool:
+    """Digits only, 1 to 5 of them, a value in 1..65535."""
+    return _PORT.fullmatch(text) is not None and 1 <= int(text) <= 65535
+
+
+def _valid_ipv4(text: str) -> bool:
+    """A dotted quad of four 0-255 octets, as ipaddress reads it."""
+    try:
+        ipaddress.IPv4Address(text)
+    except ValueError:
+        return False
+    return True
+
+
+def _valid_ipv6(text: str) -> bool:
+    """An IPv6 literal ipaddress accepts, without a zone."""
+    if "%" in text:
+        return False
+    try:
+        ipaddress.IPv6Address(text)
+    except ValueError:
+        return False
+    return True
+
+
+def _valid_dns_name(text: str) -> bool:
+    """Dot-separated labels, at most 253 characters, the last one not all digits.
+
+    A name whose last label is all digits is a malformed address ("999.8.8.8",
+    "1.2.3"), not a name, so it is refused here and left to the IPv4 rule.
+    """
+    if not text or len(text) > _DNS_NAME_MAX:
+        return False
+    labels = text.split(".")
+    if not all(_DNS_LABEL.fullmatch(label) for label in labels):
+        return False
+    return not labels[-1].isdigit()
+
+
+def _header_text(value: object) -> str | None:
+    """A header value as text with only edge spaces and tabs trimmed, else None.
+
+    None for anything that is not a str, and for a value holding a control
+    character (0x00-0x1f, 0x7f, tabs inside the text included) or a non-ASCII
+    character anywhere. Only an ASCII space or horizontal tab at the edges is
+    trimmed, so a newline, a vertical tab or a Unicode space at an edge makes
+    the value malformed instead of being stripped away. Edge spaces and tabs
+    are optional whitespace around a field value (RFC 9110 5.5) and are
+    trimmed; every other control or non-ASCII character makes it malformed.
+    """
+    if type(value) is not str:
+        return None
+    text = value.strip(" \t")
+    if not text.isascii() or any(ch < " " or ch == "\x7f" for ch in text):
+        return None
+    return text
+
+
+def _forwarded_host(value: object) -> str | None:
+    """A single plain host[:port] from X-Forwarded-Host, else None.
+
+    The whole text has to match: a DNS name, an IPv4 dotted quad or a bracketed
+    IPv6 literal, then optionally a colon and a port in 1..65535. A list, a
+    space, a path, credentials, a control or non-ASCII character, an empty or
+    over-long text, or a host with a missing or bad port is malformed and is
+    not used.
+    """
+    text = _header_text(value)
+    if not text or len(text) > _FORWARDED_HOST_MAX:
+        return None
+    if text.startswith("["):
+        literal, bracket, rest = text[1:].partition("]")
+        if not bracket or not _valid_ipv6(literal):
+            return None
+        port = rest[1:] if rest.startswith(":") else None
+        if rest and port is None:
+            return None
+    else:
+        if text.count(":") > 1:
+            return None
+        name, colon, port = text.partition(":")
+        if not (_valid_ipv4(name) or _valid_dns_name(name)):
+            return None
+        if not colon:
+            port = None
+    if port is not None and not _valid_port(port):
+        return None
+    return text
+
+
+def caller_host(host: object, forwarded_host: object) -> object:
+    """The Host value the caller classes (host class on spans, counts and logs) are read from.
+
+    Off: the Host header as received, X-Forwarded-Host untouched. On: a
+    well-formed X-Forwarded-Host, else the Host header. This feeds the host
+    classes only. The host allow-list (SUGRA_MCP_ALLOWED_HOSTS) is enforced by
+    the SDK on the Host header itself and never sees X-Forwarded-Host, on or
+    off, so no client-supplied X-Forwarded-Host can pass or fail it.
+    """
+    if not proxy_headers_trusted():
+        return host
+    forwarded = _forwarded_host(forwarded_host)
+    return host if forwarded is None else forwarded
+
+
+def _forwarded_address(value: object) -> str | None:
+    """A single plain IP address from X-Real-IP in its canonical text, else None."""
+    text = _header_text(value)
+    if not text or len(text) > 45 or "%" in text:
+        return None
+    try:
+        return str(ipaddress.ip_address(text))
+    except ValueError:
+        return None
+
+
+def caller_address(peer: object, real_ip: object) -> tuple[object, object]:
+    """The (connection peer, X-Real-IP) pair the caller's network prefix is read from.
+
+    Off: both as received. On with a well-formed X-Real-IP: that address in both
+    places, because behind the proxy the peer is the proxy and not the caller.
+    On with an absent or malformed X-Real-IP: both as received, so the prefix
+    is the one the unchanged rule gives (none for a peer that is not the
+    caller, loopback for a local one) and a bad header never names a network.
+    """
+    if not proxy_headers_trusted():
+        return peer, real_ip
+    address = _forwarded_address(real_ip)
+    if address is None:
+        return peer, real_ip
+    return address, address
 
 
 def server_header_value() -> str:
