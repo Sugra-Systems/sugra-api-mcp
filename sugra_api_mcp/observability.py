@@ -99,7 +99,7 @@ Privacy contract (enforced by tests):
   NEVER reach a span. Identity is a digest, a decimal user id, a session
   digest or a coarse network prefix.
 - All bundled OpenTelemetry instrumentations (fastapi, requests, urllib,
-  urllib3, azure_sdk, etc.) are explicitly DISABLED to prevent them from
+  urllib3, httpx, httpx2, azure_sdk, etc.) are explicitly DISABLED to prevent them from
   emitting auto-spans with URL/query attributes outside this allowlist.
 - All span operations are wrapped in try/except; a telemetry failure
   cannot mask a tool result or leave a span un-ended.
@@ -827,15 +827,23 @@ def record_unstarted_call(tool_name: str | None, error_code: str, duration_ms: i
 
 
 # azure-monitor-opentelemetry enables all bundled instrumentations by default
-# (fastapi, requests, urllib, urllib3, azure_sdk, django, flask, psycopg2).
-# Those auto-spans carry URL + query-string attributes that bypass our privacy
-# contract. Disable every bundled instrumentation explicitly so the only spans
-# we emit are the ones we author here.
+# (fastapi, requests, urllib, urllib3, azure_sdk, django, flask, psycopg2, and
+# from distro 1.8.10 httpx and httpx2, the client every outgoing call here
+# uses). Those auto-spans carry URL + query-string attributes that bypass our
+# privacy contract. Disable every bundled instrumentation explicitly so the
+# only spans we emit are the ones we author here. The distro reads an entry
+# for a library it does not know as nothing, so the list may run ahead of the
+# installed distro; a test keeps it from falling behind. The distro's own
+# OTEL_PYTHON_DISABLED_INSTRUMENTATIONS can only switch more off: an explicit
+# `enabled: False` here is merged over it and never flipped back by the
+# environment.
 _DISABLE_ALL_INSTRUMENTATION = {
     "azure_sdk": {"enabled": False},
     "django": {"enabled": False},
     "fastapi": {"enabled": False},
     "flask": {"enabled": False},
+    "httpx": {"enabled": False},
+    "httpx2": {"enabled": False},
     "psycopg2": {"enabled": False},
     "requests": {"enabled": False},
     "urllib": {"enabled": False},
