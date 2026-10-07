@@ -43,6 +43,41 @@ class EndpointParameter(BaseModel):
         return result
 
 
+class MacroKey(BaseModel):
+    """One curated series an operation serves under a fixed key.
+
+    ``key`` is "<country>/<section>", the two path values that select the
+    series; ``title`` is the series' own name, which search matches a query
+    against; ``freq`` is how often it is observed ("monthly"), empty when the
+    spec does not say.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    key: str
+    title: str = ""
+    freq: str = ""
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> MacroKey:
+        return cls(
+            key=str(data["key"]),
+            title=str(data.get("title") or ""),
+            freq=str(data.get("freq") or ""),
+        )
+
+    def to_dict(self) -> dict[str, str]:
+        result = {"key": self.key, "title": self.title}
+        if self.freq:
+            result["freq"] = self.freq
+        return result
+
+    @property
+    def params(self) -> dict[str, str]:
+        country, _, section = self.key.partition("/")
+        return {"country": country, "section": section}
+
+
 class Endpoint(BaseModel):
     """Single callable Sugra API operation."""
 
@@ -78,6 +113,11 @@ class Endpoint(BaseModel):
     # path/summary/description never spell out (coffee, cocoa, sugar,
     # gasoline, ...). Empty for every operation the API does not annotate.
     keywords: list[str] = Field(default_factory=list)
+    # The curated series behind a country/section operation, from the spec's
+    # x-sugra-macro-keys extension: search reads a query's indicator words
+    # against their titles and names the matching keys in the hit. Hundreds
+    # of entries, so describe_endpoint leaves them out (see to_dict).
+    macro_keys: list[MacroKey] = Field(default_factory=list)
 
     @property
     def required_parameters(self) -> list[str]:
@@ -114,9 +154,19 @@ class Endpoint(BaseModel):
             ),
             groups_mutually_exclusive=bool(data.get("groups_mutually_exclusive", False)),
             keywords=[str(word) for word in (data.get("keywords") or [])],
+            macro_keys=[
+                MacroKey.from_dict(item)
+                for item in (data.get("macro_keys") or [])
+                if isinstance(item, dict) and item.get("key")
+            ],
         )
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self, *, include_macro_keys: bool = False) -> dict[str, Any]:
+        """The endpoint as a dict; ``include_macro_keys`` adds the key index.
+
+        The bundle and the parity check carry the index; describe_endpoint
+        does not, since its hundreds of entries would crowd out the schema.
+        """
         result: dict[str, Any] = {
             "operation_id": self.operation_id,
             "method": self.method,
@@ -146,6 +196,8 @@ class Endpoint(BaseModel):
                 result["groups_mutually_exclusive"] = True
         if self.keywords:
             result["keywords"] = self.keywords
+        if include_macro_keys and self.macro_keys:
+            result["macro_keys"] = [item.to_dict() for item in self.macro_keys]
         return result
 
 
@@ -206,7 +258,9 @@ class Catalog(BaseModel):
         payload: dict[str, Any] = {
             "source": self.source,
             "endpoint_count": self.endpoint_count,
-            "endpoints": [endpoint.to_dict() for endpoint in self.endpoints],
+            "endpoints": [
+                endpoint.to_dict(include_macro_keys=True) for endpoint in self.endpoints
+            ],
         }
         # Omitted rather than emitted as null when absent, so an older bundle
         # round-trips byte-identically through load -> dump.

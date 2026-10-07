@@ -4,8 +4,8 @@ fetch_data runs the top search hit unless a sent key is rare and foreign to
 it and a GET hit among the first five, scoring at least half the top,
 declares every sent key (test_fetch_data_selection.py); a param the operation
 that runs does not declare returns unknown_parameters. A model that copies an example should get
-the operation the example names as the top hit, with every param it passes
-declared there.
+the operation the example names, selected the way fetch_data selects it, with
+every param it passes declared there.
 Offline: the bundled catalog and the search, no HTTP.
 """
 
@@ -47,12 +47,16 @@ def test_every_fetch_data_example_picks_the_operation_it_names() -> None:
 
     assert len(examples) == doc.count("- `fetch_data("), "an example names no operation"
     assert len(examples) >= 3
+    catalog = load_catalog()
     for example in examples:
         query, params = _arguments(example["args"])
-        top = search_catalog(load_catalog(), query, limit=3)[0]["operation_id"]
+        results = search_catalog(catalog, query, limit=gateway._SELECTION_WINDOW)
+        top = catalog.get(results[0]["operation_id"])
+        reselected = gateway._reselect(catalog, results, top, params, None)
+        runs = reselected[0] if reselected is not None else top.operation_id
 
-        assert top == example["operation"], (query, top)
-        _assert_runs(top, params)
+        assert runs == example["operation"], (query, runs)
+        _assert_runs(runs, params)
 
 
 def test_every_call_endpoint_example_in_fetch_data_runs() -> None:

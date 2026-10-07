@@ -10,6 +10,7 @@ from .aliases import (
     CENTRAL_BANK_PREFIX_BOOSTS,
     COMPOUND_NAMED_OPERATIONS,
     FX_CONVERT_OPERATION,
+    MEETING_CALENDAR_OPERATIONS,
     SOURCE_COUNTRY_PREFIXES,
     detect_currency_pairs,
     detect_fx_request,
@@ -24,7 +25,8 @@ from .aliases import (
     query_has_equity_context,
     topic_default_operations,
 )
-from .models import Catalog, Endpoint
+from .macro_keys import match_macro_keys
+from .models import Catalog, Endpoint, MacroKey
 
 TOKEN_RE = re.compile(r"[a-z0-9]+")
 
@@ -103,6 +105,9 @@ CRYPTO_NAMESPACE_BOOST = 18
 # inflation" because non-US endpoints out-ranked fred_series_series_id.
 US_MACRO_FRED_BOOST = 30
 US_MACRO_FED_BOOST = 20
+# FRED's generic proxy: beside a macro key's hit it keeps the US-macro boost,
+# clamped below that hit (see search_catalog).
+US_MACRO_PROXY_OPERATION = "fred_series_series_id"
 # Ranking mechanisms:
 # - COVERAGE: matching MORE DISTINCT query terms must beat one token repeated
 #   across prose fields ('address' x4 in a crypto endpoint outranked the
@@ -142,6 +147,11 @@ COUNTRY_PARAM_BOOST = 6
 #   (aliases.detect_weather_request). The name is the user's whole intent, so
 #   it outweighs any one field match.
 NAMED_OPERATION_BOOST = 15
+# - MACRO KEY: the query names one of the curated series a country/section
+#   operation serves ("US nonfarm payrolls", "Japan GDP growth" -
+#   macro_keys.match_macro_keys), whose own text says only "country" and
+#   "section". The series is the user's whole intent, and the hit names its key.
+MACRO_KEY_BOOST = 50
 
 
 def _tokens(value: str) -> list[str]:
@@ -304,6 +314,7 @@ def _score(
     country_terms: frozenset[str] = frozenset(),
     penalty_countries: set[str] | None = None,
     named_operations: dict[str, str] | None = None,
+    macro_key_operations: dict[str, str] | None = None,
 ) -> tuple[int, list[str]]:
     alias_terms = [term for terms in aliases.values() for term in terms]
     all_terms = [*query_terms, *_tokens(" ".join(alias_terms))]
@@ -331,6 +342,12 @@ def _score(
         score += NAMED_OPERATION_BOOST
         topic_hit = True
         why.append(f"name:{named}")
+
+    macro_key = (macro_key_operations or {}).get(endpoint.operation_id)
+    if macro_key is not None:
+        score += MACRO_KEY_BOOST
+        topic_hit = True
+        why.append(f"macro-key:{macro_key}")
 
     # Pattern-detection boosts: tilt the ranking toward the right domain when the
     # query has a distinctive shape (ticker symbol, currency pair, central bank
@@ -532,6 +549,14 @@ def known_sources(catalog: Catalog) -> set[str]:
     return values
 
 
+def _in_scope(endpoint: Endpoint, toolset: str | None, source: str | None) -> bool:
+    """Whether the endpoint passes the toolset and source filters of search_catalog."""
+    if toolset and endpoint.toolset != toolset:
+        return False
+    endpoint_sources = endpoint.sources or [endpoint.source_family]
+    return not source or source in endpoint_sources or endpoint.source_family == source
+
+
 # The bounds a query must fit before any work is done on it. Agent
 # queries name an instrument, series, place or task in a few words; even the
 # long NVDA question in the stopword note above is 16 tokens. A query past
@@ -669,6 +694,11 @@ def search_catalog(
     weather = detect_weather_request(query, terms)
     if weather is not None:
         named_operations.setdefault(weather.operation, weather.name)
+    # A meeting of the bank the query names is the calendar's question: the
+    # calendar counts as that bank's own operation, so the bank's name lifts
+    # it as it lifts the bank's rates ("when is the next Fed meeting").
+    if central_bank_prefixes and MEETING_CALENDAR_OPERATIONS & named_operations.keys():
+        central_bank_prefixes = [*central_bank_prefixes, *sorted(MEETING_CALENDAR_OPERATIONS)]
     boost_forex = bool(currency_pairs) or fx is not None
     boost_crypto = has_crypto_context
     boost_us_macro = detect_us_macro_query(query)
@@ -714,13 +744,34 @@ def search_catalog(
     # only a country from one with a topic as well.
     coverage_excluded = frozenset(consumed)
     country_terms = _country_terms(query, terms, query_countries)
+    # The curated series of a country/section operation, read off their
+    # titles. A ticker, a currency, crypto, a named central bank, benchmark or
+    # measure, or a weather question already says what the query asks for.
+    macro_matches: dict[str, list[MacroKey]] = {}
+    if not (has_ticker_token or boost_forex or has_crypto_context
+            or central_bank_prefixes or named_operations):
+        filler = _QUERY_STOPWORDS | _TWO_LETTER_FILLER
+        for endpoint in catalog.endpoints:
+            if endpoint.macro_keys and _in_scope(endpoint, toolset, source):
+                found = match_macro_keys(query, endpoint.macro_keys,
+                                         query_countries=query_countries, ignore=filler)
+                if found:
+                    macro_matches[endpoint.operation_id] = found
+    macro_key_operations = {op: found[0].key for op, found in macro_matches.items()}
+    # The key names the series the US-macro boost reaches for through FRED's
+    # generic proxy, so the boost stays on the proxy alone, below the key's
+    # hit (the clamp after scoring): a call that sends a FRED series id still
+    # finds the proxy among the hits it selects from. A US key is US-macro
+    # intent of its own ("US nonfarm payrolls" names no word of the boost's).
+    proxy_beside_key = bool(macro_matches) and (boost_us_macro or any(
+        key.params["country"] == "us" for found in macro_matches.values() for key in found
+    ))
+    if macro_matches:
+        boost_us_macro = False
 
     scored: list[tuple[int, Endpoint, list[str]]] = []
     for endpoint in catalog.endpoints:
-        if toolset and endpoint.toolset != toolset:
-            continue
-        endpoint_sources = endpoint.sources or [endpoint.source_family]
-        if source and source not in endpoint_sources and endpoint.source_family != source:
+        if not _in_scope(endpoint, toolset, source):
             continue
         score, why = _score(
             endpoint,
@@ -731,16 +782,30 @@ def search_catalog(
             boost_symbol_input=has_ticker_token,
             boost_forex=boost_forex,
             boost_crypto=boost_crypto,
-            boost_us_macro=boost_us_macro,
+            boost_us_macro=boost_us_macro or (
+                proxy_beside_key and endpoint.operation_id == US_MACRO_PROXY_OPERATION
+            ),
             central_bank_prefixes=central_bank_prefixes,
             query_countries=query_countries,
             coverage_excluded=coverage_excluded,
             country_terms=country_terms,
             penalty_countries=penalty_countries,
             named_operations=named_operations,
+            macro_key_operations=macro_key_operations,
         )
         if score > 0:
             scored.append((score, endpoint, why))
+
+    # Structural guarantee: beside a macro key's hit, FRED's generic proxy
+    # ranks strictly below it, whatever its own text matches - the key names
+    # the series, the proxy answers the series ids the key does not hold.
+    key_hits = [(score, endpoint.operation_id) for score, endpoint, _ in scored
+                if endpoint.operation_id in macro_key_operations]
+    if proxy_beside_key and key_hits:
+        key_score, key_operation = max(key_hits)
+        for i, (score, endpoint, why) in enumerate(scored):
+            if endpoint.operation_id == US_MACRO_PROXY_OPERATION and score >= key_score:
+                scored[i] = (key_score - 1, endpoint, [*why, f"clamped-below:{key_operation}"])
 
     # Structural guarantee: a deprecated route never outranks its live
     # replacement, whatever the token luck (a query built from the legacy
@@ -778,6 +843,11 @@ def search_catalog(
             **({"required_groups": [list(g) for g in endpoint.required_groups],
                 "groups_mutually_exclusive": endpoint.groups_mutually_exclusive}
                if endpoint.required_groups else {}),
+            # The series the query names, best first, with the values to call
+            # them by.
+            **({"macro_keys": [{**key.to_dict(), "params": key.params}
+                               for key in macro_matches[endpoint.operation_id]]}
+               if endpoint.operation_id in macro_matches else {}),
             "score": score,
             "why": why,
         }

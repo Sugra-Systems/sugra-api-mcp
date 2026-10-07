@@ -136,9 +136,12 @@ def main() -> int:
     # parameter, required-body flag or body schema can change while the id stays
     # put, and a client would then call a stale signature against the live API -
     # exactly the failure this gate exists to prevent, so compare the whole
-    # generated endpoint, not just its name.
-    bundle_by_id = {e.operation_id: e.to_dict() for e in bundle.endpoints}
-    current_by_id = {e.operation_id: e.to_dict() for e in current.endpoints}
+    # generated endpoint, not just its name - the macro key index included,
+    # since search reads it.
+    bundle_by_id = {e.operation_id: e.to_dict(include_macro_keys=True)
+                    for e in bundle.endpoints}
+    current_by_id = {e.operation_id: e.to_dict(include_macro_keys=True)
+                     for e in current.endpoints}
     changed = sorted(
         op_id for op_id in bundle_by_id.keys() & current_by_id.keys()
         if bundle_by_id[op_id] != current_by_id[op_id]
