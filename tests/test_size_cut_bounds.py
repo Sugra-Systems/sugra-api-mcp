@@ -244,11 +244,13 @@ def test_a_descending_forecast_keeps_today_onward_too() -> None:
 
 
 def test_both_orders_keep_the_same_records_when_the_future_is_short() -> None:
-    ascending = _hours(TODAY - timedelta(days=15), 18)
+    ascending = _hours(TODAY - timedelta(days=15), 18, width=110)
     cut_up, kept_up = _cut_hours(ascending)
     cut_down, kept_down = _cut_hours(ascending[::-1])
 
     future = [record for record in ascending if _day_of(record) >= TODAY]
+    assert len(kept_up) < len(ascending)
+    assert len(kept_down) < len(ascending)
     assert cut_up["kept_end"] == cut_down["kept_end"] == "nearest"
     assert kept_up == kept_down[::-1]
     # Every future hour, then the nearest past ones.
@@ -403,7 +405,7 @@ def test_a_refusal_naming_a_huge_key_still_fits() -> None:
     assert result["error"] == "response_too_large"
     assert _fits(result)
     assert "retry_hint" not in result
-    assert result["message"] == f"Response is about {chars(payload):,} characters; the limit is 85,000 characters."
+    assert result["message"] == f"Response is about {chars(payload):,} characters; the limit is 18,000 characters."
 
 
 def test_a_refusal_for_a_huge_url_still_fits() -> None:
@@ -460,22 +462,22 @@ def test_a_large_rest_of_the_response_is_named_not_a_record() -> None:
 
 
 def test_records_that_each_fit_beside_the_rest_are_not_blamed() -> None:
-    row = {"date": "2026-10-01", "blob": "y" * 25_000}
-    payload = {"data": {"a": [row, row], "b": [row, row]}, "meta": {"notes": "n" * 40_000}}
+    row = {"date": "2026-10-01", "blob": "y" * 5_000}
+    payload = {"data": {"a": [row, row], "b": [row, row]}, "meta": {"notes": "n" * 8_500}}
 
     result = _module().cut_to_fit(payload, "test://rest", cap=CAP)
 
     assert result["error"] == "response_too_large"
     assert "One record" not in result["message"]
-    assert "most of it is at meta, about 40,0" in result["retry_hint"]
+    assert "most of it is at meta, about 8,5" in result["retry_hint"]
 
 
 def test_the_record_named_is_the_largest_one_not_the_first_kept() -> None:
     # Neither list has an order, so each keeps its first record, and the
     # two first records together are over the cap.
-    first = {"id": 1, "blob": "f" * 50_000}
+    first = {"id": 1, "blob": "f" * 10_500}
     huge = {"id": 2, "blob": "h" * 200_000}
-    other = {"id": 3, "blob": "o" * 60_000}
+    other = {"id": 3, "blob": "o" * 12_800}
     payload = {"data": {"a": [first, huge], "b": [other, other]}}
 
     result = _module().cut_to_fit(payload, "test://worst", cap=CAP)
@@ -484,8 +486,8 @@ def test_the_record_named_is_the_largest_one_not_the_first_kept() -> None:
 
 
 def test_a_record_that_does_not_fit_beside_the_rest_is_named_with_both_sizes() -> None:
-    row = {"date": "2026-10-01", "blob": "y" * 30_000}
-    payload = {"data": [row, row, row], "meta": {"notes": "n" * 60_000}}
+    row = {"date": "2026-10-01", "blob": "y" * 6_400}
+    payload = {"data": [row, row, row], "meta": {"notes": "n" * 12_800}}
 
     result = _module().cut_to_fit(payload, "test://record", cap=CAP)
 
@@ -562,7 +564,7 @@ async def test_a_cut_that_blocks_past_its_clock_is_answered_within_the_grace(mon
 
     assert entered.is_set()
     assert result["error"] == "response_too_large"
-    assert result["message"] == "Response is over the limit of 85,000 characters."
+    assert result["message"] == "Response is over the limit of 18,000 characters."
     assert result["response_chars"] is None
     # The clock plus the grace, and the request and the fit check around it;
     # without the bound the answer would wait the ten seconds of the block.
@@ -732,7 +734,7 @@ async def test_a_call_endpoint_cut_that_blocks_is_answered_within_its_bound(monk
         cutter.release.set()
 
     assert result["error"] == "response_too_large"
-    assert result["message"] == "Response is over the limit of 85,000 characters."
+    assert result["message"] == "Response is over the limit of 18,000 characters."
     assert result["response_chars"] is None
     # Without the bound the answer would wait the ten seconds of the block.
     assert waited < 2.0

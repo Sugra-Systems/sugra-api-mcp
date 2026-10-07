@@ -198,7 +198,7 @@ async def test_a_list_under_a_key_outside_the_records_allowlist_is_cut(monkeypat
 
 
 async def test_cjk_text_is_measured_by_its_escapes() -> None:
-    body = {"data": [{"date": f"2026-01-{i % 28 + 1:02d}", "text": "東京" * 500} for i in range(60)]}
+    body = {"data": [{"date": f"2026-01-{i % 28 + 1:02d}", "text": "東京" * 200} for i in range(30)]}
     # Under the cap counted once a character, far over it as escapes: the
     # escapes are what is enforced, as they always were.
     assert len(json.dumps(body, ensure_ascii=False)) < MAX_RESPONSE_CHARS < chars(body)
@@ -212,7 +212,7 @@ async def test_cjk_text_is_measured_by_its_escapes() -> None:
 
     for result in (direct, fetched):
         cut = notice(result)
-        assert 1 <= cut["kept_count"] < 60
+        assert 1 <= cut["kept_count"] < 30
         assert cut["original_chars"] == chars(body)
         assert cut["kept_chars"] == chars(result) <= MAX_RESPONSE_CHARS
         # The dates wrap around, so no order is read and the first are kept.
@@ -263,7 +263,7 @@ async def test_on_the_event_loop_a_response_over_the_cap_is_refused_unwalked(mon
     assert result["error"] == "response_too_large"
     assert "retry_hint" not in result
     assert result["response_chars"] is None
-    assert result["message"] == "Response is over the limit of 85,000 characters."
+    assert result["message"] == "Response is over the limit of 18,000 characters."
     assert _fits(result)
 
 
@@ -303,7 +303,7 @@ async def test_one_record_over_the_cap_is_refused_in_characters(monkeypatch) -> 
     result = await call(monkeypatch, "futures_root_historical", body, {"root": "CL"})
 
     assert result["error"] == "response_too_large"
-    assert "85,000 characters" in result["message"]
+    assert "18,000 characters" in result["message"]
     assert "25000" not in result["message"] and "token" not in result["message"]
     assert result["cap_chars"] == MAX_RESPONSE_CHARS
     assert result["response_chars"] == chars(body)
