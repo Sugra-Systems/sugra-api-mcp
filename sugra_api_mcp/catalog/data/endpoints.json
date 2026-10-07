@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-10-05T14:52:36Z",
+  "built_at": "2026-10-07T19:57:35Z",
   "endpoint_count": 1625,
   "endpoints": [
     {
@@ -12306,7 +12306,7 @@
       "toolset": "commodities"
     },
     {
-      "description": "Monthly US natural gas price at Henry Hub. Data from US Energy Information Administration (EIA).",
+      "description": "US natural gas spot price at Henry Hub, monthly by default or daily with frequency=daily. Data from US Energy Information Administration (EIA).",
       "method": "GET",
       "operation_id": "commodities_energy_natural_gas",
       "parameters": [
@@ -12323,6 +12323,23 @@
             "minimum": 1,
             "title": "Limit",
             "type": "integer"
+          }
+        },
+        {
+          "description": "Observation frequency: monthly (default) or daily",
+          "example": "daily",
+          "location": "query",
+          "name": "frequency",
+          "required": false,
+          "schema": {
+            "default": "monthly",
+            "description": "Observation frequency: monthly (default) or daily",
+            "enum": [
+              "monthly",
+              "daily"
+            ],
+            "title": "Frequency",
+            "type": "string"
           }
         }
       ],
@@ -12474,10 +12491,10 @@
         "corn/maize ($/mt)",
         "soybeans ($/mt)",
         "rice, thailand 5% ($/mt)",
-        "coffee, arabica (cents/kg)",
-        "sugar, world (cents/kg)",
-        "cotton, a index (cents/kg)",
-        "rubber, tsr20 (cents/kg)"
+        "coffee, arabica ($/kg)",
+        "sugar, world ($/kg)",
+        "cotton, a index ($/kg)",
+        "rubber, tsr20 ($/kg)"
       ],
       "method": "GET",
       "operation_id": "commodities_prices",
@@ -12512,10 +12529,10 @@
         "corn/maize ($/mt)",
         "soybeans ($/mt)",
         "rice, thailand 5% ($/mt)",
-        "coffee, arabica (cents/kg)",
-        "sugar, world (cents/kg)",
-        "cotton, a index (cents/kg)",
-        "rubber, tsr20 (cents/kg)"
+        "coffee, arabica ($/kg)",
+        "sugar, world ($/kg)",
+        "cotton, a index ($/kg)",
+        "rubber, tsr20 ($/kg)"
       ],
       "method": "GET",
       "operation_id": "commodities_commodity_id",
@@ -30740,7 +30757,8 @@
         "sugar",
         "global price of sugar, no. 11, world",
         "gasoline",
-        "us regular all formulations gas price"
+        "us regular all formulations gas price",
+        "mortgage"
       ],
       "method": "GET",
       "operation_id": "fred_series_series_id",
@@ -51202,7 +51220,7 @@
       "toolset": "predictions"
     },
     {
-      "description": "CFTC-regulated prediction events with nested markets. Categories: Politics, Economics, Weather, Sports, Science, Finance, Culture.",
+      "description": "CFTC-regulated prediction events with nested markets. Categories: Politics, Economics, Weather, Sports, Science, Finance, Culture. A status outside the four Kalshi values answers 422; a series ticker Kalshi refuses answers the status Kalshi used (400 or 404), never 503.",
       "method": "GET",
       "operation_id": "kalshi_events",
       "parameters": [
@@ -51222,15 +51240,28 @@
           }
         },
         {
-          "description": "Record status.",
+          "description": "Event status filter: unopened, open, closed or settled. Omit for every status.",
           "example": "open",
           "location": "query",
           "name": "status",
           "required": false,
           "schema": {
-            "description": "Record status.",
-            "title": "Status",
-            "type": "string"
+            "anyOf": [
+              {
+                "enum": [
+                  "unopened",
+                  "open",
+                  "closed",
+                  "settled"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Event status filter: unopened, open, closed or settled. Omit for every status.",
+            "title": "Status"
           }
         },
         {
@@ -51260,7 +51291,7 @@
       "toolset": "predictions"
     },
     {
-      "description": "Fetch a specific event with all its markets by event ticker.",
+      "description": "Fetch a specific event with all its markets by event ticker. An event ticker Kalshi does not know answers 404.",
       "method": "GET",
       "operation_id": "kalshi_events_event_ticker",
       "parameters": [
@@ -63864,7 +63895,7 @@
       "toolset": "predictions"
     },
     {
-      "description": "Browse Manifold Markets. Manifold is a play-money prediction market platform - all amounts are denominated in mana (M$), a play-money currency that is NOT redeemable for real USD. Probabilities reflect crowd forecasts by users betting with mana.",
+      "description": "Browse Manifold Markets. Manifold is a play-money prediction market platform - all amounts are denominated in mana (M$), a play-money currency that is NOT redeemable for real USD. Probabilities reflect crowd forecasts by users betting with mana. A sort outside the four Manifold values answers 422; a cursor Manifold refuses answers 400.",
       "method": "GET",
       "operation_id": "predictions_manifold_markets",
       "parameters": [
@@ -63884,21 +63915,27 @@
           }
         },
         {
-          "description": "Sort order: newest, updated, most-traded, last-updated, etc.",
-          "example": "updated",
+          "description": "Sort order: created-time, updated-time, last-bet-time or last-comment-time. Omit for Manifold's default, created-time.",
+          "example": "updated-time",
           "location": "query",
           "name": "sort",
           "required": false,
           "schema": {
             "anyOf": [
               {
+                "enum": [
+                  "created-time",
+                  "updated-time",
+                  "last-bet-time",
+                  "last-comment-time"
+                ],
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "Sort order: newest, updated, most-traded, last-updated, etc.",
+            "description": "Sort order: created-time, updated-time, last-bet-time or last-comment-time. Omit for Manifold's default, created-time.",
             "title": "Sort"
           }
         },
@@ -70297,7 +70334,7 @@
       "toolset": "fundamentals"
     },
     {
-      "description": "Browse SEC EDGAR daily-index master.idx parsed metadata. Returns all filings on a given date matching the optional form code and CIK filters. For B2 v1 high-value forms (Form 4/4-A, 8-K/A, SC 13D/G/A) the rows reflect deep-parse status (``parse_attempted``, ``parse_status``). For PASSTHROUGH forms (10-K, 6-K, S-1, etc.) the rows carry master-idx metadata only - use form-specific endpoints for deep data. Returns 503 when the master-idx blob is missing for the requested date.",
+      "description": "Browse SEC EDGAR daily-index master.idx parsed metadata. Returns all filings on a given date matching the optional form code and CIK filters. For B2 v1 high-value forms (Form 4/4-A, 8-K/A, SC 13D/G/A) the rows reflect deep-parse status (``parse_attempted``, ``parse_status``). For PASSTHROUGH forms (10-K, 6-K, S-1, etc.) the rows carry master-idx metadata only - use form-specific endpoints for deep data. A date before the first held index answers 422 ``outside_retention_window`` naming that date; a date inside the held range with no index (weekend, holiday) answers 404 ``no_daily_index_for_date`` naming the held range; a date after the last held index may not be published yet and answers 503, retry after the next cycle.",
       "method": "GET",
       "operation_id": "sec_edgar_daily_index_by_form",
       "parameters": [
@@ -70402,7 +70439,7 @@
       "toolset": "fundamentals"
     },
     {
-      "description": "Form-code counts for filings filed on the given date. Useful as a lightweight overview before drilling into ``/daily-index/by-form`` with a specific form filter. Reads the same parsed master.idx blob as ``/daily-index/by-form`` so it's cache-warm with that endpoint.",
+      "description": "Form-code counts for filings filed on the given date. Useful as a lightweight overview before drilling into ``/daily-index/by-form`` with a specific form filter. Reads the same parsed master.idx blob as ``/daily-index/by-form`` so it's cache-warm with that endpoint, and answers a date it does not hold the same way: 422 before the first held index, 404 inside the held range, 503 after the last held index (not published yet, retry after the next cycle).",
       "method": "GET",
       "operation_id": "sec_edgar_daily_index_summary",
       "parameters": [
@@ -93583,5 +93620,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "4b0174a3892404aaea0b4c00d0ed3bae07cf35f1cf134bd02904289b3417a912"
+  "spec_sha256": "f0d3e7e1a34cb6a942881a340792e113d9fc131ec14bc94cd07cc89999201533"
 }
