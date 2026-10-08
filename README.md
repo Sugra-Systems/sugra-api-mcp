@@ -445,7 +445,7 @@ Key accepted but rejected. Common causes:
 
 **`429 Too Many Requests`**
 
-Hit your plan's daily limit. Response headers include `X-RateLimit-Reset` with the UTC timestamp when the counter resets (midnight UTC). Plans: [sugra.systems/api/pricing](https://sugra.systems/api/pricing).
+Hit your plan's daily limit. Response headers include `X-RateLimit-Reset` with the UTC timestamp when the counter resets (midnight UTC). Over MCP the tool result carries `reason: daily_limit_reached`, `status_code: 429`, `retry_after`, and `daily_limit` and `plan` when the API named them. Plans: [sugra.systems/api/pricing](https://sugra.systems/api/pricing).
 
 **`Invalid Host header`** (only if self-hosting HTTP mode)
 

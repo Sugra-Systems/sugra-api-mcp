@@ -380,6 +380,9 @@ _KNOWN_ERROR_CODES: frozenset[str] = frozenset({
     # no tool is registered under, or arguments that failed validation.
     "unknown_tool",
     "invalid_arguments",
+    # The API's 429 for a spent daily quota (client._daily_limit_error), told
+    # apart from a source's or a protective 429, which stay upstream_http_429.
+    "daily_limit_reached",
 }) | frozenset(_HTTP_STATUS_ERROR_CODES.values()) | frozenset(_HTTP_CLASS_ERROR_CODES.values())
 # Identity map so a str subclass that equals an allowlisted code attaches the
 # interned constant, never the caller's object.
@@ -410,6 +413,9 @@ def _error_code_of(result: dict[str, Any]) -> str:
     """
     error_value = result.get("error")
     status_code = _http_status_error_code(result.get("status_code"))
+    # Only the client sets this reason, and only beside the API's 429.
+    if status_code == "upstream_http_429" and result.get("reason") == "daily_limit_reached":
+        return "daily_limit_reached"
     if isinstance(error_value, str):
         known = _KNOWN_ERROR_CODE_OF.get(error_value)
         if known is not None and (status_code is None or known in _CODES_BESIDE_A_STATUS):
