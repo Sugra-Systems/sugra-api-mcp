@@ -691,14 +691,30 @@ NAMED_OPERATIONS: dict[str, tuple[str, ...]] = {
     "truckload price": ("fred_series_series_id",),
     "cost of trucking": ("fred_series_series_id",),
     "price of trucking": ("fred_series_series_id",),
+    # A central bank's meetings are in the meeting calendar, not among the
+    # bank's own operations ("next FOMC meeting date").
+    "meeting": ("macro_cb_calendar", "macro_cb_calendar_bank"),
 }
+
+# The central bank meeting calendar, and the banks whose meetings it
+# publishes by their central-bank prefix.
+MEETING_CALENDAR_OPERATIONS: frozenset[str] = frozenset(NAMED_OPERATIONS["meeting"])
+_MEETING_CALENDAR_PREFIXES: frozenset[str] = frozenset({
+    "fed_", "ecb_", "boe_", "boj_", "snb_", "riksbank_",
+})
 
 # Names that point to their operations only when the query also holds one of
 # these words: "trucking freight rates" asks for the trucking price index,
-# "trucking employment" does not.
+# "trucking employment" does not, and a meeting is the calendar's only when
+# a bank it covers holds it.
 _NAME_CUES: dict[str, tuple[str, ...]] = {
     "trucking": ("freight",),
     "truckload": ("freight",),
+    "meeting": (
+        "central bank",
+        *(name for name, prefix in CENTRAL_BANK_PREFIX_BOOSTS.items()
+          if prefix in _MEETING_CALENDAR_PREFIXES),
+    ),
 }
 
 # Other oils: "palm oil price" is not a crude oil question, and neither is
@@ -1607,6 +1623,16 @@ _US_CONTEXT_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+
+def query_names_united_states(query: str) -> bool:
+    """True when the query names the United States as a standalone word.
+
+    "US nonfarm payrolls" names it while the country vocabulary does not:
+    a bare uppercase code counts as a country there only beside a macro cue.
+    """
+    return bool(_US_CONTEXT_PATTERN.search(query))
+
+
 # Macro-data keywords that, combined with US context, indicate the user wants
 # US-specific macroeconomic data from a primary source (FRED). Kept narrow on
 # purpose - we don't want generic words like "data" or "rate" alone triggering
@@ -1632,7 +1658,7 @@ def detect_us_macro_query(query: str) -> bool:
     keeps generic queries like "US news" or "GDP forecast Germany" from
     triggering the FRED boost.
     """
-    if not _US_CONTEXT_PATTERN.search(query):
+    if not query_names_united_states(query):
         return False
     lowered = query.lower()
     return any(keyword in lowered for keyword in _US_MACRO_KEYWORDS)

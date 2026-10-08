@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .models import Catalog, Endpoint, EndpointParameter
+from .models import Catalog, Endpoint, EndpointParameter, MacroKey
 from .toolsets import toolset_for_tags
 
 # The v1->v2 rewrite alone resolved only 2 of 9
@@ -194,6 +194,14 @@ def build_catalog_from_openapi(
                     # extensions.
                     keywords=[
                         str(word) for word in (operation.get("x-sugra-keywords") or [])
+                    ],
+                    # The curated series behind a country/section operation,
+                    # from x-sugra-macro-keys: search matches a query's
+                    # indicator words against their titles.
+                    macro_keys=[
+                        MacroKey.from_dict(item)
+                        for item in (operation.get("x-sugra-macro-keys") or [])
+                        if isinstance(item, dict) and item.get("key")
                     ],
                 )
             )

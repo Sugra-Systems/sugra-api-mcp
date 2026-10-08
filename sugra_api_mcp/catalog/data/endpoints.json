@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-10-05T14:52:36Z",
+  "built_at": "2026-10-07T19:57:55Z",
   "endpoint_count": 1625,
   "endpoints": [
     {
@@ -12306,7 +12306,7 @@
       "toolset": "commodities"
     },
     {
-      "description": "Monthly US natural gas price at Henry Hub. Data from US Energy Information Administration (EIA).",
+      "description": "US natural gas spot price at Henry Hub, monthly by default or daily with frequency=daily. Data from US Energy Information Administration (EIA).",
       "method": "GET",
       "operation_id": "commodities_energy_natural_gas",
       "parameters": [
@@ -12323,6 +12323,23 @@
             "minimum": 1,
             "title": "Limit",
             "type": "integer"
+          }
+        },
+        {
+          "description": "Observation frequency: monthly (default) or daily",
+          "example": "daily",
+          "location": "query",
+          "name": "frequency",
+          "required": false,
+          "schema": {
+            "default": "monthly",
+            "description": "Observation frequency: monthly (default) or daily",
+            "enum": [
+              "monthly",
+              "daily"
+            ],
+            "title": "Frequency",
+            "type": "string"
           }
         }
       ],
@@ -12474,10 +12491,10 @@
         "corn/maize ($/mt)",
         "soybeans ($/mt)",
         "rice, thailand 5% ($/mt)",
-        "coffee, arabica (cents/kg)",
-        "sugar, world (cents/kg)",
-        "cotton, a index (cents/kg)",
-        "rubber, tsr20 (cents/kg)"
+        "coffee, arabica ($/kg)",
+        "sugar, world ($/kg)",
+        "cotton, a index ($/kg)",
+        "rubber, tsr20 ($/kg)"
       ],
       "method": "GET",
       "operation_id": "commodities_prices",
@@ -12512,10 +12529,10 @@
         "corn/maize ($/mt)",
         "soybeans ($/mt)",
         "rice, thailand 5% ($/mt)",
-        "coffee, arabica (cents/kg)",
-        "sugar, world (cents/kg)",
-        "cotton, a index (cents/kg)",
-        "rubber, tsr20 (cents/kg)"
+        "coffee, arabica ($/kg)",
+        "sugar, world ($/kg)",
+        "cotton, a index ($/kg)",
+        "rubber, tsr20 ($/kg)"
       ],
       "method": "GET",
       "operation_id": "commodities_commodity_id",
@@ -30740,7 +30757,8 @@
         "sugar",
         "global price of sugar, no. 11, world",
         "gasoline",
-        "us regular all formulations gas price"
+        "us regular all formulations gas price",
+        "mortgage"
       ],
       "method": "GET",
       "operation_id": "fred_series_series_id",
@@ -51202,7 +51220,7 @@
       "toolset": "predictions"
     },
     {
-      "description": "CFTC-regulated prediction events with nested markets. Categories: Politics, Economics, Weather, Sports, Science, Finance, Culture.",
+      "description": "CFTC-regulated prediction events with nested markets. Categories: Politics, Economics, Weather, Sports, Science, Finance, Culture. A status outside the four Kalshi values answers 422; a series ticker Kalshi refuses answers the status Kalshi used (400 or 404), never 503.",
       "method": "GET",
       "operation_id": "kalshi_events",
       "parameters": [
@@ -51222,15 +51240,28 @@
           }
         },
         {
-          "description": "Record status.",
+          "description": "Event status filter: unopened, open, closed or settled. Omit for every status.",
           "example": "open",
           "location": "query",
           "name": "status",
           "required": false,
           "schema": {
-            "description": "Record status.",
-            "title": "Status",
-            "type": "string"
+            "anyOf": [
+              {
+                "enum": [
+                  "unopened",
+                  "open",
+                  "closed",
+                  "settled"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Event status filter: unopened, open, closed or settled. Omit for every status.",
+            "title": "Status"
           }
         },
         {
@@ -51260,7 +51291,7 @@
       "toolset": "predictions"
     },
     {
-      "description": "Fetch a specific event with all its markets by event ticker.",
+      "description": "Fetch a specific event with all its markets by event ticker. An event ticker Kalshi does not know answers 404.",
       "method": "GET",
       "operation_id": "kalshi_events_event_ticker",
       "parameters": [
@@ -52826,6 +52857,2203 @@
     },
     {
       "description": "Fetch a single macro time-series from FRED.\n\ncountry:   ISO-2 lowercase code (us, eu, gb, jp)\nsection:   indicator key - see GET /api/v1/macro/catalog for full list\n\nQuery parameters:\n  start     - observation start YYYY-MM-DD (activates range mode)\n  end       - observation end YYYY-MM-DD\n  last_n    - return N most recent observations (default: catalog default_last_n)\n  limit     - deprecated alias for last_n\n  transform - comma-separated transforms. The supported_transforms listed for\n              each key in GET /api/v1/macro/catalog are the authority; any\n              other value is a 400. Typical mapping by unit_type and frequency:\n                rate_pct, spread_pct (daily, weekly):\n                                    dod_bps, wow_bps\n                rate_pct, spread_pct (monthly, quarterly, annual):\n                                    mom_pp, yoy_pp\n                index/level/money:  mom_pct, yoy_pct\n                weekly indices us/nfci, us/anfci, us/stlfsi, us/stlfsi4 and\n                monthly ratio keys us/isratio, us/whlslrirsa:\n                                    mom_abs, yoy_abs\n                quarterly GDP keys (us/gdp, us/real-gdp, eu/gdp, gb/gdp,\n                jp/gdp):            yoy_pct, qoq_ann_pct\n                count:              mom_abs, yoy_abs\n                a key with an empty list (jp/cpi, cn/chngdpnqdsmei):\n                                    no transform\n              mom_* compare with the previous observation, whatever the\n              frequency (a day, week, month, quarter or year earlier); dod_bps\n              compares with the previous observation of a daily or weekly\n              series (on a weekly series it equals wow_bps); yoy_* compare\n              with the same date a year earlier; wow_bps compares with one week\n              earlier (5 observations on a daily series, 1 on a weekly one).\n              Aliases: mom = mom_pct, yoy = yoy_pct, 3m_ann = qoq_ann_pct\n  order     - \"desc\" (newest first, default) or \"asc\"\n\nMode semantics:\n  last_n mode  - returns the N most recent observations (default when no start given)\n  range mode   - returns all observations in [start, end] up to max_last_n cap\n\nResponse is cached in-memory (TTL by frequency):\n  daily series     - 6 hours\n  monthly series   - 24 hours\n  quarterly series - 72 hours\nAnomalous results (mid-series nulls in monthly/quarterly) are not cached.",
+      "macro_keys": [
+        {
+          "freq": "monthly",
+          "key": "us/cpi",
+          "title": "Consumer Price Index: All Items"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/core-cpi",
+          "title": "CPI: All Items Less Food & Energy"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/pce",
+          "title": "PCE: Chain-type Price Index"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/core-pce",
+          "title": "PCE: Excluding Food and Energy"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/ppi",
+          "title": "Producer Price Index: All Commodities"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/ip",
+          "title": "Industrial Production: Total Index"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/fedfunds",
+          "title": "Federal Funds Effective Rate"
+        },
+        {
+          "freq": "daily",
+          "key": "us/fedfunds-target",
+          "title": "Federal Funds Target Rate (Upper Bound)"
+        },
+        {
+          "freq": "daily",
+          "key": "us/t10y",
+          "title": "Market Yield on U.S. Treasury Securities at 10-Year Constant Maturity"
+        },
+        {
+          "freq": "daily",
+          "key": "us/t2y",
+          "title": "Market Yield on U.S. Treasury Securities at 2-Year Constant Maturity"
+        },
+        {
+          "freq": "daily",
+          "key": "us/t10y-t2y",
+          "title": "10-Year Treasury Constant Maturity Minus 2-Year Treasury"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/gdp",
+          "title": "Gross Domestic Product"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/real-gdp",
+          "title": "Real Gross Domestic Product"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/unrate",
+          "title": "Unemployment Rate"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/payrolls",
+          "title": "All Employees: Total Nonfarm Payrolls"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/retail-sales",
+          "title": "Advance Retail Sales: Retail Trade"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/housing-starts",
+          "title": "Housing Starts: Total - New Privately Owned"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/m2",
+          "title": "M2 Money Supply"
+        },
+        {
+          "freq": "daily",
+          "key": "us/t3m",
+          "title": "3-Month Treasury Constant Maturity Rate"
+        },
+        {
+          "freq": "daily",
+          "key": "us/t1y",
+          "title": "1-Year Treasury Constant Maturity Rate"
+        },
+        {
+          "freq": "daily",
+          "key": "us/t5y",
+          "title": "5-Year Treasury Constant Maturity Rate"
+        },
+        {
+          "freq": "daily",
+          "key": "us/t30y",
+          "title": "30-Year Treasury Constant Maturity Rate"
+        },
+        {
+          "freq": "daily",
+          "key": "us/t10y-t3m",
+          "title": "10-Year Treasury Minus 3-Month Treasury"
+        },
+        {
+          "freq": "daily",
+          "key": "us/t10y-fedfunds",
+          "title": "10-Year Treasury Minus Federal Funds Rate"
+        },
+        {
+          "freq": "daily",
+          "key": "us/tips10y",
+          "title": "10-Year Treasury Inflation-Indexed Security, Constant Maturity"
+        },
+        {
+          "freq": "daily",
+          "key": "us/breakeven10y",
+          "title": "10-Year Breakeven Inflation Rate"
+        },
+        {
+          "freq": "daily",
+          "key": "us/breakeven5y",
+          "title": "5-Year Breakeven Inflation Rate"
+        },
+        {
+          "freq": "weekly",
+          "key": "us/initial-claims",
+          "title": "Initial Claims for Unemployment Insurance"
+        },
+        {
+          "freq": "weekly",
+          "key": "us/continued-claims",
+          "title": "Continued Claims (Insured Unemployment)"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/lfpr",
+          "title": "Labor Force Participation Rate"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/avg-hourly-earnings",
+          "title": "Average Hourly Earnings of All Employees: Total Private"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/umich-sentiment",
+          "title": "University of Michigan: Consumer Sentiment"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/consumer-confidence",
+          "title": "Consumer Confidence Index for the United States"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/baa-spread",
+          "title": "Moody's Seasoned Baa Corporate Bond Minus Fed Funds Rate"
+        },
+        {
+          "freq": "daily",
+          "key": "us/ice-bofa-hy",
+          "title": "ICE BofA US High Yield Index Option-Adjusted Spread"
+        },
+        {
+          "freq": "weekly",
+          "key": "us/nfci",
+          "title": "Chicago Fed National Financial Conditions Index"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/building-permits",
+          "title": "New Private Housing Units Authorized by Building Permits"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/trade-balance",
+          "title": "Trade Balance: Goods and Services"
+        },
+        {
+          "freq": "weekly",
+          "key": "us/mortgage-30y",
+          "title": "30-Year Fixed Rate Mortgage Average in the United States"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/umich-inflation-1y",
+          "title": "University of Michigan: Inflation Expectation (1 Year)"
+        },
+        {
+          "freq": "monthly",
+          "key": "eu/cpi",
+          "title": "Harmonised Index of Consumer Prices: All Items for the Euro Area (19 countries)"
+        },
+        {
+          "freq": "monthly",
+          "key": "eu/unrate",
+          "title": "Unemployment Rate: Euro Area"
+        },
+        {
+          "freq": "quarterly",
+          "key": "eu/gdp",
+          "title": "Real Gross Domestic Product for Euro Area"
+        },
+        {
+          "freq": "monthly",
+          "key": "gb/cpi",
+          "title": "Consumer Prices: All Items, Year-on-Year (United Kingdom)"
+        },
+        {
+          "freq": "monthly",
+          "key": "gb/unrate",
+          "title": "Unemployment Rate: Total: All Persons for the United Kingdom"
+        },
+        {
+          "freq": "quarterly",
+          "key": "gb/gdp",
+          "title": "Real Gross Domestic Product for the United Kingdom"
+        },
+        {
+          "freq": "annual",
+          "key": "jp/cpi",
+          "title": "Consumer Prices: Annual Inflation (Japan)"
+        },
+        {
+          "freq": "monthly",
+          "key": "jp/unrate",
+          "title": "Unemployment Rate: Total: All Persons for Japan"
+        },
+        {
+          "freq": "quarterly",
+          "key": "jp/gdp",
+          "title": "Real Gross Domestic Product for Japan"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/a072rc1q156sbea",
+          "title": "Personal saving as a percentage of disposable personal income"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/a091rc1q027sbea",
+          "title": "Federal government current expenditures: Interest payments"
+        },
+        {
+          "freq": "annual",
+          "key": "us/a191rd3a086nbea",
+          "title": "Gross domestic product (implicit price deflator)"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/a191ri1q225sbea",
+          "title": "Gross Domestic Product: Implicit Price Deflator"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/a191rl1q225sbea",
+          "title": "Real Gross Domestic Product"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/a34sno",
+          "title": "Manufacturers' New Orders: Computers and Electronic Products"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/a466rd3q052sbea",
+          "title": "Profit per unit of real gross value added of nonfinancial corporate business: Corporate profits after tax with IVA and CCAdj (unit profits from current production)"
+        },
+        {
+          "freq": "annual",
+          "key": "us/a792rc0a052nbea",
+          "title": "Personal income per capita"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/a792rc0q052sbea",
+          "title": "Personal income per capita"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/a794rx0q048sbea",
+          "title": "Real personal consumption expenditures per capita"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/a822re1q156nbea",
+          "title": "Shares of gross domestic product: Government consumption expenditures and gross investment"
+        },
+        {
+          "freq": "annual",
+          "key": "us/a939rc0a052nbea",
+          "title": "Gross domestic product per capita"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/a939rc0q052sbea",
+          "title": "Gross domestic product per capita"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/a939rx0q048sbea",
+          "title": "Real gross domestic product per capita"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/actliscoufl",
+          "title": "Housing Inventory: Active Listing Count in Florida"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/actliscouus",
+          "title": "Housing Inventory: Active Listing Count in the United States"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/adpmnusnersa",
+          "title": "Total Nonfarm Private Payroll Employment"
+        },
+        {
+          "freq": "weekly",
+          "key": "us/adpwnusnersa",
+          "title": "Total Nonfarm Private Payroll Employment"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/adxtno",
+          "title": "Manufacturers' New Orders: Durable Goods Excluding Transportation"
+        },
+        {
+          "freq": "annual",
+          "key": "us/aexchus",
+          "title": "Chinese Yuan Renminbi to U.S. Dollar Spot Exchange Rate"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/ahetpi",
+          "title": "Average Hourly Earnings of Production and Nonsupervisory Employees, Total Private"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/alnan",
+          "title": "All Employees: Total Nonfarm in Alabama"
+        },
+        {
+          "freq": "weekly",
+          "key": "us/anfci",
+          "title": "Chicago Fed Adjusted National Financial Conditions Index"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/apu0000702111",
+          "title": "Average Price: Bread, White, Pan (Cost per Pound/453.6 Grams) in U.S. City Average"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/apu0000703112",
+          "title": "Average Price: Ground Beef, 100% Beef (Cost per Pound/453.6 Grams) in U.S. City Average"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/apu0000708111",
+          "title": "Average Price: Eggs, Grade A, Large (Cost per Dozen) in U.S. City Average"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/apu0000709112",
+          "title": "Average Price: Milk, Fresh, Whole, Fortified (Cost per Gallon/3.8 Liters) in U.S. City Average"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/apu0000717311",
+          "title": "Average Price: Coffee, 100%, Ground Roast, All Sizes (Cost per Pound/453.6 Grams) in U.S. City Average"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/apu000072610",
+          "title": "Average Price: Electricity per Kilowatt-Hour in U.S. City Average"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/apu000074714",
+          "title": "Average Price: Gasoline, Unleaded Regular (Cost per Gallon/3.785 Liters) in U.S. City Average"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/apu00007471a",
+          "title": "Average Price: Gasoline, All Types (Cost per Gallon/3.785 Liters) in U.S. City Average"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/apu0000ff1101",
+          "title": "Average Price: Chicken Breast, Boneless (Cost per Pound/453.6 Grams) in U.S. City Average"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/apus12a74714",
+          "title": "Average Price: Gasoline, Unleaded Regular (Cost per Gallon/3.785 Liters) in New York-Newark-Jersey City, NY-NJ-PA (CBSA)"
+        },
+        {
+          "freq": "daily",
+          "key": "us/bamlc0a0cm",
+          "title": "ICE BofA US Corporate Index Option-Adjusted Spread"
+        },
+        {
+          "freq": "daily",
+          "key": "us/bamlc0a3caey",
+          "title": "ICE BofA Single-A US Corporate Index Effective Yield"
+        },
+        {
+          "freq": "daily",
+          "key": "us/bamlc0a4cbbb",
+          "title": "ICE BofA BBB US Corporate Index Option-Adjusted Spread"
+        },
+        {
+          "freq": "daily",
+          "key": "us/bamlc0a4cbbbey",
+          "title": "ICE BofA BBB US Corporate Index Effective Yield"
+        },
+        {
+          "freq": "daily",
+          "key": "us/bamlemcbpioas",
+          "title": "ICE BofA Emerging Markets Corporate Plus Index Option-Adjusted Spread"
+        },
+        {
+          "freq": "daily",
+          "key": "us/bamlh0a0hym2ey",
+          "title": "ICE BofA US High Yield Index Effective Yield"
+        },
+        {
+          "freq": "daily",
+          "key": "us/bamlh0a1hybb",
+          "title": "ICE BofA BB US High Yield Index Option-Adjusted Spread"
+        },
+        {
+          "freq": "daily",
+          "key": "us/bamlh0a2hyb",
+          "title": "ICE BofA Single-B US High Yield Index Option-Adjusted Spread"
+        },
+        {
+          "freq": "daily",
+          "key": "us/bamlh0a3hyc",
+          "title": "ICE BofA CCC & Lower US High Yield Index Option-Adjusted Spread"
+        },
+        {
+          "freq": "daily",
+          "key": "us/bamlh0a3hycey",
+          "title": "ICE BofA CCC & Lower US High Yield Index Effective Yield"
+        },
+        {
+          "freq": "daily",
+          "key": "us/bamlhe00ehyiey",
+          "title": "ICE BofA Euro High Yield Index Effective Yield"
+        },
+        {
+          "freq": "daily",
+          "key": "us/bamlhe00ehyioas",
+          "title": "ICE BofA Euro High Yield Index Option-Adjusted Spread"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/bbkmgdp",
+          "title": "Brave-Butters-Kelley Real Gross Domestic Product"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/boaaahorusq156n",
+          "title": "Homeownership Rates by Race and Ethnicity: Black Alone in the United States"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/bscicp03usm665s",
+          "title": "Composite Leading Indicators: Composite Business Confidence Amplitude Adjusted for United States"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/businv",
+          "title": "Total Business Inventories"
+        },
+        {
+          "freq": "annual",
+          "key": "us/cahown",
+          "title": "Homeownership Rate for California"
+        },
+        {
+          "freq": "weekly",
+          "key": "us/caiclaims",
+          "title": "Initial Claims in California"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/cana",
+          "title": "All Employees: Total Nonfarm in California"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/caputlg3311a2s",
+          "title": "Capacity Utilization: Manufacturing: Durable Goods: Iron and Steel Products (NAICS = 3311,2)"
+        },
+        {
+          "freq": "annual",
+          "key": "us/cargsp",
+          "title": "Real Gross Domestic Product: All Industry Total in California"
+        },
+        {
+          "freq": "weekly",
+          "key": "us/cc4wsa",
+          "title": "4-Week Moving Average of Continued Claims (Insured Unemployment)"
+        },
+        {
+          "freq": "weekly",
+          "key": "us/ccnsa",
+          "title": "Continued Claims (Insured Unemployment)"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/ce16ov",
+          "title": "Employment Level"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/ces3000000003",
+          "title": "Average Hourly Earnings of All Employees, Manufacturing"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/chxrsa",
+          "title": "S&P Cotality Case-Shiller IL-Chicago Home Price Index"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/ciu2010000000000i",
+          "title": "Employment Cost Index: Total compensation for Private industry workers in All industries and occupations"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/ciu2023211000000i",
+          "title": "Employment Cost Index: Wages and salaries for Private industry workers in Aircraft manufacturing"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/clf16ov",
+          "title": "Civilian Labor Force Level"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/clvmnacscab1gqeu272020",
+          "title": "Real Gross Domestic Product for European Union (27 Countries from 2020)"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/comphai",
+          "title": "Housing Affordability Index (Fixed) (replaces the retired Composite index)"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/comprnfb",
+          "title": "Nonfarm Business Sector: Real Hourly Compensation for All Workers"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/corestickm159sfrbatl",
+          "title": "Sticky Price Consumer Price Index less Food and Energy"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/cpiaucns",
+          "title": "Consumer Price Index for All Urban Consumers: All Items in U.S. City Average"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/crestkcpixsltrm159sfrbatl",
+          "title": "Sticky Price Consumer Price Index less Food, Energy, and Shelter"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/csushpinsa",
+          "title": "S&P Cotality Case-Shiller U.S. National Home Price Index"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/csushpisa",
+          "title": "S&P Cotality Case-Shiller U.S. National Home Price Index"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/cusr0000sad",
+          "title": "Consumer Price Index for All Urban Consumers: Durables in U.S. City Average"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/cusr0000saf11",
+          "title": "Consumer Price Index for All Urban Consumers: Food at Home in U.S. City Average"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/cusr0000sah1",
+          "title": "Consumer Price Index for All Urban Consumers: Shelter in U.S. City Average"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/cusr0000seha",
+          "title": "Consumer Price Index for All Urban Consumers: Rent of Primary Residence in U.S. City Average"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/cusr0000sehc",
+          "title": "Consumer Price Index for All Urban Consumers: Owners' Equivalent Rent of Residences in U.S. City Average"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/cusr0000setb01",
+          "title": "Consumer Price Index for All Urban Consumers: Gasoline (All Types) in U.S. City Average"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/cuur0000sa0l2",
+          "title": "Consumer Price Index for All Urban Consumers: All Items Less Shelter in U.S. City Average"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/cuur0000seha",
+          "title": "Consumer Price Index for All Urban Consumers: Rent of Primary Residence in U.S. City Average"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/cuura101seha",
+          "title": "Consumer Price Index for All Urban Consumers: Rent of Primary Residence in New York-Newark-Jersey City, NY-NJ-PA (CBSA)"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/cwur0000sa0",
+          "title": "Consumer Price Index for All Urban Wage Earners and Clerical Workers: All Items in U.S. City Average"
+        },
+        {
+          "freq": "annual",
+          "key": "us/cxu900000lb0403m",
+          "title": "Income Before Taxes: Wages and Salaries by Age: from Age 25 to 34"
+        },
+        {
+          "freq": "annual",
+          "key": "us/cxufedtaxeslb0905m",
+          "title": "Personal Taxes: Federal Income Taxes by Race: Black or African American"
+        },
+        {
+          "freq": "annual",
+          "key": "us/cxuhomeownlb0403m",
+          "title": "Consumer Unit Characteristics: Percent Homeowner by Age: from Age 25 to 34"
+        },
+        {
+          "freq": "daily",
+          "key": "us/dcoilbrenteu",
+          "title": "Crude Oil Prices: Brent - Europe"
+        },
+        {
+          "freq": "daily",
+          "key": "us/dcoilwtico",
+          "title": "Crude Oil Prices: West Texas Intermediate (WTI) - Cushing, Oklahoma"
+        },
+        {
+          "freq": "daily",
+          "key": "us/dexchus",
+          "title": "Chinese Yuan Renminbi to U.S. Dollar Spot Exchange Rate"
+        },
+        {
+          "freq": "daily",
+          "key": "us/dexuseu",
+          "title": "U.S. Dollars to Euro Spot Exchange Rate"
+        },
+        {
+          "freq": "daily",
+          "key": "us/dff",
+          "title": "Federal Funds Effective Rate"
+        },
+        {
+          "freq": "daily",
+          "key": "us/dfii20",
+          "title": "Market Yield on U.S. Treasury Securities at 20-Year Constant Maturity, Quoted on an Investment Basis, Inflation-Indexed"
+        },
+        {
+          "freq": "daily",
+          "key": "us/dfii30",
+          "title": "Market Yield on U.S. Treasury Securities at 30-Year Constant Maturity, Quoted on an Investment Basis, Inflation-Indexed"
+        },
+        {
+          "freq": "daily",
+          "key": "us/dfii5",
+          "title": "Market Yield on U.S. Treasury Securities at 5-Year Constant Maturity, Quoted on an Investment Basis, Inflation-Indexed"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/dgorder",
+          "title": "Manufacturers' New Orders: Durable Goods"
+        },
+        {
+          "freq": "daily",
+          "key": "us/dhhngsp",
+          "title": "Henry Hub Natural Gas Spot Price"
+        },
+        {
+          "freq": "daily",
+          "key": "us/djia",
+          "title": "Dow Jones Industrial Average"
+        },
+        {
+          "freq": "daily",
+          "key": "us/dltiit",
+          "title": "Treasury Long-Term Average (Over 10 Years), Inflation-Indexed"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/dpccrv1q225sbea",
+          "title": "Personal Consumption Expenditures (PCE) Excluding Food and Energy (Chain-Type Price Index)"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/dpcerd3q086sbea",
+          "title": "Personal consumption expenditures (implicit price deflator)"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/dpcere1q156nbea",
+          "title": "Shares of gross domestic product: Personal consumption expenditures"
+        },
+        {
+          "freq": "daily",
+          "key": "us/dtp10j28",
+          "title": "10-Year 0.5% Treasury Inflation-Indexed Note, Due 1/15/2028"
+        },
+        {
+          "freq": "daily",
+          "key": "us/dtwexbgs",
+          "title": "Nominal Broad U.S. Dollar Index"
+        },
+        {
+          "freq": "daily",
+          "key": "us/ecbestrvolwgttrmdmnrt",
+          "title": "Euro Short-Term Rate: Volume-Weighted Trimmed Mean Rate"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/eciallciv",
+          "title": "Employment Cost Index: Total compensation: All Civilian"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/eciconwag",
+          "title": "Employment Cost Index: Wages and Salaries: Private Industry Workers: Construction"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/eciwag",
+          "title": "Employment Cost Index: Wages and Salaries: Private Industry Workers"
+        },
+        {
+          "freq": "daily",
+          "key": "us/effr",
+          "title": "Effective Federal Funds Rate"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/emvoverallemv",
+          "title": "Equity Market Volatility Tracker: Overall"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/etotalusq176n",
+          "title": "Housing Inventory Estimate: Total Housing Units in the United States"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/evacantusq176n",
+          "title": "Housing Inventory Estimate: Vacant Housing Units in the United States"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/exchus",
+          "title": "Chinese Yuan Renminbi to U.S. Dollar Spot Exchange Rate"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/exhoslusm495s",
+          "title": "Existing Home Sales"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/expinf10yr",
+          "title": "10-Year Expected Inflation"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/expinf1yr",
+          "title": "1-Year Expected Inflation"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/expinf2yr",
+          "title": "2-Year Expected Inflation"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/expinf30yr",
+          "title": "30-Year Expected Inflation"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/expinf5yr",
+          "title": "5-Year Expected Inflation"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/exuseu",
+          "title": "U.S. Dollars to Euro Spot Exchange Rate"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/fdefx",
+          "title": "Federal Government: National Defense Consumption Expenditures and Gross Investment"
+        },
+        {
+          "freq": "annual",
+          "key": "us/fedtarmd",
+          "title": "FOMC Summary of Economic Projections for the Fed Funds Rate, Median"
+        },
+        {
+          "freq": "weekly",
+          "key": "us/ff",
+          "title": "Federal Funds Effective Rate"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/fgexpnd",
+          "title": "Federal Government: Current Expenditures"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/fii10",
+          "title": "Market Yield on U.S. Treasury Securities at 10-Year Constant Maturity, Quoted on an Investment Basis, Inflation-Indexed"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/fixhai",
+          "title": "Housing Affordability Index (Fixed)"
+        },
+        {
+          "freq": "annual",
+          "key": "us/fpcpitotlzgusa",
+          "title": "Inflation, consumer prices for the United States"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/frgexpusm649ncis",
+          "title": "Cass Freight Index: Expenditures"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/frgshpusm649ncis",
+          "title": "Cass Freight Index: Shipments"
+        },
+        {
+          "freq": "annual",
+          "key": "us/fyfrgda188s",
+          "title": "Federal Receipts as Percent of Gross Domestic Product"
+        },
+        {
+          "freq": "annual",
+          "key": "us/fyfsd",
+          "title": "Federal Surplus or Deficit [-]"
+        },
+        {
+          "freq": "annual",
+          "key": "us/fyfsgda188s",
+          "title": "Federal Surplus or Deficit [-] as Percent of Gross Domestic Product"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/fygfgdq188s",
+          "title": "Federal Debt Held by the Public as Percent of Gross Domestic Product"
+        },
+        {
+          "freq": "annual",
+          "key": "us/fyoigda188s",
+          "title": "Federal Outlays: Interest as Percent of Gross Domestic Product"
+        },
+        {
+          "freq": "annual",
+          "key": "us/fyongda188s",
+          "title": "Federal Net Outlays as Percent of Gross Domestic Product"
+        },
+        {
+          "freq": "weekly",
+          "key": "us/gasdesw",
+          "title": "US Diesel Sales Price"
+        },
+        {
+          "freq": "weekly",
+          "key": "us/gasregcovw",
+          "title": "US Regular Conventional Gas Price"
+        },
+        {
+          "freq": "weekly",
+          "key": "us/gasregw",
+          "title": "US Regular All Formulations Gas Price"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/gce",
+          "title": "Government Consumption Expenditures and Gross Investment"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/gcec1",
+          "title": "Real Government Consumption Expenditures and Gross Investment"
+        },
+        {
+          "freq": "annual",
+          "key": "us/gdpca",
+          "title": "Real Gross Domestic Product"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/gdpdef",
+          "title": "Gross Domestic Product: Implicit Price Deflator"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/gdppot",
+          "title": "Real Potential Gross Domestic Product"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/gepucurrent",
+          "title": "Global Economic Policy Uncertainty Index: Current Price Adjusted GDP"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/gepuppp",
+          "title": "Global Economic Policy Uncertainty Index: PPP-Adjusted GDP"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/gfdebtn",
+          "title": "Federal Debt: Total Public Debt"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/gfdegdq188s",
+          "title": "Federal Debt: Total Public Debt as Percent of Gross Domestic Product"
+        },
+        {
+          "freq": "annual",
+          "key": "us/gfdgdpa188s",
+          "title": "Gross Federal Debt as Percent of Gross Domestic Product"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/gnpdef",
+          "title": "Gross National Product: Implicit Price Deflator"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/gpdic1",
+          "title": "Real Gross Private Domestic Investment"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/hosinvusm495n",
+          "title": "Existing Home Sales: Housing Inventory"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/hosmedusm052n",
+          "title": "Median Sales Price of Existing Homes"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/hossupusm673n",
+          "title": "Existing Home Sales: Months Supply"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/hsfmedusm052n",
+          "title": "Median Sales Price of Existing Single-Family Homes"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/ic131",
+          "title": "Inbound Price Index (International Services): Air Freight"
+        },
+        {
+          "freq": "weekly",
+          "key": "us/ic4wsa",
+          "title": "4-Week Moving Average of Initial Claims"
+        },
+        {
+          "freq": "weekly",
+          "key": "us/icnsa",
+          "title": "Initial Claims"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/ieabc",
+          "title": "Balance on current account"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/imp4190",
+          "title": "U.S. Imports of Goods by Customs Basis from Ireland"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/impgs",
+          "title": "Imports of Goods and Services"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/impgsc1",
+          "title": "Real imports of goods and services"
+        },
+        {
+          "freq": "daily",
+          "key": "us/iorb",
+          "title": "Interest Rate on Reserve Balances (IORB Rate)"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/ipb50001n",
+          "title": "Industrial Production: Total Index"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/ipg211s",
+          "title": "Industrial Production: Mining: Oil and Gas Extraction (NAICS = 211)"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/ipg3344s",
+          "title": "Industrial Production: Manufacturing: Durable Goods: Semiconductor and Other Electronic Component (NAICS = 3344)"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/ipg3361t3s",
+          "title": "Industrial Production: Manufacturing: Durable Goods: Motor Vehicles and Parts (NAICS = 3361-3)"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/ipman",
+          "title": "Industrial Production: Manufacturing (NAICS)"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/ipmansics",
+          "title": "Industrial Production: Manufacturing (SIC)"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/iq12260",
+          "title": "Export Price Index (End Use): Nonmonetary Gold"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/ir",
+          "title": "Import Price Index (End Use): All Commodities"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/ir14270",
+          "title": "Import Price Index (End Use): Nonmonetary Gold"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/isratio",
+          "title": "Total Business: Inventories to Sales Ratio"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/jhgdpbrindx",
+          "title": "GDP-Based Recession Indicator Index"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/jts1000hil",
+          "title": "Hires: Total Private"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/jts1000qur",
+          "title": "Quits Rate: Total Private"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/jts2300jol",
+          "title": "Job Openings: Construction"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/jts3000jol",
+          "title": "Job Openings: Manufacturing"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/jts540099hir",
+          "title": "Hires Rate: Professional and Business Services"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/jtshil",
+          "title": "Hires: Total Nonfarm"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/jtshir",
+          "title": "Hires Rate: Total Nonfarm"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/jtsjol",
+          "title": "Job Openings: Total Nonfarm"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/jtsjor",
+          "title": "Job Openings Rate: Total Nonfarm"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/jtsldl",
+          "title": "Layoffs and Discharges: Total Nonfarm"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/jtsldr",
+          "title": "Layoffs and Discharges Rate: Total Nonfarm"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/jtsqul",
+          "title": "Quits: Total Nonfarm"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/jtsqur",
+          "title": "Quits Rate: Total Nonfarm"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/jtu5100ldl",
+          "title": "Layoffs and Discharges: Information"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/jtu5100ldr",
+          "title": "Layoffs and Discharges Rate: Information"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/kcfsi",
+          "title": "Kansas City Financial Stress Index"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/les1252881500q",
+          "title": "Employed full time: Median usual weekly nominal earnings (second quartile): Wage and salary workers: 16 years and over"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/les1252881600q",
+          "title": "Employed full time: Median usual weekly real earnings: Wage and salary workers: 16 years and over"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/les1252881900q",
+          "title": "Employed full time: Median usual weekly real earnings: Wage and salary workers: 16 years and over: Men"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/lns11300002",
+          "title": "Labor Force Participation Rate - Women"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/lns11300060",
+          "title": "Labor Force Participation Rate - 25-54 Yrs."
+        },
+        {
+          "freq": "monthly",
+          "key": "us/lxxrsa",
+          "title": "S&P Cotality Case-Shiller CA-Los Angeles Home Price Index"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/m1sl",
+          "title": "M1"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/m1v",
+          "title": "Velocity of M1 Money Stock"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/m2ns",
+          "title": "M2"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/m2real",
+          "title": "Real M2 Money Stock"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/m2v",
+          "title": "Velocity of M2 Money Stock"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/m318501q027nbea",
+          "title": "Federal government budget surplus or deficit (-)"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/manemp",
+          "title": "All Employees, Manufacturing"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/mcoilbrenteu",
+          "title": "Crude Oil Prices: Brent - Europe"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/mcoilwtico",
+          "title": "Crude Oil Prices: West Texas Intermediate (WTI) - Cushing, Oklahoma"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/mcumfn",
+          "title": "Capacity Utilization: Manufacturing (NAICS)"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/medcpim158sfrbcle",
+          "title": "Median Consumer Price Index"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/meddayonmarus",
+          "title": "Housing Inventory: Median Days on Market in the United States"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/medlisprifl",
+          "title": "Housing Inventory: Median Listing Price in Florida"
+        },
+        {
+          "freq": "annual",
+          "key": "us/mehoinusa646n",
+          "title": "Median Household Income in the United States"
+        },
+        {
+          "freq": "annual",
+          "key": "us/mehoinuscaa646n",
+          "title": "Median Household Income in California"
+        },
+        {
+          "freq": "annual",
+          "key": "us/mehoinusfla646n",
+          "title": "Median Household Income in Florida"
+        },
+        {
+          "freq": "annual",
+          "key": "us/mehoinusnja646n",
+          "title": "Median Household Income in New Jersey"
+        },
+        {
+          "freq": "annual",
+          "key": "us/mehoinusnya646n",
+          "title": "Median Household Income in New York"
+        },
+        {
+          "freq": "annual",
+          "key": "us/mehoinustxa646n",
+          "title": "Median Household Income in Texas"
+        },
+        {
+          "freq": "annual",
+          "key": "us/mepainusa672n",
+          "title": "Real Median Personal Income in the United States"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/mhhngsp",
+          "title": "Henry Hub Natural Gas Spot Price"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/mixrnsa",
+          "title": "S&P Cotality Case-Shiller FL-Miami Home Price Index"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/mmmffaq027s",
+          "title": "Money Market Funds; Total Financial Assets, Level"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/msacsr",
+          "title": "Monthly Supply of New Houses in the United States"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/mspnhsus",
+          "title": "Median Sales Price for New Houses Sold in the United States"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/mspus",
+          "title": "Median Sales Price of Houses Sold for the United States"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/mtsds133fms",
+          "title": "Federal Surplus or Deficit [-]"
+        },
+        {
+          "freq": "daily",
+          "key": "us/nasdaq100",
+          "title": "NASDAQ-100"
+        },
+        {
+          "freq": "daily",
+          "key": "us/nasdaqcom",
+          "title": "NASDAQ Composite"
+        },
+        {
+          "freq": "daily",
+          "key": "us/nasdaqqgldi",
+          "title": "Credit Suisse NASDAQ Gold FLOWS103 Price Index"
+        },
+        {
+          "freq": "weekly",
+          "key": "us/nfcicredit",
+          "title": "Chicago Fed National Financial Conditions Credit Subindex"
+        },
+        {
+          "freq": "weekly",
+          "key": "us/nfcileverage",
+          "title": "Chicago Fed National Financial Conditions Leverage Subindex"
+        },
+        {
+          "freq": "weekly",
+          "key": "us/nfcinonfinleverage",
+          "title": "Chicago Fed National Financial Conditions Index Nonfinancial Leveral Subindex"
+        },
+        {
+          "freq": "weekly",
+          "key": "us/nfcirisk",
+          "title": "Chicago Fed National Financial Conditions Risk Subindex"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/ngdprsaxdcgbq",
+          "title": "Real Gross Domestic Product for Great Britain"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/ngdpsaxdcusq",
+          "title": "Nominal Gross Domestic Product for United States"
+        },
+        {
+          "freq": "daily",
+          "key": "us/nikkei225",
+          "title": "Nikkei Stock Average, Nikkei 225"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/nrou",
+          "title": "Noncyclical Rate of Unemployment"
+        },
+        {
+          "freq": "annual",
+          "key": "us/nygdppcapkdusa",
+          "title": "Constant GDP per capita for the United States"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/nyxrsa",
+          "title": "S&P Cotality Case-Shiller NY-New York Home Price Index"
+        },
+        {
+          "freq": "daily",
+          "key": "us/obmmifha30yf",
+          "title": "30-Year Fixed Rate FHA Mortgage Index"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/ophnfb",
+          "title": "Nonfarm Business Sector: Labor Productivity (Output per Hour) for All Workers"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/palumusdm",
+          "title": "Global price of Aluminum"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/paynsa",
+          "title": "All Employees, Total Nonfarm"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/pb0000091q225sbea",
+          "title": "Real Average of GDP and GDI"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/pcdgcc96",
+          "title": "Real Personal Consumption Expenditures: Durable Goods"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/nominal-pce",
+          "title": "Personal Consumption Expenditures"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/pcec",
+          "title": "Personal Consumption Expenditures"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/pcec96",
+          "title": "Real Personal Consumption Expenditures"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/pcecc96",
+          "title": "Real Personal Consumption Expenditures"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/pcectpi",
+          "title": "Personal Consumption Expenditures: Chain-type Price Index"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/pcedg",
+          "title": "Personal Consumption Expenditures: Durable Goods"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/pcedgc96",
+          "title": "Real Personal Consumption Expenditures: Durable Goods"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/pcend",
+          "title": "Personal Consumption Expenditures: Nondurable Goods"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/pcetrim12m159sfrbdal",
+          "title": "Trimmed Mean PCE Inflation Rate"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/pcocousdm",
+          "title": "Global price of Cocoa"
+        },
+        {
+          "freq": "annual",
+          "key": "us/pcoppusda",
+          "title": "Global price of Copper"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/pcoppusdm",
+          "title": "Global price of Copper"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/pcoppusdq",
+          "title": "Global price of Copper"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/pcu2122212122210",
+          "title": "Producer Price Index by Industry: Gold Ore and Silver Ore Mining: Gold Ores"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/pcu325211325211",
+          "title": "Producer Price Index by Industry: Plastics Material and Resin Manufacturing"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/pcu32733273",
+          "title": "Producer Price Index by Industry: Cement and Concrete Product Manufacturing"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/pcu4831114831115",
+          "title": "Producer Price Index by Industry: Deep Sea Freight Transportation: Deep Sea Freight Transportation Services"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/pcu484121484121",
+          "title": "Producer Price Index by Industry: General Freight Trucking, Long-Distance Truckload"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/pcu4841214841212",
+          "title": "Producer Price Index by Industry: General Freight Trucking, Long-Distance Truckload: General Freight Trucking, Long-Distance, Truckload"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/pcu4841224841221",
+          "title": "Producer Price Index by Industry: General Freight Trucking, Long-Distance Less Than Truckload: General Freight Trucking, Long-Distance Less Than Truckload"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/pcuomfgomfg",
+          "title": "Producer Price Index by Industry: Total Manufacturing Industries"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/phxrnsa",
+          "title": "S&P Cotality Case-Shiller AZ-Phoenix Home Price Index"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/pi",
+          "title": "Personal Income"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/pincome",
+          "title": "Personal Income"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/pmsave",
+          "title": "Personal Saving"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/pngaseuusdm",
+          "title": "Global price of Natural gas, EU"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/pngasjpusdm",
+          "title": "Global price of LNG, Asia"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/pngasususdm",
+          "title": "Global price of Natural Gas, US Henry Hub Gas"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/pnrgindexm",
+          "title": "Global price of Energy index"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/poilbreusdm",
+          "title": "Global price of Brent Crude"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/poilbreusdq",
+          "title": "Global price of Brent Crude"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/poildubusdm",
+          "title": "Global price of Dubai Crude"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/poilwtiusdm",
+          "title": "Global price of WTI Crude"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/polvoilusdm",
+          "title": "Global price of Olive Oil"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/ppifis",
+          "title": "Producer Price Index by Commodity: Final Demand"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/psave",
+          "title": "Personal Saving"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/psavert",
+          "title": "Personal Saving Rate"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/quspam770a",
+          "title": "Total Credit to Private Non-Financial Sector, Adjusted for Breaks, for United States"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/railfrtcarloadsd11",
+          "title": "Rail Freight Carloads"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/railfrtintermodal",
+          "title": "Rail Freight Intermodal Traffic"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/reaintratrearat10y",
+          "title": "10-Year Real Interest Rate"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/reaintratrearat1ye",
+          "title": "1-Year Real Interest Rate"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/recprousm156n",
+          "title": "Smoothed U.S. Recession Probabilities"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/rhorusq156n",
+          "title": "Homeownership Rate in the United States"
+        },
+        {
+          "freq": "annual",
+          "key": "us/rifspffna",
+          "title": "Federal Funds Effective Rate"
+        },
+        {
+          "freq": "daily",
+          "key": "us/rifspffnb",
+          "title": "Federal Funds Effective Rate"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/rpi",
+          "title": "Real Personal Income"
+        },
+        {
+          "freq": "daily",
+          "key": "us/rpontsyd",
+          "title": "Overnight Repurchase Agreements: Treasury Securities Purchased by the Federal Reserve in the Temporary Open Market Operations"
+        },
+        {
+          "freq": "daily",
+          "key": "us/rrpontsyaward",
+          "title": "Overnight Reverse Repurchase Agreements Award Rate"
+        },
+        {
+          "freq": "daily",
+          "key": "us/rrpontsyd",
+          "title": "Overnight Reverse Repurchase Agreements: Treasury Securities Sold by the Federal Reserve in the Temporary Open Market Operations"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/rrvrusq156n",
+          "title": "Rental Vacancy Rate in the United States"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/rsahorusq156s",
+          "title": "Homeownership Rate in the United States"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/sahmcurrent",
+          "title": "Sahm Rule Recession Indicator"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/sahmrealtime",
+          "title": "Real-time Sahm Rule Recession Indicator"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/sdxrsa",
+          "title": "S&P Cotality Case-Shiller CA-San Diego Home Price Index"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/sfxrsa",
+          "title": "S&P Cotality Case-Shiller CA-San Francisco Home Price Index"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/slexpnd",
+          "title": "State and Local Government Current Expenditures"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/sndr",
+          "title": "National Rate: Savings"
+        },
+        {
+          "freq": "daily",
+          "key": "us/sp500",
+          "title": "S&P 500"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/spcs20rsa",
+          "title": "S&P Cotality Case-Shiller 20-City Composite Home Price Index"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/stleni",
+          "title": "St. Louis Fed Economic News Index: Real GDP Nowcast"
+        },
+        {
+          "freq": "weekly",
+          "key": "us/stlfsi",
+          "title": "St. Louis Fed Financial Stress Index"
+        },
+        {
+          "freq": "weekly",
+          "key": "us/stlfsi4",
+          "title": "St. Louis Fed Financial Stress Index"
+        },
+        {
+          "freq": "annual",
+          "key": "us/sttminwgca",
+          "title": "State Minimum Wage Rate for California"
+        },
+        {
+          "freq": "annual",
+          "key": "us/sttminwgfg",
+          "title": "Federal Minimum Wage Rate under the Federal Fair Labor Standards Act"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/tcu",
+          "title": "Capacity Utilization: Total Index"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/tenexpcharearispre",
+          "title": "Real Risk Premium"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/totbussmsa",
+          "title": "Total Business Sales"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/tsifrght",
+          "title": "Freight Transportation Services Index"
+        },
+        {
+          "freq": "annual",
+          "key": "us/ttlhh",
+          "title": "Total Households"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/ttlhhm156n",
+          "title": "Household Estimates"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/u6rate",
+          "title": "Total Unemployed, Plus All Persons Marginally Attached to the Labor Force, Plus Total Employed Part Time for Economic Reasons, as a Percent of the Civilian Labor Force Plus All Persons Marginally Attached to the Labor Force (U-6)"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/ulcnfb",
+          "title": "Nonfarm Business Sector: Unit Labor Costs for All Workers"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/unemploy",
+          "title": "Unemployment Level"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/usacscicp02stsam",
+          "title": "Consumer Opinion Surveys: Composite Consumer Confidence for United States"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/usalolitoaastsam",
+          "title": "Leading Indicators OECD: Leading Indicators: Composite Leading Indicator: Amplitude Adjusted for United States"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/usalolitonostsam",
+          "title": "Composite Leading Indicators: Composite Leading Indicator (CLI) Normalized for United States"
+        },
+        {
+          "freq": "annual",
+          "key": "us/ushown",
+          "title": "Homeownership Rate for the United States"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/usphci",
+          "title": "Coincident Economic Activity Index for the United States"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/ussthpi",
+          "title": "All-Transactions House Price Index for the United States"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/vapgdpfi",
+          "title": "Value Added by Industry: Finance, Insurance, Real Estate, Rental, and Leasing: Finance and Insurance as a Percentage of GDP"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/vapgdpma",
+          "title": "Value Added by Industry: Manufacturing as a Percentage of GDP"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/vapgdpspi",
+          "title": "Value Added by Industry: Private Services-Producing Industries as a Percentage of GDP"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/w006rc1q027sbea",
+          "title": "Federal government current tax receipts"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/w019rcq027sbea",
+          "title": "Federal government total expenditures"
+        },
+        {
+          "freq": "quarterly",
+          "key": "us/w068rcq027sbea",
+          "title": "Government total expenditures"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/whlslrimsa",
+          "title": "Merchant Wholesalers Inventories"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/whlslrirsa",
+          "title": "Merchant Wholesalers: Inventories to Sales Ratio"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/wpu061",
+          "title": "Producer Price Index by Commodity: Chemicals and Allied Products: Industrial Chemicals"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/wpu0911",
+          "title": "Producer Price Index by Commodity: Pulp, Paper, and Allied Products: Wood Pulp"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/wpu101",
+          "title": "Producer Price Index by Commodity: Metals and Metal Products: Iron and Steel"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/wpu101707",
+          "title": "Producer Price Index by Commodity: Metals and Metal Products: Cold Rolled Steel Sheet and Strip"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/wpu102502",
+          "title": "Producer Price Index by Commodity: Metals and Metal Products: Copper and Brass Mill Shapes"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/wpu10260314",
+          "title": "Producer Price Index by Commodity: Metals and Metal Products: Copper Wire and Cable"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/wpusi012011",
+          "title": "Producer Price Index by Commodity: Special Indexes: Construction Materials"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/wpusi019011",
+          "title": "Producer Price Index by Commodity: Special Indexes: Copper and Copper Products"
+        },
+        {
+          "freq": "weekly",
+          "key": "us/wrmfns",
+          "title": "Retail Money Market Funds"
+        },
+        {
+          "freq": "monthly",
+          "key": "us/wtisplc",
+          "title": "Spot Crude Oil Price: West Texas Intermediate (WTI)"
+        },
+        {
+          "freq": "weekly",
+          "key": "us/wtregen",
+          "title": "Liabilities and Capital: Liabilities: Deposits with F.R. Banks, Other Than Reserve Balances: U.S. Treasury, General Account: Week Average"
+        },
+        {
+          "freq": "quarterly",
+          "key": "eu/clvmeurscab1gqea19",
+          "title": "Real Gross Domestic Product (Euro/ECU Series) for Euro Area (19 Countries)"
+        },
+        {
+          "freq": "monthly",
+          "key": "eu/cp0000ez19m086nest",
+          "title": "Harmonized Index of Consumer Prices: All-Items HICP for Euro Area (19 Countries)"
+        },
+        {
+          "freq": "weekly",
+          "key": "eu/ecbassetsw",
+          "title": "Central Bank Assets for Euro Area (11-19 Countries)"
+        },
+        {
+          "freq": "daily",
+          "key": "eu/ecbdfr",
+          "title": "ECB Deposit Facility Rate for Euro Area"
+        },
+        {
+          "freq": "monthly",
+          "key": "gb/cscicp02gbm460s",
+          "title": "Consumer Opinion Surveys: Composite Consumer Confidence for United Kingdom"
+        },
+        {
+          "freq": "annual",
+          "key": "gb/nygdppcapkdgbr",
+          "title": "Constant GDP per capita for the United Kingdom"
+        },
+        {
+          "freq": "annual",
+          "key": "gb/pcagdpgba646nwdb",
+          "title": "Gross Domestic Product Per Capita for United Kingdom"
+        },
+        {
+          "freq": "quarterly",
+          "key": "gb/ukngdp",
+          "title": "Gross Domestic Product for United Kingdom"
+        },
+        {
+          "freq": "annual",
+          "key": "jp/aexjpus",
+          "title": "Japanese Yen to U.S. Dollar Spot Exchange Rate"
+        },
+        {
+          "freq": "monthly",
+          "key": "jp/ccusma02jpm618n",
+          "title": "Currency Conversions: US Dollar Exchange Rate: Average of Daily Rates: National Currency: USD for Japan"
+        },
+        {
+          "freq": "annual",
+          "key": "jp/debttljpa188a",
+          "title": "Central government debt, total (% of GDP) for Japan"
+        },
+        {
+          "freq": "daily",
+          "key": "jp/dexjpus",
+          "title": "Japanese Yen to U.S. Dollar Spot Exchange Rate"
+        },
+        {
+          "freq": "monthly",
+          "key": "jp/exjpus",
+          "title": "Japanese Yen to U.S. Dollar Spot Exchange Rate"
+        },
+        {
+          "freq": "annual",
+          "key": "jp/gggdtajpa188n",
+          "title": "General government gross debt for Japan"
+        },
+        {
+          "freq": "daily",
+          "key": "jp/jpintdusdjpy",
+          "title": "Japan Intervention: Japanese Bank purchases of USD against JPY"
+        },
+        {
+          "freq": "monthly",
+          "key": "jp/jpnassets",
+          "title": "Bank of Japan: Total Assets for Japan"
+        },
+        {
+          "freq": "quarterly",
+          "key": "jp/jpnngdp",
+          "title": "Gross Domestic Product for Japan"
+        },
+        {
+          "freq": "quarterly",
+          "key": "jp/jpnrgdpexp",
+          "title": "Real Gross Domestic Product for Japan"
+        },
+        {
+          "freq": "quarterly",
+          "key": "jp/ngdpsaxdcjpq",
+          "title": "Nominal Gross Domestic Product for Japan"
+        },
+        {
+          "freq": "annual",
+          "key": "jp/nygdppcapkdjpn",
+          "title": "Constant GDP per capita for Japan"
+        },
+        {
+          "freq": "annual",
+          "key": "jp/pcagdpjpa646nwdb",
+          "title": "Gross Domestic Product Per Capita for Japan"
+        },
+        {
+          "freq": "annual",
+          "key": "jp/rgdpnajpa666nrug",
+          "title": "Real GDP at Constant National Prices for Japan"
+        },
+        {
+          "freq": "quarterly",
+          "key": "de/clvmnacscab1gqde",
+          "title": "Real Gross Domestic Product for Germany"
+        },
+        {
+          "freq": "monthly",
+          "key": "de/cpi",
+          "title": "Consumer Prices: All Items, Year-on-Year (Germany)"
+        },
+        {
+          "freq": "quarterly",
+          "key": "de/cpmnacscab1gqde",
+          "title": "Gross Domestic Product for Germany"
+        },
+        {
+          "freq": "annual",
+          "key": "de/fpcpitotlzgdeu",
+          "title": "Inflation, consumer prices for Germany"
+        },
+        {
+          "freq": "annual",
+          "key": "de/gggdtadea188n",
+          "title": "General government gross debt for Germany"
+        },
+        {
+          "freq": "quarterly",
+          "key": "de/ngdprsaxdcdeq",
+          "title": "Real Gross Domestic Product for Germany"
+        },
+        {
+          "freq": "quarterly",
+          "key": "de/ngdpsaxdcdeq",
+          "title": "Nominal Gross Domestic Product for Germany"
+        },
+        {
+          "freq": "annual",
+          "key": "de/nygdppcapkddeu",
+          "title": "Constant GDP per capita for Germany"
+        },
+        {
+          "freq": "annual",
+          "key": "de/pcagdpdea646nwdb",
+          "title": "Gross Domestic Product Per Capita for Germany"
+        },
+        {
+          "freq": "quarterly",
+          "key": "de/qder368bis",
+          "title": "Real Residential Property Prices for Germany"
+        },
+        {
+          "freq": "quarterly",
+          "key": "de/qder628bis",
+          "title": "Real Residential Property Prices for Germany"
+        },
+        {
+          "freq": "monthly",
+          "key": "cn/ccusma02cnm618n",
+          "title": "Currency Conversions: US Dollar Exchange Rate: Average of Daily Rates: National Currency: USD for China"
+        },
+        {
+          "freq": "quarterly",
+          "key": "cn/chngdpnqdsmei",
+          "title": "Real GDP Growth, Year-on-Year (China)"
+        },
+        {
+          "freq": "monthly",
+          "key": "cn/cscicp02cnm460s",
+          "title": "Consumer Opinion Surveys: Composite Consumer Confidence for China"
+        },
+        {
+          "freq": "annual",
+          "key": "cn/gggdtacna188n",
+          "title": "General government gross debt for China"
+        },
+        {
+          "freq": "annual",
+          "key": "cn/labshpcna156nrug",
+          "title": "Share of Labour Compensation in GDP at Current National Prices for China"
+        },
+        {
+          "freq": "annual",
+          "key": "cn/mktgdpcna646nwdb",
+          "title": "Gross Domestic Product for China"
+        },
+        {
+          "freq": "annual",
+          "key": "cn/ngdprxdccna",
+          "title": "Real Gross Domestic Product for China"
+        },
+        {
+          "freq": "annual",
+          "key": "cn/nygdppcapkdchn",
+          "title": "Constant GDP per capita for China"
+        },
+        {
+          "freq": "annual",
+          "key": "cn/pcagdpcna646nwdb",
+          "title": "Gross Domestic Product Per Capita for China"
+        },
+        {
+          "freq": "quarterly",
+          "key": "cn/qcnr628bis",
+          "title": "Real Residential Property Prices for China"
+        },
+        {
+          "freq": "annual",
+          "key": "cn/rgdpnacna666nrug",
+          "title": "Real GDP at Constant National Prices for China"
+        },
+        {
+          "freq": "annual",
+          "key": "cn/sluem1524zschn",
+          "title": "Youth Unemployment Rate for China"
+        },
+        {
+          "freq": "quarterly",
+          "key": "ca/ngdprsaxdccaq",
+          "title": "Real Gross Domestic Product for Canada"
+        },
+        {
+          "freq": "annual",
+          "key": "ca/nygdppcapkdcan",
+          "title": "Constant GDP per capita for Canada"
+        },
+        {
+          "freq": "quarterly",
+          "key": "ca/qcar628bis",
+          "title": "Real Residential Property Prices for Canada"
+        },
+        {
+          "freq": "annual",
+          "key": "in/mktgdpina646nwdb",
+          "title": "Gross Domestic Product for India"
+        },
+        {
+          "freq": "quarterly",
+          "key": "in/ngdprnsaxdcinq",
+          "title": "Real Gross Domestic Product for India"
+        },
+        {
+          "freq": "annual",
+          "key": "in/nygdppcapkdind",
+          "title": "Constant GDP per capita for India"
+        },
+        {
+          "freq": "quarterly",
+          "key": "kr/ngdprsaxdckrq",
+          "title": "Real Gross Domestic Product for Republic of Korea"
+        },
+        {
+          "freq": "annual",
+          "key": "kr/nygdppcapkdkor",
+          "title": "Constant GDP per capita for the Republic of Korea"
+        },
+        {
+          "freq": "quarterly",
+          "key": "au/qaur628bis",
+          "title": "Real Residential Property Prices for Australia"
+        }
+      ],
       "method": "GET",
       "operation_id": "macro_country_section",
       "parameters": [
@@ -63864,7 +66092,7 @@
       "toolset": "predictions"
     },
     {
-      "description": "Browse Manifold Markets. Manifold is a play-money prediction market platform - all amounts are denominated in mana (M$), a play-money currency that is NOT redeemable for real USD. Probabilities reflect crowd forecasts by users betting with mana.",
+      "description": "Browse Manifold Markets. Manifold is a play-money prediction market platform - all amounts are denominated in mana (M$), a play-money currency that is NOT redeemable for real USD. Probabilities reflect crowd forecasts by users betting with mana. A sort outside the four Manifold values answers 422; a cursor Manifold refuses answers 400.",
       "method": "GET",
       "operation_id": "predictions_manifold_markets",
       "parameters": [
@@ -63884,21 +66112,27 @@
           }
         },
         {
-          "description": "Sort order: newest, updated, most-traded, last-updated, etc.",
-          "example": "updated",
+          "description": "Sort order: created-time, updated-time, last-bet-time or last-comment-time. Omit for Manifold's default, created-time.",
+          "example": "updated-time",
           "location": "query",
           "name": "sort",
           "required": false,
           "schema": {
             "anyOf": [
               {
+                "enum": [
+                  "created-time",
+                  "updated-time",
+                  "last-bet-time",
+                  "last-comment-time"
+                ],
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "Sort order: newest, updated, most-traded, last-updated, etc.",
+            "description": "Sort order: created-time, updated-time, last-bet-time or last-comment-time. Omit for Manifold's default, created-time.",
             "title": "Sort"
           }
         },
@@ -70297,7 +72531,7 @@
       "toolset": "fundamentals"
     },
     {
-      "description": "Browse SEC EDGAR daily-index master.idx parsed metadata. Returns all filings on a given date matching the optional form code and CIK filters. For B2 v1 high-value forms (Form 4/4-A, 8-K/A, SC 13D/G/A) the rows reflect deep-parse status (``parse_attempted``, ``parse_status``). For PASSTHROUGH forms (10-K, 6-K, S-1, etc.) the rows carry master-idx metadata only - use form-specific endpoints for deep data. Returns 503 when the master-idx blob is missing for the requested date.",
+      "description": "Browse SEC EDGAR daily-index master.idx parsed metadata. Returns all filings on a given date matching the optional form code and CIK filters. For B2 v1 high-value forms (Form 4/4-A, 8-K/A, SC 13D/G/A) the rows reflect deep-parse status (``parse_attempted``, ``parse_status``). For PASSTHROUGH forms (10-K, 6-K, S-1, etc.) the rows carry master-idx metadata only - use form-specific endpoints for deep data. A date before the first held index answers 422 ``outside_retention_window`` naming that date; a date inside the held range with no index (weekend, holiday) answers 404 ``no_daily_index_for_date`` naming the held range; a date after the last held index may not be published yet and answers 503, retry after the next cycle.",
       "method": "GET",
       "operation_id": "sec_edgar_daily_index_by_form",
       "parameters": [
@@ -70402,7 +72636,7 @@
       "toolset": "fundamentals"
     },
     {
-      "description": "Form-code counts for filings filed on the given date. Useful as a lightweight overview before drilling into ``/daily-index/by-form`` with a specific form filter. Reads the same parsed master.idx blob as ``/daily-index/by-form`` so it's cache-warm with that endpoint.",
+      "description": "Form-code counts for filings filed on the given date. Useful as a lightweight overview before drilling into ``/daily-index/by-form`` with a specific form filter. Reads the same parsed master.idx blob as ``/daily-index/by-form`` so it's cache-warm with that endpoint, and answers a date it does not hold the same way: 422 before the first held index, 404 inside the held range, 503 after the last held index (not published yet, retry after the next cycle).",
       "method": "GET",
       "operation_id": "sec_edgar_daily_index_summary",
       "parameters": [
@@ -93583,5 +95817,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "4b0174a3892404aaea0b4c00d0ed3bae07cf35f1cf134bd02904289b3417a912"
+  "spec_sha256": "f0d3e7e1a34cb6a942881a340792e113d9fc131ec14bc94cd07cc89999201533"
 }

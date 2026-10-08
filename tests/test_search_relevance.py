@@ -214,11 +214,12 @@ def test_query_stopwords_conservative_and_do_not_break_routing(catalog) -> None:
     assert not leaked, f"data-semantic words wrongly in stopword set: {leaked}"
 
     # End-to-end: filler-heavy and short-token queries still return results,
-    # and US-macro routing is unchanged.
+    # and US-macro routing still lands the US series.
     for query in ("US CPI inflation", "IT sector data", "What is the GDP of India?"):
         results = search_catalog(catalog, query, limit=5)
         assert results, f"stopword filter wiped all results for {query!r}"
-    assert search_catalog(catalog, "US CPI inflation", limit=1)[0]["operation_id"].startswith("fred_")
+    top = search_catalog(catalog, "US CPI inflation", limit=1)[0]
+    assert (top["operation_id"], top["macro_keys"][0]["key"]) == ("macro_country_section", "us/cpi")
 
 
 NAMESPACE_TOP_1_CASES = [
@@ -450,18 +451,85 @@ def test_detect_us_macro_query(query: str, expected: bool) -> None:
     assert detect_us_macro_query(query) is expected
 
 
-def test_us_macro_query_lands_fred_series_top_1(catalog) -> None:
+def test_us_macro_query_lands_the_us_series_first(catalog) -> None:
     """Live ChatGPT MCP feedback (2026-05-20): the LLM skipped MCP entirely
     for "US CPI inflation" because non-US country endpoints (ons_cpi, rba_cpi)
-    out-ranked fred_series_series_id. The US-macro boost makes FRED dominant.
+    out-ranked fred_series_series_id. The US-macro boost made FRED dominant;
+    now the curated macro key that names the series ranks first, and the
+    boost stays for the US series no key names.
     """
-    for query in ("US CPI inflation", "US GDP", "US unemployment rate"):
+    for query, key in (
+        ("US CPI inflation", "us/cpi"),
+        ("US GDP", "us/gdp"),
+        ("US unemployment rate", "us/unrate"),
+    ):
         results = search_catalog(catalog, query, limit=3)
         assert results, f"no results for {query!r}"
-        assert results[0]["operation_id"].startswith("fred_"), (
-            f"expected fred_* top-1 for {query!r}, got {results[0]['operation_id']}. "
-            f"Top-3: {[r['operation_id'] for r in results]}"
-        )
+        top = results[0]
+        assert (top["operation_id"], top.get("macro_keys", [{}])[0].get("key")) == (
+            "macro_country_section", key,
+        ), f"top-3 for {query!r}: {[r['operation_id'] for r in results]}"
+    results = search_catalog(catalog, "US CPI airline fares", limit=3)
+    assert results and results[0]["operation_id"].startswith("fred_"), (
+        f"top-3: {[r['operation_id'] for r in results]}"
+    )
+
+
+# A curated series by its everyday name: the macro operation answers with the
+# series' key first, and for a US series FRED's generic proxy stays among the
+# five hits fetch_data selects from, for a call that sends a FRED series id.
+MACRO_KEY_TOP_1 = [
+    ("US nonfarm payrolls", "us/payrolls"),
+    ("US housing starts", "us/housing-starts"),
+    ("US real interest rate", "us/reaintratrearat10y"),
+    ("US debt to GDP ratio", "us/gfdegdq188s"),
+    ("US 30-year mortgage rate", "us/mortgage-30y"),
+    ("US 10-year Treasury yield", "us/t10y"),
+    ("Japan GDP growth", "jp/gdp"),
+    ("China GDP growth", "cn/chngdpnqdsmei"),
+    ("euro area HICP inflation", "eu/cpi"),
+]
+
+
+@pytest.mark.parametrize("query,key", MACRO_KEY_TOP_1)
+def test_a_curated_series_lands_its_macro_key_first(catalog, query: str, key: str) -> None:
+    results = search_catalog(catalog, query, limit=5)
+    ids = [r["operation_id"] for r in results]
+    top = results[0]
+
+    assert (top["operation_id"], top.get("macro_keys", [{}])[0].get("key")) == (
+        "macro_country_section", key,
+    ), ids
+    if key.startswith("us/"):
+        assert "fred_series_series_id" in ids, ids
+
+
+@pytest.mark.parametrize("query,expected", [
+    ("next FOMC meeting date", "macro_cb_calendar"),
+    ("when is the next Fed meeting", "macro_cb_calendar"),
+    ("ECB meeting dates", "macro_cb_calendar"),
+    ("next BoE meeting", "macro_cb_calendar"),
+    ("central bank meeting calendar", "macro_cb_calendar_bank"),
+])
+def test_a_central_bank_meeting_lands_the_meeting_calendar(catalog, query: str, expected: str) -> None:
+    """The bank's own operations hold its rates, not its meeting dates."""
+    results = search_catalog(catalog, query, limit=3)
+
+    assert results[0]["operation_id"] == expected, [r["operation_id"] for r in results]
+
+
+@pytest.mark.parametrize("query", [
+    "OPEC meeting",
+    "congress committee meeting",
+    "shareholder meeting AAPL",
+    # The calendar does not publish the Bank of Canada's meetings.
+    "BoC meeting",
+])
+def test_a_meeting_the_calendar_does_not_cover_names_no_calendar(query: str) -> None:
+    from sugra_api_mcp.catalog.aliases import MEETING_CALENDAR_OPERATIONS, detect_named_operations
+
+    named = detect_named_operations(query).operations
+    assert not MEETING_CALENDAR_OPERATIONS & set(dict(named)), named
 
 
 def test_non_us_macro_query_does_not_boost_fred(catalog) -> None:
