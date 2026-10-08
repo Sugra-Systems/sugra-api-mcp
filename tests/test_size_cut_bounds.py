@@ -173,7 +173,7 @@ async def test_a_fixed_tool_response_that_fits_is_answered_on_the_loop_unseriali
     assert seen == []
 
 
-async def test_an_oversized_error_payload_is_refused_on_the_loop_unserialised(monkeypatch) -> None:
+async def test_an_oversized_error_payload_is_held_on_the_loop_unserialised(monkeypatch) -> None:
     client = _serving_bytes(json.dumps({"error": "x" * 300_000}).encode(), status=500)
     monkeypatch.setattr("sugra_api_mcp.tools.gateway.get_client", lambda: client)
     seen = _spy_dumps(monkeypatch)
@@ -186,8 +186,11 @@ async def test_an_oversized_error_payload_is_refused_on_the_loop_unserialised(mo
     on_loop = [entry for entry in seen if entry[0] and entry[2] > CAP]
     monkeypatch.undo()
 
-    assert result["error"] == "response_too_large"
-    assert result["response_chars"] is None
+    # The client holds a failure to its own bound, so call_endpoint passes it
+    # on as it is: the API's text cut, the status kept.
+    assert result["status_code"] == 500
+    assert result["error"].startswith("xxx")
+    assert result["error_truncated"] is True
     assert _fits(result)
     assert on_loop == []
 
@@ -576,10 +579,14 @@ def test_a_record_that_does_not_fit_beside_the_rest_is_named_with_both_sizes() -
     assert shell < _beside(hint, before) < shell + 1_000
 
 
-# ---- a fixed tool's failure is gated too ----
+# ---- a fixed tool's failure is held by the client ----
 
 
-async def test_an_oversized_fixed_tool_error_is_gated_off_the_loop(monkeypatch) -> None:
+async def test_an_oversized_fixed_tool_error_is_held_by_the_client(monkeypatch) -> None:
+    async def no_pool(*args, **kwargs):
+        raise AssertionError("a held failure never goes to the shaping pool")
+
+    monkeypatch.setattr(client_module, "_cut_on_pool", no_pool)
     client = _serving_bytes(json.dumps({"error": "x" * 300_000}).encode(), status=500)
     seen = _spy_dumps(monkeypatch)
     try:
@@ -588,12 +595,11 @@ async def test_an_oversized_fixed_tool_error_is_gated_off_the_loop(monkeypatch) 
         await client.aclose()
     monkeypatch.undo()
 
-    assert result["error"] == "response_too_large"
-    assert result["response_chars"] > CAP
-    assert "Most of it is at error" in result["message"]
+    assert result["status_code"] == 500
+    assert result["error"].startswith("xxx")
+    assert result["error_truncated"] is True
     assert _fits(result)
     assert [entry for entry in seen if entry[0] and entry[2] > CAP] == []
-    assert any(name.startswith("response-shaping") for _, name, _ in seen)
 
 
 async def test_a_fixed_tool_error_that_fits_is_answered_as_built() -> None:
