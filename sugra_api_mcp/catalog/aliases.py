@@ -28,6 +28,7 @@ ALIASES: dict[str, list[str]] = {
     # "unemployment rate" anchors the family on the measure, so "jobless
     # rate" lands on unemployment and not on a central bank's prime rate.
     "unemployment": ["jobless", "unemployment rate"],
+    "realty": ["real estate"],
     "treasury yield": ["treasury rates", "bond yield"],
     "ip geolocation": ["network atlas", "ip address", "asn"],
     "available data sources": ["list sources", "source catalog"],
@@ -216,22 +217,25 @@ SOURCE_COUNTRY_PREFIXES: dict[str, str] = {
     "edinet_": "JP",
     "post_statistical_": "NO", "statistical_agencies_ssb_": "NO",
     "scb_": "SE",
+    # No trailing underscore where the stem is an operation of its own, as for
+    # forex_cbr: "weather_us_forecast_" missed weather_us_forecast itself.
     "commodities_agriculture_grains": "US", "commodities_energy_natural_": "US",
-    "congress_amendments_": "US", "congress_committee_": "US", "congress_committees_": "US",
+    "congress_amendments": "US", "congress_committee_": "US", "congress_committees": "US",
     "congress_communications_": "US", "congress_hearings": "US", "congress_laws": "US",
-    "congress_members_": "US", "congress_nominations": "US", "congress_record": "US",
+    "congress_members": "US", "congress_nominations": "US", "congress_record": "US",
     "congress_sessions": "US", "congress_summaries": "US",
-    "energy_retail_": "US", "energy_tariffs": "US", "energy_utilities_": "US",
+    "energy_retail_": "US", "energy_tariffs": "US", "energy_utilities": "US",
     "environment_usgs_": "US", "equities_sp500_": "US", "etf_flows_": "US",
     "etf_sectors_": "US", "fixed_income_treasury_": "US", "macro_net_liquidity": "US",
     "macro_regime": "US", "maritime_history_": "US", "markets_equity_": "US", "multpl_": "US",
     "post_congress_": "US", "short_interest_": "US", "treasury_auctions": "US",
-    "treasury_daily_": "US", "treasury_debt_": "US", "treasury_deficit": "US",
+    "treasury_daily_": "US", "treasury_debt": "US", "treasury_deficit": "US",
     "treasury_gold": "US", "treasury_interest_": "US", "treasury_rates": "US",
     "usaspending_agencies": "US", "usaspending_agency_": "US", "usaspending_budget_": "US",
-    "usaspending_last_": "US", "usaspending_spending_": "US", "weather_nws_aviation_": "US",
-    "weather_nws_forecast_": "US", "weather_nws_office_": "US", "weather_nws_point": "US",
-    "weather_nws_zones": "US", "weather_us_alerts": "US", "weather_us_forecast_": "US",
+    "usaspending_last_": "US", "usaspending_spending": "US",
+    # The National Weather Service serves the United States alone: its
+    # product listing ranked first for "Venezuelan GDP".
+    "weather_nws_": "US", "weather_us_alerts": "US", "weather_us_forecast": "US",
     # Port and vessel sources of one country: Fintraffic Portnet covers
     # Finnish ports only, and the NOAA AIS history (the successor of
     # maritime_history_) covers United States waters only. Untagged, Portnet
@@ -404,12 +408,15 @@ def detect_network_terms(query: str) -> list[str]:
 
 
 # Currency pair detection: 3 letters + optional separator + 3 letters.
-# Matches "EUR/USD", "EURUSD", "EUR USD".
+# Matches "EUR/USD", "EURUSD", "EUR USD". Every currency named in words is
+# known by its code as well: "PEN to USD" asks what "Peruvian sol to dollar"
+# asks.
 CURRENCY_PAIR_RE = re.compile(r"\b([A-Z]{3})[ /\-]?([A-Z]{3})\b")
 _KNOWN_CURRENCIES: frozenset[str] = frozenset({
     "USD", "EUR", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD", "CNY", "INR",
     "RUB", "ZAR", "BRL", "MXN", "SEK", "NOK", "DKK", "PLN", "TRY", "HKD",
     "SGD", "KRW", "TWD", "THB", "IDR", "MYR", "PHP", "ILS", "AED", "SAR",
+    "ARS", "CLP", "COP", "PEN", "HUF", "CZK", "UAH", "KZT", "NGN", "GEL", "AMD",
 })
 
 
@@ -537,8 +544,11 @@ _CURRENCY_ISSUERS: dict[str, str] = {
     "CAD": "CA", "AUD": "AU", "NZD": "NZ", "HKD": "HK", "SGD": "SG", "TWD": "TW",
 }
 
-# ISO codes that are also English words when written in lowercase.
-_LOWERCASE_CODE_WORDS: frozenset[str] = frozenset({"try", "php", "cad", "sar", "rub"})
+# ISO codes that are also English words when written in lowercase: "price of
+# a pen in dollars" names no Peruvian sol.
+_LOWERCASE_CODE_WORDS: frozenset[str] = frozenset({
+    "try", "php", "cad", "sar", "rub", "pen", "cop", "gel",
+})
 
 # Weight, not sterling: "a pound of coffee", "price per pound".
 _CURRENCY_NAME_BLOCKERS: tuple[str, ...] = ("pound of", "per pound")
@@ -674,7 +684,8 @@ NAMED_OPERATIONS: dict[str, tuple[str, ...]] = {
     "malacca": ("maritime_chokepoints_activity", "maritime_chokepoints_malacca_throughput"),
     "bosphorus": ("maritime_chokepoints_activity",),
     "bosporus": ("maritime_chokepoints_activity",),
-    "turkish straits": ("maritime_chokepoints_activity",),
+    # Singular: a query's plural matches a singular phrase, never the reverse.
+    "turkish strait": ("maritime_chokepoints_activity",),
     "dardanelles": ("maritime_chokepoints_activity",),
     # FRED holds these under series codes only (PCU484121484121, the
     # producer price index of general freight trucking), so they name it only
@@ -1413,11 +1424,27 @@ def detect_named_operations(query: str) -> NamedRequest:
 # Hong Kong Observatory first.
 TOPIC_DEFAULT_OPERATIONS: dict[str, str] = {"weather": "v2_weather_forecast"}
 
-# Operations named by a compound whose last word is an everyday topic of its
-# own: "space weather" is solar activity, so the word "weather" finds these
-# operations only when the query also says "space".
-COMPOUND_NAMED_OPERATIONS: dict[str, tuple[str, str]] = {
-    "space_weather_": ("space", "weather"),
+# Operations named by a compound one of whose words is an everyday word of its
+# own, as (the words that make it the compound, that word): "space weather" is
+# solar activity, so the word "weather" finds these operations only when the
+# query also says "space"; and "real" in "real wages" or "real GDP" means
+# adjusted for inflation, so it finds the real-estate operations only beside a
+# word for property, as in "real estate" or "real home prices".
+COMPOUND_NAMED_OPERATIONS: dict[str, tuple[tuple[str, ...], str]] = {
+    "space_weather_": (("space",), "weather"),
+    "real_estate_": (
+        ("estate", "realty", "property", "properties", "home", "homes",
+         "house", "houses", "housing"),
+        "real",
+    ),
+}
+
+# Words an operation's summary names as the measures it is computed from,
+# never as its subject: the telecom-demand heuristic is computed from growth,
+# income and inflation, and "Dutch inflation" found it above every Dutch
+# inflation series.
+OPERATION_INPUT_WORDS: dict[str, frozenset[str]] = {
+    "imf_signals_telecom_demand_country": frozenset({"growth", "income", "inflation"}),
 }
 
 
@@ -1686,3 +1713,98 @@ def matching_central_bank_prefixes(query: str) -> list[str]:
             prefixes.append(prefix)
             seen.add(prefix)
     return prefixes
+
+
+# Words that ask for a central bank's policy rate. Beside the bank's name, with
+# nothing else asked, they name the operation that holds it: "Bank of Canada
+# rate decision" found the prime rate, which the commercial banks set, and the
+# Bank Rate, a quarter point above the policy rate. A query that asks more
+# ("SARB prime interest rate", "Norges Bank interest rate swaps", "CNB policy
+# rate history") asks for another series of the bank and is ranked as before.
+POLICY_RATE_PHRASES: tuple[str, ...] = ("rate decision", "policy rate", "interest rate")
+# The operation that holds each bank's policy rate, by the bank's prefix.
+CENTRAL_BANK_POLICY_RATES: dict[str, str] = {
+    "fed_": "fed_rates_rate_type",
+    "boj_": "boj_rates",
+    "boe_": "boe_rate",
+    "boc_": "boc_policy_rate",
+    "rba_": "rba_cash_rate",
+    "snb_": "snb_policy_rate",
+    "riksbank_": "riksbank_policy_rate",
+    "central_banks_sarb_": "central_banks_sarb_policy_rate",
+    "bnm_": "bnm_opr",
+    "norges_bank_": "norges_bank_policy_rate",
+    "cnb_": "cnb_policy_rate",
+    "bcb_": "bcb_selic",
+    "central_banks_bcrp_": "central_banks_bcrp_policy_rate",
+}
+# The ECB has no policy-rate operation: its policy rate, the deposit facility
+# rate, is a curated series of the country macro operation, and the name of
+# that rate asks for it as well.
+CENTRAL_BANK_POLICY_RATE_KEYS: dict[str, str] = {"ecb_": "eu/ecbdfr"}
+_BANK_POLICY_RATE_PHRASES: dict[str, tuple[str, ...]] = {
+    "ecb_": ("deposit rate", "deposit facility rate", "deposit facility"),
+}
+# A policy rate asked about by its date is a meeting's question ("when is the
+# next Fed rate decision"), and the meeting calendar answers it for the banks
+# it covers.
+_DATE_WORDS: tuple[str, ...] = ("when", "next", "upcoming", "date", "schedule", "calendar")
+
+
+@dataclass(frozen=True)
+class PolicyRateRequest:
+    """The policy rates a query asks of the central banks it names."""
+
+    operations: dict[str, str]   # operation_id -> the words that ask for it
+    keys: frozenset[str]         # the curated macro keys that hold them
+    words: frozenset[str]        # the query tokens of those words
+
+
+def detect_policy_rate_request(
+    query: str, terms: Iterable[str], prefixes: Iterable[str],
+) -> PolicyRateRequest:
+    """The policy rates the query asks of the banks it names by these prefixes.
+
+    ``terms`` are the query's search terms, its filler words already dropped,
+    and ``prefixes`` the central-bank prefixes matching_central_bank_prefixes
+    found in the query. The query asks for policy rates only when each term is
+    a word of a bank's name, of a policy-rate phrase or a date word.
+    """
+    tokens = _WORD_TOKEN_RE.findall(query.lower())
+    prefixes = list(prefixes)
+
+    def covered(phrases: Iterable[str]) -> set[str]:
+        return {
+            tokens[index]
+            for phrase in phrases
+            for start, end in _phrase_spans(tokens, phrase)
+            for index in range(start, end)
+        }
+
+    names = covered(name for name, prefix in CENTRAL_BANK_PREFIX_BOOSTS.items()
+                    if prefix in prefixes)
+    dates = covered(_DATE_WORDS)
+    operations: dict[str, str] = {}
+    keys: set[str] = set()
+    words: set[str] = set()
+    for prefix in prefixes:
+        asked = [
+            phrase
+            for phrase in (*POLICY_RATE_PHRASES, *_BANK_POLICY_RATE_PHRASES.get(prefix, ()))
+            if _phrase_spans(tokens, phrase)
+        ]
+        if not asked:
+            continue
+        if dates and prefix in _MEETING_CALENDAR_PREFIXES:
+            for operation in sorted(MEETING_CALENDAR_OPERATIONS):
+                operations.setdefault(operation, asked[0])
+        elif prefix in CENTRAL_BANK_POLICY_RATES:
+            operations.setdefault(CENTRAL_BANK_POLICY_RATES[prefix], asked[0])
+        elif prefix in CENTRAL_BANK_POLICY_RATE_KEYS:
+            keys.add(CENTRAL_BANK_POLICY_RATE_KEYS[prefix])
+        else:
+            continue
+        words |= covered(asked)
+    if set(terms) - names - words - dates:
+        return PolicyRateRequest({}, frozenset(), frozenset())
+    return PolicyRateRequest(operations, frozenset(keys), frozenset(words))
