@@ -236,6 +236,118 @@ async def test_equal_cut_lists_are_named_in_the_response_key_order(monkeypatch) 
     assert sets == [["zeta"], ["alpha"]]
 
 
+async def test_cut_lists_past_the_named_set_are_offered_each_on_their_own(monkeypatch) -> None:
+    # Fourteen like lists, all cut, each fitting alone: the set of six is
+    # full before the room is, so the next six are offered one by one, in
+    # the response's key order, and only the last two past both bounds go
+    # unnamed.
+    keys = [f"list{i:02d}" for i in range(14)]
+    body = {"data": {key: [{"id": i, "text": "n" * 150} for i in range(10)] for key in keys}}
+    params = {"city": "Tokyo", "forecast_days": 16}
+
+    result = await call(monkeypatch, "v2_weather_forecast", body, params)
+
+    sets = _named_sets(notice(result)["retry_hint"])
+    assert sets == [keys[:6], *([key] for key in keys[6:12])]
+
+
+class _Visits(dict):
+    """A dict that counts every key its iteration hands out."""
+
+    def __init__(self, *args) -> None:
+        super().__init__(*args)
+        self.visits = 0
+
+    def __iter__(self):
+        for key in super().__iter__():
+            self.visits += 1
+            yield key
+
+    def items(self):
+        for item in super().items():
+            self.visits += 1
+            yield item
+
+
+class _OutOfTime(Exception):
+    pass
+
+
+def _wide_root(module, tick) -> tuple[_Visits, list]:
+    # 5,000 uncut lists before 30 cut ones that grow by one row each.
+    root = _Visits({f"w{i:04d}": [i] for i in range(5_000)})
+    for i in range(30):
+        root[f"c{i:02d}"] = [{"id": j, "text": "n" * 150} for j in range(i + 1)]
+    cut = [
+        module._List(("data", f"c{i:02d}"), root[f"c{i:02d}"], None, None, tick)
+        for i in range(30)
+    ]
+    root.visits = 0
+    return root, cut
+
+
+def test_the_fields_offer_over_a_wide_root_reads_the_clock_and_sorts_only_its_bound(
+    monkeypatch,
+) -> None:
+    module = size_cut_module()
+    bound = module._MAX_NAMED_FIELDS
+    sorted_lengths: list[int] = []
+    real_sorted = sorted
+
+    def spy(items, **kwargs):
+        items = list(items)
+        sorted_lengths.append(len(items))
+        return real_sorted(items, **kwargs)
+
+    monkeypatch.setattr(module, "sorted", spy, raising=False)
+    seen_at_tick = [0]
+    root, cut = _wide_root(module, lambda: None)
+
+    def tick() -> None:
+        seen_at_tick[0] = root.visits
+
+    groups = module._fit_whole_alone({"data": root}, cut, cut, {}, 10_000, tick)
+
+    # No key of the root is visited after the last reading of the clock, and
+    # nothing longer than one bounded set is sorted.
+    assert root.visits == len(root)
+    assert seen_at_tick[0] == root.visits
+    assert sorted_lengths and max(sorted_lengths) <= bound
+    assert groups == [[f"w{i:04d}" for i in range(bound)], *([f"c{i:02d}"] for i in range(bound))]
+
+
+@pytest.mark.parametrize("budget", [10, 1_000, 4_999, 5_020])
+def test_the_fields_offer_over_a_wide_root_stops_when_the_clock_runs_out(budget) -> None:
+    module = size_cut_module()
+    root, cut = _wide_root(module, lambda: None)
+    ticks = 0
+
+    def tick() -> None:
+        nonlocal ticks
+        ticks += 1
+        if ticks > budget:
+            raise _OutOfTime
+
+    with pytest.raises(_OutOfTime):
+        module._fit_whole_alone({"data": root}, cut, cut, {}, 10_000, tick)
+    assert root.visits <= budget + 1
+
+
+def test_a_cut_list_past_the_room_of_the_first_set_is_offered_alone_before_larger_ones() -> None:
+    # One, two, four and five rows: the first two fit together, the four-row
+    # list does not fit beside them but fits alone, and so does the five-row
+    # one; each of those is a set of its own, the smaller first.
+    module = size_cut_module()
+    rows = {"a": 1, "b": 2, "c": 4, "d": 5}
+    root = {key: [{"id": j, "text": "n" * 150} for j in range(n)] for key, n in rows.items()}
+    cut = [module._List(("data", key), root[key], None, None, lambda: None) for key in root]
+    room = next(lst.chars for lst in cut if lst.path[-1] == "d")
+
+    groups = module._fit_whole_alone({"data": root}, cut, cut, {}, room, lambda: None)
+
+    assert groups == [["a", "b"], ["c"], ["d"]]
+
+
 async def test_a_cut_of_several_lists_says_how_many(monkeypatch) -> None:
     result = await call(monkeypatch, "market_calendar", market_calendar(TODAY, 8))
 
