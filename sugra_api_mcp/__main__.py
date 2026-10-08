@@ -91,7 +91,7 @@ def _run_server(args: argparse.Namespace) -> None:
         import uvicorn
         from starlette.middleware.cors import CORSMiddleware
 
-        from . import gate, teardown_filter
+        from . import gate, limits, teardown_filter
         from .auth import Authenticator, AuthMiddleware
         from .config import load_allowed_origins, load_auth_config
         from .server import close_clients
@@ -109,6 +109,10 @@ def _run_server(args: argparse.Namespace) -> None:
         register_agent_tools()
 
         auth = Authenticator(load_auth_config())
+        # The request limits (SUGRA_MCP_LIMITS): None, and nothing else done for
+        # them, unless the setting is on. Built here so a bad setting stops the
+        # start instead of the first request.
+        request_limits = limits.build_limits()
         app = mcp.streamable_http_app()
         # Human-facing landing on the host root + liveness probe + the skills
         # index. HTTP-only surface (never registered for stdio); AuthMiddleware
@@ -125,6 +129,10 @@ def _run_server(args: argparse.Namespace) -> None:
         # CORSMiddleware added second wraps it as the outer layer. OPTIONS
         # preflight is then handled by CORS before reaching auth.
         app.add_middleware(AuthMiddleware, authenticator=auth)
+        if request_limits is not None:
+            # Between auth and CORS: it runs before the credential is checked,
+            # and what it refuses still carries the CORS headers.
+            app.add_middleware(limits.AdmissionMiddleware, limits=request_limits)
         app.add_middleware(
             CORSMiddleware,
             allow_origins=load_allowed_origins(),
@@ -146,7 +154,11 @@ def _run_server(args: argparse.Namespace) -> None:
         )
         # Added last, so it wraps CORS and auth too and records the status the
         # client was actually sent.
-        app.add_middleware(gate.GateMiddleware, max_body_bytes=mcp.settings.max_request_body_size)
+        gate_options: dict[str, Any] = {"max_body_bytes": mcp.settings.max_request_body_size}
+        if request_limits is not None:
+            # The same setting turns on the extra demand counts.
+            gate_options["extended_demand"] = True
+        app.add_middleware(gate.GateMiddleware, **gate_options)
         # The summaries and the exit work run around the app's own lifespan,
         # which runs the MCP session manager. The exit work closes every Sugra
         # API client and the authenticator's connection pool after the last

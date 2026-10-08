@@ -373,6 +373,8 @@ public directory sandboxes. `SUGRA_MCP_TRUST_PROXY_HEADERS` (off by default)
 makes the server read `X-Real-IP` and `X-Forwarded-Host`; set it only behind a
 reverse proxy that overwrites both on every request, and never where clients
 can reach the process directly (details in the same guide).
+`SUGRA_MCP_LIMITS` (off by default) turns on request limits counted in the
+server's own memory; the same guide lists its settings.
 
 ### HTTP transport with OAuth
 

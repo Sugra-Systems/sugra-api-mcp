@@ -41,6 +41,13 @@ SERVER_VERSION_ENV = "SUGRA_MCP_SERVER_VERSION"
 # server, instead of the Host header and the connection peer.
 TRUST_PROXY_HEADERS_ENV = "SUGRA_MCP_TRUST_PROXY_HEADERS"
 
+# The opt-in switch for the request limits: the admission lanes, the budget for
+# requests without verified credentials, the failed-check shield and the per-key
+# call counters, all counted in the process's own memory (sugra_api_mcp.limits),
+# and the extra demand counts. Its limit settings are read by
+# sugra_api_mcp.limits.load_settings, and only when this one is on.
+LIMITS_ENV = "SUGRA_MCP_LIMITS"
+
 
 @dataclass(frozen=True)
 class Config:
@@ -216,6 +223,20 @@ def proxy_headers_trusted() -> bool:
     is never read, on or off. Read on every request.
     """
     return os.environ.get(TRUST_PROXY_HEADERS_ENV, "").strip().lower() in _TRUTHY_ENV_VALUES
+
+
+def limits_enabled() -> bool:
+    """Whether the request limits are on.
+
+    On only when SUGRA_MCP_LIMITS is 1, true, yes or on, in any case and with
+    surrounding whitespace ignored. Unset, empty and every other value mean off,
+    and off is byte-for-byte the behaviour before the setting existed: no limits
+    object is built and no request is held at admission.
+
+    Read once, when the HTTP transport starts (__main__), so a change takes a
+    restart.
+    """
+    return os.environ.get(LIMITS_ENV, "").strip().lower() in _TRUTHY_ENV_VALUES
 
 
 # Longest host a proxy header may carry: a 253-character name, a colon and a

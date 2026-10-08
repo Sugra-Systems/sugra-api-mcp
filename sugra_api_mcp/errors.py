@@ -36,9 +36,11 @@ def server_busy_error(scope: str, limit: int, elapsed_ms: int = 0) -> dict[str, 
     on tool calls in the process, "caller_tool_calls" for one caller's share of
     it, "search" for the catalog search queue, "caller_search" for one caller's
     share of the queue, "shaping" for the response shaping pool and
-    "caller_shaping" for one caller's share of the pool. The scope also reaches
-    the span as `mcp.busy.scope`, so observability._BUSY_SCOPES lists every
-    value used here. `elapsed_ms` is the time spent waiting for a slot before
+    "caller_shaping" for one caller's share of the pool, "key_checks" for the
+    limit on checks of new keys and "lane_recognised" and "lane_other" for the
+    admission lanes (limits.py). The scope also reaches the span as
+    `mcp.busy.scope`, so observability._BUSY_SCOPES lists every value used
+    here. `elapsed_ms` is the time spent waiting for a slot before
     the refusal. Nothing about the refused call itself is echoed back.
     """
     return {
@@ -48,6 +50,25 @@ def server_busy_error(scope: str, limit: int, elapsed_ms: int = 0) -> dict[str, 
         "elapsed_ms": elapsed_ms,
         "retry_hint": "The server is at its concurrency limit. Retry in a few seconds.",
     }
+
+
+def rate_limited_error(
+    scope: str, *, limit: int | None = None, retry_after: int = 1
+) -> dict[str, Any]:
+    """The structured error for work refused at a rate limit (sugra_api_mcp.limits).
+
+    `scope` names the limit: "key_minute" and "key_day" for one key's calls in
+    a window, "budget" for the requests without recognised credentials and
+    "failed_checks" for an address held after repeated refusals of new keys.
+    `limit` is the number of the first two, `retry_after` the seconds to wait.
+    Nothing about the refused request is echoed back.
+    """
+    payload: dict[str, Any] = {"error": "rate_limited", "scope": scope}
+    if limit is not None:
+        payload["limit"] = limit
+    payload["retry_after"] = retry_after
+    payload["retry_hint"] = "Too many requests. Retry after the seconds in retry_after."
+    return payload
 
 
 # One fixed hint per bound of a fields projection. A hint never repeats the
