@@ -263,7 +263,7 @@ async def test_on_the_event_loop_a_response_over_the_cap_is_refused_unwalked(mon
     assert result["error"] == "response_too_large"
     assert "retry_hint" not in result
     assert result["response_chars"] is None
-    assert result["message"] == "Response is over the limit of 18,000 characters."
+    assert result["message"] == f"Response is over the limit of {MAX_RESPONSE_CHARS:,} characters."
     assert _fits(result)
 
 
@@ -303,7 +303,7 @@ async def test_one_record_over_the_cap_is_refused_in_characters(monkeypatch) -> 
     result = await call(monkeypatch, "futures_root_historical", body, {"root": "CL"})
 
     assert result["error"] == "response_too_large"
-    assert "18,000 characters" in result["message"]
+    assert f"{MAX_RESPONSE_CHARS:,} characters" in result["message"]
     assert "25000" not in result["message"] and "token" not in result["message"]
     assert result["cap_chars"] == MAX_RESPONSE_CHARS
     assert result["response_chars"] == chars(body)

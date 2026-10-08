@@ -168,6 +168,74 @@ async def test_the_weather_fields_hint_returns_a_response_that_fits(monkeypatch)
     assert again["data"]["daily"] == body["data"]["daily"]
 
 
+async def test_a_cut_small_list_that_fits_alone_is_offered_by_fields(monkeypatch) -> None:
+    # 16 days at the cap: the cut keeps 14 of the 16 daily rows beside the
+    # hours, yet fields=["daily"] on its own returns all 16 within the cap.
+    body = weather(TODAY, 16)
+    params = {"city": "Tokyo", "forecast_days": 16}
+
+    result = await call(monkeypatch, "v2_weather_forecast", body, params)
+
+    cut = notice(result)
+    daily = next(entry for entry in cut["lists"] if entry["path"] == "data.daily")
+    assert daily["kept_count"] < daily["original_count"] == 16
+    named = json.loads(re.search(r"fields=(\[[^\]]*\])", cut["retry_hint"]).group(1))
+    assert named == ["daily"]
+    assert "for the lists that fit whole on their own" in cut["retry_hint"]
+    again = await call(monkeypatch, "v2_weather_forecast", body, params, fields=named)
+    assert "error" not in again
+    assert "truncated" not in again.get("meta", {})
+    assert again["data"]["daily"] == body["data"]["daily"]
+    assert chars(again) <= MAX_RESPONSE_CHARS
+
+
+async def test_a_cut_list_too_big_alone_is_not_offered_by_fields(monkeypatch) -> None:
+    # The hours cannot fit the cap on their own, so only the daily list is named.
+    result = await call(monkeypatch, "v2_weather_forecast", weather(TODAY, 16), {"city": "Tokyo"})
+
+    hint = notice(result)["retry_hint"]
+    assert '"hourly"' not in hint
+
+
+def _named_sets(hint: str) -> list[list[str]]:
+    return [json.loads(found) for found in re.findall(r"fields=(\[[^\]]*\])", hint)]
+
+
+async def test_two_cut_lists_that_fit_alone_but_not_together_are_each_offered(monkeypatch) -> None:
+    # daily (about 9,600 characters) and notes (about 10,400) each fit the cap
+    # on their own, not together: one fields set names one, a second the other.
+    body = weather(TODAY, 16)
+    body["data"]["notes"] = [{"id": i, "text": "n" * 150} for i in range(60)]
+    params = {"city": "Tokyo", "forecast_days": 16}
+
+    result = await call(monkeypatch, "v2_weather_forecast", body, params)
+
+    sets = _named_sets(notice(result)["retry_hint"])
+    assert sorted(sets) == [["daily"], ["notes"]]
+    for names in sets:
+        again = await call(monkeypatch, "v2_weather_forecast", body, params, fields=names)
+        assert "error" not in again
+        assert "truncated" not in again.get("meta", {})
+        assert again["data"][names[0]] == body["data"][names[0]]
+        assert chars(again) <= MAX_RESPONSE_CHARS
+
+
+async def test_equal_cut_lists_are_named_in_the_response_key_order(monkeypatch) -> None:
+    # Two cut lists of the same size: the one the response lists first is
+    # named, whatever the hash seed of the process.
+    body = weather(TODAY, 16)
+    del body["data"]["daily"]
+    rows = [{"id": i, "text": "n" * 150} for i in range(60)]
+    body["data"]["zeta"] = list(rows)
+    body["data"]["alpha"] = list(rows)
+    params = {"city": "Tokyo", "forecast_days": 16}
+
+    result = await call(monkeypatch, "v2_weather_forecast", body, params)
+
+    sets = _named_sets(notice(result)["retry_hint"])
+    assert sets == [["zeta"], ["alpha"]]
+
+
 async def test_a_cut_of_several_lists_says_how_many(monkeypatch) -> None:
     result = await call(monkeypatch, "market_calendar", market_calendar(TODAY, 8))
 
