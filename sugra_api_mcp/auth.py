@@ -34,7 +34,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
 from .client import shared_ssl_context
-from .config import AuthConfig
+from .config import AuthConfig, caller_host
 from .observability import _UA_PATTERNS, _host_class, _origin_class, _text_class
 from .server import api_key_ctx
 from .skills_index import PUBLIC_PATHS as SKILLS_PUBLIC_PATHS
@@ -705,7 +705,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 e.status,
                 _token_kind(token),
                 _token_fingerprint(token),
-                _host_class(request.headers.get("host")) or "-",
+                _host_class(caller_host(request.headers.get("host"), request.headers.get("x-forwarded-host"))) or "-",
                 _text_class(request.headers.get("user-agent"), _UA_PATTERNS),
                 _origin_class(request.headers.get("origin")),
                 e,
