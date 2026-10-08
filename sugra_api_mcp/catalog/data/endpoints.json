@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-10-08T13:39:46Z",
+  "built_at": "2026-10-08T17:09:59Z",
   "endpoint_count": 1625,
   "endpoints": [
     {
@@ -25844,7 +25844,7 @@
       "toolset": "markets"
     },
     {
-      "description": "Primary news-flow sentiment + attention for a ticker, entirely from Sugra-owned sources: GDELT tone + volume timelines and the first-party RSS news feeds (list: /api/v1/news/sources), entity-linked via the SEC registrant name + former names (so coverage filed under an old name is still matched). This is editorial NEWS-FLOW sentiment, the defensible alternative to scraped social mention-counting - it does not capture retail crowd psychology or pre-news buzz. Cached 10min (GDELT's update cadence). Not investment advice.",
+      "description": "Primary news-flow sentiment + attention for a ticker, entirely from Sugra-owned sources: GDELT tone + volume timelines and the first-party RSS news feeds (list: /api/v1/news/sources), entity-linked via the SEC registrant name + former names (so coverage filed under an old name is still matched). Tone and volume are read from the GDELT files Sugra already stores. The served window is 24 hours. Requested values 3days, 2weeks and 1month stay accepted and come back as timespan 24h with window_capped. This is editorial NEWS-FLOW sentiment, the defensible alternative to scraped social mention-counting. It does not capture retail crowd psychology or pre-news buzz. Cached 10 min. Not investment advice.",
       "method": "GET",
       "operation_id": "equities_symbol_news_sentiment",
       "parameters": [
@@ -25863,13 +25863,13 @@
           }
         },
         {
-          "description": "GDELT lookback window.",
+          "description": "Accepted lookback: 3days, 2weeks, 1month. The measurement is the stored 24 hour file window.",
           "location": "query",
           "name": "timespan",
           "required": false,
           "schema": {
             "default": "1month",
-            "description": "GDELT lookback window.",
+            "description": "Accepted lookback: 3days, 2weeks, 1month. The measurement is the stored 24 hour file window.",
             "examples": [
               "1month"
             ],
@@ -32370,7 +32370,7 @@
       "toolset": "funds"
     },
     {
-      "description": "Search 100+ languages, 250K+ sources. Supports phrase search, sentiment filters, domain/country/language filters.",
+      "description": "News cards from the GDELT files Sugra already stores: title, source, time, link, tone, themes, organizations, and quantities named in the article. The served window is at most 24 hours; a longer timespan is marked window_capped. English file by default. lang accepts the 15 source languages already stored.",
       "method": "GET",
       "operation_id": "gdelt_articles",
       "parameters": [
@@ -32402,51 +32402,51 @@
           }
         },
         {
-          "description": "Time window identifier: 15min, 1h, 3days, 2weeks, 1month.",
-          "example": "3days",
+          "description": "Time window. 15min, 1h, 6h and 24h are read as stored. Longer values are capped at 24h.",
+          "example": "24h",
           "location": "query",
           "name": "timespan",
           "required": false,
           "schema": {
-            "default": "3days",
-            "description": "Time window identifier: 15min, 1h, 3days, 2weeks, 1month.",
+            "default": "24h",
+            "description": "Time window. 15min, 1h, 6h and 24h are read as stored. Longer values are capped at 24h.",
             "title": "Timespan",
             "type": "string"
           }
         },
         {
-          "description": "Sort criterion (datedesc, dateasc, tonedesc, toneasc, hybridrel).",
+          "description": "Sort: datedesc, dateasc, tonedesc, toneasc.",
           "example": "datedesc",
           "location": "query",
           "name": "sort",
           "required": false,
           "schema": {
             "default": "datedesc",
-            "description": "Sort criterion (datedesc, dateasc, tonedesc, toneasc, hybridrel).",
+            "description": "Sort: datedesc, dateasc, tonedesc, toneasc.",
             "title": "Sort",
             "type": "string"
           }
         },
         {
-          "description": "Source country filter.",
+          "description": "Country named in the article (ISO code).",
           "example": "US",
           "location": "query",
           "name": "country",
           "required": false,
           "schema": {
-            "description": "Source country filter.",
+            "description": "Country named in the article (ISO code).",
             "title": "Country",
             "type": "string"
           }
         },
         {
-          "description": "Source language filter (ISO 639-1).",
+          "description": "en reads the English file. por, spa, deu, fra, ita, rus, zho, jpn, kor, ara, hin, fas, tur, ind, vie read the stored translation file. Any other code returns coverage language_not_stored.",
           "example": "en",
           "location": "query",
           "name": "lang",
           "required": false,
           "schema": {
-            "description": "Source language filter (ISO 639-1).",
+            "description": "en reads the English file. por, spa, deu, fra, ita, rus, zho, jpn, kor, ara, hin, fas, tur, ind, vie read the stored translation file. Any other code returns coverage language_not_stored.",
             "title": "Lang",
             "type": "string"
           }
@@ -32468,18 +32468,18 @@
       "toolset": "news"
     },
     {
-      "description": "Search within individual sentences. Returns actual text with surrounding context. 72-hour window only.",
+      "description": "Matches the query against quotations stored from the GDELT files. Rows without a quotation are not sentence matches. Window is 24 hours.",
       "method": "GET",
       "operation_id": "gdelt_context",
       "parameters": [
         {
-          "description": "Search query (all terms must be in same sentence).",
+          "description": "Search query. Each term must appear in the quotation.",
           "example": "gold",
           "location": "query",
           "name": "q",
           "required": true,
           "schema": {
-            "description": "Search query (all terms must be in same sentence).",
+            "description": "Search query. Each term must appear in the quotation.",
             "title": "Q",
             "type": "string"
           }
@@ -32500,14 +32500,14 @@
           }
         },
         {
-          "description": "Only return quoted sentences.",
+          "description": "Accepted for compatibility. Every match is already a quotation.",
           "example": false,
           "location": "query",
           "name": "quotes_only",
           "required": false,
           "schema": {
             "default": false,
-            "description": "Only return quoted sentences.",
+            "description": "Accepted for compatibility. Every match is already a quotation.",
             "title": "Quotes Only",
             "type": "boolean"
           }
@@ -32522,7 +32522,7 @@
       "sources": [
         "news"
       ],
-      "summary": "Sentence-level news search",
+      "summary": "Quotation search",
       "tags": [
         "Global News and Media"
       ],
@@ -32594,7 +32594,7 @@
       "toolset": "news"
     },
     {
-      "description": "Events where actor1, actor2, or action_geo country code equals the requested ISO 3166-1 alpha-2 code (union match). period=1h reads latest.json only; period=6h or 24h additionally merges daily shards.",
+      "description": "Events where actor1, actor2, or action_geo country code equals the requested ISO 3166-1 alpha-2 code (union match). period=1h reads latest.json only; period=6h or 24h additionally merges daily shards. Omit lang for the English file. lang set to one of the 15 stored source languages reads the translation event file instead.",
       "method": "GET",
       "operation_id": "gdelt_events_by_country_country",
       "parameters": [
@@ -32650,6 +32650,24 @@
             "title": "Offset",
             "type": "integer"
           }
+        },
+        {
+          "description": "Stored translation source language: por, spa, deu, fra, ita, rus, zho, jpn, kor, ara, hin, fas, tur, ind, vie. Omit for the English file. Any other code is language_not_stored.",
+          "location": "query",
+          "name": "lang",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Stored translation source language: por, spa, deu, fra, ita, rus, zho, jpn, kor, ara, hin, fas, tur, ind, vie. Omit for the English file. Any other code is language_not_stored.",
+            "title": "Lang"
+          }
         }
       ],
       "path": "/api/v1/gdelt/events/by-country/{country}",
@@ -32668,7 +32686,7 @@
       "toolset": "news"
     },
     {
-      "description": "Events ranked by how much media attention they are getting in the window, from the GDELT Mentions stream (DATA-12). Each event carries its mention count, distinct outlet count, average tone, and first/last seen time. Join global_event_id back to /gdelt/recent for event detail. period=1h reads the rolling window; 6h/24h merge daily shards.",
+      "description": "Events ranked by how much media attention they are getting in the window, from the GDELT Mentions stream (DATA-12). Each event carries its mention count, distinct outlet count, up to five outlet names, up to five article links, average tone, and first/last seen time. Join global_event_id back to /gdelt/recent for event detail. period=1h reads the rolling window; 6h/24h merge daily shards. Omit lang for the English mentions file. lang set to one of the 15 stored source languages ranks the translation mentions instead.",
       "method": "GET",
       "operation_id": "gdelt_events_trending",
       "parameters": [
@@ -32698,6 +32716,24 @@
             "title": "Limit",
             "type": "integer"
           }
+        },
+        {
+          "description": "Stored translation source language: por, spa, deu, fra, ita, rus, zho, jpn, kor, ara, hin, fas, tur, ind, vie. Omit for the English file. Any other code is language_not_stored.",
+          "location": "query",
+          "name": "lang",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Stored translation source language: por, spa, deu, fra, ita, rus, zho, jpn, kor, ara, hin, fas, tur, ind, vie. Omit for the English file. Any other code is language_not_stored.",
+            "title": "Lang"
+          }
         }
       ],
       "path": "/api/v1/gdelt/events/trending",
@@ -32714,7 +32750,7 @@
       "toolset": "news"
     },
     {
-      "description": "Paginated GDELT 2.0 events from the rolling live ingest window. since=15m and since=1h read latest.json. since=6h and since=24h additionally merge daily shards (date-boundary aware). Updated every 15 minutes by the ingest Function App.",
+      "description": "Paginated GDELT 2.0 events from the rolling live ingest window. since=15m and since=1h read latest.json. since=6h and since=24h additionally merge daily shards (date-boundary aware). Updated every 15 minutes by the ingest Function App. Omit lang for the English file. lang set to one of the 15 stored source languages reads the translation event file instead.",
       "method": "GET",
       "operation_id": "gdelt_recent",
       "parameters": [
@@ -32757,6 +32793,24 @@
             "title": "Offset",
             "type": "integer"
           }
+        },
+        {
+          "description": "Stored translation source language: por, spa, deu, fra, ita, rus, zho, jpn, kor, ara, hin, fas, tur, ind, vie. Omit for the English file. Any other code is language_not_stored.",
+          "location": "query",
+          "name": "lang",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Stored translation source language: por, spa, deu, fra, ita, rus, zho, jpn, kor, ara, hin, fas, tur, ind, vie. Omit for the English file. Any other code is language_not_stored.",
+            "title": "Lang"
+          }
         }
       ],
       "path": "/api/v1/gdelt/recent",
@@ -32773,7 +32827,7 @@
       "toolset": "news"
     },
     {
-      "description": "Tone/sentiment histogram for a topic. Bins from -18 (negative) to +18 (positive).",
+      "description": "Tone histogram for articles in the stored file window. Bins are rounded tone, clamped to -20..20.",
       "method": "GET",
       "operation_id": "gdelt_sentiment",
       "parameters": [
@@ -32790,14 +32844,14 @@
           }
         },
         {
-          "description": "Time window identifier.",
-          "example": "1month",
+          "description": "Time window. Longer than 24h is capped and marked.",
+          "example": "24h",
           "location": "query",
           "name": "timespan",
           "required": false,
           "schema": {
-            "default": "1month",
-            "description": "Time window identifier.",
+            "default": "24h",
+            "description": "Time window. Longer than 24h is capped and marked.",
             "title": "Timespan",
             "type": "string"
           }
@@ -32884,7 +32938,7 @@
       "toolset": "news"
     },
     {
-      "description": "Coverage volume or sentiment over time for a topic. Modes: timelinevol, timelinevolraw, timelinetone, timelinelang.",
+      "description": "Article counts or mean tone over the stored file window. Modes: timelinevol, timelinevolraw, timelinetone, timelinelang. The served window is at most 24 hours.",
       "method": "GET",
       "operation_id": "gdelt_timeline",
       "parameters": [
@@ -32901,39 +32955,39 @@
           }
         },
         {
-          "description": "Time window identifier.",
-          "example": "1month",
+          "description": "Time window. Longer than 24h is capped and marked.",
+          "example": "24h",
           "location": "query",
           "name": "timespan",
           "required": false,
           "schema": {
-            "default": "1month",
-            "description": "Time window identifier.",
+            "default": "24h",
+            "description": "Time window. Longer than 24h is capped and marked.",
             "title": "Timespan",
             "type": "string"
           }
         },
         {
-          "description": "GDELT visualization mode (timelinevol, timelinevolraw, timelinetone, timelinelang).",
+          "description": "timelinevol, timelinevolraw, timelinetone, or timelinelang.",
           "example": "timelinevol",
           "location": "query",
           "name": "mode",
           "required": false,
           "schema": {
             "default": "timelinevol",
-            "description": "GDELT visualization mode (timelinevol, timelinevolraw, timelinetone, timelinelang).",
+            "description": "timelinevol, timelinevolraw, timelinetone, or timelinelang.",
             "title": "Mode",
             "type": "string"
           }
         },
         {
-          "description": "Source country filter.",
+          "description": "Country named in the article (ISO code).",
           "example": "US",
           "location": "query",
           "name": "country",
           "required": false,
           "schema": {
-            "description": "Source country filter.",
+            "description": "Country named in the article (ISO code).",
             "title": "Country",
             "type": "string"
           }
@@ -32955,7 +33009,7 @@
       "toolset": "news"
     },
     {
-      "description": "Search TV news transcripts from Internet Archive (2M+ hours, 163 stations, since July 2009).",
+      "description": "Television transcripts are not in the GDELT files Sugra stores. The route stays and says so. It does not call an external host.",
       "method": "GET",
       "operation_id": "gdelt_tv",
       "parameters": [
@@ -32972,27 +33026,27 @@
           }
         },
         {
-          "description": "GDELT television station (CNN, FOXNEWS, MSNBC, BBCNEWS, etc).",
+          "description": "Ignored. Television transcripts are not in the stored files.",
           "example": "CNN",
           "location": "query",
           "name": "station",
           "required": false,
           "schema": {
             "default": "CNN",
-            "description": "GDELT television station (CNN, FOXNEWS, MSNBC, BBCNEWS, etc).",
+            "description": "Ignored. Television transcripts are not in the stored files.",
             "title": "Station",
             "type": "string"
           }
         },
         {
-          "description": "Maximum records to return.",
+          "description": "Ignored. No clips are stored.",
           "example": 50,
           "location": "query",
           "name": "max_records",
           "required": false,
           "schema": {
             "default": 50,
-            "description": "Maximum records to return.",
+            "description": "Ignored. No clips are stored.",
             "maximum": 3000,
             "minimum": 1,
             "title": "Max Records",
@@ -33000,14 +33054,14 @@
           }
         },
         {
-          "description": "Time window identifier.",
-          "example": "1month",
+          "description": "Ignored. No clips are stored.",
+          "example": "24h",
           "location": "query",
           "name": "timespan",
           "required": false,
           "schema": {
-            "default": "1month",
-            "description": "Time window identifier.",
+            "default": "24h",
+            "description": "Ignored. No clips are stored.",
             "title": "Timespan",
             "type": "string"
           }
@@ -95817,5 +95871,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "c8d205e680385cf1039d067a7729976b31caa3cf3cffeaa1fbae34097bffe274"
+  "spec_sha256": "43122586fdf56e65f421eb5fd03b612f65c25e6e7115469e23b1c859cdeed0ba"
 }
