@@ -65,7 +65,10 @@ What is said: ``meta.truncated`` names the cut. Its ``original_count``,
 largest one cut, at ``path``; ``original_chars``, ``kept_chars`` and
 ``cap_chars`` give the sizes; ``lists`` gives the same per path when more
 than one list was cut; ``retry_hint`` says what was kept and which arguments
-of the tool and parameters of the operation choose a smaller answer. A
+of the tool and parameters of the operation choose a smaller answer. Its
+``fields`` names the lists that stayed whole and every cut list that fits the
+cap on its own, measured from the record sizes the cut already has: that list
+whole plus the response outside the lists plus the room the notice takes. A
 refusal says the size and the limit in characters and, when it can, where
 the size is and how to leave it out. Every refusal is measured too: one
 that would itself be over the cap, through a very long URL or key, says the
@@ -392,23 +395,67 @@ def _is_records_list(payload: Any, path: tuple[str, ...]) -> bool:
     return False
 
 
-def _uncut_lists(
-    payload: Any, cut: list[_List], kept: dict[tuple[str, ...], int], tick: Tick
-) -> list[str]:
-    """Keys of the root holding a list that stayed whole, when every cut list
-    sits under another key of the root: fields naming them leave the cut out."""
+def _lists_by_key(lists: list[_List], prefix: tuple[str, ...], tick: Tick) -> dict[str, int]:
+    """The characters of the records of every list under each key of the
+    root: what that key's lists add to the response outside its lists."""
+    sizes: dict[str, int] = {}
+    for lst in _each(lists, tick):
+        if len(lst.path) > len(prefix):
+            key = lst.path[len(prefix)]
+            sizes[key] = sizes.get(key, 0) + lst.chars
+    return sizes
+
+
+def _fit_whole_alone(
+    payload: Any,
+    lists: list[_List],
+    cut: list[_List],
+    kept: dict[tuple[str, ...], int],
+    room: int | None,
+    tick: Tick,
+) -> list[list[str]]:
+    """Sets of keys of the root that fields can name to get their lists whole:
+    the lists that stayed whole, and every cut list under another key of the
+    root that fits the cap on its own. ``room`` is what the cap leaves for lists
+    after the response outside them (every list empty, so a conservative
+    shell: fields drops what it does not name) and after what the gate adds,
+    the cut notice standing for that; None offers no cut list. The first set is
+    the lists that stayed whole plus the cut lists that fit in ``room``
+    together, smallest first; a cut list that fits alone but not with those
+    comes after as a set of its own."""
     root, prefix = _root(payload)
     if not isinstance(root, dict):
         return []
     cut_keys = {lst.path[len(prefix)] for lst in _each(cut, tick) if len(lst.path) > len(prefix)}
-    names = []
+    sizes = _lists_by_key(lists, prefix, tick)
+    named: set[str] = set()
+    used = 0
     for key, value in _each(root.items(), tick):
         path = (*prefix, key)
         if key in cut_keys or not isinstance(value, list) or not value:
             continue
         if kept.get(path, len(value)) == len(value):
-            names.append(key)
-    return names[:_MAX_NAMED_FIELDS]
+            named.add(key)
+            used += sizes.get(key, 0)
+    order = {key: index for index, key in enumerate(root)}
+    alone: list[str] = []
+    if room is not None:
+        # Smallest first, so the most lists are named; each adds its records.
+        # Ties keep the response's own key order, never the hash order.
+        grouped = True
+        for key in sorted(cut_keys, key=lambda name: (sizes.get(name, 0), order.get(name, 0))):
+            tick()
+            size = sizes.get(key, 0)
+            if grouped and used + size <= room:
+                named.add(key)
+                used += size
+            else:
+                grouped = False
+                if size <= room:
+                    alone.append(key)
+    groups = [[key for key in root if key in named][:_MAX_NAMED_FIELDS]]
+    groups.extend([key] for key in alone[:_MAX_NAMED_FIELDS])
+    return [group for group in groups if group]
 
 
 def _shown(lst: _List, kept: int) -> str:
@@ -431,6 +478,8 @@ def _cut_hint(
     primary: _List,
     cut: list[_List],
     kept: dict[tuple[str, ...], int],
+    lists: list[_List],
+    room: int | None,
     tick: Tick,
 ) -> str:
     hint = _shown(primary, kept[primary.path])
@@ -459,9 +508,11 @@ def _cut_hint(
         and _is_records_list(payload, primary.path)
     ):
         levers.append(f"limit={kept[primary.path]} beside params")
-    whole = _uncut_lists(payload, cut, kept, tick)
-    if whole:
-        levers.append(f"fields={json.dumps(whole)} for the lists kept whole")
+    for index, names in enumerate(_fit_whole_alone(payload, lists, cut, kept, room, tick)):
+        # The first set fits together; each later one is a cut list that fits
+        # the cap only by itself.
+        reason = "the lists that fit whole on their own" if index == 0 else "that list alone"
+        levers.append(f"fields={json.dumps(names)} for {reason}")
     if levers:
         hint += " To choose what is kept, pass " + ", or ".join(levers) + "."
     return hint
@@ -669,12 +720,16 @@ def cut_to_fit(
         biggest = max(_each(lists, tick), key=lambda lst: lst.chars)
         estimate = {lst.path: lst.n for lst in _each(lists, tick)}
         estimated = _notice(
-            payload, endpoint, biggest, lists, estimate, size=size, kept_chars=cap, cap=cap, tick=tick
+            payload, endpoint, biggest, lists, estimate,
+            lists=lists, room=None, size=size, kept_chars=cap, cap=cap, tick=tick,
         )
         tick()
         reserve = response_chars(estimated) + 25
         tick()
         target = cap - reserve
+        # What fields naming one list alone leaves that list: the cap less
+        # the response outside the lists and less the notice's reserve.
+        room = target - shell
         ceiling = ceiling_for(target)
         previous: dict[tuple[str, ...], int] | None = None
         for _ in range(MAX_SHRINK_PASSES):
@@ -696,7 +751,8 @@ def cut_to_fit(
                 replacements[lst.path] = lst.records[low:high]
             result = _with_lists(payload, replacements, tick)
             notice = _notice(
-                payload, endpoint, primary, cut, kept, size=size, kept_chars=0, cap=cap, tick=tick
+                payload, endpoint, primary, cut, kept,
+                lists=lists, room=room, size=size, kept_chars=0, cap=cap, tick=tick,
             )
             _with_notice(result, notice)
             # kept_chars is written as 0 and measured; the true value has
@@ -739,6 +795,8 @@ def _notice(
     cut: list[_List],
     kept: dict[tuple[str, ...], int],
     *,
+    lists: list[_List],
+    room: int | None,
     size: int,
     kept_chars: int,
     cap: int,
@@ -754,7 +812,7 @@ def _notice(
         "original_chars": size,
         "kept_chars": kept_chars,
         "cap_chars": cap,
-        "retry_hint": _cut_hint(payload, endpoint, primary, cut, kept, tick),
+        "retry_hint": _cut_hint(payload, endpoint, primary, cut, kept, lists, room, tick),
     }
     if len(cut) > 1:
         entries = []

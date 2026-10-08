@@ -405,7 +405,7 @@ def test_a_refusal_naming_a_huge_key_still_fits() -> None:
     assert result["error"] == "response_too_large"
     assert _fits(result)
     assert "retry_hint" not in result
-    assert result["message"] == f"Response is about {chars(payload):,} characters; the limit is 18,000 characters."
+    assert result["message"] == f"Response is about {chars(payload):,} characters; the limit is {MAX_RESPONSE_CHARS:,} characters."
 
 
 def test_a_refusal_for_a_huge_url_still_fits() -> None:
@@ -564,7 +564,7 @@ async def test_a_cut_that_blocks_past_its_clock_is_answered_within_the_grace(mon
 
     assert entered.is_set()
     assert result["error"] == "response_too_large"
-    assert result["message"] == "Response is over the limit of 18,000 characters."
+    assert result["message"] == f"Response is over the limit of {MAX_RESPONSE_CHARS:,} characters."
     assert result["response_chars"] is None
     # The clock plus the grace, and the request and the fit check around it;
     # without the bound the answer would wait the ten seconds of the block.
@@ -734,7 +734,7 @@ async def test_a_call_endpoint_cut_that_blocks_is_answered_within_its_bound(monk
         cutter.release.set()
 
     assert result["error"] == "response_too_large"
-    assert result["message"] == "Response is over the limit of 18,000 characters."
+    assert result["message"] == f"Response is over the limit of {MAX_RESPONSE_CHARS:,} characters."
     assert result["response_chars"] is None
     # Without the bound the answer would wait the ten seconds of the block.
     assert waited < 2.0
