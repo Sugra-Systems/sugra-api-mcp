@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 
 from sugra_api_mcp.catalog.aliases import (
+    country_statistic_words,
     detect_currency_pairs,
     detect_tickers,
     detect_us_macro_query,
@@ -2325,6 +2326,133 @@ def test_an_operation_computed_from_inflation_is_no_inflation_series(catalog) ->
     assert "imf_signals_telecom_demand_country" not in top_5, top_5
     top = search_catalog(catalog, "telecom demand Netherlands", limit=1)[0]["operation_id"]
     assert top == "imf_signals_telecom_demand_country", top
+
+
+# ---- A statistic every country reports, asked for no country -----------------------
+
+@pytest.mark.parametrize("query", [
+    "inflation", "inflation rate", "current inflation rate", "what drives inflation",
+    "how do oil prices affect inflation", "how does the price of oil affect inflation",
+    "oil prices and inflation", "inflation and oil prices", "oil price inflation",
+    "how does inflation affect gold", "inflation in emerging markets",
+    "unemployment", "unemployment rate", "GDP", "real GDP growth", "CPI",
+])
+def test_a_statistic_asked_for_no_country_finds_an_operation_that_takes_the_country(
+    catalog, query: str,
+) -> None:
+    """The inflation of Argentina, the unemployment of Finland and the GDP of
+    Spain ranked first for a question that names no country."""
+    from sugra_api_mcp.catalog.aliases import SOURCE_COUNTRY_PREFIXES
+
+    top = search_catalog(catalog, query, limit=1)[0]["operation_id"]
+    endpoint = next(e for e in catalog.endpoints if e.operation_id == top)
+    assert not top.startswith(tuple(SOURCE_COUNTRY_PREFIXES)), top
+    assert any(parameter.name.lower() == "country" for parameter in endpoint.parameters), top
+
+
+def test_a_national_source_stepped_down_keeps_its_rank_over_unrelated_operations(catalog) -> None:
+    """Pushed below the weakest operation that takes the country, FRED fell
+    below price histories of prediction-market tokens, which match only
+    "history" and a word of the CPI alias."""
+    results = search_catalog(catalog, "inflation history since 1970", limit=200)
+    ranks = {r["operation_id"]: i for i, r in enumerate(results)}
+    fred = ranks["fred_series_series_id"]
+    for operation in ("predictions_price_history_token_id", "onchain_bitcoin_price_history"):
+        assert ranks.get(operation, len(ranks)) > fred, (operation, ranks.get(operation), fred)
+
+
+@pytest.mark.parametrize("query,expected", [
+    ("Argentina inflation", "central_banks_bcra_inflation"),
+    ("Australia inflation", "rba_cpi"),
+    # No operation that takes the country holds the coffee price; FRED does.
+    ("coffee prices and inflation", "fred_series_series_id"),
+])
+def test_a_national_source_keeps_first_place_where_the_question_asks_for_it(
+    catalog, query: str, expected: str,
+) -> None:
+    top = search_catalog(catalog, query, limit=1)[0]["operation_id"]
+    assert top == expected, top
+
+
+@pytest.mark.parametrize("query,words", [
+    ("GDP", {"gdp"}),
+    ("CPI inflation", {"cpi", "inflation"}),
+    ("the exchange rate and unemployment", {"unemployment"}),
+    ("interest rate", set()),
+    ("bond yield and the trade balance", set()),
+])
+def test_only_a_one_word_statistic_asks_for_any_country(query: str, words: set[str]) -> None:
+    """One query word matched in an operation's fields says the operation
+    answers the statistic, so the cues of two words stay out."""
+    assert country_statistic_words(query) == words
+
+
+_ANY_COUNTRY_NOTES = {"pattern:any-country->param", "lifted-above:national-sources",
+                      "clamped-below:any-country-answers"}
+
+
+@pytest.mark.parametrize("query", [
+    "Henry Hub and inflation",  # a benchmark's market
+    "Fed interest rate and inflation",  # a central bank
+    "ECB inflation",
+    "AAPL inflation",  # a listing
+    "us inflation",  # the United States, in any spelling
+    "U.S. inflation",
+])
+def test_a_question_that_names_a_place_asks_for_no_other_country(catalog, query: str) -> None:
+    for row in search_catalog(catalog, query, limit=2000):
+        assert not _ANY_COUNTRY_NOTES & set(row["why"]), (row["operation_id"], row["why"])
+
+
+def test_an_operation_that_answers_through_the_statistics_alias_takes_the_country(catalog) -> None:
+    """The country profile answers "unemployment" with its jobless rate, a word
+    of the statistic's alias. Counted by its own words alone, it would lose the
+    boost, and the ILO gender gap would take first place."""
+    results = search_catalog(catalog, "unemployment", limit=10)
+    assert results[0]["operation_id"] == "ilostat_unemployment", [r["operation_id"] for r in results]
+    profile = next(r for r in results if r["operation_id"] == "macro_country_profile")
+    assert "pattern:any-country->param" in profile["why"], profile["why"]
+
+
+def test_an_operation_in_neither_group_keeps_its_rank(catalog) -> None:
+    """The Penn World Table takes the country as an ISO3 code, so it neither
+    earns the boost nor is a national source: it keeps its place above the
+    national GDP sources."""
+    results = search_catalog(catalog, "GDP", limit=200)
+    ranks = {r["operation_id"]: i for i, r in enumerate(results)}
+    pwt = ranks["research_pwt_country_iso3"]
+    for operation in ("ine_gdp", "ons_gdp", "stat_finland_gdp"):
+        assert ranks.get(operation, len(ranks)) > pwt, (operation, ranks.get(operation), pwt)
+
+
+def test_a_two_letter_word_keeps_no_national_source_in_place(catalog) -> None:
+    """Denmark's EU-harmonised price index names the EU in its summary; two
+    letters are too short to be a word that only it answers."""
+    row = next(r for r in search_catalog(catalog, "EU inflation", limit=50)
+               if r["operation_id"] == "statistical_agencies_statbank_dk_hicp")
+    assert "clamped-below:any-country-answers" in row["why"], row["why"]
+
+
+def test_an_equal_score_never_ranks_a_national_source_first() -> None:
+    """Equal scores fell back on operation_id order, so a national source
+    could still rank above an operation that takes the country. An operation
+    in neither group keeps its slot between them."""
+    from sugra_api_mcp.catalog.models import Catalog, Endpoint, EndpointParameter
+
+    country = EndpointParameter(name="country", location="query")
+    # The country boost stands in for the path and the description: a tie.
+    takes = Endpoint(operation_id="world_widget", method="GET", path="/x",
+                     summary="Inflation", parameters=[country])
+    national = Endpoint(operation_id="ine_widget", method="GET", path="/inflation",
+                        summary="Inflation", description="Inflation")
+    neither = Endpoint(operation_id="jj_widget", method="GET", path="/inflation",
+                       summary="Inflation", description="Inflation")
+    tied = Catalog(source="test", endpoints=[national, neither, takes])
+    results = search_catalog(tied, "inflation", limit=5)
+    assert len({r["score"] for r in results}) == 1, results
+    assert [r["operation_id"] for r in results] == ["world_widget", "jj_widget", "ine_widget"]
+    assert "lifted-above:national-sources" in results[0]["why"], results[0]["why"]
+    assert "clamped-below:any-country-answers" in results[2]["why"], results[2]["why"]
 
 
 # ---- Currency words, a country prefix, a singular strait ---------------------------

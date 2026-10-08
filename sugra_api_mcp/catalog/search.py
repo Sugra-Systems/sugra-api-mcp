@@ -14,6 +14,7 @@ from .aliases import (
     OPERATION_INPUT_WORDS,
     SOURCE_ALSO_SERVES,
     SOURCE_COUNTRY_PREFIXES,
+    country_statistic_words,
     detect_currency_pairs,
     detect_fx_request,
     detect_named_operations,
@@ -26,6 +27,7 @@ from .aliases import (
     matching_aliases,
     matching_central_bank_prefixes,
     query_has_equity_context,
+    query_names_united_states,
     topic_default_operations,
 )
 from .macro_keys import match_macro_keys
@@ -344,6 +346,9 @@ def _score(
     own_named_words: frozenset[str] = frozenset(),
     macro_key_operations: dict[str, str] | None = None,
     country_answers: set[str] | None = None,
+    any_country_cues: frozenset[str] = frozenset(),
+    place_answers: set[str] | None = None,
+    term_hits: dict[str, tuple[frozenset[str], frozenset[str]]] | None = None,
 ) -> tuple[int, list[str]]:
     """Score one endpoint for the query.
 
@@ -353,6 +358,15 @@ def _score(
     ``country_answers``, when given, collects the endpoint's operation_id if
     it answers for the country the query names: the country-parameter boost
     reached it and it is no national source of another country.
+
+    ``any_country_cues`` holds the statistic words of a question that names
+    no place, which asks for that statistic for whichever country the user
+    means: an operation that takes the country as a parameter, is no national
+    source and matches one of those words in any field answers it, so it
+    earns the country-parameter boost, and ``place_answers``, when given,
+    collects its operation_id. ``term_hits``, when given, records the query
+    words the endpoint matches in a field other than its description, and
+    those it matches in any field.
     """
     alias_terms = [term for terms in aliases.values() for term in terms]
     all_terms = [*query_terms, *_tokens(" ".join(alias_terms))]
@@ -381,6 +395,9 @@ def _score(
     silenced |= named_words - own_named_words
 
     alias_consumed: set[str] = set()
+    # The statistic words the alias that matched stands for: "consumer price
+    # index" answers "inflation" as the word itself does.
+    alias_statistics: frozenset[str] = frozenset()
     for phrase, expansions in aliases.items():
         if any(
             _alias_matches_profile(profile, expansion)
@@ -394,6 +411,7 @@ def _score(
             # not be re-paid through the coverage bonus (double-paying
             # 'exchange rate' lifted CB converters over the forex namespace).
             alias_consumed.update(_tokens(phrase))
+            alias_statistics = any_country_cues & {phrase, *expansions}
             break
 
     if named is not None:
@@ -475,6 +493,8 @@ def _score(
             why.append("pattern:us-macro->fed")
 
     matched_query_terms: set[str] = set()
+    strong_words: set[str] = set()
+    matched_words: set[str] = set(alias_statistics)
     for term in all_terms:
         if term in silenced:
             continue
@@ -510,6 +530,11 @@ def _score(
                 topic_hit = True
         if hit and term not in country_terms:
             topic_hit = True
+        if any_country_cues and term in query_terms and len(term) >= 3:
+            if hit:
+                strong_words.add(term)
+            if hit or term in profile.description:
+                matched_words.add(term)
         # Coverage counts STRONG-field hits only (a description-only match
         # is too weak), skips sub-3-letter noise ('is' matched a parameter and
         # re-ranked the NVDA prompt), and skips tokens a pattern detector
@@ -566,6 +591,15 @@ def _score(
             why.append("pattern:country->param")
             if country_answers is not None and not mismatched:
                 country_answers.add(endpoint.operation_id)
+    elif (any_country_cues & matched_words and profile.takes_country_param
+          and _source_country(endpoint) is None):
+        score += COUNTRY_PARAM_BOOST
+        why.append("pattern:any-country->param")
+        if place_answers is not None:
+            place_answers.add(endpoint.operation_id)
+
+    if term_hits is not None:
+        term_hits[endpoint.operation_id] = (frozenset(strong_words), frozenset(matched_words))
 
     # Deprecation: never above the live replacement.
     if endpoint.deprecated and endpoint.replaced_by:
@@ -842,9 +876,19 @@ def search_catalog(
     ))
     if macro_matches:
         boost_us_macro = False
+    # A question that names no place - no country in any spelling, no
+    # currency's issuer, no market or port, no central bank, no listing - and
+    # asks for a statistic every country reports asks for it for whichever
+    # country the user means.
+    any_country_cues = frozenset() if (
+        penalty_countries or central_bank_prefixes or has_ticker_token
+        or query_names_united_states(query)
+    ) else country_statistic_words(query)
 
     scored: list[tuple[int, Endpoint, list[str]]] = []
     country_answers: set[str] = set()
+    place_answers: set[str] = set()
+    term_hits: dict[str, tuple[frozenset[str], frozenset[str]]] = {}
     for endpoint in catalog.endpoints:
         if not _in_scope(endpoint, toolset, source):
             continue
@@ -870,6 +914,9 @@ def search_catalog(
             own_named_words=own_named_words.get(endpoint.operation_id, frozenset()),
             macro_key_operations=macro_key_operations,
             country_answers=country_answers,
+            any_country_cues=any_country_cues,
+            place_answers=place_answers,
+            term_hits=term_hits if any_country_cues else None,
         )
         if score > 0:
             scored.append((score, endpoint, why))
@@ -897,6 +944,54 @@ def search_catalog(
             if _is_foreign_source(endpoint, penalty_countries) and score >= floor:
                 scored[i] = (floor - 1, endpoint, [*why, "clamped-below:country-answers"])
 
+    # Equal scores: the default operation of a topic word the query names
+    # comes first ("weather" -> the worldwide forecast), then operation_id.
+    defaults = topic_default_operations(query)
+
+    def tie_break(endpoint: Endpoint) -> tuple[bool, str]:
+        return endpoint.operation_id not in defaults, endpoint.operation_id
+
+    # Structural guarantee: a question that names no place and asks for a
+    # statistic every country reports ranks a national source that answers it
+    # below every operation that answers it for whichever country is meant,
+    # for the national source answers for one country the question never
+    # named: "how do oil prices affect inflation" found the inflation of
+    # Argentina first. A national source keeps its rank when it answers a word
+    # of the question that none of those operations answers: in "coffee prices
+    # and inflation" FRED holds the coffee price. The two groups trade the
+    # slots they hold in the ranking between them, each slot a score and a
+    # tie-break, so every other operation keeps its slot and an equal score
+    # never ranks a national source first: pushed below the weakest of those
+    # operations instead, the national sources fell below operations that
+    # answer nothing the question asks ("GDP" found a weather product first).
+    held: dict[str, tuple[bool, str]] = {}
+    places = [i for i, (_, endpoint, _) in enumerate(scored)
+              if endpoint.operation_id in place_answers]
+    if places:
+        answered = frozenset().union(
+            *(term_hits[scored[i][1].operation_id][1] for i in places))
+        national: list[int] = []
+        for i, (_, endpoint, _) in enumerate(scored):
+            strong, matched = term_hits[endpoint.operation_id]
+            if (endpoint.operation_id not in place_answers
+                    and _source_country(endpoint) is not None
+                    and any_country_cues & matched and not strong - answered):
+                national.append(i)
+
+        def slot_of(i: int) -> tuple[int, bool, str]:
+            return -scored[i][0], *tie_break(scored[i][1])
+
+        slots = sorted(slot_of(i) for i in [*places, *national])
+        ranked = [*sorted(places, key=slot_of), *sorted(national, key=slot_of)]
+        lifted = set(places)
+        for slot, i in zip(slots, ranked, strict=True):
+            if slot != slot_of(i):
+                _, endpoint, why = scored[i]
+                note = ("lifted-above:national-sources" if i in lifted
+                        else "clamped-below:any-country-answers")
+                scored[i] = (-slot[0], endpoint, [*why, note])
+                held[endpoint.operation_id] = slot[1:]
+
     # Structural guarantee: a deprecated route never outranks its live
     # replacement, whatever the token luck (a query built from the legacy
     # summary text otherwise always wins textually). Clamp strictly below.
@@ -913,11 +1008,9 @@ def search_catalog(
                              [*why, f"clamped-below:{endpoint.replaced_by}"])
 
     scored = [item for item in scored if item[0] > 0]
-    # Equal scores: the default operation of a topic word the query names
-    # comes first ("weather" -> the worldwide forecast), then operation_id.
-    defaults = topic_default_operations(query)
+    # A slot the trade above handed over keeps its tie-break.
     scored.sort(key=lambda item: (
-        -item[0], item[1].operation_id not in defaults, item[1].operation_id,
+        -item[0], *held.get(item[1].operation_id, tie_break(item[1])),
     ))
     return [
         {
