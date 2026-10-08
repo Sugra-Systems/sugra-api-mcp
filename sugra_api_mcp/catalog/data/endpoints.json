@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-10-07T19:57:55Z",
+  "built_at": "2026-10-08T13:39:46Z",
   "endpoint_count": 1625,
   "endpoints": [
     {
@@ -12362,14 +12362,14 @@
       "operation_id": "commodities_energy_petroleum",
       "parameters": [
         {
-          "description": "Number of observations",
+          "description": "Number of observations per series: Brent and WTI each get up to this many daily prices",
           "example": 50,
           "location": "query",
           "name": "limit",
           "required": false,
           "schema": {
             "default": 30,
-            "description": "Number of observations",
+            "description": "Number of observations per series: Brent and WTI each get up to this many daily prices",
             "maximum": 365,
             "minimum": 1,
             "title": "Limit",
@@ -30886,7 +30886,7 @@
           }
         },
         {
-          "description": "FRED value transform applied UPSTREAM: lin (level, default), chg (change), ch1 (change from year ago), pch (percent change), pc1 (percent change from year ago), pca (compounded annual rate of change), cch (continuously compounded change), cca (continuously compounded annual rate), log (natural log). Percent transforms return percent NUMBERS (pch=3.2 means 3.2 percent, not 0.032); the 'units' metadata field keeps the series' original units, so the applied transform is echoed under 'transform'.",
+          "description": "FRED value transform applied UPSTREAM: lin (level, default), chg (change), ch1 (change from year ago), pch (percent change), pc1 (percent change from year ago), pca (compounded annual rate of change), cch (continuously compounded change), cca (continuously compounded annual rate), log (natural log). Percent transforms return percent NUMBERS (pch=3.2 means 3.2 percent, not 0.032). With any transform but lin, 'units' and 'units_short' name the transform and the series' own labels move to 'level_units' and 'level_units_short'; the request is echoed under 'transform'.",
           "location": "query",
           "name": "units",
           "required": false,
@@ -30900,7 +30900,7 @@
                 "type": "null"
               }
             ],
-            "description": "FRED value transform applied UPSTREAM: lin (level, default), chg (change), ch1 (change from year ago), pch (percent change), pc1 (percent change from year ago), pca (compounded annual rate of change), cch (continuously compounded change), cca (continuously compounded annual rate), log (natural log). Percent transforms return percent NUMBERS (pch=3.2 means 3.2 percent, not 0.032); the 'units' metadata field keeps the series' original units, so the applied transform is echoed under 'transform'.",
+            "description": "FRED value transform applied UPSTREAM: lin (level, default), chg (change), ch1 (change from year ago), pch (percent change), pc1 (percent change from year ago), pca (compounded annual rate of change), cch (continuously compounded change), cca (continuously compounded annual rate), log (natural log). Percent transforms return percent NUMBERS (pch=3.2 means 3.2 percent, not 0.032). With any transform but lin, 'units' and 'units_short' name the transform and the series' own labels move to 'level_units' and 'level_units_short'; the request is echoed under 'transform'.",
             "title": "Units"
           }
         }
@@ -95817,5 +95817,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "f0d3e7e1a34cb6a942881a340792e113d9fc131ec14bc94cd07cc89999201533"
+  "spec_sha256": "c8d205e680385cf1039d067a7729976b31caa3cf3cffeaa1fbae34097bffe274"
 }
