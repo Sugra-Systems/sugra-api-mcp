@@ -12,6 +12,7 @@ from .aliases import (
     FX_CONVERT_OPERATION,
     MEETING_CALENDAR_OPERATIONS,
     OPERATION_INPUT_WORDS,
+    SOURCE_ALSO_SERVES,
     SOURCE_COUNTRY_PREFIXES,
     detect_currency_pairs,
     detect_fx_request,
@@ -308,9 +309,18 @@ def _source_country(endpoint: Endpoint) -> str | None:
 
 
 def _is_foreign_source(endpoint: Endpoint, countries: set[str]) -> bool:
-    """Whether the endpoint is a national source of none of the countries."""
+    """Whether the endpoint is a national source of none of the countries.
+
+    A source that also answers for a place the query names is no foreign
+    source there: the National Weather Service warns for Puerto Rico.
+    """
     country = _source_country(endpoint) if countries else None
-    return country is not None and country not in countries
+    if country is None or country in countries:
+        return False
+    return not any(
+        endpoint.operation_id.startswith(prefix) and not places.isdisjoint(countries)
+        for prefix, places in SOURCE_ALSO_SERVES.items()
+    )
 
 
 def _score(
@@ -331,10 +341,14 @@ def _score(
     penalty_countries: set[str] | None = None,
     named_operations: dict[str, str] | None = None,
     named_words: frozenset[str] = frozenset(),
+    own_named_words: frozenset[str] = frozenset(),
     macro_key_operations: dict[str, str] | None = None,
     country_answers: set[str] | None = None,
 ) -> tuple[int, list[str]]:
     """Score one endpoint for the query.
+
+    ``named_words`` are the query words of every name the query holds, and
+    ``own_named_words`` those of the names that point to this endpoint.
 
     ``country_answers``, when given, collects the endpoint's operation_id if
     it answers for the country the query names: the country-parameter boost
@@ -362,9 +376,9 @@ def _score(
     # The words of a name score for the operations it names alone: in "oil
     # price history" the words "oil" and "price" name the oil price, and
     # scoring them for every operation that says "price" put a prediction
-    # market's price history above it.
-    if named is None:
-        silenced |= named_words
+    # market's price history above it. In "oil price and Henry Hub" the gas
+    # benchmark scores "henry" and "hub", never "oil" or "price".
+    silenced |= named_words - own_named_words
 
     alias_consumed: set[str] = set()
     for phrase, expansions in aliases.items():
@@ -739,6 +753,13 @@ def search_catalog(
     policy_rate = detect_policy_rate_request(query, terms, central_bank_prefixes)
     for operation, words in policy_rate.operations.items():
         named_operations.setdefault(operation, words)
+    # Each name's words belong to the operations it points to.
+    named_words = named.words | policy_rate.words
+    own_named_words = dict(named.operation_words)
+    for operation in policy_rate.operations:
+        own_named_words[operation] = (
+            own_named_words.get(operation, frozenset()) | policy_rate.words
+        )
     # A meeting of the bank the query names is the calendar's question: the
     # calendar counts as that bank's own operation, so the bank's name lifts
     # it as it lifts the bank's rates ("when is the next Fed meeting").
@@ -845,7 +866,8 @@ def search_catalog(
             country_terms=country_terms,
             penalty_countries=penalty_countries,
             named_operations=named_operations,
-            named_words=named.words | policy_rate.words,
+            named_words=named_words,
+            own_named_words=own_named_words.get(endpoint.operation_id, frozenset()),
             macro_key_operations=macro_key_operations,
             country_answers=country_answers,
         )
