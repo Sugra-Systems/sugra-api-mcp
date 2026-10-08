@@ -1665,6 +1665,7 @@ def test_the_words_of_a_name_score_for_the_named_operation_alone() -> None:
     _, why = _score(endpoint, terms, {}, named_words=frozenset({"oil", "price"}), **_SCORE_FLAGS)
     assert "summary:price" not in why and "summary:history" in why, why
     _, why = _score(endpoint, terms, {}, named_words=frozenset({"oil", "price"}),
+                    own_named_words=frozenset({"oil", "price"}),
                     named_operations={"widget_price_history": "oil price"}, **_SCORE_FLAGS)
     assert "summary:price" in why, why
 
@@ -2393,3 +2394,102 @@ def test_the_turkish_strait_is_named_in_the_singular_and_the_plural(query: str) 
     from sugra_api_mcp.catalog.aliases import detect_named_operations
 
     assert detect_named_operations(query).operations == {"maritime_chokepoints_activity": "turkish strait"}
+
+
+# ---- The US territories, and two names in one question ------------------------------
+# The National Weather Service warns, forecasts and observes for Puerto Rico,
+# Guam, the US Virgin Islands, American Samoa and the Northern Mariana Islands.
+# Marked a national source of the United States alone, it was stepped down as
+# another country's source there: a worldwide forecast, a network outage list
+# and an air-quality forecast ranked first.
+
+_NWS_ALERTS = {"weather_nws_alerts_active", "weather_us_alerts"}
+
+
+@pytest.mark.parametrize("query,expected", [
+    ("weather alerts puerto rico", _NWS_ALERTS),
+    ("active weather alerts in puerto rico", _NWS_ALERTS),
+    ("guam weather alerts", _NWS_ALERTS),
+    ("nws alerts guam", _NWS_ALERTS),
+    ("weather alerts us virgin islands", _NWS_ALERTS),
+    ("american samoa weather alerts", _NWS_ALERTS),
+    ("northern mariana islands weather alerts", _NWS_ALERTS),
+    ("nws forecast puerto rico", {"weather_nws_forecast", "weather_nws_forecast_hourly"}),
+    ("weather stations in puerto rico", {"weather_nws_stations"}),
+    ("radar guam", {"weather_nws_radar_stations"}),
+])
+def test_the_weather_service_answers_for_the_us_territories(catalog, query: str, expected: set[str]) -> None:
+    top = search_catalog(catalog, query, limit=1)[0]["operation_id"]
+    assert top in expected, (query, top)
+
+
+@pytest.mark.parametrize("query", ["weather alerts in mexico", "weather alerts venezuela"])
+def test_the_weather_service_still_steps_down_for_another_country(catalog, query: str) -> None:
+    top_3 = [r["operation_id"] for r in search_catalog(catalog, query, limit=3)]
+    assert not any(op.startswith(("weather_nws_", "weather_us_")) for op in top_3), top_3
+
+
+@pytest.mark.parametrize("query", ["Puerto Rico GDP", "Guam GDP", "American Samoa GDP", "American Samoan GDP"])
+def test_a_territory_gdp_question_finds_no_weather_text_product(catalog, query: str) -> None:
+    """The word "product" of gross domestic product matches the weather
+    service's text product listing, which therefore serves no territory."""
+    top = search_catalog(catalog, query, limit=1)[0]["operation_id"]
+    assert not top.startswith("weather_"), top
+
+
+def test_a_source_that_also_serves_a_place_is_no_foreign_source_there(catalog) -> None:
+    from sugra_api_mcp.catalog.search import _is_foreign_source
+
+    alerts = catalog.get("weather_nws_alerts_active")
+    assert not _is_foreign_source(alerts, {"PR"})
+    assert not _is_foreign_source(alerts, {"GU", "MX"})
+    assert _is_foreign_source(alerts, {"MX"})
+    assert _is_foreign_source(catalog.get("weather_nws_product_type_id_location_id_latest"), {"PR"})
+
+
+def test_every_place_a_source_also_serves_belongs_to_a_live_national_source(catalog) -> None:
+    """A prefix that matches no operation serves nothing, and an operation
+    that is no national source has no country to add places to."""
+    from sugra_api_mcp.catalog.aliases import SOURCE_ALSO_SERVES, SOURCE_COUNTRY_PREFIXES
+
+    ids = [endpoint.operation_id for endpoint in catalog.endpoints]
+    for prefix, places in SOURCE_ALSO_SERVES.items():
+        matched = [op for op in ids if op.startswith(prefix)]
+        assert matched, prefix
+        for op in matched:
+            countries = {c for p, c in SOURCE_COUNTRY_PREFIXES.items() if op.startswith(p)}
+            assert countries and countries.isdisjoint(places), (prefix, op, countries)
+
+
+def test_a_word_of_another_operations_name_is_silenced() -> None:
+    from sugra_api_mcp.catalog.models import Endpoint
+    from sugra_api_mcp.catalog.search import _score
+
+    endpoint = Endpoint(operation_id="gas_hub_price", method="GET", path="/x",
+                        summary="Hub gas price", toolset="markets")
+    terms = ["oil", "price", "henry", "hub"]
+    _, why = _score(endpoint, terms, {}, named_words=frozenset(terms),
+                    own_named_words=frozenset({"henry", "hub"}),
+                    named_operations={"gas_hub_price": "henry hub", "oil_spot": "oil price"},
+                    **_SCORE_FLAGS)
+    assert "summary:hub" in why and "summary:price" not in why, why
+
+
+def _scored_words(why: list[str]) -> set[str]:
+    return {reason.split(":", 1)[1] for reason in why if not reason.startswith("name:")}
+
+
+@pytest.mark.parametrize("query,operation,other_name", [
+    ("oil price and henry hub", "commodities_energy_natural_gas", {"oil", "price"}),
+    ("oil price and henry hub", _OIL, {"henry", "hub"}),
+    ("ttf and brent", "commodities_commodity_id", {"brent"}),
+    ("trucking freight rates and oil price", _TRUCKING, {"oil"}),
+])
+def test_in_a_question_with_two_names_each_operation_scores_its_own(
+    catalog, query: str, operation: str, other_name: set[str],
+) -> None:
+    """The commodity operation's description lists Brent, and "ttf and
+    brent" ranked it first on the oil's name as well as its own."""
+    results = {r["operation_id"]: r for r in search_catalog(catalog, query, limit=3)}
+    assert operation in results, list(results)
+    assert not _scored_words(results[operation]["why"]) & other_name, results[operation]["why"]

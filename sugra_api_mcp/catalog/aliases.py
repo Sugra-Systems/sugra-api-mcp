@@ -233,8 +233,9 @@ SOURCE_COUNTRY_PREFIXES: dict[str, str] = {
     "treasury_gold": "US", "treasury_interest_": "US", "treasury_rates": "US",
     "usaspending_agencies": "US", "usaspending_agency_": "US", "usaspending_budget_": "US",
     "usaspending_last_": "US", "usaspending_spending": "US",
-    # The National Weather Service serves the United States alone: its
-    # product listing ranked first for "Venezuelan GDP".
+    # The National Weather Service serves the United States and its
+    # territories alone (SOURCE_ALSO_SERVES): its product listing ranked first
+    # for "Venezuelan GDP".
     "weather_nws_": "US", "weather_us_alerts": "US", "weather_us_forecast": "US",
     # Port and vessel sources of one country: Fintraffic Portnet covers
     # Finnish ports only, and the NOAA AIS history (the successor of
@@ -245,6 +246,24 @@ SOURCE_COUNTRY_PREFIXES: dict[str, str] = {
 # The dead-prefix test (tests/test_search_relevance.py) guards this map: every
 # entry must match at least one bundled operation, so a source rename or
 # removal fails loudly instead of silently disarming the geography penalty.
+
+# The places a national source answers for besides its own country, by
+# operation_id prefix: the National Weather Service warns, forecasts and
+# observes for the US territories as well as the states, so "weather alerts in
+# Puerto Rico" is its question, not a foreign source's. Its glossary answers
+# for no place, and its text product listing stays out: its word "product"
+# matches the gross domestic product of a GDP question ("American Samoa GDP"
+# found it first).
+US_TERRITORIES: frozenset[str] = frozenset({"AS", "GU", "MP", "PR", "VI"})
+SOURCE_ALSO_SERVES: dict[str, frozenset[str]] = {
+    prefix: US_TERRITORIES
+    for prefix in (
+        "weather_nws_alert", "weather_nws_aviation_", "weather_nws_forecast",
+        "weather_nws_office_", "weather_nws_point", "weather_nws_radar_",
+        "weather_nws_station", "weather_nws_zones", "weather_us_alerts",
+        "weather_us_forecast",
+    )
+}
 
 # Query-side country vocabulary: a comprehensive generated module, because
 # a closed 30-entry list recreated silent substitution for every omitted
@@ -1358,6 +1377,8 @@ class NamedRequest:
     operations: dict[str, str]   # operation_id -> the name that points to it
     countries: frozenset[str]    # where the named benchmark or port is
     words: frozenset[str]        # the query tokens of those names
+    # operation_id -> the query tokens of the names that point to it
+    operation_words: dict[str, frozenset[str]]
 
 
 def detect_named_operations(query: str) -> NamedRequest:
@@ -1382,6 +1403,7 @@ def detect_named_operations(query: str) -> NamedRequest:
     operations: dict[str, str] = {}
     countries: set[str] = set()
     words: set[str] = set()
+    operation_words: dict[str, set[str]] = {}
     names = [
         (start, end, name, NAMED_OPERATIONS[name])
         for start, end, name in _claim_names(_blank(tokens, _NAME_BLOCKERS), NAMED_OPERATIONS)
@@ -1401,6 +1423,7 @@ def detect_named_operations(query: str) -> NamedRequest:
             continue
         for op in targets:
             operations.setdefault(op, name)
+            operation_words.setdefault(op, set()).update(tokens[start:end])
         if name in NAMED_PLACES:
             countries.add(NAMED_PLACES[name])
         words.update(tokens[start:end])
@@ -1414,7 +1437,12 @@ def detect_named_operations(query: str) -> NamedRequest:
         for start, end, name in ports:
             countries.add(PORT_COUNTRIES[name])
             words.update(tokens[start:end])
-    return NamedRequest(operations, frozenset(countries), frozenset(words))
+            for op in PORT_OPERATIONS:
+                operation_words.setdefault(op, set()).update(tokens[start:end])
+    return NamedRequest(
+        operations, frozenset(countries), frozenset(words),
+        {op: frozenset(found) for op, found in operation_words.items()},
+    )
 
 
 # The operation a topic word means when the query asks nothing narrower:
