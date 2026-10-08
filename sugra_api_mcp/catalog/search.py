@@ -11,11 +11,13 @@ from .aliases import (
     COMPOUND_NAMED_OPERATIONS,
     FX_CONVERT_OPERATION,
     MEETING_CALENDAR_OPERATIONS,
+    OPERATION_INPUT_WORDS,
     SOURCE_COUNTRY_PREFIXES,
     detect_currency_pairs,
     detect_fx_request,
     detect_named_operations,
     detect_network_terms,
+    detect_policy_rate_request,
     detect_query_countries,
     detect_tickers,
     detect_us_macro_query,
@@ -297,6 +299,20 @@ def _alias_matches_profile(profile: _EndpointProfile, expansion: str) -> bool:
     return bool(normalized_phrase) and normalized_phrase in profile.text_normalized
 
 
+def _source_country(endpoint: Endpoint) -> str | None:
+    """The country of the national source the endpoint belongs to, if any."""
+    for prefix, country in SOURCE_COUNTRY_PREFIXES.items():
+        if endpoint.operation_id.startswith(prefix):
+            return country
+    return None
+
+
+def _is_foreign_source(endpoint: Endpoint, countries: set[str]) -> bool:
+    """Whether the endpoint is a national source of none of the countries."""
+    country = _source_country(endpoint) if countries else None
+    return country is not None and country not in countries
+
+
 def _score(
     endpoint: Endpoint,
     query_terms: list[str],
@@ -314,8 +330,16 @@ def _score(
     country_terms: frozenset[str] = frozenset(),
     penalty_countries: set[str] | None = None,
     named_operations: dict[str, str] | None = None,
+    named_words: frozenset[str] = frozenset(),
     macro_key_operations: dict[str, str] | None = None,
+    country_answers: set[str] | None = None,
 ) -> tuple[int, list[str]]:
+    """Score one endpoint for the query.
+
+    ``country_answers``, when given, collects the endpoint's operation_id if
+    it answers for the country the query names: the country-parameter boost
+    reached it and it is no national source of another country.
+    """
     alias_terms = [term for terms in aliases.values() for term in terms]
     all_terms = [*query_terms, *_tokens(" ".join(alias_terms))]
     why: list[str] = []
@@ -325,9 +349,30 @@ def _score(
     # asks besides the country names it (see COUNTRY_PARAM_BOOST).
     topic_hit = False
 
+    named = (named_operations or {}).get(endpoint.operation_id)
+    # A compound-named operation answers one word of the compound only beside
+    # the other: "space weather" is solar activity, not the weather in Paris,
+    # and "real wages" are no real estate.
+    silenced = {
+        tail for prefix, (heads, tail) in COMPOUND_NAMED_OPERATIONS.items()
+        if endpoint.operation_id.startswith(prefix)
+        and not any(head in query_terms for head in heads)
+    }
+    silenced |= OPERATION_INPUT_WORDS.get(endpoint.operation_id, frozenset())
+    # The words of a name score for the operations it names alone: in "oil
+    # price history" the words "oil" and "price" name the oil price, and
+    # scoring them for every operation that says "price" put a prediction
+    # market's price history above it.
+    if named is None:
+        silenced |= named_words
+
     alias_consumed: set[str] = set()
     for phrase, expansions in aliases.items():
-        if any(_alias_matches_profile(profile, expansion) for expansion in expansions):
+        if any(
+            _alias_matches_profile(profile, expansion)
+            for expansion in expansions
+            if not set(_tokens(expansion)) <= silenced
+        ):
             score += ALIAS_PHRASE_BOOST
             topic_hit = True
             why.append(f"alias:{phrase}")
@@ -337,7 +382,6 @@ def _score(
             alias_consumed.update(_tokens(phrase))
             break
 
-    named = (named_operations or {}).get(endpoint.operation_id)
     if named is not None:
         score += NAMED_OPERATION_BOOST
         topic_hit = True
@@ -416,12 +460,6 @@ def _score(
             score += US_MACRO_FED_BOOST
             why.append("pattern:us-macro->fed")
 
-    # A compound-named operation answers the compound's last word only beside
-    # its first: "space weather" is solar activity, not the weather in Paris.
-    silenced = {
-        tail for prefix, (head, tail) in COMPOUND_NAMED_OPERATIONS.items()
-        if endpoint.operation_id.startswith(prefix) and head not in query_terms
-    }
     matched_query_terms: set[str] = set()
     for term in all_terms:
         if term in silenced:
@@ -482,7 +520,7 @@ def _score(
     # and handed the intent boost to toolset-less endpoints on any query.
     toolset_lower = endpoint.toolset.lower()
     for term in query_terms if len(toolset_lower) >= 4 else ():
-        if term in coverage_excluded:
+        if term in coverage_excluded or term in silenced:
             continue
         if term == toolset_lower or (
             len(term) >= 4 and (toolset_lower.startswith(term) or term.startswith(toolset_lower))
@@ -496,13 +534,10 @@ def _score(
     # places a query names without naming a country - a currency's issuer, a
     # benchmark's market, a port's country - count here too.
     penalized = query_countries if penalty_countries is None else penalty_countries
-    if penalized:
-        for prefix, country in SOURCE_COUNTRY_PREFIXES.items():
-            if endpoint.operation_id.startswith(prefix):
-                if country not in penalized:
-                    score -= WRONG_COUNTRY_PENALTY
-                    why.append(f"geo-mismatch:{country}")
-                break
+    mismatched = _is_foreign_source(endpoint, penalized)
+    if mismatched:
+        score -= WRONG_COUNTRY_PENALTY
+        why.append(f"geo-mismatch:{_source_country(endpoint)}")
 
     if query_countries:
         # A generic country-parameterized endpoint can answer for WHATEVER
@@ -515,6 +550,8 @@ def _score(
         if profile.takes_country_param and (country_only or topic_hit):
             score += COUNTRY_PARAM_BOOST
             why.append("pattern:country->param")
+            if country_answers is not None and not mismatched:
+                country_answers.add(endpoint.operation_id)
 
     # Deprecation: never above the live replacement.
     if endpoint.deprecated and endpoint.replaced_by:
@@ -694,6 +731,14 @@ def search_catalog(
     weather = detect_weather_request(query, terms)
     if weather is not None:
         named_operations.setdefault(weather.operation, weather.name)
+    # A policy-rate word beside a central bank's name, with nothing else asked,
+    # names the operation that holds the bank's policy rate, or the meeting
+    # calendar when it asks when. Its words then score for those operations
+    # alone, as a name's words do: "Bank Negara Malaysia interest rate" found
+    # the bank's interbank rate.
+    policy_rate = detect_policy_rate_request(query, terms, central_bank_prefixes)
+    for operation, words in policy_rate.operations.items():
+        named_operations.setdefault(operation, words)
     # A meeting of the bank the query names is the calendar's question: the
     # calendar counts as that bank's own operation, so the bank's name lifts
     # it as it lifts the bank's rates ("when is the next Fed meeting").
@@ -732,6 +777,7 @@ def search_catalog(
     # Currency and other names are consumed too: their boost IS their
     # contribution, and their places join the geography penalty below.
     consumed.update(named.words)
+    consumed.update(policy_rate.words)
     if weather is not None:
         consumed.update(weather.words)
     penalty_countries = set(query_countries) | named.countries
@@ -757,6 +803,13 @@ def search_catalog(
                                          query_countries=query_countries, ignore=filler)
                 if found:
                     macro_matches[endpoint.operation_id] = found
+    # The policy rate of a bank with no operation of its own is a curated key.
+    if policy_rate.keys:
+        for endpoint in catalog.endpoints:
+            if endpoint.macro_keys and _in_scope(endpoint, toolset, source):
+                found = [key for key in endpoint.macro_keys if key.key in policy_rate.keys]
+                if found:
+                    macro_matches[endpoint.operation_id] = found
     macro_key_operations = {op: found[0].key for op, found in macro_matches.items()}
     # The key names the series the US-macro boost reaches for through FRED's
     # generic proxy, so the boost stays on the proxy alone, below the key's
@@ -770,6 +823,7 @@ def search_catalog(
         boost_us_macro = False
 
     scored: list[tuple[int, Endpoint, list[str]]] = []
+    country_answers: set[str] = set()
     for endpoint in catalog.endpoints:
         if not _in_scope(endpoint, toolset, source):
             continue
@@ -791,7 +845,9 @@ def search_catalog(
             country_terms=country_terms,
             penalty_countries=penalty_countries,
             named_operations=named_operations,
+            named_words=named.words | policy_rate.words,
             macro_key_operations=macro_key_operations,
+            country_answers=country_answers,
         )
         if score > 0:
             scored.append((score, endpoint, why))
@@ -806,6 +862,18 @@ def search_catalog(
         for i, (score, endpoint, why) in enumerate(scored):
             if endpoint.operation_id == US_MACRO_PROXY_OPERATION and score >= key_score:
                 scored[i] = (key_score - 1, endpoint, [*why, f"clamped-below:{key_operation}"])
+
+    # Structural guarantee: a national source of a country the query does not
+    # name ranks below every operation that answers for the country it names:
+    # "Venezuelan GDP" found the GDP of Spain above the World Bank and the
+    # composite country profile, which take Venezuela.
+    answering = [score for score, endpoint, _ in scored
+                 if endpoint.operation_id in country_answers]
+    if answering:
+        floor = min(answering)
+        for i, (score, endpoint, why) in enumerate(scored):
+            if _is_foreign_source(endpoint, penalty_countries) and score >= floor:
+                scored[i] = (floor - 1, endpoint, [*why, "clamped-below:country-answers"])
 
     # Structural guarantee: a deprecated route never outranks its live
     # replacement, whatever the token luck (a query built from the legacy

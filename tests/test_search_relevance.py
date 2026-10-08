@@ -398,11 +398,12 @@ def test_single_generic_network_token_does_not_suppress_equity_boost(catalog) ->
 
 
 def test_central_bank_boost_narrows_to_correct_namespace(catalog) -> None:
-    """All top-5 for ECB queries should be ecb_*, not other central banks."""
+    """An ECB query ranks no other central bank: below the ECB's policy rate,
+    a curated series of the country macro operation, the top 5 are ecb_*."""
     results = search_catalog(catalog, "ECB interest rate", limit=5)
     top_5_ops = [r["operation_id"] for r in results[:5]]
-    ecb_count = sum(1 for op in top_5_ops if op.startswith("ecb_"))
-    assert ecb_count >= 4, (
+    assert top_5_ops[0] == "macro_country_section", top_5_ops
+    assert all(op.startswith("ecb_") for op in top_5_ops[1:]), (
         f"ECB query did not concentrate in ecb_* namespace: {top_5_ops}"
     )
 
@@ -510,6 +511,9 @@ def test_a_curated_series_lands_its_macro_key_first(catalog, query: str, key: st
     ("ECB meeting dates", "macro_cb_calendar"),
     ("next BoE meeting", "macro_cb_calendar"),
     ("central bank meeting calendar", "macro_cb_calendar_bank"),
+    # A rate decision asked about by its date is the meeting's question.
+    ("when is the next ECB rate decision", "macro_cb_calendar"),
+    ("next Fed rate decision date", "macro_cb_calendar"),
 ])
 def test_a_central_bank_meeting_lands_the_meeting_calendar(catalog, query: str, expected: str) -> None:
     """The bank's own operations hold its rates, not its meeting dates."""
@@ -1464,6 +1468,12 @@ PRICED_SUBJECT_NAMED = [
     ("oil's price", _OIL),
     ("price of Venezuelan crude", _OIL),
     ("Venezuelan oil price", _OIL),
+    # A demonym that names a country keeps naming an origin of the oil.
+    ("Iraqi oil price", _OIL),
+    ("Kuwaiti oil price", _OIL),
+    ("Angolan oil price", _OIL),
+    ("price of Libyan crude", _OIL),
+    ("Iranian crude oil price", _OIL),
     ("annual price of oil", _OIL),
     ("price of United States crude oil", _OIL),
     ("price of U.S. crude", _OIL),
@@ -1524,18 +1534,19 @@ PRICED_SUBJECT_NAMED = [
     ("trucking and rail freight rates", _TRUCKING),
     ("price index of trucking", _TRUCKING),
     ("PPI trucking", _TRUCKING),
-]
-
-# Named in either word order, though another operation ranks first: natural
-# gas is named beside oil, "history" and "predict" also match the
-# prediction-market operations' own names, a repeated "price" favours the
-# operations named after it, and inflation has operations of its own.
-PRICED_SUBJECT_NAMED_BESIDE_OTHERS = [
-    ("price of oil and natural gas", _OIL),
+    # The words of the name score for the named operation alone: "history"
+    # and "predict" matched the prediction-market operations' own names, and
+    # a repeated "price" the operations named after it.
     ("price history of oil", _OIL),
     ("oil price history", _OIL),
     ("predict the price of oil", _OIL),
     ("price of oil vs price of gold", _OIL),
+]
+
+# Named in either word order, though another operation ranks first: natural
+# gas is named beside oil, and inflation has operations of its own.
+PRICED_SUBJECT_NAMED_BESIDE_OTHERS = [
+    ("price of oil and natural gas", _OIL),
     ("how does the price of oil affect inflation", _OIL),
 ]
 
@@ -1635,6 +1646,27 @@ def test_a_priced_subject_is_named_beside_other_words(query: str, operation: str
     from sugra_api_mcp.catalog.aliases import detect_named_operations
 
     assert operation in detect_named_operations(query).operations
+
+
+def test_natural_gas_named_beside_oil_ranks_first(catalog) -> None:
+    """Its own words still score for the gas operation: only the words of
+    the oil's name score for the oil operation alone."""
+    top = [r["operation_id"] for r in search_catalog(catalog, "price of oil and natural gas", limit=2)]
+    assert top == ["commodities_energy_natural_gas", _OIL], top
+
+
+def test_the_words_of_a_name_score_for_the_named_operation_alone() -> None:
+    from sugra_api_mcp.catalog.models import Endpoint
+    from sugra_api_mcp.catalog.search import _score
+
+    endpoint = Endpoint(operation_id="widget_price_history", method="GET", path="/x",
+                        summary="Price history", toolset="markets")
+    terms = ["oil", "price", "history"]
+    _, why = _score(endpoint, terms, {}, named_words=frozenset({"oil", "price"}), **_SCORE_FLAGS)
+    assert "summary:price" not in why and "summary:history" in why, why
+    _, why = _score(endpoint, terms, {}, named_words=frozenset({"oil", "price"}),
+                    named_operations={"widget_price_history": "oil price"}, **_SCORE_FLAGS)
+    assert "summary:price" in why, why
 
 
 @pytest.mark.parametrize("query,operation", PRICED_SUBJECT_NOT_NAMED)
@@ -1862,10 +1894,12 @@ def test_every_named_target_is_a_bundled_operation(catalog) -> None:
     import re
 
     from sugra_api_mcp.catalog.aliases import (
+        CENTRAL_BANK_POLICY_RATES,
         COMPOUND_NAMED_OPERATIONS,
         FX_CONVERT_OPERATION,
         NAMED_OPERATIONS,
         NAMED_PLACES,
+        OPERATION_INPUT_WORDS,
         PORT_OPERATIONS,
         TOPIC_DEFAULT_OPERATIONS,
         US_WEATHER_OPERATION,
@@ -1877,12 +1911,13 @@ def test_every_named_target_is_a_bundled_operation(catalog) -> None:
     targets = {op for ops in NAMED_OPERATIONS.values() for op in ops}
     targets |= {*PORT_OPERATIONS, FX_CONVERT_OPERATION, *TOPIC_DEFAULT_OPERATIONS.values()}
     targets |= {WEATHER_FORECAST_OPERATION, WEATHER_HISTORY_OPERATION, US_WEATHER_OPERATION}
+    targets |= {*CENTRAL_BANK_POLICY_RATES.values(), *OPERATION_INPUT_WORDS}
     assert targets <= ids, f"names pointing to no bundled operation: {sorted(targets - ids)}"
     dead = [prefix for prefix in COMPOUND_NAMED_OPERATIONS
             if not any(op.startswith(prefix) for op in ids)]
     assert not dead, f"compound prefixes matching no bundled operation: {dead}"
-    for head, tail in COMPOUND_NAMED_OPERATIONS.values():
-        assert re.fullmatch(r"[a-z0-9]+", head) and re.fullmatch(r"[a-z0-9]+", tail)
+    for heads, tail in COMPOUND_NAMED_OPERATIONS.values():
+        assert heads and all(re.fullmatch(r"[a-z0-9]+", word) for word in (*heads, tail)), (heads, tail)
     assert set(NAMED_PLACES) <= set(NAMED_OPERATIONS)
 
 
@@ -2070,3 +2105,291 @@ def test_the_national_weather_countries_are_those_of_the_weather_sources(catalog
         if any(op.startswith(prefix) and "weather" in op for op in ids)
     }
     assert countries == NATIONAL_WEATHER_COUNTRIES
+
+
+# ---- Central banks' policy rates ---------------------------------------------------
+# A rate word beside a bank's name, with nothing else asked, names the
+# operation that holds the bank's policy rate. Before, "Bank of Canada rate
+# decision" ranked the Bank Rate and the prime rate above it, and no ECB rate
+# question reached the ECB's policy rate, a curated series.
+
+POLICY_RATE_TOP_1 = [
+    ("BoC rate decision", "boc_policy_rate", None),
+    ("Bank of Canada rate decision", "boc_policy_rate", None),
+    # The meeting calendar does not publish the Bank of Canada's meetings.
+    ("when is the next Bank of Canada rate decision", "boc_policy_rate", None),
+    ("ECB rate decision", "macro_country_section", "eu/ecbdfr"),
+    ("ECB interest rate", "macro_country_section", "eu/ecbdfr"),
+    ("ECB interest rates", "macro_country_section", "eu/ecbdfr"),
+    ("ECB deposit rate", "macro_country_section", "eu/ecbdfr"),
+    ("ECB deposit facility rate", "macro_country_section", "eu/ecbdfr"),
+    ("BoJ rate decision", "boj_rates", None),
+    ("SNB rate decision", "snb_policy_rate", None),
+    ("Riksbank rate decision", "riksbank_policy_rate", None),
+    ("Norges Bank rate decision", "norges_bank_policy_rate", None),
+    ("RBA rate decision", "rba_cash_rate", None),
+    ("Bank of England rate decision", "boe_rate", None),
+    ("Fed rate decision", "fed_rates_rate_type", None),
+    ("Fed funds rate", "fed_rates_rate_type", None),
+    ("Bank Negara Malaysia interest rate", "bnm_opr", None),
+    ("BCB interest rate", "bcb_selic", None),
+]
+
+
+@pytest.mark.parametrize("query,operation,key", POLICY_RATE_TOP_1)
+def test_a_central_bank_rate_question_lands_its_policy_rate_first(
+    catalog, query: str, operation: str, key: str | None,
+) -> None:
+    results = search_catalog(catalog, query, limit=3)
+    top = results[0]
+    assert top["operation_id"] == operation, [r["operation_id"] for r in results]
+    if key is not None:
+        assert top["macro_keys"][0]["key"] == key, top["macro_keys"]
+
+
+# A question that asks more than the policy rate asks for another series of
+# the bank, and keeps it first.
+POLICY_RATE_QUALIFIED_TOP_1 = [
+    ("Norges Bank interest rate swaps", "norges_bank_irs"),
+    ("Norges Bank policy rate announcements", "norges_bank_policy_rate_announcements"),
+    ("SARB prime interest rate", "central_banks_sarb_prime_rate"),
+    ("CNB policy rate history", "cnb_policy_rate_history"),
+    ("RBA housing interest rates", "rba_housing_rates"),
+    ("BoE household interest rates", "boe_household_rates"),
+    ("SNB sight deposit rate", "snb_sight_deposit_rate"),
+    ("Riksbank policy rates all", "riksbank_policy_rates_all"),
+    ("BNM interbank interest rate", "bnm_interest_rate"),
+]
+
+
+@pytest.mark.parametrize("query,operation", POLICY_RATE_QUALIFIED_TOP_1)
+def test_a_qualified_rate_question_keeps_its_series_first(catalog, query: str, operation: str) -> None:
+    top = [r["operation_id"] for r in search_catalog(catalog, query, limit=3)]
+    assert top[0] == operation, top
+
+
+# The terms below are what search_catalog passes: the query's words with its
+# filler dropped.
+@pytest.mark.parametrize("query,terms,operations,keys,words", [
+    ("Bank of Canada rate decision", ["bank", "canada", "rate", "decision"],
+     {"boc_policy_rate": "rate decision"}, set(), {"rate", "decision"}),
+    ("ECB deposit rate", ["ecb", "deposit", "rate"], {}, {"eu/ecbdfr"}, {"deposit", "rate"}),
+    ("Fed and ECB interest rates", ["fed", "ecb", "interest", "rates"],
+     {"fed_rates_rate_type": "interest rate"}, {"eu/ecbdfr"}, {"interest", "rates"}),
+    ("when is the next ECB rate decision", ["next", "ecb", "rate", "decision"],
+     {"macro_cb_calendar": "rate decision", "macro_cb_calendar_bank": "rate decision"},
+     set(), {"rate", "decision"}),
+])
+def test_detect_policy_rate_request(
+    query: str, terms: list[str], operations: dict[str, str], keys: set[str], words: set[str],
+) -> None:
+    from sugra_api_mcp.catalog.aliases import (
+        detect_policy_rate_request,
+        matching_central_bank_prefixes,
+    )
+
+    request = detect_policy_rate_request(query, terms, matching_central_bank_prefixes(query))
+    assert (request.operations, request.keys, request.words) == (operations, keys, words)
+
+
+@pytest.mark.parametrize("query,terms", [
+    # Another word asks for another series of the bank.
+    ("Norges Bank interest rate swaps", ["norges", "bank", "interest", "rate", "swaps"]),
+    ("CNB policy rate history", ["cnb", "policy", "rate", "history"]),
+    # No rate word.
+    ("ECB yield curve", ["ecb", "yield", "curve"]),
+    ("BoC meeting", ["boc", "meeting"]),
+    # No bank named.
+    ("Canada interest rate", ["canada", "interest", "rate"]),
+])
+def test_a_question_that_asks_more_names_no_policy_rate(query: str, terms: list[str]) -> None:
+    from sugra_api_mcp.catalog.aliases import (
+        detect_policy_rate_request,
+        matching_central_bank_prefixes,
+    )
+
+    request = detect_policy_rate_request(query, terms, matching_central_bank_prefixes(query))
+    assert (request.operations, request.keys, request.words) == ({}, frozenset(), frozenset())
+
+
+def test_every_policy_rate_belongs_to_its_bank(catalog) -> None:
+    """A bank prefix that left the boost map, an operation of another bank or
+    a curated key no operation carries would silently disarm a policy rate."""
+    from sugra_api_mcp.catalog.aliases import (
+        CENTRAL_BANK_POLICY_RATE_KEYS,
+        CENTRAL_BANK_POLICY_RATES,
+        CENTRAL_BANK_PREFIX_BOOSTS,
+    )
+
+    banks = set(CENTRAL_BANK_POLICY_RATES) | set(CENTRAL_BANK_POLICY_RATE_KEYS)
+    assert banks <= set(CENTRAL_BANK_PREFIX_BOOSTS.values())
+    assert not set(CENTRAL_BANK_POLICY_RATES) & set(CENTRAL_BANK_POLICY_RATE_KEYS)
+    for prefix, operation in CENTRAL_BANK_POLICY_RATES.items():
+        assert operation.startswith(prefix), (prefix, operation)
+    carried = {key.key for endpoint in catalog.endpoints for key in endpoint.macro_keys or ()}
+    assert set(CENTRAL_BANK_POLICY_RATE_KEYS.values()) <= carried
+
+
+# ---- "real": adjusted for inflation, or real estate -------------------------------
+# "real" alone means adjusted for inflation, as in real wages or real GDP, and
+# names the real-estate operations only beside a word for property. The word
+# alone ranked them first for "real wages UK".
+
+@pytest.mark.parametrize("query", [
+    "real wages UK", "real interest rate", "real disposable income",
+    "US real interest rate", "real GDP Germany",
+])
+def test_real_alone_ranks_no_real_estate(catalog, query: str) -> None:
+    top_5 = [r["operation_id"] for r in search_catalog(catalog, query, limit=5)]
+    assert not [op for op in top_5 if op.startswith("real_estate_")], top_5
+
+
+@pytest.mark.parametrize("query,expected", [
+    ("real estate prices", "real_estate_"),
+    ("realty prices", "real_estate_"),
+    ("real home prices", "real_estate_home_values_geo_type"),
+])
+def test_real_beside_a_property_word_ranks_real_estate_first(catalog, query: str, expected: str) -> None:
+    top = search_catalog(catalog, query, limit=1)[0]["operation_id"]
+    assert top.startswith(expected), (query, top)
+
+
+def test_real_house_prices_rank_a_house_price_series_first(catalog) -> None:
+    top = search_catalog(catalog, "real house prices", limit=1)[0]["operation_id"]
+    assert top.endswith("_house_prices"), top
+
+
+def test_real_answers_the_real_estate_operations_only_beside_a_property_word() -> None:
+    from sugra_api_mcp.catalog.models import Endpoint
+    from sugra_api_mcp.catalog.search import _score
+
+    estate = Endpoint(operation_id="real_estate_widget", method="GET", path="/x",
+                      summary="Real home values", toolset="real_estate")
+    _, why = _score(estate, ["real", "wages"], {}, **_SCORE_FLAGS)
+    assert not [reason for reason in why if reason.endswith(":real")], why
+    for word in ("estate", "realty", "home", "houses", "housing"):
+        _, why = _score(estate, ["real", word], {}, **_SCORE_FLAGS)
+        assert "summary:real" in why, (word, why)
+    # Only the real-estate operations go quiet on the word.
+    wages = Endpoint(operation_id="earnings_widget", method="GET", path="/x",
+                     summary="Real wages", toolset="macro")
+    _, why = _score(wages, ["real", "wages"], {}, **_SCORE_FLAGS)
+    assert "summary:real" in why, why
+
+
+# ---- A country without curated keys, and the demonyms that name it ----------------
+
+@pytest.mark.parametrize("demonym,country", [
+    ("Afghan", "AF"), ("Algerian", "DZ"), ("Angolan", "AO"), ("Bahraini", "BH"),
+    ("Bangladeshi", "BD"), ("Ghanaian", "GH"), ("Iranian", "IR"), ("Iraqi", "IQ"),
+    ("Jordanian", "JO"), ("Kuwaiti", "KW"), ("Lebanese", "LB"), ("Libyan", "LY"),
+    ("Omani", "OM"), ("Qatari", "QA"), ("Syrian", "SY"), ("Tunisian", "TN"),
+    ("Venezuelan", "VE"), ("Yemeni", "YE"),
+])
+def test_a_demonym_names_its_country(demonym: str, country: str) -> None:
+    from sugra_api_mcp.catalog.aliases import detect_query_countries
+
+    assert detect_query_countries(f"{demonym} inflation") == {country}
+
+
+@pytest.mark.parametrize("query,expected", [
+    ("Netherlands CPI inflation", {"bis_cpi"}),
+    # The two operations that answer for the country tie.
+    ("Dutch inflation", {"macro_country_profile", "worldbank_country_overview"}),
+    ("Iranian inflation rate", {"macro_country_profile"}),
+    ("Venezuelan GDP", {"research_pwt_country_iso3"}),
+])
+def test_a_country_without_curated_keys_lands_an_operation_that_answers_for_it(
+    catalog, query: str, expected: set[str],
+) -> None:
+    """A telecom-demand heuristic, a US series and the GDP of Spain ranked
+    first; each expected operation takes the country as a parameter."""
+    top = [r["operation_id"] for r in search_catalog(catalog, query, limit=3)]
+    assert top[0] in expected, top
+
+
+def test_a_national_source_of_another_country_ranks_below_the_answers(catalog) -> None:
+    results = search_catalog(catalog, "Venezuelan GDP", limit=200)
+    ranks = {r["operation_id"]: i for i, r in enumerate(results)}
+    answer = ranks["research_pwt_country_iso3"]
+    for operation in ("ine_gdp", "ons_gdp", "stat_finland_gdp"):
+        assert ranks.get(operation, len(ranks)) > answer, (operation, ranks.get(operation))
+
+
+def test_an_operation_computed_from_inflation_is_no_inflation_series(catalog) -> None:
+    """The telecom-demand heuristic is computed from growth, income and
+    inflation; it ranked first for "Dutch inflation" and still answers for
+    telecom demand."""
+    top_5 = [r["operation_id"] for r in search_catalog(catalog, "Dutch inflation", limit=5)]
+    assert "imf_signals_telecom_demand_country" not in top_5, top_5
+    top = search_catalog(catalog, "telecom demand Netherlands", limit=1)[0]["operation_id"]
+    assert top == "imf_signals_telecom_demand_country", top
+
+
+# ---- Currency words, a country prefix, a singular strait ---------------------------
+
+def test_every_currency_named_in_words_is_known_by_its_code() -> None:
+    from sugra_api_mcp.catalog.aliases import _KNOWN_CURRENCIES, CURRENCY_NAMES
+
+    named = set(CURRENCY_NAMES.values())
+    assert named <= _KNOWN_CURRENCIES, sorted(named - _KNOWN_CURRENCIES)
+
+
+def test_a_lowercase_code_word_is_a_known_currency_code() -> None:
+    from sugra_api_mcp.catalog.aliases import _KNOWN_CURRENCIES, _LOWERCASE_CODE_WORDS
+
+    assert {word.upper() for word in _LOWERCASE_CODE_WORDS} <= _KNOWN_CURRENCIES
+    assert {"pen", "cop", "gel"} <= _LOWERCASE_CODE_WORDS
+
+
+@pytest.mark.parametrize("query", [
+    "price of a pen in dollars", "cop salary in dollars", "hair gel price in euros",
+])
+def test_a_lowercase_english_word_names_no_currency(query: str) -> None:
+    from sugra_api_mcp.catalog.aliases import detect_fx_request
+
+    assert detect_fx_request(query) is None
+
+
+@pytest.mark.parametrize("query,currencies", [
+    ("PEN to USD", ("PEN", "USD")),
+    ("COP to USD", ("COP", "USD")),
+    ("GEL to USD", ("GEL", "USD")),
+])
+def test_a_capital_code_still_names_its_currency(catalog, query: str, currencies: tuple[str, ...]) -> None:
+    from sugra_api_mcp.catalog.aliases import detect_fx_request
+
+    fx = detect_fx_request(query)
+    assert fx is not None and (fx.currencies, fx.pair) == (currencies, True)
+    assert search_catalog(catalog, query, limit=1)[0]["operation_id"] == "forex_convert"
+
+
+@pytest.mark.parametrize("query,ticker", [("AMD stock price", "AMD"), ("COP stock price", "COP")])
+def test_a_currency_code_that_is_also_a_listing_stays_a_ticker(query: str, ticker: str) -> None:
+    assert detect_tickers(query) == [ticker]
+
+
+def test_no_country_prefix_misses_the_operation_it_is_named_for(catalog) -> None:
+    """A trailing underscore misses the operation the prefix names itself:
+    "weather_us_forecast_" never stepped weather_us_forecast down."""
+    from sugra_api_mcp.catalog.aliases import SOURCE_COUNTRY_PREFIXES
+
+    ids = {endpoint.operation_id for endpoint in catalog.endpoints}
+    missed = [prefix for prefix in SOURCE_COUNTRY_PREFIXES if prefix.endswith("_") and prefix[:-1] in ids]
+    assert not missed, missed
+
+
+def test_a_question_about_another_country_steps_the_us_forecast_down(catalog) -> None:
+    from sugra_api_mcp.catalog.search import WRONG_COUNTRY_PENALTY, _score
+
+    endpoint = catalog.get("weather_us_forecast")
+    plain, _ = _score(endpoint, ["weather", "forecast"], {}, **_SCORE_FLAGS)
+    stepped, _ = _score(endpoint, ["weather", "forecast"], {}, penalty_countries={"FR"}, **_SCORE_FLAGS)
+    assert plain - stepped == WRONG_COUNTRY_PENALTY
+
+
+@pytest.mark.parametrize("query", ["Turkish strait", "Turkish straits", "ships through the Turkish strait"])
+def test_the_turkish_strait_is_named_in_the_singular_and_the_plural(query: str) -> None:
+    from sugra_api_mcp.catalog.aliases import detect_named_operations
+
+    assert detect_named_operations(query).operations == {"maritime_chokepoints_activity": "turkish strait"}
