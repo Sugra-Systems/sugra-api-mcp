@@ -266,15 +266,16 @@ def process_side() -> str:
 
 # HTTP failures from the Sugra API. SugraClient keeps the API's own text at
 # result["error"] for the CALLER (a bad symbol says which, a quota refusal
-# names the plan) and sets result["status_code"] from the response. That text
-# can never pass the allowlist, so every such failure used to be
-# `unknown_error` - 66% of all failures over 90 days, with a caller's 429
-# quota, a bad-symbol 404 and a 503 upstream outage indistinguishable. The
-# span now names the failure from this fixed table keyed on the STATUS, an
-# int the client set and never a caller value. Named entries are the statuses
-# the API returns deliberately; anything else lands in its class bucket. The
-# table is the only path from a status to a span, and every value in it is a
-# constant.
+# names the plan, an object detail its own code) and sets
+# result["status_code"] from the response. Free text never passes the
+# allowlist, so every such failure used to be `unknown_error` - 66% of all
+# failures over 90 days, with a caller's 429 quota, a bad-symbol 404 and a 503
+# upstream outage indistinguishable. The span now names the failure from this
+# fixed table keyed on the STATUS, an int the client set and never a caller
+# value, even when the API's code happens to spell an allowlisted one
+# (_error_code_of). Named entries are the statuses the API returns
+# deliberately; anything else lands in its class bucket. The table is the only
+# path from a status to a span, and every value in it is a constant.
 _HTTP_STATUS_ERROR_CODES: dict[int, str] = {
     400: "upstream_http_400",  # a parameter value the router rejected
     401: "upstream_http_401",  # the caller's API key was refused
@@ -384,25 +385,36 @@ _KNOWN_ERROR_CODES: frozenset[str] = frozenset({
 # interned constant, never the caller's object.
 _KNOWN_ERROR_CODE_OF: dict[str, str] = {code: code for code in _KNOWN_ERROR_CODES}
 
+# The codes a tool sets on purpose beside the HTTP status of the failure it
+# renames (tools/agent.py keeps the plane's 403). Beside a status any other
+# value at "error" is the API's own word, even one that spells an allowlisted
+# code: an API 504 carries {"error": "upstream_timeout"} for ITS provider,
+# which is not this server's own timeout.
+_CODES_BESIDE_A_STATUS: frozenset[str] = frozenset({"agent_plane_unavailable"})
+
 
 def _error_code_of(result: dict[str, Any]) -> str:
     """The allowlisted span code for a FAILED tool result.
 
-    A code the tool named itself wins - it is the more specific signal (the
-    plane's `agent_plane_unavailable` sits beside a status_code of 403).
+    A code the tool named itself wins - it is the more specific signal. With
+    no failing HTTP status beside it (none, or one the table does not name)
+    any allowlisted code is the tool's own; beside one, only a code in
+    _CODES_BESIDE_A_STATUS is (the plane's `agent_plane_unavailable` sits
+    beside a status_code of 403), and the status names the failure through
+    the fixed table.
     The attached value is the interned constant from `_KNOWN_ERROR_CODES`, not
     the object in the result, so a str subclass cannot reach the span.
-    Otherwise the HTTP status the client recorded names the failure through
-    the fixed table. Anything else is the residual `unknown_error`: free text
-    with no status, or a shape no contract produces. Nothing taken from the
-    dict itself is ever attached.
+    Anything else is the residual `unknown_error`: free text with no status,
+    or a shape no contract produces. Nothing taken from the dict itself is
+    ever attached.
     """
     error_value = result.get("error")
+    status_code = _http_status_error_code(result.get("status_code"))
     if isinstance(error_value, str):
         known = _KNOWN_ERROR_CODE_OF.get(error_value)
-        if known is not None:
+        if known is not None and (status_code is None or known in _CODES_BESIDE_A_STATUS):
             return known
-    return _http_status_error_code(result.get("status_code")) or "unknown_error"
+    return status_code or "unknown_error"
 
 
 # The bound that refused a server_busy call, exactly as

@@ -852,6 +852,46 @@ def test_allowlisted_code_wins_over_the_status_beside_it(monkeypatch) -> None:
     _assert_span_is_clean(span, _FAILURE_ATTRS | _TOOL_ATTRS, "plane text")
 
 
+def test_an_api_code_that_spells_an_allowlisted_one_is_named_by_its_status(monkeypatch) -> None:
+    """The client puts an object detail's own code at "error", so an API 504
+    {"detail": {"error": "upstream_timeout", ...}} arrives as error
+    "upstream_timeout" beside status_code 504. That is the API's provider
+    timing out, not this server's own timeout, and the span says so by the
+    status."""
+    tracer = _install_fake_tracer(monkeypatch)
+
+    @observability.trace_mcp_tool("call_endpoint")
+    async def fake_call() -> dict:
+        return {
+            **_http_failure(504),
+            "error": "upstream_timeout",
+            "detail": {"error": "upstream_timeout", "source": _API_TEXT, "retry_hint": _API_TEXT},
+        }
+
+    asyncio.run(fake_call())
+
+    span = tracer.spans[0]
+    assert span.attributes["mcp.error.code"] == "upstream_http_504"
+    _assert_span_is_clean(span, _FAILURE_ATTRS | _TOOL_ATTRS, *_API_SENTINELS)
+
+
+@pytest.mark.parametrize(
+    ("result", "expected"),
+    [
+        ({"error": "upstream_timeout", "status_code": None}, "upstream_timeout"),
+        ({"error": "upstream_timeout", "status_code": 504}, "upstream_http_504"),
+        ({"error": "auth_failed", "status_code": 401}, "upstream_http_401"),
+        ({"error": "unknown_parameters", "status_code": 400}, "upstream_http_400"),
+        ({"error": "agent_plane_unavailable", "status_code": 403}, "agent_plane_unavailable"),
+        # A status the table does not name leaves the tool's own code standing.
+        ({"error": "response_too_large", "status_code": 200}, "response_too_large"),
+        ({"error": "upstream_timeout", "status_code": "504"}, "upstream_timeout"),
+    ],
+)
+def test_beside_a_failing_status_only_a_tool_set_code_wins(result: dict, expected: str) -> None:
+    assert observability._error_code_of(result) == expected
+
+
 def test_a_str_subclass_error_code_reaches_the_span_as_str(monkeypatch) -> None:
     """An allowlisted str subclass is stored as an exact str."""
     class _Code(str):
