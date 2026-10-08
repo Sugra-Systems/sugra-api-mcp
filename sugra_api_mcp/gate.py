@@ -301,13 +301,16 @@ class _DemandCapture:
     It never reads the answer's body.
     """
 
-    __slots__ = ("client", "failed", "method", "status")
+    __slots__ = ("client", "extended", "extensions", "failed", "method", "status")
 
-    def __init__(self) -> None:
+    def __init__(self, extended: bool = False) -> None:
         self.method = demand.UNREAD
         self.client = demand.NOT_APPLICABLE
         self.status: object = None
         self.failed = False
+        # The extra demand counts (demand.extension_facts), kept only when asked for.
+        self.extended = extended
+        self.extensions: list[demand.ExtensionKey] = []
 
     def attempt(self, step: Callable[[Any], None], value: Any) -> None:
         try:
@@ -320,6 +323,8 @@ class _DemandCapture:
         decoded, request_message = parsed
         if decoded:
             self.method, self.client = demand.request_facts(request_message)
+            if self.extended:
+                self.extensions = demand.extension_facts(request_message)
 
     def sent(self, message: Message) -> None:
         """Keep the status of an answer start whose send completed."""
@@ -351,9 +356,11 @@ class GateMiddleware:
         max_body_bytes: int,
         summary: GateSummary | None = None,
         demand_counter: demand.DemandCounter | None = None,
+        extended_demand: bool = False,
     ) -> None:
         self.app = app
         self.max_body_bytes = max_body_bytes
+        self.extended_demand = extended_demand
         self.summary = summary if summary is not None else default_summary
         self.demand = demand_counter if demand_counter is not None else demand.default_counter
 
@@ -373,7 +380,11 @@ class GateMiddleware:
         body_too_large = False
         status: int | None = None
         answer = bytearray()
-        capture = _DemandCapture() if scope.get("path", "").rstrip("/") == _MCP_PATH else None
+        capture = (
+            _DemandCapture(self.extended_demand)
+            if scope.get("path", "").rstrip("/") == _MCP_PATH
+            else None
+        )
 
         async def gate_receive() -> Message:
             nonlocal body_read, body_too_large
@@ -451,6 +462,10 @@ class GateMiddleware:
             )
             client = capture.client if parsed else demand.NOT_APPLICABLE
             self.demand.add((method, demand.status_of(capture.status), host, ua, origin, client))
+            # The request is counted above; its extra counts never undo that.
+            with contextlib.suppress(Exception):
+                for extension in capture.extensions if parsed else ():
+                    self.demand.add_extension(extension)
         except Exception:
             with contextlib.suppress(Exception):
                 self.demand.add_failure()

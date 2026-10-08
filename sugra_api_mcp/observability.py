@@ -33,7 +33,8 @@ Custom dimensions captured per MCP tool invocation:
     mcp.busy.scope       - server_busy failures only: the bound
                            that refused the call, one of tool_calls /
                            caller_tool_calls / search / caller_search /
-                           shaping / caller_shaping; any other value is
+                           shaping / caller_shaping / key_checks /
+                           lane_recognised / lane_other; any other value is
                            dropped
     mcp.caller.*         - how the call arrived, read from the
                            request that carried it and its session: transport,
@@ -371,6 +372,9 @@ _KNOWN_ERROR_CODES: frozenset[str] = frozenset({
     # refused because the search queue is full, or a response refused at
     # the shaping pool (tools/gateway.py).
     "server_busy",
+    # A tool call refused at a per-key rate limit (limits.py, only with
+    # SUGRA_MCP_LIMITS on and a limit set).
+    "rate_limited",
     # A tool call that never reached its tool (server.py call_tool): a name
     # no tool is registered under, or arguments that failed validation.
     "unknown_tool",
@@ -402,7 +406,9 @@ def _error_code_of(result: dict[str, Any]) -> str:
 
 
 # The bound that refused a server_busy call, exactly as
-# errors.server_busy_error names it. Three of the six are one caller's share
+# errors.server_busy_error names it. key_checks, lane_recognised and
+# lane_other are the request limits' (limits.py). Three of the first six are
+# one caller's share
 # (the name current_caller returns: http:<digest> of one key, http:anonymous
 # for every unauthenticated HTTP request together, or local for everything
 # off HTTP), so without the scope a span cannot tell one such caller held to
@@ -416,6 +422,9 @@ _BUSY_SCOPES: frozenset[str] = frozenset({
     "caller_search",
     "shaping",
     "caller_shaping",
+    "key_checks",
+    "lane_recognised",
+    "lane_other",
 })
 
 

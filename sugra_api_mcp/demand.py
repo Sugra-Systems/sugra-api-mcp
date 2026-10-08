@@ -101,6 +101,62 @@ logger = logging.getLogger(COUNTER_LOGGER)
 logger.setLevel(logging.INFO)
 
 Key = tuple[str, str, str, str, str, str]
+ExtensionKey = tuple[str, str]
+
+# The extra demand counts, kept only when GateMiddleware is built with
+# extended_demand (the request limits setting, sugra_api_mcp.limits). Each
+# request adds to them beside its sdemand1 line, never in place of it:
+#
+#   discover   - a server/discover request, value attempt
+#   events     - any events/... request, one value for every method
+#   extension  - an extension an initialize declares in capabilities.extensions,
+#                by a closed list: ui for io.modelcontextprotocol/ui, other
+#                for every other name. A name is never written.
+#
+# They are written beside each sdemand1 record as one more record:
+#
+#     sdemandx1 side=<side> lines=<m>
+#     <kind> <value> <count>
+DISCOVER_KIND = "discover"
+EVENTS_KIND = "events"
+EXTENSION_KIND = "extension"
+DISCOVER_METHOD = "server/discover"
+EVENTS_PREFIX = "events/"
+EXTENSION_CLASSES = {"io.modelcontextprotocol/ui": "ui"}
+EXTENSION_OTHER = "other"
+# Most items of a batch and most declared extensions looked at.
+_EXTENSION_SCAN_MAX = 16
+_EXTENSION_NAMES_MAX = 64
+
+
+def extension_facts(message: object) -> list[ExtensionKey]:
+    """The extra demand counts one decoded request body adds, as (kind, value) pairs."""
+    items = message[:_EXTENSION_SCAN_MAX] if isinstance(message, list) else [message]
+    facts: list[ExtensionKey] = []
+    for item in items:
+        method = item.get("method") if isinstance(item, dict) else None
+        if type(method) is not str:
+            continue
+        if method == DISCOVER_METHOD:
+            facts.append((DISCOVER_KIND, "attempt"))
+        elif method.startswith(EVENTS_PREFIX):
+            facts.append((EVENTS_KIND, "request"))
+        elif method == INITIALIZE:
+            facts.extend((EXTENSION_KIND, value) for value in _declared_extensions(item))
+    return facts
+
+
+def _declared_extensions(initialize: dict[str, object]) -> list[str]:
+    params = initialize.get("params")
+    capabilities = params.get("capabilities") if isinstance(params, dict) else None
+    declared = capabilities.get("extensions") if isinstance(capabilities, dict) else None
+    if not isinstance(declared, dict):
+        return []
+    classes = {
+        EXTENSION_CLASSES.get(name, EXTENSION_OTHER) if type(name) is str else EXTENSION_OTHER
+        for name in list(declared)[:_EXTENSION_NAMES_MAX]
+    }
+    return sorted(classes)
 
 
 def request_facts(message: object) -> tuple[str, str]:
@@ -149,6 +205,7 @@ class DemandCounter:
 
     def __init__(self) -> None:
         self._counts: dict[Key, int] = {}
+        self._extensions: dict[ExtensionKey, int] = {}
         self._failed = 0
         self._lost = 0
         self._lost_written = 0
@@ -162,6 +219,12 @@ class DemandCounter:
                 self._lost += 1
             else:
                 self._counts[key] = self._counts.get(key, 0) + 1
+
+    def add_extension(self, key: ExtensionKey) -> None:
+        """Count one of the extra demand counts. After close it is dropped, not lost: it is no request."""
+        with self._lock:
+            if not self._closed:
+                self._extensions[key] = self._extensions.get(key, 0) + 1
 
     def add_failure(self) -> None:
         """Count a request whose demand step raised."""
@@ -199,9 +262,14 @@ class DemandCounter:
     def _write(self) -> None:
         with self._lock:
             counts, self._counts = self._counts, {}
+            extensions, self._extensions = self._extensions, {}
             failed, self._failed = self._failed, 0
             lost = self._lost
         if not counts and not failed and lost == self._lost_written:
+            # Only the extra counts of a request counted in the interval before.
+            if extensions:
+                with contextlib.suppress(Exception):
+                    _log_extensions(extensions)
             return
         try:
             _log(counts, failed, lost)
@@ -211,6 +279,11 @@ class DemandCounter:
             raise
         with self._lock:
             self._lost_written = lost
+        if extensions:
+            # Telemetry beside the record, never a reason to fail it: a write
+            # the logger raised on drops this interval's extra counts.
+            with contextlib.suppress(Exception):
+                _log_extensions(extensions)
 
 
 def _header(side: str, requests: int, lines: int, omitted: int, failed: int, lost: int) -> str:
@@ -239,6 +312,15 @@ def _log(counts: dict[Key, int], failed: int, lost: int) -> None:
         shown += count
     header = _header(side, total + failed, len(lines), total - shown, failed, lost)
     logger.info("%s", "\n".join([header, *lines]))
+
+
+def _log_extensions(counts: dict[ExtensionKey, int]) -> None:
+    lines = [
+        " ".join((kind[:FIELD_MAX], value[:FIELD_MAX], str(count)))
+        for (kind, value), count in sorted(counts.items())
+    ]
+    side = observability.process_side()[:SIDE_MAX]
+    logger.info("%s", "\n".join([f"sdemandx1 side={side} lines={len(lines)}", *lines]))
 
 
 default_counter = DemandCounter()

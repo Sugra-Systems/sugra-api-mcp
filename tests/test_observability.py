@@ -1430,7 +1430,17 @@ def test_an_anyio_cancel_scope_behaves_the_same_through_the_wrapper(monkeypatch,
 # ---- The bound that refused a server_busy call reaches the span ----
 
 
-_SCOPE_NAMES = ("tool_calls", "caller_tool_calls", "search", "caller_search", "shaping", "caller_shaping")
+_SCOPE_NAMES = (
+    "tool_calls",
+    "caller_tool_calls",
+    "search",
+    "caller_search",
+    "shaping",
+    "caller_shaping",
+    "key_checks",
+    "lane_recognised",
+    "lane_other",
+)
 _BUSY_ATTRS = _FAILURE_ATTRS | {"mcp.busy.scope"}
 _BUSY_HINT = "The server is at its concurrency limit. Retry in a few seconds."
 
@@ -1439,7 +1449,7 @@ class _StrSubclass(str):
     """A str that is not exactly a str: it must not pass as a scope name."""
 
 
-# Values a payload could carry at "scope" that are not one of the six names:
+# Values a payload could carry at "scope" that are not one of the known names:
 # near misses, a joined list, free text, other scalar types, containers (a
 # membership test on them would raise into the tool result) and a str subclass.
 _NOT_A_SCOPE = [
@@ -1483,7 +1493,7 @@ def test_a_returned_server_busy_keeps_its_scope_on_the_span(monkeypatch, scope: 
 
 
 @pytest.mark.parametrize("scope", _NOT_A_SCOPE, ids=repr)
-def test_a_returned_scope_outside_the_six_names_never_reaches_the_span(monkeypatch, scope: object) -> None:
+def test_a_returned_scope_outside_the_known_names_never_reaches_the_span(monkeypatch, scope: object) -> None:
     tracer = _install_fake_tracer(monkeypatch)
 
     @observability.trace_mcp_tool("search_endpoints")
@@ -1574,7 +1584,7 @@ def test_a_refused_admission_keeps_its_scope_on_the_span(monkeypatch, scope: str
 
 
 @pytest.mark.parametrize("scope", _NOT_A_SCOPE, ids=repr)
-def test_a_refused_admission_drops_a_scope_outside_the_six_names(monkeypatch, scope: object) -> None:
+def test_a_refused_admission_drops_a_scope_outside_the_known_names(monkeypatch, scope: object) -> None:
     tracer = _install_fake_tracer(monkeypatch)
     observability.record_refused_call("call_endpoint", "server_busy", scope)
     span = tracer.spans[0]
@@ -1592,8 +1602,45 @@ def test_a_refused_admission_carries_a_scope_only_for_server_busy(monkeypatch) -
         _assert_span_is_clean(span, _FAILURE_ATTRS)
 
 
-def test_the_scope_allowlist_is_exactly_the_six_bounds() -> None:
+def test_the_scope_allowlist_is_exactly_the_nine_bounds() -> None:
     assert frozenset(_SCOPE_NAMES) == observability._BUSY_SCOPES
+
+
+def test_the_rate_limit_code_is_allowlisted() -> None:
+    assert "rate_limited" in observability._KNOWN_ERROR_CODES
+    assert observability._error_code_of(errors.rate_limited_error("key_minute", limit=9)) == "rate_limited"
+
+
+@pytest.mark.parametrize("scope", ["key_minute", "key_day", "budget", "failed_checks"])
+def test_a_returned_rate_limit_reaches_the_span_as_its_code_only(monkeypatch, scope: str) -> None:
+    tracer = _install_fake_tracer(monkeypatch)
+    payload = errors.rate_limited_error(scope, limit=12345, retry_after=6789)
+
+    @observability.trace_mcp_tool("call_endpoint")
+    async def fake_call() -> dict:
+        return payload
+
+    assert asyncio.run(fake_call()) is payload
+    span = tracer.spans[0]
+    assert span.attributes["mcp.success"] is False
+    assert span.attributes["mcp.error.code"] == "rate_limited"
+    # The limit's name and numbers and the hint stay with the caller.
+    _assert_span_is_clean(
+        span, _FAILURE_ATTRS | _TOOL_ATTRS, scope, "12345", "6789", "Too many requests"
+    )
+
+
+def test_a_rate_limit_scope_is_never_a_busy_scope(monkeypatch) -> None:
+    tracer = _install_fake_tracer(monkeypatch)
+
+    @observability.trace_mcp_tool("call_endpoint")
+    async def fake_call() -> dict:
+        return {"error": "rate_limited", "scope": "search", "retry_after": 3}
+
+    asyncio.run(fake_call())
+    assert "mcp.busy.scope" not in tracer.spans[0].attributes
+    observability.record_refused_call("call_endpoint", "rate_limited", "search")
+    assert "mcp.busy.scope" not in tracer.spans[1].attributes
 
 
 def test_the_projection_bound_code_is_allowlisted() -> None:

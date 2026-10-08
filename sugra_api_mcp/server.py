@@ -20,7 +20,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, Icon, TextContent, ToolAnnotations
 from mcp.types import Tool as MCPTool
 
-from . import __version__, gate, observability
+from . import __version__, gate, limits, observability
 from .client import SugraClient, close_shared_pools
 from .config import (
     MISSING_API_KEY_HINT,
@@ -154,26 +154,44 @@ class SugraFastMCP(FastMCP):
         gate_call = record.call_started(dispatch) if record is not None else None
         previous_dispatch = observability.tool_dispatch.set(dispatch)
         outcome = gate.FAILED
+        # With the limits on, the request carries an admission that settles the
+        # call's charge and learns from how the call ended, however it ended;
+        # off, there is none.
+        admission = limits.current_admission()
+        # The call's own charge: made here, carried by this frame, settled in the
+        # finally below and nowhere else, so concurrent calls never share one.
+        held = None
         try:
-            result = await self._admitted_call_tool(name, arguments, dispatch)
+            limit_refusal = None
+            if admission is not None:
+                charge = admission.before_call(_dispatching_http_request()[1])
+                held, limit_refusal = charge.held, charge.refusal
+            result = await self._admitted_call_tool(name, arguments, dispatch, limit_refusal)
             outcome = gate.outcome_of(result)
             return result
         finally:
             observability.tool_dispatch.reset(previous_dispatch)
+            if admission is not None:
+                admission.after_call(held, outcome, dispatch.api_requests)
             if record is not None and gate_call is not None:
                 record.call_finished(gate_call, outcome)
 
     async def _admitted_call_tool(
-        self, name: str, arguments: dict[str, Any], dispatch: observability.ToolDispatch
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        dispatch: observability.ToolDispatch,
+        refusal: dict[str, Any] | None = None,
     ) -> Any:
-        """Refuse a call past the in-flight caps with server_busy.
+        """Refuse a call past the request limits (refusal, already decided) or the in-flight caps with server_busy.
 
         Admission and release go through the module-level counters under their
         lock (see MAX_IN_FLIGHT_TOOL_CALLS), so every server instance in the
         process shares them, and one caller holds at most its own share.
         """
         caller = current_caller()
-        refusal = _admit_tool_call(caller)
+        if refusal is None:
+            refusal = _admit_tool_call(caller)
         if refusal is not None:
             # The refused call never reaches its tool, so the tool's span never
             # starts; record one here, for registered names only.
@@ -567,6 +585,14 @@ class RequestPrincipal:
     method: str | None
     user_id: int | None = None
     platform: str | None = None
+
+
+def request_principal_method(scope: Any) -> str | None:
+    """How the request of this scope authenticated ("oauth", "api_key"), None when it did not."""
+    state = scope.get("state") if isinstance(scope, dict) else None
+    principal = state.get(REQUEST_PRINCIPAL_STATE) if isinstance(state, dict) else None
+    return principal.method if isinstance(principal, RequestPrincipal) else None
+
 
 # Set by AuthMiddleware for every request it serves. A Streamable HTTP session
 # task inherits it from the request that opened the session, so a dispatch that
