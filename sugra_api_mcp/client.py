@@ -265,12 +265,119 @@ _SALES_TEXT = re.compile(r"\bupgrade\b|app\.sugra\.ai", re.IGNORECASE)
 def _detail_text(payload: Any) -> str | None:
     """The API's own explanation of a failure, or None.
 
-    FastAPI puts an HTTPException's text at `detail`. A validation failure
-    puts a list there instead, which is not a sentence and is left out.
+    FastAPI puts an HTTPException's text at `detail`. An object or a
+    validation list there is not a sentence: `_detail_fields` carries it.
     """
     if isinstance(payload, dict) and isinstance(payload.get("detail"), str):
         return payload["detail"].strip() or None
     return None
+
+
+# The most characters (response_chars) of the fields `_detail_fields` returns,
+# measured as one object. The largest object detail the API sends today, the
+# allowed list of index sub-industries, measures about 3,800.
+_DETAIL_CHARS = 8_000
+
+
+def _detail_fields(payload: Any) -> dict[str, Any]:
+    """The fields that carry an API `detail` that is not a sentence, or {}.
+
+    An object names the failure in its own keys, such as {"error":
+    "invalid_window", "allowed": [...], "received": "2w"}: its `error`
+    becomes the error text and the object itself is carried at `detail`. A
+    FastAPI validation list is carried as where each failure is and what it
+    says, without the value the caller sent. What does not fit _DETAIL_CHARS
+    is left out, and `detail_truncated` says so. A detail with selling text
+    anywhere in it, in a part that is not carried too, is left out whole, as
+    a selling sentence is.
+    """
+    detail = payload.get("detail") if isinstance(payload, dict) else None
+    if isinstance(detail, dict):
+        return _object_detail(detail)
+    if isinstance(detail, list):
+        return _validation_detail(detail)
+    return {}
+
+
+def _object_detail(detail: dict[str, Any]) -> dict[str, Any]:
+    if not detail or _sells(detail):
+        return {}
+    code = detail.get("error")
+    named = {"error": code.strip()} if isinstance(code, str) and code.strip() else {}
+    if _fits({**named, "detail": detail}, _DETAIL_CHARS):
+        return {**named, "detail": detail}
+    if _fits({**named, "detail_truncated": True}, _DETAIL_CHARS):
+        return {**named, "detail_truncated": True}
+    return {"detail_truncated": True}
+
+
+def _validation_detail(detail: list[Any]) -> dict[str, Any]:
+    if _sells(detail):
+        return {}
+    items: list[dict[str, str]] = []
+    for failure in detail:
+        if not isinstance(failure, dict) or not isinstance(failure.get("msg"), str):
+            continue
+        loc = failure.get("loc")
+        # FastAPI's loc is names and list indexes; any other part is no place,
+        # a bool included, though Python counts it an int.
+        if isinstance(loc, list) and loc and all(
+            isinstance(part, str) or (isinstance(part, int) and not isinstance(part, bool))
+            for part in loc
+        ):
+            items.append({"loc": ".".join(str(part) for part in loc), "msg": failure["msg"]})
+        else:
+            items.append({"msg": failure["msg"]})
+    if not items:
+        return {}
+    if _fits({"detail": items}, _DETAIL_CHARS):
+        return {"detail": items}
+    kept: list[dict[str, str]] = []
+    # What the items have left once the fields' own keys and brackets are
+    # counted; each item after the first also carries its ", " separator.
+    room = _DETAIL_CHARS - response_chars({"detail": [], "detail_truncated": True})
+    for item in items:
+        size = _chars(item, room - (2 if kept else 0))
+        if size is None:
+            break
+        room -= size + (2 if kept else 0)
+        kept.append(item)
+    # The whole list did not fit, so at least one item is always left out.
+    return {"detail": kept, "detail_truncated": True} if kept else {"detail_truncated": True}
+
+
+def _chars(value: Any, budget: int) -> int | None:
+    """response_chars_within, with a value too deeply nested to measure
+    counted as over the budget."""
+    if budget < 0:
+        return None
+    try:
+        return response_chars_within(value, budget)
+    except RecursionError:
+        return None
+
+
+def _fits(value: Any, budget: int) -> bool:
+    return _chars(value, budget) is not None
+
+
+def _sells(value: Any) -> bool:
+    """Whether any key or string in value matches _SALES_TEXT.
+
+    Walked with a stack, not by recursion, so no nesting depth can raise.
+    """
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, str):
+            if _SALES_TEXT.search(item):
+                return True
+        elif isinstance(item, dict):
+            stack.extend(item.keys())
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
+    return False
 
 
 def _positive_int_header(response: httpx.Response, name: str) -> int | None:
@@ -750,16 +857,19 @@ class SugraClient:
             # was read at all.
             has_error_key = isinstance(payload, dict) and "error" in payload
             detail = None if has_error_key else _detail_text(payload)
+            carried: dict[str, Any] = {} if has_error_key else _detail_fields(payload)
             if detail is not None:
                 if response.status_code == 429 and detail.startswith(_DAILY_LIMIT_PREFIX):
                     quota = _daily_limit_error(detail, response)
                 elif not _SALES_TEXT.search(detail):
                     error = detail
+            error = carried.pop("error", error)
             result: dict[str, Any] = {
                 "error": error or f"HTTP {response.status_code}",
                 "status_code": response.status_code,
                 "url": str(response.request.url),
                 "elapsed_ms": elapsed_ms,
+                **carried,
                 **quota,
             }
             retry_after = _retry_after(response)
