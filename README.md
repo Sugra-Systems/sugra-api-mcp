@@ -447,6 +447,8 @@ Key accepted but rejected. Common causes:
 
 Hit your plan's daily limit. Response headers include `X-RateLimit-Reset` with the UTC timestamp when the counter resets (midnight UTC). Over MCP the tool result carries `reason: daily_limit_reached`, `status_code: 429`, `retry_after`, and `daily_limit` and `plan` when the API named them. Plans: [sugra.systems/api/pricing](https://sugra.systems/api/pricing).
 
+Before the limit is reached, a `call_endpoint` or `fetch_data` result shows what is left: `meta.quota` holds `limit`, `remaining` (requests left today) and `resets_at`, copied from the API's `X-RateLimit-*` response headers. A result carries no `meta.quota` when the API did not report a quota.
+
 **`Invalid Host header`** (only if self-hosting HTTP mode)
 
 FastMCP has DNS rebinding protection for public hostnames behind a reverse
