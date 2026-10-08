@@ -852,6 +852,45 @@ def test_allowlisted_code_wins_over_the_status_beside_it(monkeypatch) -> None:
     _assert_span_is_clean(span, _FAILURE_ATTRS | _TOOL_ATTRS, "plane text")
 
 
+def test_the_client_quota_refusal_has_its_own_span_code(monkeypatch) -> None:
+    """A spent daily quota is most of the 429s a user meets. The span names it
+    `daily_limit_reached`, so it is no longer counted with a source's limit or
+    a protective one, and the refusal text never reaches the span."""
+    import httpx
+
+    from sugra_api_mcp.client import SugraClient
+    from sugra_api_mcp.config import Config
+
+    tracer = _install_fake_tracer(monkeypatch)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            429,
+            json={"detail": "Daily limit of 50 requests reached. Current plan: free."},
+            headers={"Retry-After": "60", "X-RateLimit-Limit": "50", "X-Request-ID": "SECRETREQID"},
+            request=request,
+        )
+
+    @observability.trace_mcp_tool("call_endpoint")
+    async def fake_call() -> dict:
+        client = SugraClient(
+            Config(api_base="https://api.test", api_key="test-key", timeout=0.25),
+            transport=httpx.MockTransport(handler),
+        )
+        try:
+            return await client.get("/api/v1/quotes/SECRETSYM-IN-URL/price")
+        finally:
+            await client.aclose()
+
+    asyncio.run(fake_call())
+
+    span = tracer.spans[0]
+    assert span.attributes["mcp.error.code"] == "daily_limit_reached"
+    _assert_span_is_clean(
+        span, _FAILURE_ATTRS | _TOOL_ATTRS, "SECRETSYM-IN-URL", "SECRETREQID", "free plan"
+    )
+
+
 def test_an_api_code_that_spells_an_allowlisted_one_is_named_by_its_status(monkeypatch) -> None:
     """The client puts an object detail's own code at "error", so an API 504
     {"detail": {"error": "upstream_timeout", ...}} arrives as error
@@ -886,6 +925,12 @@ def test_an_api_code_that_spells_an_allowlisted_one_is_named_by_its_status(monke
         # A status the table does not name leaves the tool's own code standing.
         ({"error": "response_too_large", "status_code": 200}, "response_too_large"),
         ({"error": "upstream_timeout", "status_code": "504"}, "upstream_timeout"),
+        # The client's quota refusal has its own code; any other 429 keeps the status.
+        ({"error": _API_TEXT, "status_code": 429, "reason": "daily_limit_reached"}, "daily_limit_reached"),
+        ({"error": _API_TEXT, "status_code": 429, "reason": "rate_limited"}, "upstream_http_429"),
+        ({"error": _API_TEXT, "status_code": 429}, "upstream_http_429"),
+        ({"error": _API_TEXT, "status_code": 503, "reason": "daily_limit_reached"}, "upstream_http_503"),
+        ({"error": _API_TEXT, "reason": "daily_limit_reached"}, "unknown_error"),
     ],
 )
 def test_beside_a_failing_status_only_a_tool_set_code_wins(result: dict, expected: str) -> None:

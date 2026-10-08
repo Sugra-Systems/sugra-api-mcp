@@ -117,7 +117,7 @@ async def test_the_daily_limit_reaches_the_caller_as_plain_information(monkeypat
     and no link into billing."""
     import httpx
 
-    from sugra_api_mcp.client import PLANS_PAGE_URL, SugraClient
+    from sugra_api_mcp.client import SugraClient
     from sugra_api_mcp.config import Config
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -154,7 +154,9 @@ async def test_the_daily_limit_reaches_the_caller_as_plain_information(monkeypat
     assert payload["daily_limit"] == 1000
     assert payload["retry_after"] == 7200
     assert "of 1000" in payload["error"] and "personal plan" in payload["error"]
-    assert PLANS_PAGE_URL in payload["error"]
+    assert "http" not in payload["error"]
+    for field in ("url", "elapsed_ms", "request_id"):
+        assert field not in payload
     text = " ".join(block.text for block in result.content if hasattr(block, "text"))
     for seen in (json.dumps(payload), text):
         assert "upgrade" not in seen.lower()

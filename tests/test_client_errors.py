@@ -18,7 +18,6 @@ import httpx
 
 from sugra_api_mcp.client import (
     _DETAIL_CHARS,
-    PLANS_PAGE_URL,
     SugraClient,
     _detail_fields,
     response_chars,
@@ -351,20 +350,20 @@ async def _answer(status: int, body: Any, headers: dict[str, str] | None = None)
 async def test_the_daily_limit_refusal_is_plain_information_for_the_model() -> None:
     result = await _answer(429, {"detail": _QUOTA_DETAIL}, _QUOTA_HEADERS)
 
-    assert result["error"] == (
-        "The daily request limit of 50 for this Sugra account on the free plan has been "
-        "reached. It resets at 00:00 UTC. Sugra plans and their daily limits are described "
-        f"at {PLANS_PAGE_URL}."
-    )
-    assert result["reason"] == "daily_limit_reached"
-    assert result["daily_limit"] == 50
-    assert result["plan"] == "free"
-    assert result["status_code"] == 429
-    assert result["retry_after"] == 3600
-    assert result["request_id"] == "req_quota"
+    assert result == {
+        "error": (
+            "The daily request limit of 50 for this Sugra account on the free plan has been "
+            "reached. It resets at 00:00 UTC."
+        ),
+        "reason": "daily_limit_reached",
+        "daily_limit": 50,
+        "plan": "free",
+        "status_code": 429,
+        "retry_after": 3600,
+    }
     text = json.dumps(result).lower()
     assert "upgrade" not in text
-    assert "app.sugra.ai" not in text
+    assert "http" not in text
 
 
 async def test_the_daily_limit_refusal_leaves_out_what_the_api_did_not_say() -> None:
@@ -372,13 +371,12 @@ async def test_the_daily_limit_refusal_leaves_out_what_the_api_did_not_say() -> 
 
     result = await _answer(429, {"detail": detail}, {"Retry-After": "3600"})
 
-    assert result["error"] == (
-        "The daily request limit for this Sugra account has been reached. It resets at "
-        f"00:00 UTC. Sugra plans and their daily limits are described at {PLANS_PAGE_URL}."
-    )
-    assert result["reason"] == "daily_limit_reached"
-    assert "daily_limit" not in result
-    assert "plan" not in result
+    assert result == {
+        "error": "The daily request limit for this Sugra account has been reached. It resets at 00:00 UTC.",
+        "reason": "daily_limit_reached",
+        "status_code": 429,
+        "retry_after": 3600,
+    }
 
 
 async def test_other_rate_limits_keep_their_own_text() -> None:

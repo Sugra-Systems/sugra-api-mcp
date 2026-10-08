@@ -250,11 +250,11 @@ def _retry_after(response: httpx.Response) -> int | str | None:
 # FastAPI `detail` that starts with this text, names the plan, and ends with
 # an upgrade link into the billing cabinet. That wording is written for a
 # developer's REST client. A model inside a chat app gets the same facts as
-# plain information instead: no upgrade wording and no link into billing,
-# only the public page that describes the plans.
+# plain information instead: the limit, the plan and when it resets, with no
+# upgrade wording and no link at all, since even the public plans page offers
+# subscriptions.
 _DAILY_LIMIT_PREFIX = "Daily limit of "
 _PLAN_IN_DETAIL = re.compile(r"Current plan: ([A-Za-z0-9_-]+)\.")
-PLANS_PAGE_URL = "https://sugra.systems/api/pricing"
 
 # A `detail` forwarded to the model never sells: one that still asks for an
 # upgrade or links into the app is replaced by the bare status, which is
@@ -399,10 +399,7 @@ def _daily_limit_error(detail: str, response: httpx.Response) -> dict[str, Any]:
     if plan is not None:
         reached += f" on the {plan} plan"
     fields: dict[str, Any] = {
-        "error": (
-            f"{reached} has been reached. It resets at 00:00 UTC. "
-            f"Sugra plans and their daily limits are described at {PLANS_PAGE_URL}."
-        ),
+        "error": f"{reached} has been reached. It resets at 00:00 UTC.",
         "reason": "daily_limit_reached",
     }
     if limit is not None:
@@ -863,6 +860,15 @@ class SugraClient:
                     quota = _daily_limit_error(detail, response)
                 elif not _SALES_TEXT.search(detail):
                     error = detail
+            retry_after = _retry_after(response)
+            if quota:
+                # A spent quota is not a fault to trace: the url, the timing and
+                # the request id give a model nothing to act on, only the limit,
+                # the plan and when it resets.
+                quota["status_code"] = response.status_code
+                if retry_after is not None:
+                    quota["retry_after"] = retry_after
+                return quota
             error = carried.pop("error", error)
             result: dict[str, Any] = {
                 "error": error or f"HTTP {response.status_code}",
@@ -870,9 +876,7 @@ class SugraClient:
                 "url": str(response.request.url),
                 "elapsed_ms": elapsed_ms,
                 **carried,
-                **quota,
             }
-            retry_after = _retry_after(response)
             if retry_after is not None:
                 result["retry_after"] = retry_after
             # The API stamps every response with a request id; carrying it on the
