@@ -66,8 +66,9 @@ largest one cut, at ``path``; ``original_chars``, ``kept_chars`` and
 ``cap_chars`` give the sizes; ``lists`` gives the same per path when more
 than one list was cut; ``retry_hint`` says what was kept and which arguments
 of the tool and parameters of the operation choose a smaller answer. Its
-``fields`` names the lists that stayed whole and every cut list that fits the
-cap on its own, measured from the record sizes the cut already has: that list
+``fields`` names the lists that stayed whole and the cut lists that fit the
+cap on their own, at most _MAX_NAMED_FIELDS in a set and _MAX_NAMED_FIELDS
+sets of one, measured from the record sizes the cut already has: that list
 whole plus the response outside the lists plus the room the notice takes. A
 refusal says the size and the limit in characters and, when it can, where
 the size is and how to leave it out. Every refusal is measured too: one
@@ -77,6 +78,7 @@ size alone, with the URL cut to _MAX_URL_CHARS.
 
 from __future__ import annotations
 
+import heapq
 import json
 import time
 from bisect import bisect_right
@@ -415,46 +417,59 @@ def _fit_whole_alone(
     tick: Tick,
 ) -> list[list[str]]:
     """Sets of keys of the root that fields can name to get their lists whole:
-    the lists that stayed whole, and every cut list under another key of the
-    root that fits the cap on its own. ``room`` is what the cap leaves for lists
-    after the response outside them (every list empty, so a conservative
+    the lists that stayed whole, and the cut lists under other keys of the
+    root that fit the cap on their own. ``room`` is what the cap leaves for
+    lists after the response outside them (every list empty, so a conservative
     shell: fields drops what it does not name) and after what the gate adds,
-    the cut notice standing for that; None offers no cut list. The first set is
-    the lists that stayed whole plus the cut lists that fit in ``room``
-    together, smallest first; a cut list that fits alone but not with those
-    comes after as a set of its own."""
+    the cut notice standing for that; None offers no cut list. The first set
+    holds at most _MAX_NAMED_FIELDS names, in the response's key order: the
+    first lists that stayed whole, then the cut lists, smallest first, while
+    they fit in ``room`` together with them. Then the next cut lists, smallest
+    first, each of which fits ``room`` alone, follow as sets of one, at most
+    _MAX_NAMED_FIELDS of them; a larger cut list past those is not offered.
+    Every pass over the root and the cut lists reads the clock, and nothing
+    longer than the two bounded sets is ever ranked or sorted."""
     root, prefix = _root(payload)
     if not isinstance(root, dict):
         return []
     cut_keys = {lst.path[len(prefix)] for lst in _each(cut, tick) if len(lst.path) > len(prefix)}
     sizes = _lists_by_key(lists, prefix, tick)
-    named: set[str] = set()
+    named: list[str] = []
+    order: dict[str, int] = {}
     used = 0
-    for key, value in _each(root.items(), tick):
+    for index, (key, value) in enumerate(_each(root.items(), tick)):
+        order[key] = index
         path = (*prefix, key)
         if key in cut_keys or not isinstance(value, list) or not value:
             continue
-        if kept.get(path, len(value)) == len(value):
-            named.add(key)
+        # The first whole lists in the response's order; past the bound none
+        # is kept, so no set of them grows with the response.
+        if len(named) < _MAX_NAMED_FIELDS and kept.get(path, len(value)) == len(value):
+            named.append(key)
             used += sizes.get(key, 0)
-    order = {key: index for index, key in enumerate(root)}
     alone: list[str] = []
     if room is not None:
         # Smallest first, so the most lists are named; each adds its records.
-        # Ties keep the response's own key order, never the hash order.
+        # Ties keep the response's own key order, never the hash order. No
+        # more than the two bounded sets can take is ever ranked.
+        fitting = (
+            (sizes.get(key, 0), order.get(key, 0), key)
+            for key in _each(cut_keys, tick)
+            if sizes.get(key, 0) <= room
+        )
         grouped = True
-        for key in sorted(cut_keys, key=lambda name: (sizes.get(name, 0), order.get(name, 0))):
+        for size, _, key in heapq.nsmallest(2 * _MAX_NAMED_FIELDS, fitting):
             tick()
-            size = sizes.get(key, 0)
-            if grouped and used + size <= room:
-                named.add(key)
+            if grouped and len(named) < _MAX_NAMED_FIELDS and used + size <= room:
+                named.append(key)
                 used += size
             else:
                 grouped = False
-                if size <= room:
+                if len(alone) < _MAX_NAMED_FIELDS:
                     alone.append(key)
-    groups = [[key for key in root if key in named][:_MAX_NAMED_FIELDS]]
-    groups.extend([key] for key in alone[:_MAX_NAMED_FIELDS])
+    # At most _MAX_NAMED_FIELDS names, back in the response's key order.
+    groups = [sorted(named, key=order.__getitem__)]
+    groups.extend([key] for key in alone)
     return [group for group in groups if group]
 
 
