@@ -285,7 +285,7 @@ async def get_timeseries(
     not share one step, ``unknown`` when the source does not say, and null
     when no point came back. It describes how each point was built, not how
     far apart the returned points are: a thinned daily series still reads
-    daily, and ``downsampled`` is what says points were dropped.
+    ``1d``, and ``downsampled`` is what says points were dropped.
 
     The two ETF flow metrics answer different questions and are not
     interchangeable. ``etf_flows`` is an ESTIMATE at filing cadence: one point

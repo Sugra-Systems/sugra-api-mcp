@@ -439,6 +439,6 @@ def test_get_timeseries_description_reads_the_step_from_served_granularity(monke
         in normalized
     ), normalized
     assert (
-        "a thinned daily series still reads daily, and ``downsampled`` is "
+        "a thinned daily series still reads ``1d``, and ``downsampled`` is "
         "what says points were dropped" in normalized
     ), normalized
