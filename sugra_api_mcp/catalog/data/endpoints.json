@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-10-08T18:50:29Z",
+  "built_at": "2026-10-09T04:26:50Z",
   "endpoint_count": 1625,
   "endpoints": [
     {
@@ -83322,7 +83322,7 @@
           }
         },
         {
-          "description": "Two-letter US state code (e.g. NY, CA). An unresolvable city/state pair is 422, never 404.",
+          "description": "Two-letter code of a US state (e.g. NY, CA), DC, or a territory (PR, GU, VI, AS, MP); the city is matched only inside it. An unresolvable city/state pair is 422, never 404.",
           "example": "NY",
           "location": "query",
           "name": "state",
@@ -83337,7 +83337,7 @@
                 "type": "null"
               }
             ],
-            "description": "Two-letter US state code (e.g. NY, CA). An unresolvable city/state pair is 422, never 404.",
+            "description": "Two-letter code of a US state (e.g. NY, CA), DC, or a territory (PR, GU, VI, AS, MP); the city is matched only inside it. An unresolvable city/state pair is 422, never 404.",
             "title": "State"
           }
         }
@@ -83432,7 +83432,7 @@
           }
         },
         {
-          "description": "Two-letter US state code (e.g. NY, CA). An unresolvable city/state pair is 422, never 404.",
+          "description": "Two-letter code of a US state (e.g. NY, CA), DC, or a territory (PR, GU, VI, AS, MP); the city is matched only inside it. An unresolvable city/state pair is 422, never 404.",
           "example": "NY",
           "location": "query",
           "name": "state",
@@ -83447,7 +83447,7 @@
                 "type": "null"
               }
             ],
-            "description": "Two-letter US state code (e.g. NY, CA). An unresolvable city/state pair is 422, never 404.",
+            "description": "Two-letter code of a US state (e.g. NY, CA), DC, or a territory (PR, GU, VI, AS, MP); the city is matched only inside it. An unresolvable city/state pair is 422, never 404.",
             "title": "State"
           }
         }
@@ -95871,5 +95871,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "daea164b00fb4cd68d487de9411206629ebd8f31958d47089c5318f930f7927c"
+  "spec_sha256": "89a44e941201c49020eb903991066c87d357bb5e5af4d5c65f30d72bc2bc1fb7"
 }
