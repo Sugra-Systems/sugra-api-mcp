@@ -2389,11 +2389,17 @@ def test_a_product_named_before_a_price_statistic_is_the_subject(catalog, query:
     assert any(note.startswith("lifted-above:") for note in top["why"]), top["why"]
 
 
-def test_a_product_named_elsewhere_in_the_question_is_no_subject(catalog) -> None:
-    """"CPI for countries producing coffee" asks for the CPI: coffee says
-    which countries, so FRED keeps its own rank below the CPI of every
-    country."""
-    results = search_catalog(catalog, "CPI for countries producing coffee", limit=2)
+@pytest.mark.parametrize("query", [
+    # Coffee says which countries.
+    "CPI for countries producing coffee",
+    # Two things asked, not the coffee CPI.
+    "coffee, CPI",
+    "coffee; CPI",
+])
+def test_a_product_named_elsewhere_in_the_question_is_no_subject(catalog, query: str) -> None:
+    """The question asks for the CPI, so FRED keeps its own rank below the
+    CPI of every country."""
+    results = search_catalog(catalog, query, limit=2)
     assert [r["operation_id"] for r in results] == ["bis_cpi", "fred_series_series_id"], results
     assert not any(note.startswith(("lifted-above:", "clamped-below:"))
                    for note in results[1]["why"]), results[1]["why"]
@@ -2445,7 +2451,8 @@ def test_only_a_keyword_makes_a_national_source_the_subject() -> None:
 def test_a_subject_names_only_what_it_moved_past() -> None:
     """A subject that overtakes only a national source says so, not that it
     overtook an operation that takes the country, which it ranked above
-    already; the national source it overtook names both."""
+    already; the national source it overtook names the operation that takes
+    the country, which overtook it too."""
     from sugra_api_mcp.catalog.models import Catalog, Endpoint, EndpointParameter
 
     country = EndpointParameter(name="country", location="query")
