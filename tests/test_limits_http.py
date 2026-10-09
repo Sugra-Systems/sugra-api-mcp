@@ -167,7 +167,7 @@ async def stack(
         token = token.strip()
         if token.startswith("jwt-"):
             if token in (revoked or set()):
-                raise AuthError("token_revoked", status=403)
+                raise AuthError("Access token refused (token_revoked), sign in again")
             return ResolvedAuth(
                 api_key=f"sugra_TENANT_{token[4:]}", user_id=7, access_token_id=token, method="oauth"
             )
@@ -359,7 +359,7 @@ async def test_a_jwt_the_auth_layer_verified_is_recognised_and_a_revoked_one_is_
         assert (await tool_call(client, session, "jwt-1"))[0] == 200
         assert shared.recognised.is_recognised(digest("jwt-1"))
         revoked.add("jwt-1")
-        assert (await tool_call(client, session, "jwt-1"))[0] == 403
+        assert (await tool_call(client, session, "jwt-1"))[0] == 401
         assert not shared.recognised.is_recognised(digest("jwt-1"))
 
 

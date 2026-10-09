@@ -62,6 +62,19 @@ ACCESS_CACHE_PRUNE_WATERMARK = ACCESS_CACHE_MAX_ENTRIES - 512
 ACCESS_PLATFORMS: frozenset[str] = frozenset({
     "openai", "anthropic", "cursor", "google", "xai", "custom",
 })
+# The APP activity verdicts on the presented token or its connection
+# (McpConnectionService::recordMcpActivity). Each one means the client must
+# sign in again, so it answers 401 invalid_token. Any other APP 4xx is a fault
+# between MCP and the APP (internal token, validation, route, throttle) and
+# answers 502: a 401 there would send every client into a sign-in loop.
+REAUTH_ACTIVITY_CODES = frozenset({
+    "token_not_found",
+    "token_user_mismatch",
+    "token_revoked",
+    "token_expired",
+    "connection_not_found",
+    "connection_disconnected",
+})
 JWKS_ADMISSION_SLOTS = 4
 JWKS_ADMISSION_WAIT_SECONDS = 2.0
 JWKS_FAILURE_COOLDOWN_SECONDS = 5.0
@@ -174,9 +187,14 @@ def _token_fingerprint(token: str) -> str:
 
 
 class AuthError(Exception):
-    def __init__(self, message: str, *, status: int = 401) -> None:
+    """An auth refusal. A 401 says error="invalid_token" unless reauth is False."""
+
+    def __init__(
+        self, message: str, *, status: int = 401, reauth: bool = True,
+    ) -> None:
         super().__init__(message)
         self.status = status
+        self.reauth = reauth
 
 
 @dataclass(frozen=True)
@@ -452,7 +470,10 @@ class Authenticator:
             scopes = set()
 
         if REQUIRED_SCOPE not in scopes:
-            raise AuthError(f"Token missing required scope: {REQUIRED_SCOPE}")
+            # A valid token without the scope is not an invalid token: it keeps
+            # the bare challenge (insufficient_scope is MCP-29 decision 9).
+            raise AuthError(
+                f"Token missing required scope: {REQUIRED_SCOPE}", reauth=False)
 
     async def _lookup_api_key(self, user_id: int) -> str:
         now = time.time()
@@ -499,12 +520,18 @@ class Authenticator:
                     status=502) from e
 
             if resp.status_code == 404:
-                body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
-                raise AuthError(
-                    body.get("message")
-                    or "User has no API key. Create one at https://app.sugra.ai/settings",
-                    status=403,
-                )
+                body = _json_object(resp)
+                code = body.get("error")
+                if code == "no_api_key":
+                    message = body.get("message")
+                    raise AuthError(
+                        message if isinstance(message, str) and message
+                        else "User has no API key. Create one at https://app.sugra.ai/settings",
+                        status=403,
+                    )
+                if code == "user_not_found":
+                    # The token's account is gone: sign in again.
+                    raise AuthError("Access token refused (user_not_found), sign in again")
             if resp.status_code >= 400:
                 raise AuthError(f"Internal lookup failed: HTTP {resp.status_code}", status=502)
 
@@ -569,13 +596,20 @@ class Authenticator:
         if resp.status_code >= 500:
             raise AuthError(f"Internal MCP access validation failed: HTTP {resp.status_code}", status=502)
 
-        try:
-            body = resp.json()
-        except ValueError:
-            body = {}
+        code = _json_object(resp).get("error")
+        if isinstance(code, str) and code in REAUTH_ACTIVITY_CODES:
+            raise AuthError(f"Access token refused ({code}), sign in again")
+        raise AuthError(
+            f"Internal MCP access validation failed: HTTP {resp.status_code}", status=502)
 
-        message = body.get("error") if isinstance(body, dict) else None
-        raise AuthError(message or f"MCP access validation failed: HTTP {resp.status_code}", status=403)
+
+def _json_object(resp: httpx.Response) -> dict:
+    """The response body when it is a JSON object, else an empty dict."""
+    try:
+        body = resp.json()
+    except ValueError:
+        return {}
+    return body if isinstance(body, dict) else {}
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -585,13 +619,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self._auth = authenticator
 
-    def _auth_headers(self) -> dict[str, str]:
-        return {
-            "WWW-Authenticate": (
-                'Bearer resource_metadata="'
-                f'{self._auth.protected_resource_metadata_url}"'
-            )
-        }
+    def _auth_headers(self, *, invalid_token: bool = False) -> dict[str, str]:
+        # A presented token that failed gets error="invalid_token", which is
+        # what makes a client run its sign-in again; a request with no token,
+        # a token without the scope and the auth timeout get the bare
+        # challenge (RFC 6750 3.1).
+        challenge = (
+            'Bearer resource_metadata="'
+            f'{self._auth.protected_resource_metadata_url}"'
+        )
+        if invalid_token:
+            challenge += ', error="invalid_token"'
+        return {"WWW-Authenticate": challenge}
 
     async def _is_public_mcp_request(self, request: Request) -> bool:
         if request.method != "POST" or request.url.path.rstrip("/") != "/mcp":
@@ -710,6 +749,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 _origin_class(request.headers.get("origin")),
                 e,
             )
+            if e.status == 401 and e.reauth:
+                return JSONResponse(
+                    {"error": "auth_failed", "message": str(e)},
+                    status_code=401,
+                    headers=self._auth_headers(invalid_token=True),
+                )
             return JSONResponse(
                 {"error": "auth_failed", "message": str(e)},
                 status_code=e.status,

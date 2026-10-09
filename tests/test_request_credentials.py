@@ -108,7 +108,7 @@ async def test_http_tool_calls_use_the_credential_of_the_request_that_carries_th
         token = token.strip()
         if token.startswith("jwt-"):
             if token in revoked:
-                raise AuthError("token_revoked", status=403)
+                raise AuthError("Access token refused (token_revoked), sign in again")
             return ResolvedAuth(api_key=f"sugra_TENANT_{token[4:]}", user_id=1, access_token_id=token)
         return await real_resolve(token)
 
@@ -169,7 +169,7 @@ async def test_http_tool_calls_use_the_credential_of_the_request_that_carries_th
                 assert await call(client, opened_by_a, "jwt-B", entity_screen) == (200, ["sugra_TENANT_B"])
 
                 revoked.add("jwt-A")
-                assert await call(client, opened_by_a, "jwt-A") == (403, [])
+                assert await call(client, opened_by_a, "jwt-A") == (401, [])
                 # After revocation a made-up raw key on A's session does not inherit A's key.
                 assert await call(client, opened_by_a, "sugra_made_up") == (200, ["sugra_made_up"])
     finally:

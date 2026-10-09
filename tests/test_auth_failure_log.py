@@ -30,7 +30,8 @@ LINE_RE = re.compile(
 )
 
 WWW_AUTHENTICATE = (
-    'Bearer resource_metadata="https://app.sugra.ai/.well-known/oauth-protected-resource"'
+    'Bearer resource_metadata="https://app.sugra.ai/.well-known/oauth-protected-resource", '
+    'error="invalid_token"'
 )
 
 
@@ -164,7 +165,7 @@ def _failure_lines(records: list[logging.LogRecord]) -> list[dict[str, str]]:
 def _key_shaped_authenticator(auth: Authenticator) -> Authenticator:
     """A sugra_ key resolves without failing today; make one fail to reach the line."""
     auth.resolve = AsyncMock(
-        side_effect=AuthError("MCP access validation failed: HTTP 403", status=403))
+        side_effect=AuthError("User has no API key", status=403))
     return auth
 
 
@@ -175,7 +176,7 @@ def _key_shaped_authenticator(auth: Authenticator) -> Authenticator:
         (LONG_OPAQUE, 401, "Malformed token: Not enough segments", False),
         (PLACEHOLDER, 401, "Malformed token: Not enough segments", False),
         (JWT_BAD_SIGNATURE, 401, "Invalid token: Signature verification failed", False),
-        (KEY_SHAPED, 403, "MCP access validation failed: HTTP 403", True),
+        (KEY_SHAPED, 403, "User has no API key", True),
     ],
     ids=["short_opaque", "long_opaque", "placeholder", "jwt_bad_signature", "key_shaped"],
 )
