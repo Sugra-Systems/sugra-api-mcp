@@ -3,9 +3,13 @@
 fetch_data runs the top search hit unless a sent key is rare and foreign to
 it and a GET hit among the first five, scoring at least half the top,
 declares every sent key (test_fetch_data_selection.py); a param the operation
-that runs does not declare returns unknown_parameters. A model that copies an example should get
-the operation the example names, selected the way fetch_data selects it, with
-every param it passes declared there.
+that runs does not declare returns unknown_parameters.
+
+Each example is checked in two steps. The operation fetch_data runs for the
+example's query and params, the top hit or the hit the params select, must be
+the operation the example names. That operation must then declare every param
+the example passes, and the example must pass every param that operation
+requires and need no request body.
 Offline: the bundled catalog and the search, no HTTP.
 """
 

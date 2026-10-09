@@ -7,6 +7,7 @@ import difflib
 import math
 import threading
 import time
+import weakref
 from collections import deque
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -655,20 +656,28 @@ _RARE_KEY_MAX_OPERATIONS = 5
 _RESELECT_SCORE_FLOOR = 0.5
 _MAX_ALTERNATIVES = 3
 
-_key_counts: tuple[Any, dict[str, int]] | None = None
+_key_counts: tuple[weakref.ref[Any], dict[str, int]] | None = None
 
 
 def _operations_per_key(catalog: Any) -> dict[str, int]:
-    """How many operations declare each parameter name, cached per catalog."""
+    """How many operations declare each parameter name, cached per catalog.
+
+    The cache holds the catalog by weak reference, so it never keeps a
+    replaced catalog alive; a catalog that cannot be weakly referenced is
+    counted on every call.
+    """
     global _key_counts
     cached = _key_counts
-    if cached is not None and cached[0] is catalog:
+    if cached is not None and cached[0]() is catalog:
         return cached[1]
     counts: dict[str, int] = {}
     for endpoint in getattr(catalog, "endpoints", None) or ():
         for name in {parameter.name for parameter in endpoint.parameters}:
             counts[name] = counts.get(name, 0) + 1
-    _key_counts = (catalog, counts)
+    try:
+        _key_counts = (weakref.ref(catalog), counts)
+    except TypeError:
+        _key_counts = None
     return counts
 
 
@@ -694,11 +703,17 @@ def _selectable(catalog: Any, operation_id: str, keys: Any) -> Any | None:
 
 
 def _hit_score(hit: Any) -> float | None:
-    """A hit's finite numeric score, or None: NaN and infinity never compare."""
+    """A hit's finite numeric score, or None: NaN and infinity never compare.
+
+    An integer too large for a float counts as infinite.
+    """
     score = hit.get("score") if isinstance(hit, dict) else None
     if isinstance(score, bool) or not isinstance(score, (int, float)):
         return None
-    if not math.isfinite(score):
+    try:
+        if not math.isfinite(score):
+            return None
+    except OverflowError:
         return None
     return score
 
@@ -726,7 +741,8 @@ def _reselect(
     """
     if not params or body is not None or top.method != "GET":
         return None
-    if results[0]["operation_id"] in _OPEN_QUERY_OPERATIONS:
+    top_id = _hit_operation_id(results[0])
+    if top_id is None or top_id in _OPEN_QUERY_OPERATIONS:
         return None
     accepted = [parameter.name for parameter in top.parameters]
     foreign = [
@@ -1346,19 +1362,23 @@ async def fetch_data(
         # Every payload below lists the first three hits, as before the
         # selection window grew to five.
         candidates = results[:_CANDIDATE_LIST]
-        top = results[0]
-        operation_id = top["operation_id"]
-
-        try:
-            endpoint = catalog.get(operation_id)
-        except KeyError:
+        top_match = _hit_operation_id(results[0])
+        endpoint = None
+        if top_match is not None:
+            try:
+                endpoint = catalog.get(top_match)
+            except KeyError:
+                endpoint = None
+        if top_match is None or endpoint is None:
             # Should never happen — search returned an op_id that load_catalog
-            # doesn't recognise. Surface as a clear error rather than crashing.
+            # doesn't recognise, or a top hit with no string operation_id.
+            # Surface as a clear error rather than crashing.
             return {
                 "error": "stale_search_result",
-                "operation_id": operation_id,
+                "operation_id": top_match,
                 "candidate_endpoints": candidates,
             }
+        operation_id = top_match
 
         clean_params = {key: value for key, value in (params or {}).items() if value is not None}
         # Params that belong to another hit run that hit, not the top match:
@@ -1371,7 +1391,7 @@ async def fetch_data(
             "selected_by": "params" if reselected is not None else "query",
         }
         if reselected is not None:
-            selection["top_match"] = top["operation_id"]
+            selection["top_match"] = top_match
 
         missing = _missing_required(endpoint, clean_params, body)
         # A query that names a country must not run on the operation's
