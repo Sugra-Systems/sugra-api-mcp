@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from itertools import pairwise
 from typing import Any
 
 from ._countries import COUNTRY_QUERY_TERMS
@@ -1058,25 +1059,34 @@ def search_catalog(
     # answer nothing the question asks ("GDP" found a weather product first).
     # The words that name a statistic in other words are the statistic, which
     # every one of those operations answers: "consumer" and "prices" in
-    # "consumer prices". An operation that answers the statistic and names a
-    # word of the question in its keywords that none of those operations
-    # answers holds the subject of the question, so it takes the first of the
-    # slots: "coffee CPI" found the CPI of every country above FRED, which
-    # holds the coffee price index. A word only its other fields name is too
-    # weak for that ("forecast", "history"), and keeps its rank only.
+    # "consumer prices". A word named right before the statistic that an
+    # operation answering the statistic names in its keywords, and none of
+    # those operations answers, is the subject of the question, so that
+    # operation takes the first of the slots: "coffee CPI" found the CPI of
+    # every country above FRED, which holds the coffee price index. A word
+    # only its other fields name is too weak for that ("forecast",
+    # "history"), and so is a word elsewhere in the question ("CPI for
+    # countries producing coffee" asks for the CPI): either keeps its rank.
     held: dict[str, tuple[bool, str]] = {}
     places = [i for i, (_, endpoint, _) in enumerate(scored)
               if endpoint.operation_id in place_answers]
     if places:
         answered = frozenset().union(
             *(term_hits[scored[i][1].operation_id][1] for i in places), *spelled.values())
+        statistic_words = any_country_cues | frozenset().union(*spelled.values())
+        words = _tokens(query)
+        named_before = frozenset(
+            word for word, after in pairwise(words)
+            if word not in statistic_words
+            and (after in statistic_words or after.removesuffix("s") in statistic_words)
+        )
         subjects: list[int] = []
         national: list[int] = []
         for i, (_, endpoint, _) in enumerate(scored):
             strong, matched, keywords = term_hits[endpoint.operation_id]
             if endpoint.operation_id in place_answers or not any_country_cues & matched:
                 continue
-            if keywords - answered:
+            if (keywords - answered) & named_before:
                 subjects.append(i)
             elif _source_country(endpoint) is not None and not strong - answered:
                 national.append(i)
@@ -1084,20 +1094,29 @@ def search_catalog(
         def slot_of(i: int) -> tuple[int, bool, str]:
             return -scored[i][0], *tie_break(scored[i][1])
 
-        slots = sorted(slot_of(i) for i in [*subjects, *places, *national])
-        ranked = [*sorted(subjects, key=slot_of), *sorted(places, key=slot_of),
-                  *sorted(national, key=slot_of)]
-        notes = {i: "lifted-above:any-country-answers" for i in subjects}
-        for i in places:
-            notes[i] = "lifted-above:national-sources"
-        for slot, i in zip(slots, ranked, strict=True):
-            if slot != slot_of(i):
-                _, endpoint, why = scored[i]
-                note = notes.get(i, "clamped-below:any-country-answers")
-                if i in places and slot > slot_of(i):
-                    note = "clamped-below:subject-answers"
-                scored[i] = (-slot[0], endpoint, [*why, note])
-                held[endpoint.operation_id] = slot[1:]
+        group = {i: "subject" for i in subjects} | {i: "place" for i in places} | {
+            i: "national" for i in national}
+        before = {i: slot_of(i) for i in group}
+        after = dict(zip(
+            [*sorted(subjects, key=slot_of), *sorted(places, key=slot_of),
+             *sorted(national, key=slot_of)],
+            sorted(before.values()), strict=True))
+        for i, slot in after.items():
+            if slot == before[i]:
+                continue
+            # The note names what the row moved past: the rows it overtook,
+            # or the rows that overtook it.
+            if slot < before[i]:
+                passed = {group[j] for j in group if before[j] < before[i] and after[j] > slot}
+                note = ("lifted-above:any-country-answers" if "place" in passed
+                        else "lifted-above:national-sources")
+            else:
+                passed = {group[j] for j in group if before[j] > before[i] and after[j] < slot}
+                note = ("clamped-below:any-country-answers" if "place" in passed
+                        else "clamped-below:subject-answers")
+            _, endpoint, why = scored[i]
+            scored[i] = (-slot[0], endpoint, [*why, note])
+            held[endpoint.operation_id] = slot[1:]
 
     # Structural guarantee: a deprecated route never outranks its live
     # replacement, whatever the token luck (a query built from the legacy

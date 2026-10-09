@@ -2386,7 +2386,17 @@ def test_a_product_named_before_a_price_statistic_is_the_subject(catalog, query:
     the product."""
     top = search_catalog(catalog, query, limit=1)[0]
     assert top["operation_id"] == "fred_series_series_id", top
-    assert "lifted-above:any-country-answers" in top["why"], top["why"]
+    assert any(note.startswith("lifted-above:") for note in top["why"]), top["why"]
+
+
+def test_a_product_named_elsewhere_in_the_question_is_no_subject(catalog) -> None:
+    """"CPI for countries producing coffee" asks for the CPI: coffee says
+    which countries, so FRED keeps its own rank below the CPI of every
+    country."""
+    results = search_catalog(catalog, "CPI for countries producing coffee", limit=2)
+    assert [r["operation_id"] for r in results] == ["bis_cpi", "fred_series_series_id"], results
+    assert not any(note.startswith(("lifted-above:", "clamped-below:"))
+                   for note in results[1]["why"]), results[1]["why"]
 
 
 @pytest.mark.parametrize("query,expected", [
@@ -2426,8 +2436,33 @@ def test_only_a_keyword_makes_a_national_source_the_subject() -> None:
     assert [r["operation_id"] for r in results] == ["ine_widget", "world_widget", "ons_widget"], results
     assert "lifted-above:any-country-answers" in results[0]["why"], results[0]["why"]
     assert "clamped-below:subject-answers" in results[1]["why"], results[1]["why"]
-    assert not {"lifted-above:any-country-answers", "clamped-below:any-country-answers"} & set(
-        results[2]["why"]), results[2]["why"]
+    # The summary-only operation scores and explains itself as it does alone.
+    alone = search_catalog(Catalog(source="test", endpoints=[worded]), "coffee inflation", limit=1)
+    assert (results[2]["score"], results[2]["why"]) == (alone[0]["score"], alone[0]["why"]), (
+        results[2], alone)
+
+
+def test_a_subject_names_only_what_it_moved_past() -> None:
+    """A subject that overtakes only a national source says so, not that it
+    overtook an operation that takes the country, which it ranked above
+    already; the national source it overtook names both."""
+    from sugra_api_mcp.catalog.models import Catalog, Endpoint, EndpointParameter
+
+    country = EndpointParameter(name="country", location="query")
+    # Before the trade: the national source 32, the subject 30, the operation
+    # that takes the country 18.
+    national = Endpoint(operation_id="ine_inflation", method="GET", path="/inflation",
+                        summary="Inflation", description="Inflation")
+    keyed = Endpoint(operation_id="ons_widget", method="GET", path="/y",
+                     summary="Prices", description="Inflation", keywords=["coffee", "inflation"])
+    takes = Endpoint(operation_id="world_widget", method="GET", path="/x",
+                     summary="Prices", description="Inflation", parameters=[country])
+    results = search_catalog(Catalog(source="test", endpoints=[national, keyed, takes]),
+                             "coffee inflation", limit=5)
+    assert [r["operation_id"] for r in results] == ["ons_widget", "world_widget", "ine_inflation"], results
+    assert "lifted-above:national-sources" in results[0]["why"], results[0]["why"]
+    assert "lifted-above:national-sources" in results[1]["why"], results[1]["why"]
+    assert "clamped-below:any-country-answers" in results[2]["why"], results[2]["why"]
 
 
 @pytest.mark.parametrize("query,words", [
