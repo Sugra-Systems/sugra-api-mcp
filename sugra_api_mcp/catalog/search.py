@@ -434,7 +434,8 @@ def _score(
     # the other: "space weather" is solar activity, not the weather in Paris,
     # and "real wages" are no real estate.
     silenced = {
-        tail for prefix, (heads, tail) in COMPOUND_NAMED_OPERATIONS.items()
+        tail for prefix, (heads, tails) in COMPOUND_NAMED_OPERATIONS.items()
+        for tail in tails
         if endpoint.operation_id.startswith(prefix)
         and not any(head in query_terms for head in heads)
     }

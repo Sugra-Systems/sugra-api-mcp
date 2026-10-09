@@ -1585,22 +1585,26 @@ def detect_named_operations(query: str) -> NamedRequest:
 # Hong Kong Observatory first.
 TOPIC_DEFAULT_OPERATIONS: dict[str, str] = {"weather": "v2_weather_forecast"}
 
-# Operations named by a compound one of whose words is an everyday word of its
-# own, as (the words that make it the compound, that word): "space weather" is
-# solar activity, so the word "weather" finds these operations only when the
+# Operations named by a compound some of whose words are everyday words of their
+# own, as (the words that make it the compound, those words): "space weather"
+# is solar activity, so the word "weather" finds these operations only when the
 # query also says "space"; and "real" in "real wages" or "real GDP" means
 # adjusted for inflation, so it finds the real-estate operations only beside a
 # word for property, as in "real estate" or "real home prices". The changes to
-# an ETF's top holdings answer "top" only beside a word for change: "VOO's top
-# holdings" asks for the holdings, not how they moved between two dates.
-COMPOUND_NAMED_OPERATIONS: dict[str, tuple[tuple[str, ...], str]] = {
-    "space_weather_": (("space",), "weather"),
+# an ETF's top holdings answer "top" and "holdings" only beside a word for
+# change: "VOO's top holdings" asks for the holdings, not how they moved
+# between two dates.
+COMPOUND_NAMED_OPERATIONS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    "space_weather_": (("space",), ("weather",)),
     "real_estate_": (
         ("estate", "realty", "property", "properties", "home", "homes",
          "house", "houses", "housing"),
-        "real",
+        ("real",),
     ),
-    "etf_symbol_top_holdings_changes": (("change", "changes", "changed", "churn"), "top"),
+    "etf_symbol_top_holdings_changes": (
+        ("change", "changes", "changed", "churn"),
+        ("top", "holdings"),
+    ),
 }
 
 # Words an operation's summary names as the measures it is computed from,
