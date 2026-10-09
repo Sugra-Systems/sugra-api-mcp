@@ -50,6 +50,7 @@ import ssl
 import threading
 import time
 from collections.abc import Callable
+from datetime import datetime
 from functools import partial
 from typing import Any
 
@@ -380,11 +381,81 @@ def _sells(value: Any) -> bool:
     return False
 
 
-def _positive_int_header(response: httpx.Response, name: str) -> int | None:
+def _int_header(response: httpx.Response, name: str) -> int | None:
+    """A header of at most 15 ASCII digits as an int, else None. Never raises:
+    the length bound keeps a malformed header from a proxy inside the limit
+    int() puts on long digit strings."""
     raw = str(response.headers.get(name, "")).strip()
-    if raw.isascii() and raw.isdigit() and int(raw) > 0:
+    if raw.isascii() and raw.isdigit() and len(raw) <= 15:
         return int(raw)
     return None
+
+
+def _positive_int_header(response: httpx.Response, name: str) -> int | None:
+    value = _int_header(response, name)
+    return value if value is not None and value > 0 else None
+
+
+# A reset time in the shape the API sends (2026-10-08T23:59:59Z): ASCII
+# digits, a T between the date and the time, an hour from 00 to 23, an
+# optional fraction of a second and a stated offset. fromisoformat alone is
+# not enough: it takes any one character in place of the T, an offset of
+# +00:60, and on some Python versions an hour of 24.
+_TIMESTAMP = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}"
+    r"T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\.[0-9]{1,6})?"
+    r"(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])"
+)
+
+
+def _is_timestamp(raw: str) -> bool:
+    """True for a reset time of that shape on a day the calendar has."""
+    if _TIMESTAMP.fullmatch(raw) is None:
+        return False
+    try:
+        datetime.fromisoformat(raw)
+    except ValueError:
+        return False
+    return True
+
+
+# The API reports the account's daily quota on every response it counts. A
+# model that sees what is left can spend calls with care and tell the person
+# before the limit is reached, instead of learning of it from the refusal
+# below. Information only, like that refusal: no plan and no link.
+def _daily_quota(response: httpx.Response) -> dict[str, Any] | None:
+    """The quota from the X-RateLimit headers, or None.
+
+    All three must be well formed: a positive limit, a remainder no larger
+    than it, and a reset time with its offset. A response without them, such
+    as one from a public route or an unmetered key, or with any one of them
+    malformed, carries no quota rather than a guessed one.
+    """
+    limit = _positive_int_header(response, "X-RateLimit-Limit")
+    remaining = _int_header(response, "X-RateLimit-Remaining")
+    resets_at = str(response.headers.get("X-RateLimit-Reset", "")).strip()
+    if limit is None or remaining is None or remaining > limit:
+        return None
+    if not _is_timestamp(resets_at):
+        return None
+    return {"limit": limit, "remaining": remaining, "resets_at": resets_at}
+
+
+def _with_quota(payload: Any, response: httpx.Response) -> Any:
+    """A success payload with meta.quota added when the API reported one.
+
+    Only an object can carry it. A meta that is not an object, or that
+    already holds a quota of the API's own, is left as the API sent it."""
+    quota = _daily_quota(response)
+    if quota is None or not isinstance(payload, dict):
+        return payload
+    meta = payload.get("meta")
+    if meta is None:
+        meta = {}
+    if not isinstance(meta, dict) or "quota" in meta:
+        return payload
+    payload["meta"] = {**meta, "quota": quota}
+    return payload
 
 
 def _daily_limit_error(detail: str, response: httpx.Response) -> dict[str, Any]:
@@ -887,7 +958,7 @@ class SugraClient:
             if request_id:
                 result["request_id"] = str(request_id)
             return result
-        return payload
+        return _with_quota(payload, response)
 
     async def aclose(self) -> None:
         """Close the client built on a transport of this client's own.
