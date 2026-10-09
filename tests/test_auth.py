@@ -267,7 +267,7 @@ async def test_jwt_activity_validation_failure_denies_auth(auth_config, rsa_keyp
     with patch("httpx.AsyncClient.post", new=fake_post), pytest.raises(AuthError) as exc:
         await auth.resolve(token)
 
-    assert exc.value.status == 403
+    assert exc.value.status == 401
     assert "connection_disconnected" in str(exc.value)
     assert call_count == 1
 
