@@ -111,10 +111,11 @@ TICKER_QUOTES_SYMBOL_BOOST = 25
 TICKER_SYMBOL_PATH_BOOST = 10
 TICKER_SYMBOL_PARAM_BOOST = 6
 # A listing question that names a period lifts the price history above the
-# listing operations no other word picks: above a word only a description
-# holds (1), and no higher, so a word of the question in a strong field still
-# picks its operation ("AAPL dividends since 2020" is the dividends).
-LISTING_PERIOD_BOOST = 2
+# listing operations no other word picks: level with a word only a description
+# holds (1), where the history wins as the tie default, and below every strong
+# field, so a word of the question in a strong field still picks its operation
+# ("AAPL dividends since 2020" is the dividends).
+LISTING_PERIOD_BOOST = 1
 CURRENCY_PAIR_FOREX_BOOST = 15
 CENTRAL_BANK_PREFIX_BOOST = 15
 CRYPTO_NAMESPACE_BOOST = 18
@@ -834,8 +835,11 @@ def search_catalog(
         boost_quotes_symbol = True
 
     boost_markets_toolset = boost_quotes_symbol
-    # A listing question that names a period asks for the price history.
-    listing_period = boost_quotes_symbol and query_names_a_period(query)
+    # A question about one listing that names a period asks for its price
+    # history; several listings with a period still ask for their prices.
+    listing_period = (
+        boost_quotes_symbol and len(tickers) <= 1 and query_names_a_period(query)
+    )
     # Everyday names: a currency named in words, and the benchmarks, waterways,
     # ports and measures of detect_named_operations. Crypto context keeps
     # "convert bitcoin to dollars" a crypto price. A pair asks for a

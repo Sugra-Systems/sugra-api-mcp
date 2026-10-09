@@ -18,6 +18,7 @@ from sugra_api_mcp.catalog.aliases import (
     detect_tickers,
     detect_us_macro_query,
     matching_central_bank_prefixes,
+    query_names_a_period,
 )
 from sugra_api_mcp.catalog.loader import load_catalog
 from sugra_api_mcp.catalog.search import search_catalog
@@ -2654,7 +2655,9 @@ def test_a_statistic_acronym_is_no_listing(query: str) -> None:
 
 @pytest.mark.parametrize("query", [
     "TLT since 2020", "SPY since 2020", "AAPL over the last five years",
-    "How has QQQ done over the past decade?",
+    "How has QQQ done over the past decade?", "AAPL in 2008",
+    # Level with a description-only word ("aapl", "month"): the tie default.
+    "AAPL over the last month",
 ])
 def test_a_listing_and_a_period_ask_for_the_price_history(catalog, query: str) -> None:
     """"TLT since 2020" ranked the dividends and splits first: the ticker
@@ -2662,6 +2665,16 @@ def test_a_listing_and_a_period_ask_for_the_price_history(catalog, query: str) -
     top = search_catalog(catalog, query, limit=1)[0]
     assert top["operation_id"] == "quotes_symbol_historical", top
     assert "pattern:period->history" in top["why"], top
+
+
+@pytest.mark.parametrize("query,named", [
+    ("TLT since 2020", True), ("AAPL past week", True), ("SPY a month ago", True),
+    ("AAPL over the last month", True), ("TLT over the decades", True),
+    ("IWM Russell 2000", False), ("AAPL 2020", False), ("AAPL since open", False),
+    ("AAPL 15 minutes ago", False), ("AAPL last close", False),
+])
+def test_a_period_is_days_or_longer(query: str, named: bool) -> None:
+    assert query_names_a_period(query) is named
 
 
 @pytest.mark.parametrize("query,first", [
@@ -2684,16 +2697,27 @@ def test_a_listing_no_word_narrows_asks_for_its_price(catalog, query: str) -> No
     "inflation since 2020", "GDP of France since 2010",
     # No period of days or longer, or a listing named like a period word.
     "AAPL since open", "AAPL 15 minutes ago", "AAPL versus AGO", "AAPL dividend history",
+    # A number in a name, and several listings with a period.
+    "IWM Russell 2000", "TLT SPY since 2020",
 ])
 def test_no_listing_period_lifts_no_price_history(catalog, query: str) -> None:
     rows = search_catalog(catalog, query, limit=2000)
     assert not any("pattern:period->history" in row["why"] for row in rows)
 
 
-@pytest.mark.parametrize("query", ["TLT SPY", "AAPL vs MSFT"])
+@pytest.mark.parametrize("query", ["TLT SPY", "TLT SPY since 2020"])
 def test_several_listings_ask_for_their_prices(catalog, query: str) -> None:
+    """No description names TLT or SPY: the tie order alone puts the
+    several-listings operation first."""
     assert len(detect_tickers(query)) == 2
-    top = search_catalog(catalog, query, limit=1)[0]
+    rows = search_catalog(catalog, query, limit=2)
+    assert rows[0]["operation_id"] == "quotes_symbol_multiple", rows[0]
+    assert rows[0]["score"] == rows[1]["score"], rows
+
+
+def test_several_listings_one_described_ask_for_their_prices(catalog) -> None:
+    assert len(detect_tickers("AAPL vs MSFT")) == 2
+    top = search_catalog(catalog, "AAPL vs MSFT", limit=1)[0]
     assert top["operation_id"] == "quotes_symbol_multiple", top
 
 
