@@ -15,6 +15,7 @@ back as is. Offline: the bundled catalog and the search, no HTTP.
 
 from __future__ import annotations
 
+import gc
 from typing import Any
 
 from sugra_api_mcp.catalog import search
@@ -282,8 +283,9 @@ async def test_the_candidate_list_stays_at_three(monkeypatch) -> None:
 
     assert client.calls == []
     assert result["selected_endpoint"]["operation_id"] == "crypto_coin_id_price"
-    assert [hit["operation_id"] for hit in result["candidate_endpoints"]] == _ranks(
-        "Bitcoin price")[:3]
+    assert result["candidate_endpoints"] == search_catalog(
+        load_catalog(), "Bitcoin price", limit=3)
+    assert len(result["candidate_endpoints"]) == 3
 
 
 async def test_the_score_floor_is_inclusive_at_half(monkeypatch) -> None:
@@ -358,6 +360,31 @@ async def test_six_declaring_operations_are_not_rare(monkeypatch) -> None:
     assert result["alternatives"] == ["candidate_op"]
 
 
+def test_the_key_counts_do_not_keep_a_catalog_alive(monkeypatch) -> None:
+    monkeypatch.setattr(gateway, "_key_counts", None)
+    catalog = Catalog(source="test", endpoints=_declaring(2))
+
+    assert gateway._operations_per_key(catalog) == {"gauge_id": 2}
+    assert gateway._operations_per_key(catalog) is gateway._key_counts[1]
+    del catalog
+    gc.collect()
+
+    assert gateway._key_counts[0]() is None
+
+
+def test_a_catalog_that_cannot_be_weakly_referenced_is_counted_not_cached(monkeypatch) -> None:
+    class _Slotted:
+        __slots__ = ("endpoints",)
+
+        def __init__(self, endpoints: list[Endpoint]) -> None:
+            self.endpoints = endpoints
+
+    monkeypatch.setattr(gateway, "_key_counts", None)
+
+    assert gateway._operations_per_key(_Slotted(_declaring(3))) == {"gauge_id": 3}
+    assert gateway._key_counts is None
+
+
 def test_the_common_keys_of_the_bundled_catalog_are_not_rare() -> None:
     counts = gateway._operations_per_key(load_catalog())
 
@@ -365,8 +392,24 @@ def test_the_common_keys_of_the_bundled_catalog_are_not_rare() -> None:
         assert counts.get(key, 0) > gateway._RARE_KEY_MAX_OPERATIONS, (key, counts.get(key))
 
 
-async def test_a_non_finite_top_score_never_reselects(monkeypatch) -> None:
-    for top_score in (float("nan"), float("inf")):
+# Scores that never compare: NaN, infinities, an integer too large for a float,
+# a boolean and a string.
+_UNUSABLE_SCORES = (
+    float("nan"), float("inf"), float("-inf"), 10**400, -(10**400), True, False, "high", "40")
+
+
+def test_an_unusable_score_reads_as_none() -> None:
+    for score in _UNUSABLE_SCORES:
+        assert gateway._hit_score({"score": score}) is None, score
+    assert gateway._hit_score({}) is None
+    assert gateway._hit_score("not a hit") is None
+    assert gateway._hit_score({"score": 40}) == 40
+    assert gateway._hit_score({"score": 0.5}) == 0.5
+    assert gateway._hit_score({"score": 10**300}) == 10**300
+
+
+async def test_an_unusable_top_score_never_reselects(monkeypatch) -> None:
+    for top_score in _UNUSABLE_SCORES:
         hits = [{"operation_id": "top_op", "score": top_score},
                 {"operation_id": "candidate_op", "score": 30}]
         client = _patch(monkeypatch, _declaring(2), hits)
@@ -378,8 +421,8 @@ async def test_a_non_finite_top_score_never_reselects(monkeypatch) -> None:
         assert result["operation_id"] == "top_op", top_score
 
 
-async def test_a_non_finite_candidate_score_is_never_selected(monkeypatch) -> None:
-    for candidate_score in (float("nan"), float("inf")):
+async def test_an_unusable_candidate_score_is_never_selected(monkeypatch) -> None:
+    for candidate_score in _UNUSABLE_SCORES:
         hits = [{"operation_id": "top_op", "score": 40},
                 {"operation_id": "candidate_op", "score": candidate_score},
                 {"operation_id": "filler_0", "score": 30}]
@@ -405,6 +448,63 @@ async def test_a_malformed_hit_is_skipped_not_fatal(monkeypatch) -> None:
 
     assert client.calls == [("/api/v1/candidate_op", {"gauge_id": "G1"})]
     assert result["meta"]["fetch_data"]["operation_id"] == "candidate_op"
+
+
+async def test_a_top_hit_without_a_string_operation_id_is_a_stale_result(monkeypatch) -> None:
+    """The top hit is read as defensively as the rest: no crash, and the same
+    answer as an id the catalog does not hold."""
+    rest = [{"operation_id": "candidate_op", "score": 40},
+            {"operation_id": "filler_0", "score": 30}]
+    for top_hit in ({"score": 40}, {"operation_id": 7, "score": 40},
+                    {"operation_id": None, "score": 40}, "not a hit"):
+        hits = [top_hit, *rest]
+        client = _patch(monkeypatch, _declaring(2), hits)
+
+        bare = await gateway.fetch_data(query="gauge")
+        sent = await gateway.fetch_data(query="gauge", params={"gauge_id": "G1"})
+
+        assert client.calls == [], top_hit
+        for result in (bare, sent):
+            assert result["error"] == "stale_search_result", top_hit
+            assert result["operation_id"] is None, top_hit
+            assert result["candidate_endpoints"] == hits[:3], top_hit
+
+
+async def test_an_unknown_top_hit_is_still_a_stale_result(monkeypatch) -> None:
+    hits = [{"operation_id": "no_such_operation", "score": 40},
+            {"operation_id": "candidate_op", "score": 40}]
+    client = _patch(monkeypatch, _declaring(2), hits)
+
+    result = await gateway.fetch_data(query="gauge", params={"gauge_id": "G1"})
+
+    assert client.calls == []
+    assert result["error"] == "stale_search_result"
+    assert result["operation_id"] == "no_such_operation"
+
+
+def test_a_malformed_top_hit_is_never_reselected() -> None:
+    catalog = Catalog(source="test", endpoints=_declaring(2))
+    top = catalog.get("top_op")
+    rest = [{"operation_id": "candidate_op", "score": 40}]
+    params = {"gauge_id": "G1"}
+
+    assert gateway._reselect(catalog, [{"operation_id": "top_op", "score": 40}, *rest], top, params, None)
+    for top_hit in ({"score": 40}, {"operation_id": 7, "score": 40}, "not a hit"):
+        assert gateway._reselect(catalog, [top_hit, *rest], top, params, None) is None, top_hit
+
+
+async def test_a_delegated_result_that_is_not_a_dict_comes_back_as_is(monkeypatch) -> None:
+    """The refusal check reads dicts only; anything else is returned untouched."""
+    _patch(monkeypatch, _declaring(2), [{"operation_id": "top_op", "score": 40}])
+    for delegated in (["not", "a", "dict"], "plain text", 7, None):
+        async def _call_endpoint(*, _answer: Any = delegated, **_kwargs: Any) -> Any:
+            return _answer
+
+        monkeypatch.setattr(gateway, "call_endpoint", _call_endpoint)
+
+        result = await gateway.fetch_data(query="gauge", params={"gauge_id": "G1"})
+
+        assert result == delegated, delegated
 
 
 async def test_alternatives_stop_at_three(monkeypatch) -> None:
