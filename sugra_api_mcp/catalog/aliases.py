@@ -1592,8 +1592,9 @@ TOPIC_DEFAULT_OPERATIONS: dict[str, str] = {"weather": "v2_weather_forecast"}
 # adjusted for inflation, so it finds the real-estate operations only beside a
 # word for property, as in "real estate" or "real home prices". The changes to
 # an ETF's top holdings answer "top" and "holdings" only beside a word for
-# change: "VOO's top holdings" asks for the holdings, not how they moved
-# between two dates.
+# change, and a word for change only beside "top" or "holdings": "VOO's top
+# holdings" asks for the holdings, not how they moved between two dates, and
+# "SPY changes" asks nothing about holdings.
 COMPOUND_NAMED_OPERATIONS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "space_weather_": (("space",), ("weather",)),
     "real_estate_": (
@@ -1604,6 +1605,10 @@ COMPOUND_NAMED_OPERATIONS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = 
     "etf_symbol_top_holdings_changes": (
         ("change", "changes", "changed", "churn"),
         ("top", "holdings"),
+    ),
+    "etf_symbol_top_holdings_": (
+        ("top", "holdings"),
+        ("change", "changes", "changed", "churn"),
     ),
 }
 

@@ -2680,6 +2680,16 @@ def test_holdings_are_no_change_in_them(catalog, query: str) -> None:
     assert "pattern:ticker->etf_symbol" not in changes["why"], changes
 
 
+@pytest.mark.parametrize("query", ["SPY changes", "SPY churn", "what changed in SPY"])
+def test_a_change_is_no_holdings_change(catalog, query: str) -> None:
+    """And a word for change answers it only beside "top" or "holdings": "SPY
+    changes" says nothing about holdings."""
+    rows = search_catalog(catalog, query, limit=2000)
+    assert rows[0]["operation_id"] != "etf_symbol_top_holdings_changes", rows[0]
+    changes = next(row for row in rows if row["operation_id"] == "etf_symbol_top_holdings_changes")
+    assert "pattern:ticker->etf_symbol" not in changes["why"], changes
+
+
 @pytest.mark.parametrize("query,first", [
     # The topic word picks the quotes.
     ("SPY price", "quotes_symbol_price"),
