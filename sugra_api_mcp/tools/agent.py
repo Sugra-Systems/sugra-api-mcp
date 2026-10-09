@@ -278,6 +278,15 @@ async def get_timeseries(
     Returns points oldest-first with an explicit downsampling flag when the
     raw series exceeded max_points. Times are UTC. Costs 1 unit per call.
 
+    Read the step from ``served_granularity``, not ``granularity``. The
+    latter echoes the request; the former is the step the source built the
+    points at, and the two can differ (a long price range can come back as
+    monthly bars under a "1d" request). It reads ``mixed`` when the points do
+    not share one step, ``unknown`` when the source does not say, and null
+    when no point came back. It describes how each point was built, not how
+    far apart the returned points are: a thinned daily series still reads
+    daily, and ``downsampled`` is what says points were dropped.
+
     The two ETF flow metrics answer different questions and are not
     interchangeable. ``etf_flows`` is an ESTIMATE at filing cadence: one point
     per SEC filing refresh, so ``t`` is a filing date and even a wide window

@@ -420,3 +420,25 @@ def test_get_snapshot_description_warns_macro_calendar_ignores_entity(monkeypatc
         "for macro_calendar, entity is accepted but does not filter the "
         "calendar" in normalized
     ), normalized
+
+
+def test_get_timeseries_description_reads_the_step_from_served_granularity(monkeypatch):
+    """The series answer carries `granularity` as the REQUESTED step and
+    `served_granularity` as the step the source built the points at; a long
+    price range asked at "1d" comes back as monthly bars. Thinning to
+    max_points is reported by `downsampled` and leaves the step as built. A
+    caller reading only the served tool description must be told which field
+    to quote, or it describes monthly bars as a daily series."""
+    monkeypatch.setenv("SUGRA_AGENT_INTERNAL_TOKEN", "tok-123")
+    instance = FastMCP("probe")
+    assert register_agent_tools(instance) is True
+    tools = {t.name: t for t in asyncio.run(instance.list_tools())}
+    normalized = " ".join((tools["get_timeseries"].description or "").split())
+    assert (
+        "Read the step from ``served_granularity``, not ``granularity``."
+        in normalized
+    ), normalized
+    assert (
+        "a thinned daily series still reads daily, and ``downsampled`` is "
+        "what says points were dropped" in normalized
+    ), normalized
