@@ -10,6 +10,7 @@ import time
 from collections import deque
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
+from contextvars import ContextVar
 from functools import partial
 from typing import Annotated, Any
 
@@ -544,10 +545,13 @@ async def _shape_off_loop(call: Callable[[], Any]) -> Any:
 
 def _shape_and_gate(
     payload: Any, path: str, limit: int | None, fields: list[str] | None, include_raw: bool,
-    *, endpoint: Any = None,
+    *, endpoint: Any = None, selection: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The job the shaping pool runs: shape the response, then apply the size gate."""
     shaped = shape_response(payload, limit=limit, fields=fields, include_raw=include_raw)
+    if selection is not None and isinstance(shaped, dict):
+        # fetch_data's selection is part of the answer, so the gate measures it.
+        shaped = _with_fetch_meta(shaped, selection)
     # The unshaped payload lets the gate read the records' order as the
     # API sent them, so it keeps the same end meta.shaped reports; the
     # endpoint lets its hints name the operation's own parameters.
@@ -773,6 +777,14 @@ def _alternatives(
         if len(found) == _MAX_ALTERNATIVES:
             break
     return found
+
+
+# The selection fetch_data made, for the call_endpoint it delegates to: that call
+# writes it into meta.fetch_data before the size gate, so the cap counts it and a
+# cut keeps it. A context variable rather than a parameter, because the delegate
+# is the published tool and its schema must not grow; fetch_data resets it when
+# the call returns, so a call_endpoint a client sends never reads one.
+_FETCH_SELECTION: ContextVar[dict[str, Any] | None] = ContextVar("fetch_selection", default=None)
 
 
 def _with_fetch_meta(result: dict[str, Any], selection: dict[str, Any]) -> dict[str, Any]:
@@ -1147,7 +1159,8 @@ async def call_endpoint(
         # by two clocks, the fields projection's and then the cut's, plus a
         # grace; past it the plain size refusal answers (client._cut_on_pool).
         return await _cut_on_pool(
-            partial(_shape_and_gate, payload, path, limit, fields, include_raw, endpoint=endpoint),
+            partial(_shape_and_gate, payload, path, limit, fields, include_raw,
+                    endpoint=endpoint, selection=_FETCH_SELECTION.get()),
             path,
             clocks=2,
         )
@@ -1438,28 +1451,29 @@ async def fetch_data(
         # delegate is the decorated tool, and its span reads the operation
         # from kwargs only (a positional first argument is a raw query on
         # other tools). Passed positionally, every delegated failure was a
-        # call_endpoint span with no operation at all.
-        result = await call_endpoint(
-            operation_id=operation_id,
-            params=clean_params,
-            body=body,
-            limit=limit,
-            fields=fields,
-            include_raw=include_raw,
-        )
-        if not isinstance(result, dict):
-            return result
-        if is_error_payload(result):
-            # The refusal comes from the delegate, so its span keeps the
-            # operation; the hits that would take every sent key are named.
-            if result.get("error") == "unknown_parameters":
-                alternatives = _alternatives(
-                    catalog, results, operation_id, clean_params, result.get("unknown"))
-                if alternatives:
-                    result = {**result, "alternatives": alternatives}
-            return result
-        # After the size gate: the selection adds a few dozen characters.
-        return _with_fetch_meta(result, selection)
+        # call_endpoint span with no operation at all. The delegate writes the
+        # selection into meta.fetch_data before its size gate.
+        previous = _FETCH_SELECTION.set(selection)
+        try:
+            result = await call_endpoint(
+                operation_id=operation_id,
+                params=clean_params,
+                body=body,
+                limit=limit,
+                fields=fields,
+                include_raw=include_raw,
+            )
+        finally:
+            _FETCH_SELECTION.reset(previous)
+        # A refusal comes from the delegate, so its span keeps the operation;
+        # the hits that would take every sent key are named.
+        if (isinstance(result, dict) and is_error_payload(result)
+                and result.get("error") == "unknown_parameters"):
+            alternatives = _alternatives(
+                catalog, results, operation_id, clean_params, result.get("unknown"))
+            if alternatives:
+                result = {**result, "alternatives": alternatives}
+        return result
     except Exception as exc:
         return {
             "error": "tool_execution_failed",

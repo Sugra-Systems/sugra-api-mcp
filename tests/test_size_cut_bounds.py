@@ -461,28 +461,104 @@ def test_a_large_rest_of_the_response_is_named_not_a_record() -> None:
     assert "most of it is at meta, about " in result["retry_hint"]
 
 
-def test_records_that_each_fit_beside_the_rest_are_not_blamed() -> None:
-    row = {"date": "2026-10-01", "blob": "y" * 5_000}
-    payload = {"data": {"a": [row, row], "b": [row, row]}, "meta": {"notes": "n" * 8_500}}
+def _beside(hint: str, before: str) -> int:
+    """The size the hint gives for the rest of the response and the notice."""
+    tail = hint.split(before, 1)[1]
+    return int(tail.split(" characters", 1)[0].replace(",", ""))
 
-    result = _module().cut_to_fit(payload, "test://rest", cap=CAP)
+
+def test_first_records_that_fit_only_alone_are_named_with_their_sum() -> None:
+    # Each list's first record fits beside the rest; the two together do not.
+    row = {"date": "2026-10-01", "blob": "y" * 5_000}
+    big = {"date": "2026-10-01", "blob": "z" * 5_200}
+    payload = {"data": {"a": [row, row], "b": [big, big]}, "meta": {"notes": "n" * 8_500}}
+
+    result = _module().cut_to_fit(payload, "test://sum", cap=CAP)
 
     assert result["error"] == "response_too_large"
+    hint = result["retry_hint"]
+    together = chars(row) + chars(big)
+    assert hint.startswith(
+        f"Each list keeps at least one record, and those 2 records, about {together:,} "
+        "characters together, do not fit beside the rest of the response and the cut notice, about "
+    )
+    assert hint.endswith(f"The largest is at data.b, about {chars(big):,} characters.")
+    shell = chars({"data": {"a": [], "b": []}, "meta": payload["meta"]})
+    beside = _beside(hint, "the cut notice, about ")
+    assert shell < beside < CAP - chars(big)
+    assert together > CAP - beside
     assert "One record" not in result["message"]
-    assert "most of it is at meta, about 8,5" in result["retry_hint"]
 
 
-def test_the_record_named_is_the_largest_one_not_the_first_kept() -> None:
-    # Neither list has an order, so each keeps its first record, and the
-    # two first records together are over the cap.
-    first = {"id": 1, "blob": "f" * 10_500}
+def test_the_record_named_is_the_first_kept_not_the_largest() -> None:
+    # The list has no order, so the cut keeps its first record; the larger
+    # record behind it would be cut anyway and is not what leaves no room.
+    first = {"id": 1, "blob": "f" * 10_000}
     huge = {"id": 2, "blob": "h" * 200_000}
-    other = {"id": 3, "blob": "o" * 12_800}
-    payload = {"data": {"a": [first, huge], "b": [other, other]}}
+    payload = {"data": [first, huge], "meta": {"notes": "n" * 9_000}}
 
-    result = _module().cut_to_fit(payload, "test://worst", cap=CAP)
+    result = _module().cut_to_fit(payload, "test://first", cap=CAP)
 
-    assert result["retry_hint"].startswith("One record at data.a is larger than the limit by itself")
+    assert result["retry_hint"].startswith(
+        f"One record at data, about {chars(first):,} characters, does not fit beside ")
+    assert "200," not in result["retry_hint"]
+
+
+def test_more_lists_whose_first_record_is_too_large_are_counted() -> None:
+    big = {"id": 1, "blob": "b" * 19_000}
+    three = {"data": {"a": [big], "b": [big], "c": [big]}}
+    two = {"data": {"a": [big], "b": [big]}}
+
+    counted = _module().cut_to_fit(three, "test://three", cap=CAP)["retry_hint"]
+    one_more = _module().cut_to_fit(two, "test://two", cap=CAP)["retry_hint"]
+
+    assert counted == (
+        f"One record at data.a is larger than the limit by itself, about {chars(big):,} "
+        "characters. 2 more lists hold a record that does not fit either."
+    )
+    assert one_more.endswith(" One more list holds a record that does not fit either.")
+
+
+def _two_lists() -> dict:
+    row = {"date": "2026-10-01", "blob": "y" * 3_000}
+    return {"data": {"a": [row] * 6, "b": [row] * 6}, "meta": {"notes": "n" * 2_000}}
+
+
+def test_passes_that_run_out_still_measure_one_record_of_each_list(monkeypatch) -> None:
+    module = _module()
+    monkeypatch.setattr(module, "MAX_SHRINK_PASSES", 0)
+
+    result = module.cut_to_fit(_two_lists(), "test://least", cap=CAP)
+
+    assert "error" not in result
+    assert [len(result["data"]["a"]), len(result["data"]["b"])] == [1, 1]
+    assert _fits(result)
+    assert notice(result)["kept_chars"] == chars(result)
+
+
+def test_a_notice_over_its_reserve_is_said_with_the_sizes(monkeypatch) -> None:
+    # The one-record cut fits by the estimate; its real notice is larger.
+    module = _module()
+    written = module._notice
+
+    def _padded(*args, **kwargs):
+        made = written(*args, **kwargs)
+        if kwargs["kept_chars"] == 0:
+            made["pad"] = "p" * CAP
+        return made
+
+    monkeypatch.setattr(module, "_notice", _padded)
+    payload = _two_lists()
+
+    result = module.cut_to_fit(payload, "test://notice", cap=CAP)
+
+    row = payload["data"]["a"][0]
+    shell = chars({"data": {"a": [], "b": []}, "meta": payload["meta"]})
+    assert result["retry_hint"] == (
+        f"Even one record of each list, about {2 * chars(row):,} characters, with the rest of the "
+        f"response, about {shell:,} characters, and the cut notice is over the limit. The "
+        f"largest is at data.a, about {chars(row):,} characters."
+    )
 
 
 def test_a_record_that_does_not_fit_beside_the_rest_is_named_with_both_sizes() -> None:
@@ -492,10 +568,12 @@ def test_a_record_that_does_not_fit_beside_the_rest_is_named_with_both_sizes() -
     result = _module().cut_to_fit(payload, "test://record", cap=CAP)
 
     shell = chars({"data": [], "meta": payload["meta"]})
-    assert result["retry_hint"] == (
-        f"One record at data, about {chars(row):,} characters, does not fit beside "
-        f"the rest of the response, about {shell:,} characters."
-    )
+    hint = result["retry_hint"]
+    before = (f"One record at data, about {chars(row):,} characters, does not fit beside "
+              "the rest of the response and the cut notice, about ")
+    assert hint.startswith(before)
+    assert hint.endswith(" characters.")
+    assert shell < _beside(hint, before) < shell + 1_000
 
 
 # ---- a fixed tool's failure is gated too ----
