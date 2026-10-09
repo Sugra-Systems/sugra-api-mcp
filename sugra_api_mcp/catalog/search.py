@@ -7,6 +7,7 @@ from typing import Any
 
 from ._countries import COUNTRY_QUERY_TERMS
 from .aliases import (
+    CENTRAL_BANK_PLACES,
     CENTRAL_BANK_PREFIX_BOOSTS,
     COMPOUND_NAMED_OPERATIONS,
     FX_CONVERT_OPERATION,
@@ -839,6 +840,17 @@ def search_catalog(
     if fx is not None:
         consumed.update(fx.words)
         penalty_countries |= fx.issuer_countries
+    # A named central bank names the place it answers for, and "US" in any
+    # spelling names the United States when no other place is named, as the
+    # macro keys read it ("show us Japan GDP" asks about Japan): "Fed
+    # inflation" and "U.S. inflation" ranked the inflation of Argentina among
+    # the first answers.
+    penalty_countries.update(
+        CENTRAL_BANK_PLACES[prefix] for prefix in central_bank_prefixes
+        if prefix in CENTRAL_BANK_PLACES
+    )
+    if not penalty_countries - {"US"} and query_names_united_states(query):
+        penalty_countries.add("US")
     # Country tokens are NOT consumed: consuming them would strip the CORRECT
     # national source of the coverage credit for the country the user typed.
     # The country-param boost reads them separately, to tell a query that is

@@ -105,6 +105,19 @@ CENTRAL_BANK_PREFIX_BOOSTS: dict[str, str] = {
     "reserve bank of india": "rbi_",
 }
 
+# The place each central bank above answers for, by its prefix: a national
+# source of another country is never the answer to a question about the bank
+# ("Fed inflation" found the inflation of Argentina first). The ECB's place is
+# the euro area, "EU" as for the euro: no source's country, so every national
+# source steps down.
+CENTRAL_BANK_PLACES: dict[str, str] = {
+    "fed_": "US", "ecb_": "EU", "boj_": "JP", "boe_": "GB", "boc_": "CA",
+    "rba_": "AU", "rbnz_": "NZ", "snb_": "CH", "riksbank_": "SE",
+    "central_banks_sarb_": "ZA", "bnm_": "MY", "norges_bank_": "NO",
+    "cnb_": "CZ", "bcb_": "BR", "central_banks_bcrp_": "PE", "bcra_": "AR",
+    "rbi_": "IN",
+}
+
 # Likely stock ticker: 2-5 uppercase letters, optional dot (BRK.A).
 # Single-letter tokens are excluded because plain English sentences like
 # "I need GDP data" or "A CPI endpoint" would otherwise count "I" / "A" as
