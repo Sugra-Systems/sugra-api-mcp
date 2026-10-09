@@ -178,6 +178,15 @@ _NON_TICKER_WORDS: frozenset[str] = frozenset({
 # whitelist where a bare mention almost always means the instrument. The
 # _NON_TICKER_WORDS list above remains a hard NEVER list (currencies, org
 # acronyms) that wins even over equity context.
+# The whitelisted ETFs: search lets their ticker reach the per-ETF operations
+# too, so "SPY flows" finds the ETF's flows, not a company cash flow statement.
+ETF_TICKERS: frozenset[str] = frozenset({
+    # Index ETFs
+    "SPY", "QQQ", "IWM", "DIA", "VTI", "VOO",
+    # Bond and sector ETFs: "TLT inflation" asks about the ETF.
+    "TLT", "IEF", "SHY", "AGG", "BND", "LQD", "HYG",
+    "XLK", "XLF", "XLE", "XLV", "XLI", "XLY", "XLP", "XLU", "XLB", "XLC", "XLRE",
+})
 _TICKER_WHITELIST: frozenset[str] = frozenset({
     # Mega-cap equities
     "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "NVDA", "TSLA", "META", "NFLX",
@@ -189,12 +198,7 @@ _TICKER_WHITELIST: frozenset[str] = frozenset({
     # covers the bare quote lookups for such symbols.
     "XOM", "CVX", "WMT", "KO", "PEP", "DIS", "CAT", "JNJ", "PFE",
     "UNH", "HD", "MCD", "NKE",
-    # Index ETFs
-    "SPY", "QQQ", "IWM", "DIA", "VTI", "VOO",
-    # Bond and sector ETFs: "TLT inflation" asks about the ETF.
-    "TLT", "IEF", "SHY", "AGG", "BND", "LQD", "HYG",
-    "XLK", "XLF", "XLE", "XLV", "XLI", "XLY", "XLP", "XLU", "XLB", "XLC", "XLRE",
-})
+}) | ETF_TICKERS
 
 # National-source geography: operation_id prefix -> ISO2 country of
 # the NATIONAL source. Used by search to demote a national source when the
@@ -1586,7 +1590,9 @@ TOPIC_DEFAULT_OPERATIONS: dict[str, str] = {"weather": "v2_weather_forecast"}
 # solar activity, so the word "weather" finds these operations only when the
 # query also says "space"; and "real" in "real wages" or "real GDP" means
 # adjusted for inflation, so it finds the real-estate operations only beside a
-# word for property, as in "real estate" or "real home prices".
+# word for property, as in "real estate" or "real home prices". The changes to
+# an ETF's top holdings answer "top" only beside a word for change: "VOO's top
+# holdings" asks for the holdings, not how they moved between two dates.
 COMPOUND_NAMED_OPERATIONS: dict[str, tuple[tuple[str, ...], str]] = {
     "space_weather_": (("space",), "weather"),
     "real_estate_": (
@@ -1594,6 +1600,7 @@ COMPOUND_NAMED_OPERATIONS: dict[str, tuple[tuple[str, ...], str]] = {
          "house", "houses", "housing"),
         "real",
     ),
+    "etf_symbol_top_holdings_changes": (("change", "changes", "changed", "churn"), "top"),
 }
 
 # Words an operation's summary names as the measures it is computed from,

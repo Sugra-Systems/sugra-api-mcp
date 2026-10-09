@@ -12,6 +12,7 @@ from .aliases import (
     COMPOUND_NAMED_OPERATIONS,
     COUNTRY_STATISTIC_SPELLINGS,
     COUNTRY_STATISTIC_WORDS,
+    ETF_TICKERS,
     FX_CONVERT_OPERATION,
     MEETING_CALENDAR_OPERATIONS,
     OPERATION_INPUT_WORDS,
@@ -377,6 +378,7 @@ def _score(
     boost_markets_toolset: bool,
     boost_symbol_input: bool,
     boost_forex: bool,
+    boost_etf_symbol: bool = False,
     boost_crypto: bool,
     boost_us_macro: bool,
     central_bank_prefixes: list[str],
@@ -607,6 +609,16 @@ def _score(
     if len(matched_query_terms) >= 2:
         score += COVERAGE_BONUS_PER_TERM * len(matched_query_terms)
         why.append(f"coverage:{len(matched_query_terms)}")
+
+    # A whitelisted ETF's ticker reaches the per-ETF operations as it reaches
+    # the quotes, but only those whose name, summary, path, parameters or
+    # keywords hold a word of the question: the topic word picks between them
+    # ("SPY flows" is the ETF's flows, "SPY price" its price), and a ticker
+    # alone or a word in a description keeps the quotes first.
+    if boost_etf_symbol and endpoint.operation_id.startswith("etf_symbol_") and matched_query_terms:
+        score += TICKER_QUOTES_SYMBOL_BOOST
+        # First, where the quotes carry theirs: the reasons are cut to six.
+        why.insert(0, "pattern:ticker->etf_symbol")
 
     # Toolset intent: a query term that IS the toolset name (or its
     # stem: 'geocode' -> 'geocoding') pins the domain. Except when the term
@@ -984,6 +996,7 @@ def search_catalog(
             boost_quotes_symbol=boost_quotes_symbol,
             boost_markets_toolset=boost_markets_toolset,
             boost_symbol_input=has_ticker_token,
+            boost_etf_symbol=has_ticker_token and not ETF_TICKERS.isdisjoint(tickers),
             boost_forex=boost_forex,
             boost_crypto=boost_crypto,
             boost_us_macro=boost_us_macro or (
