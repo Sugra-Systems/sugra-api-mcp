@@ -2558,6 +2558,11 @@ def test_a_question_that_names_the_ratio_still_finds_it(catalog, query: str) -> 
     ("show me the share of GDP", {}),
     ("what's the share of GDP", {}),
     ("get the ratio to GDP", {}),
+    # A number or a word that says when measures nothing either.
+    ("2024 ratio to GDP", {}),
+    ("annual ratio to GDP", {}),
+    ("quarterly share of GDP", {}),
+    ("M2 to GDP", {"gdp": {"m2"}}),
     ("inflation to GDP", {}),  # a country statistic is no numerator
     ("price to earnings", {}),  # no country statistic as the base
     ("GDP", {}),
@@ -2607,6 +2612,7 @@ def test_a_ratio_with_another_numerator_answers_no_ratio_question(catalog, query
     "bank credit as a percent of GDP",
     "ratio to GDP",  # names no numerator
     "what is the ratio to GDP",
+    "2024 ratio to GDP",
 ])
 def test_a_ratio_question_with_its_own_numerator_finds_the_ratio(catalog, query: str) -> None:
     top = search_catalog(catalog, query, limit=1)[0]["operation_id"]
