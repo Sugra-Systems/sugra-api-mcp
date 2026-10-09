@@ -191,6 +191,9 @@ _TICKER_WHITELIST: frozenset[str] = frozenset({
     "UNH", "HD", "MCD", "NKE",
     # Index ETFs
     "SPY", "QQQ", "IWM", "DIA", "VTI", "VOO",
+    # Bond and sector ETFs: "TLT inflation" asks about the ETF.
+    "TLT", "IEF", "SHY", "AGG", "BND", "LQD", "HYG",
+    "XLK", "XLF", "XLE", "XLV", "XLI", "XLY", "XLP", "XLU", "XLB", "XLC", "XLRE",
 })
 
 # National-source geography: operation_id prefix -> ISO2 country of
@@ -641,15 +644,9 @@ class FxRequest:
         )
 
 
-def detect_fx_request(query: str) -> FxRequest | None:
-    """The exchange-rate question the query asks, or None.
-
-    A query asks one when it joins two different currencies as a conversion
-    ("dollar to yen", "Turkish lira for one US dollar", "EUR/USD") or names a
-    currency beside an exchange-rate cue ("euro exchange rate"). A currency
-    named alone ("coffee price in dollars") asks nothing. Crypto queries are
-    the caller's to exclude: "convert bitcoin to dollars" is a crypto price.
-    """
+def _currency_mentions(query: str) -> tuple[list[str], list[tuple[int, int, str]]]:
+    """The query's lowercase tokens, weight phrases blanked, and the currencies
+    it names in words or by code, as (start, end, ISO code) in query order."""
     raw_tokens = re.findall(r"[A-Za-z0-9]+", query)
     tokens = _blank([token.lower() for token in raw_tokens], _CURRENCY_NAME_BLOCKERS)
     mentions = [
@@ -663,6 +660,19 @@ def detect_fx_request(query: str) -> FxRequest | None:
                 and (raw.isupper() or tokens[index] not in _LOWERCASE_CODE_WORDS)):
             mentions.append((index, index + 1, code))
     mentions.sort()
+    return tokens, mentions
+
+
+def detect_fx_request(query: str) -> FxRequest | None:
+    """The exchange-rate question the query asks, or None.
+
+    A query asks one when it joins two different currencies as a conversion
+    ("dollar to yen", "Turkish lira for one US dollar", "EUR/USD") or names a
+    currency beside an exchange-rate cue ("euro exchange rate"). A currency
+    named alone ("coffee price in dollars") asks nothing. Crypto queries are
+    the caller's to exclude: "convert bitcoin to dollars" is a crypto price.
+    """
+    tokens, mentions = _currency_mentions(query)
     iso_pairs = detect_currency_pairs(query)
 
     pair = bool(iso_pairs)
@@ -688,6 +698,26 @@ def detect_fx_request(query: str) -> FxRequest | None:
             + [code.lower() for found in iso_pairs for code in found]
         ),
     )
+
+
+def currency_statistic_places(query: str) -> tuple[frozenset[str], frozenset[str]]:
+    """The countries whose currency the query names right before one of the
+    one-word country statistics, and the words that name those currencies.
+
+    "yen inflation" asks for the inflation of Japan, as "Japan inflation"
+    does. A currency named anywhere else is a unit or a market, not a place:
+    "GDP in dollars", "coffee price in dollars and inflation".
+    """
+    tokens, mentions = _currency_mentions(query)
+    places: set[str] = set()
+    words: set[str] = set()
+    for start, end, code in mentions:
+        if code in _CURRENCY_ISSUERS and any(
+            _phrase_spans(tokens[end:end + 1], cue) for cue in _COUNTRY_STATISTIC_CUES
+        ):
+            places.add(_CURRENCY_ISSUERS[code])
+            words.update(tokens[start:end])
+    return frozenset(places), frozenset(words)
 
 
 # Everyday names of a benchmark, waterway or measure -> the operations that

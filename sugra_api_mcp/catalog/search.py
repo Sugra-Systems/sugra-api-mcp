@@ -17,6 +17,7 @@ from .aliases import (
     SOURCE_ALSO_SERVES,
     SOURCE_COUNTRY_PREFIXES,
     country_statistic_words,
+    currency_statistic_places,
     detect_currency_pairs,
     detect_fx_request,
     detect_named_operations,
@@ -895,19 +896,31 @@ def search_catalog(
     )
     if not penalty_countries - {"US"} and query_names_united_states(query):
         penalty_countries.add("US")
+    # A currency named right before a statistic every country reports names
+    # its issuer's country, as the country's name would, where nothing else
+    # names a place or a listing (a named central bank and "U.S." stand in
+    # penalty_countries by now): "yen inflation" ranked the composite country
+    # profile first, for any country, and not the inflation of Japan.
+    currency_words: frozenset[str] = frozenset()
+    if not (penalty_countries or has_ticker_token):
+        currency_countries, currency_words = currency_statistic_places(query)
+        query_countries |= currency_countries
+        penalty_countries |= currency_countries
     # Country tokens are NOT consumed: consuming them would strip the CORRECT
     # national source of the coverage credit for the country the user typed.
     # The country-param boost reads them separately, to tell a query that is
     # only a country from one with a topic as well.
     coverage_excluded = frozenset(consumed)
-    country_terms = _country_terms(query, terms, query_countries)
+    country_terms = _country_terms(query, terms, query_countries) | frozenset(
+        term for term in terms if term in currency_words
+    )
     # The curated series of a country/section operation, read off their
     # titles. A ticker, a currency, crypto, a named central bank, benchmark or
     # measure, or a weather question already says what the query asks for.
     macro_matches: dict[str, list[MacroKey]] = {}
     if not (has_ticker_token or boost_forex or has_crypto_context
             or central_bank_prefixes or named_operations):
-        filler = _QUERY_STOPWORDS | _TWO_LETTER_FILLER
+        filler = _QUERY_STOPWORDS | _TWO_LETTER_FILLER | currency_words
         for endpoint in catalog.endpoints:
             if endpoint.macro_keys and _in_scope(endpoint, toolset, source):
                 found = match_macro_keys(query, endpoint.macro_keys,

@@ -2534,6 +2534,111 @@ def test_a_question_that_names_the_ratio_still_finds_it(catalog, query: str) -> 
     assert top == "bis_credit_gap", top
 
 
+@pytest.mark.parametrize("query,places,words", [
+    ("yen inflation", {"JP"}, {"yen"}),
+    ("JPY inflation", {"JP"}, {"jpy"}),
+    ("dollars inflation", {"US"}, {"dollars"}),
+    ("Mexican peso inflation", {"MX"}, {"mexican", "peso"}),
+    ("GBP CPI", {"GB"}, {"gbp"}),
+    ("yuan GDP", {"CN"}, {"yuan"}),
+    # A unit, a market, a weight or a word of several currencies: no place.
+    ("GDP in dollars", set(), set()),
+    ("coffee price in dollars and inflation", set(), set()),
+    ("yen and inflation", set(), set()),
+    ("dollar exchange rate and inflation", set(), set()),
+    ("pound of coffee inflation", set(), set()),
+    ("peso inflation", set(), set()),
+    ("euro area inflation", set(), set()),
+])
+def test_a_currency_right_before_a_country_statistic_names_its_issuer(
+    query: str, places: set[str], words: set[str],
+) -> None:
+    from sugra_api_mcp.catalog.aliases import currency_statistic_places
+
+    assert currency_statistic_places(query) == (frozenset(places), frozenset(words))
+
+
+@pytest.mark.parametrize("query,key", [
+    ("yen inflation", "jp/cpi"),
+    ("JPY inflation", "jp/cpi"),
+    ("euro inflation", "eu/cpi"),
+    ("dollars inflation", "us/cpi"),
+    ("pound inflation", "gb/cpi"),
+    ("GBP CPI", "gb/cpi"),
+    ("euro unemployment", "eu/unrate"),
+])
+def test_a_currency_before_a_statistic_asks_about_its_country(catalog, query: str, key: str) -> None:
+    """"yen inflation" ranked the composite country profile first, for any
+    country, and not the inflation of Japan."""
+    top = search_catalog(catalog, query, limit=1)[0]
+    assert key in [series["key"] for series in top.get("macro_keys") or []], top
+
+
+@pytest.mark.parametrize("query", ["euro unemployment", "euro GDP"])
+def test_the_word_that_names_the_currency_is_no_topic(catalog, query: str) -> None:
+    """The euro area's balance of payments names the euro and answers
+    neither statistic: the word names the place, as "Germany" does in
+    "Germany unemployment", and takes no boost for the country."""
+    row = next(r for r in search_catalog(catalog, query, limit=2000)
+               if r["operation_id"] == "ecb_balance_of_payments")
+    assert "pattern:country->param" not in row["why"], row["why"]
+
+
+@pytest.mark.parametrize(("query", "place"), [
+    ("yen inflation", "JP"),
+    ("franc inflation", "CH"),
+    ("pound inflation", "GB"),
+    ("dollar inflation", "US"),
+])
+def test_a_currency_before_a_statistic_lists_no_other_country(catalog, query: str, place: str) -> None:
+    from sugra_api_mcp.catalog.search import _source_country
+
+    for row in search_catalog(catalog, query, limit=3):
+        country = _source_country(catalog.get(row["operation_id"]))
+        assert country in (None, place), (query, row["operation_id"], country)
+
+
+@pytest.mark.parametrize("query", [
+    "GDP in dollars",  # a unit
+    "inflation in dollars",
+    "coffee price in dollars and inflation",
+    "yen and inflation",  # a market beside the statistic
+])
+def test_a_currency_elsewhere_in_the_question_names_no_place(catalog, query: str) -> None:
+    rows = search_catalog(catalog, query, limit=2000)
+    assert not [row["operation_id"] for row in rows if "pattern:country->param" in row["why"]]
+    assert any("pattern:any-country->param" in row["why"] for row in rows)
+
+
+def test_a_named_country_or_a_listing_wins_over_a_currency(catalog) -> None:
+    """A currency names its country only where nothing else names a place:
+    Turkey's inflation in euros, the chip maker's price."""
+    for row in search_catalog(catalog, "euro inflation in Turkey", limit=5):
+        assert not [series for series in row.get("macro_keys") or []
+                    if series["key"].startswith("eu/")], row
+    for row in search_catalog(catalog, "AMD inflation", limit=2000):
+        assert "pattern:country->param" not in row["why"], row
+
+
+@pytest.mark.parametrize("query,ticker", [
+    ("TLT inflation", "TLT"),
+    ("TLT since 2020", "TLT"),
+    ("IEF yield", "IEF"),
+    ("XLK flows", "XLK"),
+])
+def test_a_bond_or_sector_fund_is_a_listing_without_an_equity_word(catalog, query: str, ticker: str) -> None:
+    """"TLT inflation" asks about the bond fund: it took the any-country
+    reading and ranked the composite country profile first."""
+    assert detect_tickers(query) == [ticker]
+    top = search_catalog(catalog, query, limit=1)[0]
+    assert "pattern:ticker->quotes_symbol" in top["why"], top
+
+
+@pytest.mark.parametrize("query", ["PCE inflation", "HICP inflation", "TIPS inflation", "CPI inflation"])
+def test_a_statistic_acronym_is_no_listing(query: str) -> None:
+    assert detect_tickers(query) == []
+
+
 # ---- Currency words, a country prefix, a singular strait ---------------------------
 
 def test_every_currency_named_in_words_is_known_by_its_code() -> None:
