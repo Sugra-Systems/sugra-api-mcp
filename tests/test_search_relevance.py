@@ -2473,9 +2473,12 @@ def test_an_operation_in_neither_group_keeps_its_rank(catalog) -> None:
 def test_a_two_letter_word_keeps_no_national_source_in_place(catalog) -> None:
     """Denmark's EU-harmonised price index names the EU in its summary; two
     letters are too short to be a word that only it answers."""
-    row = next(r for r in search_catalog(catalog, "EU inflation", limit=50)
-               if r["operation_id"] == "statistical_agencies_statbank_dk_hicp")
-    assert "clamped-below:any-country-answers" in row["why"], row["why"]
+    rows = search_catalog(catalog, "EU inflation", limit=100)
+    ranks = {row["operation_id"]: i for i, row in enumerate(rows)}
+    answers = [ranks[row["operation_id"]] for row in rows
+               if "pattern:any-country->param" in row["why"]]
+    assert answers
+    assert ranks["statistical_agencies_statbank_dk_hicp"] > max(answers), ranks
 
 
 def test_an_equal_score_never_ranks_a_national_source_first() -> None:
@@ -2609,6 +2612,53 @@ def test_a_currency_before_a_statistic_lists_no_other_country(catalog, query: st
     for row in search_catalog(catalog, query, limit=3):
         country = _source_country(catalog.get(row["operation_id"]))
         assert country in (None, place), (query, row["operation_id"], country)
+
+
+@pytest.mark.parametrize(("query", "key"), [
+    ("EU inflation", "eu/cpi"),
+    ("euro area inflation", "eu/cpi"),
+    ("eurozone inflation", "eu/cpi"),
+    ("European Union inflation", "eu/cpi"),
+    ("EU unemployment", "eu/unrate"),
+])
+def test_the_euro_area_lists_no_other_country(catalog, query: str, key: str) -> None:
+    """"EU inflation" listed the inflation of Argentina and US TIPS among its
+    first answers: the euro area is the place of no national source."""
+    from sugra_api_mcp.catalog.search import _source_country
+
+    rows = search_catalog(catalog, query, limit=10)
+    assert key in [series["key"] for series in rows[0].get("macro_keys") or []], rows[0]
+    if key == "eu/cpi":
+        for row in rows:
+            country = _source_country(catalog.get(row["operation_id"]))
+            assert country is None, (query, row["operation_id"], country)
+
+
+@pytest.mark.parametrize(("query", "named"), [
+    ("EU inflation", True), ("euro zone GDP", True), ("Germany vs EU inflation", True),
+    ("euro inflation", False), ("European stocks", False), ("Europe inflation", False),
+])
+def test_the_euro_area_is_named_in_its_own_words(query: str, named: bool) -> None:
+    from sugra_api_mcp.catalog.macro_keys import query_names_euro_area
+
+    assert query_names_euro_area(query) is named
+
+
+@pytest.mark.parametrize("query", ["EU inflation", "eurozone inflation"])
+def test_the_euro_area_keeps_the_operations_that_take_a_country(catalog, query: str) -> None:
+    """The euro area is no country those operations boost for, so they keep
+    the any-country reading right below the euro area's own series."""
+    rows = search_catalog(catalog, query, limit=3)
+    assert {row["operation_id"] for row in rows[1:]} == {
+        "macro_country_profile", "worldbank_country_overview"}, rows
+    assert all("pattern:any-country->param" in row["why"] for row in rows[1:])
+
+
+def test_a_country_beside_the_euro_area_keeps_its_own_sources(catalog) -> None:
+    rows = search_catalog(catalog, "Germany vs EU inflation", limit=10)
+    german = [row for row in rows if row["operation_id"].startswith("destatis_")]
+    assert german, [row["operation_id"] for row in rows]
+    assert not any("clamped-below:country-answers" in row["why"] for row in german)
 
 
 @pytest.mark.parametrize("query", [
