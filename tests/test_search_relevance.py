@@ -2404,6 +2404,46 @@ def test_a_question_that_names_a_place_asks_for_no_other_country(catalog, query:
         assert not _ANY_COUNTRY_NOTES & set(row["why"]), (row["operation_id"], row["why"])
 
 
+@pytest.mark.parametrize(("query", "place"), [
+    ("ECB inflation", "EU"),  # the euro area: no national source answers it
+    ("Fed inflation", "US"),
+    ("Bank of England inflation", "GB"),
+    ("Fed unemployment", "US"),
+    ("us inflation", "US"),  # the United States, in any spelling
+    ("U.S. inflation", "US"),
+])
+def test_a_named_central_bank_or_the_united_states_names_its_place(catalog, query: str, place: str) -> None:
+    """A national source of another country is never among the first answers
+    about a named central bank or the United States: the inflation of Argentina
+    ranked first for "Fed inflation" and third for "U.S. inflation"."""
+    from sugra_api_mcp.catalog.search import _source_country
+
+    for row in search_catalog(catalog, query, limit=3):
+        country = _source_country(catalog.get(row["operation_id"]))
+        assert country in (None, place), (query, row["operation_id"], country)
+
+
+def test_a_named_place_still_wins_over_the_word_us(catalog) -> None:
+    """"show us Japan inflation" asks about Japan: the word "us" names the
+    United States only when no other place is named."""
+    from sugra_api_mcp.catalog.search import _source_country
+
+    for row in search_catalog(catalog, "show us Japan inflation", limit=3):
+        assert _source_country(catalog.get(row["operation_id"])) != "US", row["operation_id"]
+
+
+def test_every_central_bank_names_its_place() -> None:
+    from sugra_api_mcp.catalog.aliases import (
+        CENTRAL_BANK_PLACES,
+        CENTRAL_BANK_PREFIX_BOOSTS,
+        SOURCE_COUNTRY_PREFIXES,
+    )
+
+    assert set(CENTRAL_BANK_PLACES) == set(CENTRAL_BANK_PREFIX_BOOSTS.values())
+    for prefix, place in CENTRAL_BANK_PLACES.items():
+        assert SOURCE_COUNTRY_PREFIXES.get(prefix, place) == place, prefix
+
+
 def test_an_operation_that_answers_through_the_statistics_alias_takes_the_country(catalog) -> None:
     """The country profile answers "unemployment" with its jobless rate, a word
     of the statistic's alias. Counted by its own words alone, it would lose the
