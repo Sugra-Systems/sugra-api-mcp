@@ -2539,6 +2539,77 @@ def test_a_question_that_names_the_ratio_still_finds_it(catalog, query: str) -> 
     assert top == "bis_credit_gap", top
 
 
+@pytest.mark.parametrize(("text", "numerators"), [
+    ("government debt to GDP", {"debt"}),
+    ("debt-to-GDP", {"debt"}),
+    ("debt % of GDP", {"debt"}),
+    ("debt as a percent of GDP", {"debt"}),
+    ("budget deficit as a share of GDP", {"deficit"}),
+    ("debt ratio to GDP", {"debt"}),
+    ("credit to GDP gap", {"credit"}),
+    ("credit to GDP and debt to GDP", {"credit", "debt"}),
+    ("ratio to GDP", set()),  # nothing before the ratio but filler
+    ("share of GDP", set()),
+    ("inflation to GDP", set()),  # a country statistic is no numerator
+    ("price to earnings", set()),  # no country statistic as the base
+    ("GDP", set()),
+])
+def test_the_numerator_of_a_ratio(text: str, numerators: set[str]) -> None:
+    from sugra_api_mcp.catalog.search import _ratio_numerators
+
+    assert _ratio_numerators(text) == numerators
+
+
+@pytest.mark.parametrize("query", [
+    "government debt to GDP",
+    "debt % of GDP",
+    "debt as a percent of GDP",
+    "debt-to-GDP",
+    "debts to GDP",
+    "household debt to GDP",
+    "deficit to GDP",
+    "budget deficit as a percent of GDP",
+    "exports to GDP",
+    "tax revenue as a percent of GDP",
+    "debt to gross domestic product",
+])
+def test_a_ratio_with_another_numerator_answers_no_ratio_question(catalog, query: str) -> None:
+    """The credit-to-GDP gap ranked first for "government debt to GDP": it
+    names GDP as the base of a ratio, but of credit, never of debt."""
+    results = search_catalog(catalog, query, limit=200)
+    assert results[0]["operation_id"] != "bis_credit_gap", results[:3]
+    gap = next(r for r in results if r["operation_id"] == "bis_credit_gap")
+    assert "pattern:any-country->param" not in gap["why"], gap["why"]
+
+
+@pytest.mark.parametrize("query", [
+    "credit-to-GDP",
+    "private credit to GDP",
+    "credit to GDP ratio",
+    "bank credit as a percent of GDP",
+    "ratio to GDP",  # names no numerator
+])
+def test_a_ratio_question_with_its_own_numerator_finds_the_ratio(catalog, query: str) -> None:
+    top = search_catalog(catalog, query, limit=1)[0]["operation_id"]
+    assert top == "bis_credit_gap", top
+
+
+@pytest.mark.parametrize(("summary", "answers"), [
+    ("Government debt to GDP", True),
+    ("Government debts to GDP", True),
+    ("Credit-to-GDP gaps", False),
+])
+def test_an_operation_that_names_the_numerator_answers_the_ratio(summary: str, answers: bool) -> None:
+    from sugra_api_mcp.catalog.models import Catalog, Endpoint, EndpointParameter
+
+    country = EndpointParameter(name="country", location="query")
+    ratio = Endpoint(operation_id="world_ratio", method="GET", path="/ratio",
+                     summary=summary, parameters=[country])
+    results = search_catalog(Catalog(source="test", endpoints=[ratio]),
+                             "government debt to GDP", limit=1)
+    assert ("pattern:any-country->param" in results[0]["why"]) is answers, results[0]["why"]
+
+
 @pytest.mark.parametrize("query,places,words", [
     ("yen inflation", {"JP"}, {"yen"}),
     ("JPY inflation", {"JP"}, {"jpy"}),
