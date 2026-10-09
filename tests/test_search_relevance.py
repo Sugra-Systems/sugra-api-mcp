@@ -2680,10 +2680,21 @@ def test_a_listing_no_word_narrows_asks_for_its_price(catalog, query: str) -> No
     assert "pattern:period->history" not in rows[0]["why"], rows[0]
 
 
-@pytest.mark.parametrize("query", ["inflation since 2020", "GDP of France since 2010"])
-def test_a_period_without_a_listing_lifts_no_price_history(catalog, query: str) -> None:
+@pytest.mark.parametrize("query", [
+    "inflation since 2020", "GDP of France since 2010",
+    # No period of days or longer, or a listing named like a period word.
+    "AAPL since open", "AAPL 15 minutes ago", "AAPL versus AGO", "AAPL dividend history",
+])
+def test_no_listing_period_lifts_no_price_history(catalog, query: str) -> None:
     rows = search_catalog(catalog, query, limit=2000)
     assert not any("pattern:period->history" in row["why"] for row in rows)
+
+
+@pytest.mark.parametrize("query", ["TLT SPY", "AAPL vs MSFT"])
+def test_several_listings_ask_for_their_prices(catalog, query: str) -> None:
+    assert len(detect_tickers(query)) == 2
+    top = search_catalog(catalog, query, limit=1)[0]
+    assert top["operation_id"] == "quotes_symbol_multiple", top
 
 
 # ---- A statistic named in other words ------------------------------------------------

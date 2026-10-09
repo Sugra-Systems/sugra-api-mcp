@@ -15,6 +15,7 @@ from .aliases import (
     FX_CONVERT_OPERATION,
     LISTING_DEFAULT_OPERATION,
     LISTING_HISTORY_OPERATION,
+    LISTINGS_DEFAULT_OPERATION,
     MEETING_CALENDAR_OPERATIONS,
     OPERATION_INPUT_WORDS,
     SOURCE_ALSO_SERVES,
@@ -833,6 +834,8 @@ def search_catalog(
         boost_quotes_symbol = True
 
     boost_markets_toolset = boost_quotes_symbol
+    # A listing question that names a period asks for the price history.
+    listing_period = boost_quotes_symbol and query_names_a_period(query)
     # Everyday names: a currency named in words, and the benchmarks, waterways,
     # ports and measures of detect_named_operations. Crypto context keeps
     # "convert bitcoin to dollars" a crypto price. A pair asks for a
@@ -994,7 +997,7 @@ def search_catalog(
             [*terms, *sorted(frozenset(spelled) - set(terms))],
             aliases,
             boost_quotes_symbol=boost_quotes_symbol,
-            boost_listing_history=boost_quotes_symbol and query_names_a_period(query),
+            boost_listing_history=listing_period,
             boost_markets_toolset=boost_markets_toolset,
             boost_symbol_input=has_ticker_token,
             boost_forex=boost_forex,
@@ -1045,11 +1048,16 @@ def search_catalog(
                 scored[i] = (floor - 1, endpoint, [*why, "clamped-below:country-answers"])
 
     # Equal scores: the default operation of a topic word the query names
-    # comes first ("weather" -> the worldwide forecast), and a listing's price
-    # in a listing question ("TLT"), then operation_id.
+    # comes first ("weather" -> the worldwide forecast), and in a listing
+    # question the prices of several listings ("TLT SPY"), the price history
+    # ("TLT since 2020") or the price ("TLT"), then operation_id.
     defaults = topic_default_operations(query)
     if boost_quotes_symbol:
-        defaults |= {LISTING_DEFAULT_OPERATION}
+        defaults |= {
+            LISTINGS_DEFAULT_OPERATION if len(tickers) > 1
+            else LISTING_HISTORY_OPERATION if listing_period
+            else LISTING_DEFAULT_OPERATION
+        }
 
     def tie_break(endpoint: Endpoint) -> tuple[bool, str]:
         return endpoint.operation_id not in defaults, endpoint.operation_id
