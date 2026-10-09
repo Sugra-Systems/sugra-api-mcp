@@ -278,56 +278,68 @@ _RATIO_FILLER = frozenset({"a", "an", "as", "in", "of", "ratio", "ratios", "the"
 
 # The words that lead into a question or say when, and measure nothing:
 # "what is the ratio to GDP", "show me the share of GDP" and "annual ratio
-# to GDP" name no numerator. A number ("2024 ratio to GDP") names none either.
+# to GDP" name no numerator.
 _RATIO_LEAD_INS = _QUERY_STOPWORDS | _TWO_LETTER_FILLER | frozenset({
     "calculate", "chart", "compare", "compute", "fetch", "find", "get", "give",
-    "list", "look", "need", "plot", "see", "show", "tell", "want",
+    "list", "look", "need", "please", "plot", "see", "show", "tell", "want", "whats",
     "annual", "average", "daily", "historical", "latest", "monthly", "quarterly",
     "recent", "weekly", "yearly",
 })
+
+
+def _measures(word: str) -> bool:
+    """Whether a word before a ratio can be what the ratio measures."""
+    return (len(word) > 1 and not word.isdigit() and word not in _RATIO_LEAD_INS
+            and word not in COUNTRY_STATISTIC_WORDS)
 
 
 def _ratio_numerators(text: str) -> dict[str, frozenset[str]]:
     """The words a text measures against each country statistic.
 
     "debt" for "gdp" in "government debt to GDP", "debt-to-GDP" and "debt as
-    a percent of GDP": the last word before the ratio, past any filler. A
-    numerator that is a country statistic itself, a number, or a word that
-    leads into the question or says when, reads as none.
+    a percent of GDP": the last word before the ratio, past any filler and
+    any number ("debt 80% of GDP", "2024 ratio to GDP"), and the words listed
+    with it ("debt and deficit to GDP", "debt, deficit or spending to GDP").
+    A numerator that is a country statistic itself, or a word that leads
+    into the question or says when, reads as none.
     """
     lowered = text.lower()
-    tokens = [(match.start(), match.group()) for match in TOKEN_RE.finditer(lowered)]
+    tokens = list(TOKEN_RE.finditer(lowered))
     numerators: dict[str, set[str]] = {}
     for match in _RATIO_BASE_RE.finditer(lowered):
         base = match.group(1)
         if base not in COUNTRY_STATISTIC_WORDS:
             continue
-        before = [word for start, word in tokens if start < match.start()]
-        while before and before[-1] in _RATIO_FILLER:
+        before = [token for token in tokens if token.start() < match.start()]
+        while before and (before[-1].group() in _RATIO_FILLER or before[-1].group().isdigit()):
             before.pop()
-        if (before and len(before[-1]) > 1 and not before[-1].isdigit()
-                and before[-1] not in _RATIO_LEAD_INS
-                and before[-1] not in COUNTRY_STATISTIC_WORDS):
-            numerators.setdefault(base, set()).add(before[-1])
+        while before and _measures(before[-1].group()):
+            word = before.pop()
+            numerators.setdefault(base, set()).add(word.group())
+            if before and before[-1].group() in {"and", "or"}:
+                before.pop()
+            elif not (before and "," in lowered[before[-1].end():word.start()]):
+                break
     return {base: frozenset(words) for base, words in numerators.items()}
 
 
-def _singular(word: str) -> str:
-    """The word without its plural ending: "taxes" reads as "tax", "liabilities"
-    as "liability", "debts" as "debt"."""
+def _singulars(word: str) -> frozenset[str]:
+    """The word and every singular its plural ending may stand for: "taxes"
+    for "tax", "expenses" for "expense", "liabilities" for "liability"."""
+    forms = {word}
     if len(word) > 4 and word.endswith("ies"):
-        return f"{word[:-3]}y"
+        forms.add(f"{word[:-3]}y")
     if len(word) > 3 and word.endswith("es") and word[:-2].endswith(("s", "x", "z", "ch", "sh")):
-        return word[:-2]
+        forms.add(word[:-2])
     if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
-        return word[:-1]
-    return word
+        forms.add(word[:-1])
+    return frozenset(forms)
 
 
 def _names_any(words: frozenset[str], tokens: frozenset[str]) -> bool:
     """Whether the tokens hold one of the words, in the singular or the plural."""
-    wanted = {_singular(word) for word in words}
-    return any(_singular(token) in wanted for token in tokens)
+    wanted = frozenset().union(*(_singulars(word) for word in words))
+    return any(not wanted.isdisjoint(_singulars(token)) for token in tokens)
 
 
 class _EndpointProfile:
