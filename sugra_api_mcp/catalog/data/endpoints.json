@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-10-09T04:26:50Z",
+  "built_at": "2026-10-09T17:14:54Z",
   "endpoint_count": 1625,
   "endpoints": [
     {
@@ -32375,13 +32375,13 @@
       "operation_id": "gdelt_articles",
       "parameters": [
         {
-          "description": "Free-text search query.",
+          "description": "Free-text search query. Only uppercase OR starts a new group.",
           "example": "gold",
           "location": "query",
           "name": "q",
           "required": true,
           "schema": {
-            "description": "Free-text search query.",
+            "description": "Free-text search query. Only uppercase OR starts a new group.",
             "title": "Q",
             "type": "string"
           }
@@ -32440,13 +32440,13 @@
           }
         },
         {
-          "description": "en reads the English file. por, spa, deu, fra, ita, rus, zho, jpn, kor, ara, hin, fas, tur, ind, vie read the stored translation file. Any other code returns coverage language_not_stored.",
+          "description": "Omit lang, or pass en, eng, or english, to read the English file. A two-letter code maps onto a stored code: pt por, es spa, de deu, fr fra, it ita, ru rus, zh zho, ja jpn, ko kor, ar ara, hi hin, fa fas, tr tur, id ind, vi vie. One of those stored codes reads the translation file. Any other code returns coverage language_not_stored.",
           "example": "en",
           "location": "query",
           "name": "lang",
           "required": false,
           "schema": {
-            "description": "en reads the English file. por, spa, deu, fra, ita, rus, zho, jpn, kor, ara, hin, fas, tur, ind, vie read the stored translation file. Any other code returns coverage language_not_stored.",
+            "description": "Omit lang, or pass en, eng, or english, to read the English file. A two-letter code maps onto a stored code: pt por, es spa, de deu, fr fra, it ita, ru rus, zh zho, ja jpn, ko kor, ar ara, hi hin, fa fas, tr tur, id ind, vi vie. One of those stored codes reads the translation file. Any other code returns coverage language_not_stored.",
             "title": "Lang",
             "type": "string"
           }
@@ -32473,13 +32473,13 @@
       "operation_id": "gdelt_context",
       "parameters": [
         {
-          "description": "Search query. Each term must appear in the quotation.",
+          "description": "Search query. Every term within a group must appear in the quotation. Only uppercase OR starts a new group.",
           "example": "gold",
           "location": "query",
           "name": "q",
           "required": true,
           "schema": {
-            "description": "Search query. Each term must appear in the quotation.",
+            "description": "Search query. Every term within a group must appear in the quotation. Only uppercase OR starts a new group.",
             "title": "Q",
             "type": "string"
           }
@@ -32594,7 +32594,7 @@
       "toolset": "news"
     },
     {
-      "description": "Events where actor1, actor2, or action_geo country code equals the requested ISO 3166-1 alpha-2 code (union match). period=1h reads latest.json only; period=6h or 24h additionally merges daily shards. Omit lang for the English file. lang set to one of the 15 stored source languages reads the translation event file instead.",
+      "description": "Events where actor1, actor2, or action_geo country code equals the requested ISO 3166-1 alpha-2 code (union match). period=1h reads latest.json only; period=6h or 24h additionally merges daily shards. Omit lang, or pass en, eng, or english, for the English file. A two-letter code maps onto a stored code. One of the 15 stored source languages reads the translation event file.",
       "method": "GET",
       "operation_id": "gdelt_events_by_country_country",
       "parameters": [
@@ -32652,7 +32652,7 @@
           }
         },
         {
-          "description": "Stored translation source language: por, spa, deu, fra, ita, rus, zho, jpn, kor, ara, hin, fas, tur, ind, vie. Omit for the English file. Any other code is language_not_stored.",
+          "description": "Omit lang, or pass en, eng, or english, for the English file. A two-letter code maps onto a stored code: pt por, es spa, de deu, fr fra, it ita, ru rus, zh zho, ja jpn, ko kor, ar ara, hi hin, fa fas, tr tur, id ind, vi vie. One of ara, deu, fas, fra, hin, ind, ita, jpn, kor, por, rus, spa, tur, vie, zho reads the translation event file. Any other code is language_not_stored.",
           "location": "query",
           "name": "lang",
           "required": false,
@@ -32665,7 +32665,7 @@
                 "type": "null"
               }
             ],
-            "description": "Stored translation source language: por, spa, deu, fra, ita, rus, zho, jpn, kor, ara, hin, fas, tur, ind, vie. Omit for the English file. Any other code is language_not_stored.",
+            "description": "Omit lang, or pass en, eng, or english, for the English file. A two-letter code maps onto a stored code: pt por, es spa, de deu, fr fra, it ita, ru rus, zh zho, ja jpn, ko kor, ar ara, hi hin, fa fas, tr tur, id ind, vi vie. One of ara, deu, fas, fra, hin, ind, ita, jpn, kor, por, rus, spa, tur, vie, zho reads the translation event file. Any other code is language_not_stored.",
             "title": "Lang"
           }
         }
@@ -32686,7 +32686,7 @@
       "toolset": "news"
     },
     {
-      "description": "Events ranked by how much media attention they are getting in the window, from the GDELT Mentions stream (DATA-12). Each event carries its mention count, distinct outlet count, up to five outlet names, up to five article links, average tone, and first/last seen time. Join global_event_id back to /gdelt/recent for event detail. period=1h reads the rolling window; 6h/24h merge daily shards. Omit lang for the English mentions file. lang set to one of the 15 stored source languages ranks the translation mentions instead.",
+      "description": "Events ranked by how much media attention they are getting in the window, from the GDELT Mentions stream (DATA-12). Each event carries its mention count, distinct outlet count, up to five outlet names, up to five article links, average tone, and first/last seen time. Join global_event_id back to /gdelt/recent for event detail. period=1h reads the rolling window; 6h/24h merge daily shards. Omit lang, or pass en, eng, or english, for the English mentions file. A two-letter code maps onto a stored code. One of the 15 stored source languages ranks the translation mentions.",
       "method": "GET",
       "operation_id": "gdelt_events_trending",
       "parameters": [
@@ -32718,7 +32718,7 @@
           }
         },
         {
-          "description": "Stored translation source language: por, spa, deu, fra, ita, rus, zho, jpn, kor, ara, hin, fas, tur, ind, vie. Omit for the English file. Any other code is language_not_stored.",
+          "description": "Omit lang, or pass en, eng, or english, for the English file. A two-letter code maps onto a stored code: pt por, es spa, de deu, fr fra, it ita, ru rus, zh zho, ja jpn, ko kor, ar ara, hi hin, fa fas, tr tur, id ind, vi vie. One of ara, deu, fas, fra, hin, ind, ita, jpn, kor, por, rus, spa, tur, vie, zho reads the translation event file. Any other code is language_not_stored.",
           "location": "query",
           "name": "lang",
           "required": false,
@@ -32731,7 +32731,7 @@
                 "type": "null"
               }
             ],
-            "description": "Stored translation source language: por, spa, deu, fra, ita, rus, zho, jpn, kor, ara, hin, fas, tur, ind, vie. Omit for the English file. Any other code is language_not_stored.",
+            "description": "Omit lang, or pass en, eng, or english, for the English file. A two-letter code maps onto a stored code: pt por, es spa, de deu, fr fra, it ita, ru rus, zh zho, ja jpn, ko kor, ar ara, hi hin, fa fas, tr tur, id ind, vi vie. One of ara, deu, fas, fra, hin, ind, ita, jpn, kor, por, rus, spa, tur, vie, zho reads the translation event file. Any other code is language_not_stored.",
             "title": "Lang"
           }
         }
@@ -32750,7 +32750,7 @@
       "toolset": "news"
     },
     {
-      "description": "Paginated GDELT 2.0 events from the rolling live ingest window. since=15m and since=1h read latest.json. since=6h and since=24h additionally merge daily shards (date-boundary aware). Updated every 15 minutes by the ingest Function App. Omit lang for the English file. lang set to one of the 15 stored source languages reads the translation event file instead.",
+      "description": "Paginated GDELT 2.0 events from the rolling live ingest window. since=15m and since=1h read latest.json. since=6h and since=24h additionally merge daily shards (date-boundary aware). Updated every 15 minutes by the ingest Function App. Omit lang, or pass en, eng, or english, for the English file. A two-letter code maps onto a stored code. One of the 15 stored source languages reads the translation event file.",
       "method": "GET",
       "operation_id": "gdelt_recent",
       "parameters": [
@@ -32795,7 +32795,7 @@
           }
         },
         {
-          "description": "Stored translation source language: por, spa, deu, fra, ita, rus, zho, jpn, kor, ara, hin, fas, tur, ind, vie. Omit for the English file. Any other code is language_not_stored.",
+          "description": "Omit lang, or pass en, eng, or english, for the English file. A two-letter code maps onto a stored code: pt por, es spa, de deu, fr fra, it ita, ru rus, zh zho, ja jpn, ko kor, ar ara, hi hin, fa fas, tr tur, id ind, vi vie. One of ara, deu, fas, fra, hin, ind, ita, jpn, kor, por, rus, spa, tur, vie, zho reads the translation event file. Any other code is language_not_stored.",
           "location": "query",
           "name": "lang",
           "required": false,
@@ -32808,7 +32808,7 @@
                 "type": "null"
               }
             ],
-            "description": "Stored translation source language: por, spa, deu, fra, ita, rus, zho, jpn, kor, ara, hin, fas, tur, ind, vie. Omit for the English file. Any other code is language_not_stored.",
+            "description": "Omit lang, or pass en, eng, or english, for the English file. A two-letter code maps onto a stored code: pt por, es spa, de deu, fr fra, it ita, ru rus, zh zho, ja jpn, ko kor, ar ara, hi hin, fa fas, tr tur, id ind, vi vie. One of ara, deu, fas, fra, hin, ind, ita, jpn, kor, por, rus, spa, tur, vie, zho reads the translation event file. Any other code is language_not_stored.",
             "title": "Lang"
           }
         }
@@ -32832,13 +32832,13 @@
       "operation_id": "gdelt_sentiment",
       "parameters": [
         {
-          "description": "Free-text search query.",
+          "description": "Free-text search query. Only uppercase OR starts a new group.",
           "example": "gold",
           "location": "query",
           "name": "q",
           "required": true,
           "schema": {
-            "description": "Free-text search query.",
+            "description": "Free-text search query. Only uppercase OR starts a new group.",
             "title": "Q",
             "type": "string"
           }
@@ -32943,13 +32943,13 @@
       "operation_id": "gdelt_timeline",
       "parameters": [
         {
-          "description": "Free-text search query.",
+          "description": "Free-text search query. Only uppercase OR starts a new group.",
           "example": "gold",
           "location": "query",
           "name": "q",
           "required": true,
           "schema": {
-            "description": "Free-text search query.",
+            "description": "Free-text search query. Only uppercase OR starts a new group.",
             "title": "Q",
             "type": "string"
           }
@@ -51634,7 +51634,7 @@
       "toolset": "macro"
     },
     {
-      "description": "Returns the subset of the macro catalog for a specific country.\nSame structure as /catalog - use this to discover available series\nbefore calling /{country}/{section} or /multi.",
+      "description": "Returns the subset of the macro catalog for a specific country.\nSame structure as /catalog - use this to discover available series\nbefore calling /{country}/{section} or /multi. A large country (us) has\nseveral hundred entries: narrow them with q or frequency and page them\nwith limit and offset; the answer then also carries `total`.",
       "method": "GET",
       "operation_id": "macro_catalog_country",
       "parameters": [
@@ -51660,6 +51660,87 @@
             ],
             "title": "Country",
             "type": "string"
+          }
+        },
+        {
+          "description": "Optional keywords; every word must occur in the section, title, series ID or units (case-insensitive).",
+          "example": "inflation",
+          "location": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional keywords; every word must occur in the section, title, series ID or units (case-insensitive).",
+            "title": "Q"
+          }
+        },
+        {
+          "description": "Optional comma-separated frequencies: daily, weekly, monthly, quarterly or annual.",
+          "example": "monthly",
+          "location": "query",
+          "name": "frequency",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional comma-separated frequencies: daily, weekly, monthly, quarterly or annual.",
+            "title": "Frequency"
+          }
+        },
+        {
+          "description": "Optional maximum entries to return. Omit for every matching entry.",
+          "example": 50,
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 500,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional maximum entries to return. Omit for every matching entry.",
+            "title": "Limit"
+          }
+        },
+        {
+          "description": "Optional number of matching entries to skip (zero-indexed).",
+          "example": 0,
+          "location": "query",
+          "name": "offset",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional number of matching entries to skip (zero-indexed).",
+            "title": "Offset"
           }
         }
       ],
@@ -52150,10 +52231,112 @@
       "toolset": "macro"
     },
     {
-      "description": "The full catalog of cross-country macroeconomic indicators available from Sugra Macro: symbol root, country, ISO, description, frequency, currency, scale, and coverage dates. Use it to discover the symbols the indicators series endpoint accepts.",
+      "description": "The full catalog of cross-country macroeconomic indicators available from Sugra Macro: symbol root, country, ISO, description, frequency, currency, scale, and coverage dates. Use it to discover the symbols the indicators series endpoint accepts. The whole catalog is several thousand rows: narrow it with q, country or frequency and page it with limit and offset.",
       "method": "GET",
       "operation_id": "macro_indicators_available",
-      "parameters": [],
+      "parameters": [
+        {
+          "description": "Optional keywords; every word must occur in the symbol, its root (symbol_root), the country or the description (case-insensitive).",
+          "example": "inflation",
+          "location": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional keywords; every word must occur in the symbol, its root (symbol_root), the country or the description (case-insensitive).",
+            "title": "Q"
+          }
+        },
+        {
+          "description": "Optional comma-separated countries, each a two-letter ISO code, W00 for the world commodity rows, or a country name as the catalog spells it (case-insensitive).",
+          "example": "DE,US",
+          "location": "query",
+          "name": "country",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional comma-separated countries, each a two-letter ISO code, W00 for the world commodity rows, or a country name as the catalog spells it (case-insensitive).",
+            "title": "Country"
+          }
+        },
+        {
+          "description": "Optional comma-separated frequencies: D, W, M, Q or A.",
+          "example": "M",
+          "location": "query",
+          "name": "frequency",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional comma-separated frequencies: D, W, M, Q or A.",
+            "title": "Frequency"
+          }
+        },
+        {
+          "description": "Optional maximum rows to return. Omit for every matching row.",
+          "example": 50,
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 1000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional maximum rows to return. Omit for every matching row.",
+            "title": "Limit"
+          }
+        },
+        {
+          "description": "Optional number of matching rows to skip (zero-indexed).",
+          "example": 0,
+          "location": "query",
+          "name": "offset",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional number of matching rows to skip (zero-indexed).",
+            "title": "Offset"
+          }
+        }
+      ],
       "path": "/api/v1/macro/indicators/available",
       "request_body_required": false,
       "required_parameters": [],
@@ -65761,6 +65944,27 @@
             "description": "Sort direction (true=ascending, false=descending).",
             "title": "Ascending",
             "type": "boolean"
+          }
+        },
+        {
+          "description": "Optional maximum nested markets per event (0 = none); markets_count still gives each event's full number. Omit for every market.",
+          "example": 3,
+          "location": "query",
+          "name": "markets_limit",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional maximum nested markets per event (0 = none); markets_count still gives each event's full number. Omit for every market.",
+            "title": "Markets Limit"
           }
         }
       ],
@@ -89381,6 +89585,87 @@
             "description": "YYYY-MM-DD (default: today + 7 days). Max 31-day range.",
             "title": "End Date"
           }
+        },
+        {
+          "description": "Optional comma-separated sections to return: earnings, dividends, splits, economic_events. Omit for all four.",
+          "example": "economic_events",
+          "location": "query",
+          "name": "sections",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional comma-separated sections to return: earnings, dividends, splits, economic_events. Omit for all four.",
+            "title": "Sections"
+          }
+        },
+        {
+          "description": "Optional comma-separated country names that economic_events rows must match (case-insensitive, e.g. United States). Other sections are not filtered by it.",
+          "example": "United States,Germany",
+          "location": "query",
+          "name": "country",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional comma-separated country names that economic_events rows must match (case-insensitive, e.g. United States). Other sections are not filtered by it.",
+            "title": "Country"
+          }
+        },
+        {
+          "description": "Optional maximum rows per returned section. Omit for every row.",
+          "example": 50,
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 1000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional maximum rows per returned section. Omit for every row.",
+            "title": "Limit"
+          }
+        },
+        {
+          "description": "Optional number of rows to skip in each returned section (zero-indexed).",
+          "example": 0,
+          "location": "query",
+          "name": "offset",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional number of rows to skip in each returned section (zero-indexed).",
+            "title": "Offset"
+          }
         }
       ],
       "path": "/api/v2/market/calendar",
@@ -95871,5 +96156,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "89a44e941201c49020eb903991066c87d357bb5e5af4d5c65f30d72bc2bc1fb7"
+  "spec_sha256": "4cb5820eb4f9d2cdabcd75b3d3aaf38fb1398661e3f83c1ced2ed36250a4c034"
 }
