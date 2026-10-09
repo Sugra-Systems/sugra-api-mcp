@@ -1614,6 +1614,27 @@ def topic_default_operations(query: str) -> frozenset[str]:
     )
 
 
+# A question about a listing that no other word narrows asks for its price,
+# or for its price history when it names a period: "TLT since 2020" and "AAPL
+# over the last five years" ask for a series over time. The ticker scores some
+# fifty listing operations equally, and their operation_id order put the
+# dividends and splits first.
+LISTING_DEFAULT_OPERATION = "quotes_symbol_price"
+LISTING_HISTORY_OPERATION = "quotes_symbol_historical"
+_PERIOD_WORDS: tuple[str, ...] = (
+    "since", "ago", "history", "historical", "over time", "decade", "decades",
+    "years", "months", "weeks",
+)
+_YEAR_RE = re.compile(r"(?:19|20)\d\d")
+
+
+def query_names_a_period(query: str) -> bool:
+    """Whether the query names a period: a period word or a year."""
+    tokens = _WORD_TOKEN_RE.findall(query.lower())
+    return any(_YEAR_RE.fullmatch(token) for token in tokens) or any(
+        _phrase_spans(tokens, word) for word in _PERIOD_WORDS)
+
+
 # An everyday weather question names the worldwide forecast, or the history
 # when it asks about the past: "temperature in Dubai", "will it rain in Rome
 # tomorrow", "past weather in London". Its words alone found NOAA water

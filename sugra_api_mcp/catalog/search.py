@@ -13,6 +13,8 @@ from .aliases import (
     COUNTRY_STATISTIC_SPELLINGS,
     COUNTRY_STATISTIC_WORDS,
     FX_CONVERT_OPERATION,
+    LISTING_DEFAULT_OPERATION,
+    LISTING_HISTORY_OPERATION,
     MEETING_CALENDAR_OPERATIONS,
     OPERATION_INPUT_WORDS,
     SOURCE_ALSO_SERVES,
@@ -31,6 +33,7 @@ from .aliases import (
     matching_aliases,
     matching_central_bank_prefixes,
     query_has_equity_context,
+    query_names_a_period,
     query_names_united_states,
     spelled_country_statistics,
     topic_default_operations,
@@ -106,6 +109,11 @@ TICKER_QUOTES_SYMBOL_BOOST = 25
 # without a ticker-like token ("federal funds rate", "EUR USD exchange rate").
 TICKER_SYMBOL_PATH_BOOST = 10
 TICKER_SYMBOL_PARAM_BOOST = 6
+# A listing question that names a period lifts the price history above the
+# listing operations no other word picks: above a word only a description
+# holds (1), and no higher, so a word of the question in a strong field still
+# picks its operation ("AAPL dividends since 2020" is the dividends).
+LISTING_PERIOD_BOOST = 2
 CURRENCY_PAIR_FOREX_BOOST = 15
 CENTRAL_BANK_PREFIX_BOOST = 15
 CRYPTO_NAMESPACE_BOOST = 18
@@ -374,6 +382,7 @@ def _score(
     aliases: dict[str, list[str]],
     *,
     boost_quotes_symbol: bool,
+    boost_listing_history: bool = False,
     boost_markets_toolset: bool,
     boost_symbol_input: bool,
     boost_forex: bool,
@@ -481,6 +490,9 @@ def _score(
     if boost_quotes_symbol and endpoint.operation_id.startswith("quotes_symbol_"):
         score += TICKER_QUOTES_SYMBOL_BOOST
         why.append("pattern:ticker->quotes_symbol")
+        if boost_listing_history and endpoint.operation_id == LISTING_HISTORY_OPERATION:
+            score += LISTING_PERIOD_BOOST
+            why.append("pattern:period->history")
     elif boost_markets_toolset and endpoint.toolset == "markets":
         score += TICKER_MARKETS_TOOLSET_BOOST
         why.append("pattern:ticker->markets")
@@ -982,6 +994,7 @@ def search_catalog(
             [*terms, *sorted(frozenset(spelled) - set(terms))],
             aliases,
             boost_quotes_symbol=boost_quotes_symbol,
+            boost_listing_history=boost_quotes_symbol and query_names_a_period(query),
             boost_markets_toolset=boost_markets_toolset,
             boost_symbol_input=has_ticker_token,
             boost_forex=boost_forex,
@@ -1032,8 +1045,11 @@ def search_catalog(
                 scored[i] = (floor - 1, endpoint, [*why, "clamped-below:country-answers"])
 
     # Equal scores: the default operation of a topic word the query names
-    # comes first ("weather" -> the worldwide forecast), then operation_id.
+    # comes first ("weather" -> the worldwide forecast), and a listing's price
+    # in a listing question ("TLT"), then operation_id.
     defaults = topic_default_operations(query)
+    if boost_quotes_symbol:
+        defaults |= {LISTING_DEFAULT_OPERATION}
 
     def tie_break(endpoint: Endpoint) -> tuple[bool, str]:
         return endpoint.operation_id not in defaults, endpoint.operation_id

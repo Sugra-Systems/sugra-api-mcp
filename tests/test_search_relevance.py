@@ -2652,6 +2652,40 @@ def test_a_statistic_acronym_is_no_listing(query: str) -> None:
     assert detect_tickers(query) == []
 
 
+@pytest.mark.parametrize("query", [
+    "TLT since 2020", "SPY since 2020", "AAPL over the last five years",
+    "How has QQQ done over the past decade?",
+])
+def test_a_listing_and_a_period_ask_for_the_price_history(catalog, query: str) -> None:
+    """"TLT since 2020" ranked the dividends and splits first: the ticker
+    scores the listing operations equally and their names broke the tie."""
+    top = search_catalog(catalog, query, limit=1)[0]
+    assert top["operation_id"] == "quotes_symbol_historical", top
+    assert "pattern:period->history" in top["why"], top
+
+
+@pytest.mark.parametrize("query,first", [
+    ("AAPL dividends since 2020", "quotes_symbol_actions"),
+    ("NVDA earnings since 2020", "earnings"),
+])
+def test_a_period_leaves_the_operation_a_topic_word_names(catalog, query: str, first: str) -> None:
+    assert search_catalog(catalog, query, limit=1)[0]["operation_id"] == first
+
+
+@pytest.mark.parametrize("query", ["TLT", "XLE oil", "XLF banks", "PLTR today"])
+def test_a_listing_no_word_narrows_asks_for_its_price(catalog, query: str) -> None:
+    rows = search_catalog(catalog, query, limit=2)
+    assert rows[0]["operation_id"] == "quotes_symbol_price", rows[0]
+    assert rows[0]["score"] == rows[1]["score"], rows
+    assert "pattern:period->history" not in rows[0]["why"], rows[0]
+
+
+@pytest.mark.parametrize("query", ["inflation since 2020", "GDP of France since 2010"])
+def test_a_period_without_a_listing_lifts_no_price_history(catalog, query: str) -> None:
+    rows = search_catalog(catalog, query, limit=2000)
+    assert not any("pattern:period->history" in row["why"] for row in rows)
+
+
 # ---- A statistic named in other words ------------------------------------------------
 
 @pytest.mark.parametrize("query,spelled", [
