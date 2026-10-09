@@ -1614,6 +1614,41 @@ def topic_default_operations(query: str) -> frozenset[str]:
     )
 
 
+# A question about a listing that no other word narrows asks for its price,
+# for its price history when it names a period of days or longer ("TLT since
+# 2020", "AAPL over the last five years"), and for the prices of several
+# listings when it names several ("TLT SPY"). The ticker scores some fifty
+# listing operations equally, and their operation_id order put the dividends
+# and splits first. "since" and "ago" alone name no such period ("AAPL since
+# open", "15 minutes ago"), and a year counts only after a word that dates
+# ("since 2020", "in 2008"), so a name holding a number ("IWM Russell 2000")
+# names none.
+LISTING_DEFAULT_OPERATION = "quotes_symbol_price"
+LISTING_HISTORY_OPERATION = "quotes_symbol_historical"
+LISTINGS_DEFAULT_OPERATION = "quotes_symbol_multiple"
+_PERIOD_WORDS: tuple[str, ...] = (
+    "days", "weeks", "months", "years", "decade", "over time",
+    "last week", "past week", "week ago", "last month", "past month",
+    "month ago", "last year", "past year", "year ago",
+)
+_YEAR_RE = re.compile(r"(?:19|20)\d\d")
+_YEAR_PREPOSITIONS = frozenset({
+    "since", "from", "in", "after", "before", "until", "between", "through",
+    "during",
+})
+
+
+def query_names_a_period(query: str) -> bool:
+    """Whether the query names a period of days or longer: a year after a
+    word that dates, or a period word."""
+    tokens = _WORD_TOKEN_RE.findall(query.lower())
+    return any(
+        _YEAR_RE.fullmatch(token) and index > 0
+        and tokens[index - 1] in _YEAR_PREPOSITIONS
+        for index, token in enumerate(tokens)
+    ) or any(_phrase_spans(tokens, word) for word in _PERIOD_WORDS)
+
+
 # An everyday weather question names the worldwide forecast, or the history
 # when it asks about the past: "temperature in Dubai", "will it rain in Rome
 # tomorrow", "past weather in London". Its words alone found NOAA water
