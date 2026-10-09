@@ -272,54 +272,50 @@ def _ratio_base_statistics(texts: list[str]) -> frozenset[str]:
     return frozenset(bases - named)
 
 
-# The words that may stand between a ratio's numerator and its base:
-# "debt as a percent of GDP", "debt ratio to GDP".
-_RATIO_FILLER = frozenset({"a", "an", "as", "in", "of", "ratio", "ratios", "the"})
-
-# The words that lead into a question or say when, and measure nothing:
-# "what is the ratio to GDP", "show me the share of GDP" and "annual ratio
-# to GDP" name no numerator.
-_RATIO_LEAD_INS = _QUERY_STOPWORDS | _TWO_LETTER_FILLER | frozenset({
+# The words of a question that measure nothing: function words, request
+# verbs, the words that say when or how, and the words that name where or
+# the data itself ("which country has the highest annual ratio to GDP").
+_RATIO_NON_MEASURES = _QUERY_STOPWORDS | _TWO_LETTER_FILLER | frozenset({
     "calculate", "chart", "compare", "compute", "fetch", "find", "get", "give",
     "list", "look", "need", "please", "plot", "see", "show", "tell", "want", "whats",
-    "annual", "average", "daily", "historical", "latest", "monthly", "quarterly",
-    "recent", "weekly", "yearly",
+    "annual", "average", "current", "daily", "historical", "latest", "monthly",
+    "quarterly", "recent", "today", "weekly", "year", "yearly",
+    "high", "higher", "highest", "low", "lower", "lowest", "much", "rank", "top",
+    "countries", "country", "global", "nation", "nations", "world",
+    "data", "figure", "figures", "indicator", "indicators", "level", "levels",
+    "number", "numbers", "ratio", "ratios", "series", "statistics", "value", "values",
 })
 
 
 def _measures(word: str) -> bool:
     """Whether a word before a ratio can be what the ratio measures."""
-    return (len(word) > 1 and not word.isdigit() and word not in _RATIO_LEAD_INS
+    return (len(word) > 1 and not word.isdigit() and word not in _RATIO_NON_MEASURES
             and word not in COUNTRY_STATISTIC_WORDS)
 
 
 def _ratio_numerators(text: str) -> dict[str, frozenset[str]]:
     """The words a text measures against each country statistic.
 
-    "debt" for "gdp" in "government debt to GDP", "debt-to-GDP" and "debt as
-    a percent of GDP": the last word before the ratio, past any filler and
-    any number ("debt 80% of GDP", "2024 ratio to GDP"), and the words listed
-    with it ("debt and deficit to GDP", "debt, deficit or spending to GDP").
-    A numerator that is a country statistic itself, or a word that leads
-    into the question or says when, reads as none.
+    Every word before the ratio, back to the ratio before it or the start of
+    the text, that can measure something: "debt" in "debt-to-GDP", "debt as
+    a percent of GDP" and "government debt is 80% of GDP" ("government" too),
+    "debt" and "deficit" in "debt and budget deficit to GDP". No phrasing is
+    parsed, so an operation that names any of those words answers the ratio,
+    and a question whose words before the ratio all measure nothing ("what is
+    the ratio to GDP", "2024 share of GDP") names no numerator.
     """
     lowered = text.lower()
-    tokens = list(TOKEN_RE.finditer(lowered))
     numerators: dict[str, set[str]] = {}
+    start = 0
     for match in _RATIO_BASE_RE.finditer(lowered):
+        window = TOKEN_RE.findall(lowered[start:match.start()])
+        start = match.end()
         base = match.group(1)
         if base not in COUNTRY_STATISTIC_WORDS:
             continue
-        before = [token for token in tokens if token.start() < match.start()]
-        while before and (before[-1].group() in _RATIO_FILLER or before[-1].group().isdigit()):
-            before.pop()
-        while before and _measures(before[-1].group()):
-            word = before.pop()
-            numerators.setdefault(base, set()).add(word.group())
-            if before and before[-1].group() in {"and", "or"}:
-                before.pop()
-            elif not (before and "," in lowered[before[-1].end():word.start()]):
-                break
+        words = {word for word in window if _measures(word)}
+        if words:
+            numerators.setdefault(base, set()).update(words)
     return {base: frozenset(words) for base, words in numerators.items()}
 
 

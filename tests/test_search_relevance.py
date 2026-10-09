@@ -2540,38 +2540,42 @@ def test_a_question_that_names_the_ratio_still_finds_it(catalog, query: str) -> 
 
 
 @pytest.mark.parametrize(("text", "numerators"), [
-    ("government debt to GDP", {"gdp": {"debt"}}),
+    ("government debt to GDP", {"gdp": {"government", "debt"}}),
     ("debt-to-GDP", {"gdp": {"debt"}}),
     ("debt % of GDP", {"gdp": {"debt"}}),
     ("debt as a percent of GDP", {"gdp": {"debt"}}),
-    ("budget deficit as a share of GDP", {"gdp": {"deficit"}}),
+    ("budget deficit as a share of GDP", {"gdp": {"budget", "deficit"}}),
     ("debt ratio to GDP", {"gdp": {"debt"}}),
     ("credit to GDP gap", {"gdp": {"credit"}}),
     ("credit to GDP and debt to GDP", {"gdp": {"credit", "debt"}}),
-    # Each numerator stays with its own base.
-    ("credit to inflation and government debt to GDP", {"inflation": {"credit"}, "gdp": {"debt"}}),
+    # Each base reads only the words back to the ratio before it.
+    ("credit to inflation and government debt to GDP",
+     {"inflation": {"credit"}, "gdp": {"government", "debt"}}),
     ("debt to GDP and ratio to GDP", {"gdp": {"debt"}}),
-    ("ratio to GDP", {}),  # nothing before the ratio but filler
+    ("ratio to GDP", {}),  # nothing before the ratio that measures
     ("share of GDP", {}),
-    # The words that lead into the question measure nothing.
+    # Function words, request verbs, numbers and the words that say when,
+    # where or how much measure nothing.
     ("what is the ratio to GDP", {}),
     ("show me the share of GDP", {}),
     ("what's the share of GDP", {}),
+    ("whats the ratio to GDP", {}),
     ("get the ratio to GDP", {}),
-    # A number or a word that says when measures nothing either.
     ("2024 ratio to GDP", {}),
-    ("government debt 80% of GDP", {"gdp": {"debt"}}),  # past the ratio's value
+    ("annual ratio to GDP", {}),
+    ("quarterly share of GDP", {}),
+    ("which country has the highest ratio to GDP", {}),
+    ("which country has the highest debt to GDP", {"gdp": {"debt"}}),
+    # Every phrasing of the numerator reads it.
+    ("government debt 80% of GDP", {"gdp": {"government", "debt"}}),
+    ("government debt is 80% of GDP", {"gdp": {"government", "debt"}}),
     ("debt 2024 ratio to GDP", {"gdp": {"debt"}}),
-    # Numerators joined by "and" or "or" share the base.
     ("debt and deficit to GDP", {"gdp": {"debt", "deficit"}}),
+    ("debt and budget deficit to GDP", {"gdp": {"debt", "budget", "deficit"}}),
     ("exports or imports as a share of GDP", {"gdp": {"exports", "imports"}}),
     ("debt, deficit and spending to GDP", {"gdp": {"debt", "deficit", "spending"}}),
     ("in 2020, debt to GDP", {"gdp": {"debt"}}),
-    ("GDP and debt to GDP", {"gdp": {"debt"}}),  # a statistic joined by "and" is none
-    ("show and debt to GDP", {"gdp": {"debt"}}),
-    ("whats the ratio to GDP", {}),
-    ("annual ratio to GDP", {}),
-    ("quarterly share of GDP", {}),
+    ("GDP and debt to GDP", {"gdp": {"debt"}}),  # a country statistic is none
     ("M2 to GDP", {"gdp": {"m2"}}),
     ("inflation to GDP", {}),  # a country statistic is no numerator
     ("price to earnings", {}),  # no country statistic as the base
@@ -2616,7 +2620,9 @@ def test_a_numerator_matches_no_other_word(numerator: str, token: str) -> None:
     "tax revenue as a percent of GDP",
     "debt to gross domestic product",
     "government debt 80% of GDP",
+    "government debt is 80% of GDP",
     "debt and deficit to GDP",
+    "which country has the highest debt to GDP",
 ])
 def test_a_ratio_with_another_numerator_answers_no_ratio_question(catalog, query: str) -> None:
     """The credit-to-GDP gap ranked first for "government debt to GDP": it
@@ -2656,6 +2662,10 @@ def test_a_ratio_question_with_its_own_numerator_finds_the_ratio(catalog, query:
     # Either of two numerators joined by "and" answers.
     ("Government debt to GDP", "debt and deficit to GDP", True),
     ("Credit-to-GDP gaps", "debt and deficit to GDP", False),
+    ("Government debt to GDP", "debt and budget deficit to GDP", True),
+    ("Government debt to GDP", "debt or private credit to GDP", True),
+    ("Credit-to-GDP gaps", "government debt is 80% of GDP", False),
+    ("Government debt to GDP", "government debt is 80% of GDP", True),
     # A numerator answers only its own base: credit is measured against
     # inflation here, and GDP against debt.
     ("Credit-to-GDP gaps", "credit to inflation and government debt to GDP", False),
