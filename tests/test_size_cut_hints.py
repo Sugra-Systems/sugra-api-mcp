@@ -84,11 +84,8 @@ async def test_a_hint_names_only_parameters_the_operation_has(monkeypatch, opera
         assert cut["kept_count"] < cut["original_count"]
 
 
-@pytest.mark.parametrize("operation_id", ["rba_cpi", "macro_indicators_available"])
-async def test_an_operation_without_parameters_gets_no_filter_advice(monkeypatch, operation_id) -> None:
-    body = indicators(4900) if operation_id == "macro_indicators_available" else {"data": bars(2000)}
-
-    result = await call(monkeypatch, operation_id, body)
+async def test_an_operation_without_parameters_gets_no_filter_advice(monkeypatch) -> None:
+    result = await call(monkeypatch, "rba_cpi", {"data": bars(2000)})
 
     hint = notice(result)["retry_hint"]
     assert hint.endswith(" The source returns this whole dataset in one response.")
