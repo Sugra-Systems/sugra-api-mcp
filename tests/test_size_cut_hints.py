@@ -9,9 +9,11 @@ a hint gives a response that fits.
 
 from __future__ import annotations
 
+import heapq
 import json
 import re
 from datetime import timedelta
+from types import SimpleNamespace
 
 import pytest
 
@@ -257,20 +259,45 @@ class _Visits(dict):
     def __init__(self, *args) -> None:
         super().__init__(*args)
         self.visits = 0
+        self.trace: list[str] | None = None
+
+    def _visit(self) -> None:
+        self.visits += 1
+        if self.trace is not None:
+            self.trace.append("root")
 
     def __iter__(self):
         for key in super().__iter__():
-            self.visits += 1
+            self._visit()
             yield key
 
     def items(self):
         for item in super().items():
-            self.visits += 1
+            self._visit()
             yield item
 
 
 class _OutOfTime(Exception):
     pass
+
+
+def _trace_ranking(monkeypatch, module, root: _Visits) -> list[str]:
+    """A trace of the root visits and of every cut key the ranking of the cut
+    lists takes, in the order they happen; the caller's tick adds its own."""
+    trace: list[str] = []
+    root.trace = trace
+    real_nsmallest = heapq.nsmallest
+
+    def taken(candidates):
+        for candidate in candidates:
+            trace.append("cut")
+            yield candidate
+
+    def nsmallest(n, candidates, **kwargs):
+        return real_nsmallest(n, taken(candidates), **kwargs)
+
+    monkeypatch.setattr(module, "heapq", SimpleNamespace(nsmallest=nsmallest))
+    return trace
 
 
 def _wide_root(module, tick) -> tuple[_Visits, list]:
@@ -300,18 +327,21 @@ def test_the_fields_offer_over_a_wide_root_reads_the_clock_and_sorts_only_its_bo
         return real_sorted(items, **kwargs)
 
     monkeypatch.setattr(module, "sorted", spy, raising=False)
-    seen_at_tick = [0]
     root, cut = _wide_root(module, lambda: None)
+    trace = _trace_ranking(monkeypatch, module, root)
 
-    def tick() -> None:
-        seen_at_tick[0] = root.visits
+    groups = module._fit_whole_alone({"data": root}, cut, cut, {}, 10_000, lambda: trace.append("tick"))
 
-    groups = module._fit_whole_alone({"data": root}, cut, cut, {}, 10_000, tick)
-
-    # No key of the root is visited after the last reading of the clock, and
-    # nothing longer than one bounded set is sorted.
+    # Every key of the root and every cut key the ranking takes has a reading
+    # of the clock of its own: a root key is read just before its tick, a cut
+    # key just after it. Nothing longer than one bounded set is sorted.
     assert root.visits == len(root)
-    assert seen_at_tick[0] == root.visits
+    assert trace.count("cut") == len(cut)
+    for index, event in enumerate(trace):
+        if event == "root":
+            assert trace[index + 1] == "tick", f"root visit {index} has no tick of its own"
+        elif event == "cut":
+            assert trace[index - 1] == "tick", f"cut key {index} has no tick of its own"
     assert sorted_lengths and max(sorted_lengths) <= bound
     assert groups == [[f"w{i:04d}" for i in range(bound)], *([f"c{i:02d}"] for i in range(bound))]
 
@@ -331,6 +361,38 @@ def test_the_fields_offer_over_a_wide_root_stops_when_the_clock_runs_out(budget)
     with pytest.raises(_OutOfTime):
         module._fit_whole_alone({"data": root}, cut, cut, {}, 10_000, tick)
     assert root.visits <= budget + 1
+
+
+def test_the_fields_offer_stops_while_it_ranks_the_cut_lists_when_the_clock_runs_out(
+    monkeypatch,
+) -> None:
+    # A first run counts the ticks the passes before the ranking take; a
+    # budget a few ticks past them runs out while the cut lists are ranked.
+    module = size_cut_module()
+    root, cut = _wide_root(module, lambda: None)
+    trace = _trace_ranking(monkeypatch, module, root)
+    module._fit_whole_alone({"data": root}, cut, cut, {}, 10_000, lambda: trace.append("tick"))
+    before_ranking = trace[: trace.index("cut")].count("tick") - 1
+    ranking = before_ranking + len(cut)
+    budget = before_ranking + 5
+    assert root.visits == len(root) and budget < ranking
+
+    root, cut = _wide_root(module, lambda: None)
+    trace = _trace_ranking(monkeypatch, module, root)
+    ticks = 0
+
+    def tick() -> None:
+        nonlocal ticks
+        ticks += 1
+        if ticks > budget:
+            raise _OutOfTime
+
+    with pytest.raises(_OutOfTime):
+        module._fit_whole_alone({"data": root}, cut, cut, {}, 10_000, tick)
+    # The root walk finished, and the ranking stopped after the cut keys the
+    # budget left room for, not after all of them.
+    assert root.visits == len(root)
+    assert trace.count("cut") == budget - before_ranking
 
 
 def test_a_cut_list_past_the_room_of_the_first_set_is_offered_alone_before_larger_ones() -> None:
