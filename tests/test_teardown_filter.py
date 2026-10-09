@@ -55,6 +55,7 @@ def _no_filter_left_behind(monkeypatch) -> Iterator[None]:
     """No filter installed, and a fresh module counter, for every test."""
     teardown_filter.uninstall()
     monkeypatch.setattr(teardown_filter, "counter", teardown_filter.RaceCounter())
+    monkeypatch.setattr(teardown_filter, "_probed", False)
     yield
     teardown_filter.uninstall()
 
@@ -583,7 +584,7 @@ def _every_key() -> list[tuple[str, ...]]:
 def _accounted(message: str) -> tuple[int, int, int, list[str]]:
     """dropped, omitted, the sum of the written counts, and the lines of a count record."""
     header, *lines = message.splitlines()
-    match = re.fullmatch(r"srace1 side=(\S+) dropped=(\d+) lines=(\d+) omitted=(\d+)", header)
+    match = re.fullmatch(r"srace1 side=(\S+) dropped=(\d+) lines=(\d+) omitted=(\d+) unmatched=(\d+)", header)
     assert match is not None, header
     assert int(match.group(3)) == len(lines)
     return int(match.group(2)), int(match.group(4)), sum(int(line.rsplit(" ", 1)[1]) for line in lines), lines
@@ -595,13 +596,14 @@ def test_an_absurd_side_and_huge_counts_stay_within_the_budget(caplog, monkeypat
     keys = _every_key()
     assert len(keys) > teardown_filter.MAX_LINES
     counter = teardown_filter.RaceCounter()
-    counter._counts = {key: 10**30 + i for i, key in enumerate(keys)}  # type: ignore[misc]
+    big = teardown_filter.COUNT_CAP // (2 * len(keys))
+    counter._counts = {key: big + i for i, key in enumerate(keys)}  # type: ignore[misc]
     counter.write()
     [message] = _count_records(caplog)
     assert message.startswith("srace1 side=unknown ")
     assert len(message) <= teardown_filter.MAX_RECORD_CHARS
     dropped, omitted, written, lines = _accounted(message)
-    assert dropped == sum(10**30 + i for i in range(len(keys)))
+    assert dropped == sum(big + i for i in range(len(keys)))
     assert written + omitted == dropped
     assert 0 < len(lines) <= teardown_filter.MAX_LINES
 
@@ -610,7 +612,7 @@ def test_the_character_budget_stops_the_lines_and_counts_the_rest_as_omitted(cap
     caplog.set_level(logging.INFO, logger=teardown_filter.COUNTER_LOGGER)
     monkeypatch.setattr(teardown_filter, "MAX_LINES", 10**6)
     keys = _every_key()
-    counts = {key: 10**30 + i for i, key in enumerate(keys)}
+    counts = {key: 10**7 + i for i, key in enumerate(keys)}
     counter = teardown_filter.RaceCounter()
     counter._counts = dict(counts)  # type: ignore[arg-type]
     counter.write()
@@ -625,17 +627,59 @@ def test_the_character_budget_stops_the_lines_and_counts_the_rest_as_omitted(cap
     assert len(message) + 1 + len(following) > teardown_filter.MAX_RECORD_CHARS
 
 
+def _widest_header() -> int:
+    """The longest header there can be: the longest side, every number at its widest."""
+    cap = f"{teardown_filter.COUNT_CAP}+"
+    side = "x" * teardown_filter.MAX_SIDE_CHARS
+    return len(f"srace1 side={side} dropped={cap} lines={teardown_filter.MAX_LINES} omitted={cap} unmatched={cap}")
+
+
 def test_the_record_stays_within_every_budget_size(monkeypatch) -> None:
-    """The header's own digits are counted: at no budget does the record pass it."""
-    counts = {key: 10**30 + i for i, key in enumerate(_every_key()[:40])}
-    for budget in range(60, 1_200):
+    """From the widest header up, at no budget does the record pass it, whatever the counts."""
+    monkeypatch.setattr(observability, "process_side", lambda: "x" * teardown_filter.MAX_SIDE_CHARS)
+    keys = _every_key()[:40]
+    exact = {key: 10**9 + i for i, key in enumerate(keys)}
+    huge = {key: 10**30 + i for i, key in enumerate(keys)}
+    floor = _widest_header()
+    assert floor < teardown_filter.MAX_RECORD_CHARS
+    for budget in range(floor, floor + 1_200):
         monkeypatch.setattr(teardown_filter, "MAX_RECORD_CHARS", budget)
-        message = teardown_filter._count_text(counts)
-        # The header is always written; a line is added only when the whole record still fits.
-        if len(message.splitlines()) > 1:
-            assert len(message) <= budget, budget
-        dropped, omitted, written, _ = _accounted(message)
-        assert written + omitted == dropped == sum(counts.values())
+        for counts, unmatched in ((exact, 5), (huge, 10**30), ({}, 10**30)):
+            message = teardown_filter._count_text(counts, unmatched)
+            assert len(message) <= budget, (budget, len(message))
+        dropped, omitted, written, _ = _accounted(teardown_filter._count_text(exact))
+        assert written + omitted == dropped == sum(exact.values())
+
+
+def test_a_count_beyond_the_cap_is_written_as_the_cap_with_a_plus(caplog, monkeypatch) -> None:
+    caplog.set_level(logging.INFO, logger=teardown_filter.COUNTER_LOGGER)
+    monkeypatch.setattr(observability, "process_side", lambda: "x" * teardown_filter.MAX_SIDE_CHARS)
+    cap = teardown_filter.COUNT_CAP
+    first = ("post", "closed", "none", "other", "none")
+    second = ("get", "closed", "unknown", "unknown", "unknown")
+    counter = teardown_filter.RaceCounter()
+    # More digits than int-to-text conversion allows by default: a count is never converted whole.
+    counter._counts = {first: 10**5000, second: cap}  # type: ignore[misc]
+    counter._unmatched = 10**30
+    counter.write()
+    [message] = _count_records(caplog)
+    assert len(message) <= teardown_filter.MAX_RECORD_CHARS
+    header, *lines = message.splitlines()
+    assert header == (
+        f"srace1 side={'x' * 128} dropped={cap}+ lines=2 omitted=0 unmatched={cap}+"
+    )
+    assert lines == [f"post closed none other none {cap}+", f"get closed unknown unknown unknown {cap}"]
+    # A count at the cap is exact; one above it says so.
+    assert teardown_filter._number(cap) == str(cap)
+    assert teardown_filter._number(cap + 1) == f"{cap}+"
+
+
+def test_an_omitted_count_beyond_the_cap_is_marked_in_the_header() -> None:
+    keys = _every_key()[: teardown_filter.MAX_LINES + 1]
+    counts = {key: 10**30 for key in keys}
+    header = teardown_filter._count_text(counts).splitlines()[0]
+    cap = teardown_filter.COUNT_CAP
+    assert f"dropped={cap}+ " in header and f"omitted={cap}+ " in header
 
 
 def test_a_class_outside_the_known_labels_is_counted_as_other(monkeypatch) -> None:
@@ -698,6 +742,49 @@ def test_an_error_inside_the_filter_lets_the_record_through() -> None:
     counter = teardown_filter.counter
     assert _passes(record)
     assert counter._counts == {}
+    # A record the filter could not decide, shaped like a race, is counted as kept.
+    assert counter._unmatched == 1
+
+
+def test_a_near_miss_is_kept_and_counted_as_unmatched() -> None:
+    counter = teardown_filter.counter
+
+    def closed() -> ExcInfo:
+        return _raised_in_handler(anyio.ClosedResourceError(), _transport(True))
+
+    near_misses = [
+        _record("A changed SDK text", closed()),
+        _record(POST_MSG, closed(), args=("x",)),
+        _record(POST_MSG, closed(), level=logging.WARNING),
+        _record(POST_MSG, _raised_in_handler(anyio.ClosedResourceError(), _transport(False))),
+        _record(POST_MSG, _raised_in_handler(anyio.BrokenResourceError())),
+    ]
+    for record in near_misses:
+        assert _passes(record)
+    assert counter._unmatched == len(near_misses)
+    assert counter._counts == {}
+    # A drop is not a near miss, and records unlike a race are not counted at all.
+    assert not _passes(_record(POST_MSG, closed()))
+    assert _passes(_record(POST_MSG, _raised_in_handler(ValueError("x"), _transport(True))))
+    assert _passes(_record(POST_MSG, None))
+    other = logging.getLogger("mcp.server.streamable_http_manager").makeRecord(
+        "mcp.server.streamable_http_manager", logging.ERROR, "x.py", 1, POST_MSG, (), closed()
+    )
+    assert _passes(other)
+    assert counter._unmatched == len(near_misses)
+    assert sum(counter._counts.values()) == 1
+
+
+def test_the_unmatched_count_is_written_with_no_drop_and_taken_off(caplog) -> None:
+    caplog.set_level(logging.INFO, logger=teardown_filter.COUNTER_LOGGER)
+    counter = teardown_filter.RaceCounter()
+    counter.add_unmatched()
+    counter.add_unmatched()
+    counter.write()
+    counter.write()
+    [message] = _count_records(caplog)
+    assert re.fullmatch(r"srace1 side=\S+ dropped=0 lines=0 omitted=0 unmatched=2", message)
+    assert counter._unmatched == 0
 
 
 # ---- The count ----
@@ -719,7 +806,7 @@ def test_the_count_is_written_as_a_delta_and_only_when_there_is_one(caplog, monk
     [message] = _count_records(caplog)
     side = observability.process_side()
     assert message.splitlines() == [
-        f"srace1 side={side} dropped=3 lines=2 omitted=0",
+        f"srace1 side={side} dropped=3 lines=2 omitted=0 unmatched=0",
         "post closed app.sugra.ai chatgpt openai 2",
         "get broken unknown unknown unknown 1",
     ]
@@ -736,7 +823,7 @@ def test_the_count_keeps_the_largest_lines_and_sums_the_rest(caplog, monkeypatch
     counter.add(("sse", "closed", "none", "other", "none"))
     counter.write()
     [message] = _count_records(caplog)
-    assert message.splitlines()[0].endswith("dropped=4 lines=1 omitted=1")
+    assert message.splitlines()[0].endswith("dropped=4 lines=1 omitted=1 unmatched=0")
     assert message.splitlines()[1:] == ["post closed none other none 3"]
 
 
@@ -934,6 +1021,59 @@ def test_install_is_idempotent_and_uninstall_removes_the_filter() -> None:
     teardown_filter.uninstall()
     assert teardown_filter.installed_filter() is None
     assert teardown_filter.install() is not first
+
+
+def _warnings(caplog) -> list[str]:
+    return [
+        r.getMessage()
+        for r in caplog.records
+        if r.name == teardown_filter.COUNTER_LOGGER and r.levelno == logging.WARNING
+    ]
+
+
+def test_install_is_silent_when_the_sdk_has_what_the_filter_reads(caplog) -> None:
+    caplog.set_level(logging.INFO, logger=teardown_filter.COUNTER_LOGGER)
+    teardown_filter.install()
+    teardown_filter.install()
+    assert _warnings(caplog) == []
+
+
+def test_install_warns_once_naming_the_missing_transport_attribute(caplog, monkeypatch) -> None:
+    caplog.set_level(logging.INFO, logger=teardown_filter.COUNTER_LOGGER)
+    monkeypatch.delattr(StreamableHTTPServerTransport, "is_terminated")
+    race_filter = teardown_filter.install()
+    assert teardown_filter.install() is race_filter
+    [warning] = _warnings(caplog)
+    assert "StreamableHTTPServerTransport.is_terminated" in warning
+    assert teardown_filter.installed_filter() is race_filter
+
+
+def test_an_install_after_uninstall_does_not_warn_again(caplog, monkeypatch) -> None:
+    caplog.set_level(logging.INFO, logger=teardown_filter.COUNTER_LOGGER)
+    monkeypatch.delattr(StreamableHTTPServerTransport, "is_terminated")
+    first = teardown_filter.install()
+    teardown_filter.uninstall()
+    second = teardown_filter.install()
+    assert second is not first
+    assert teardown_filter.installed_filter() is second
+    [warning] = _warnings(caplog)
+    assert "StreamableHTTPServerTransport.is_terminated" in warning
+
+
+def test_install_warns_when_the_sdk_logger_has_another_name(caplog, monkeypatch) -> None:
+    caplog.set_level(logging.INFO, logger=teardown_filter.COUNTER_LOGGER)
+    monkeypatch.setattr(sh, "logger", logging.getLogger("mcp.server.moved"))
+    teardown_filter.install()
+    [warning] = _warnings(caplog)
+    assert f"logger {SDK}" in warning
+
+
+def test_a_probe_that_fails_never_blocks_the_install(monkeypatch) -> None:
+    def broken() -> list[str]:
+        raise RuntimeError("probe")
+
+    monkeypatch.setattr(teardown_filter, "_missing_sdk_parts", broken)
+    assert teardown_filter.install() is teardown_filter.installed_filter()
 
 
 def test_installs_at_the_same_time_leave_one_filter(monkeypatch) -> None:
