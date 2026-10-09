@@ -2374,6 +2374,62 @@ def test_a_national_source_keeps_first_place_where_the_question_asks_for_it(
     assert top == expected, top
 
 
+@pytest.mark.parametrize("query", [
+    "coffee CPI",
+    "gasoline CPI",
+    "coffee consumer prices",
+    "gasoline consumer prices",
+])
+def test_a_product_named_before_a_price_statistic_is_the_subject(catalog, query: str) -> None:
+    """The CPI of every country ranked above FRED, which holds the coffee and
+    the gasoline price index: no operation that takes the country answers
+    the product."""
+    top = search_catalog(catalog, query, limit=1)[0]
+    assert top["operation_id"] == "fred_series_series_id", top
+    assert "lifted-above:any-country-answers" in top["why"], top["why"]
+
+
+@pytest.mark.parametrize("query,expected", [
+    ("CPI", "bis_cpi"),
+    ("consumer prices", "bis_cpi"),
+    ("inflation", "macro_country_profile"),
+    ("food inflation", "macro_country_profile"),
+    ("core inflation", "macro_country_profile"),
+    ("wage growth and inflation", "macro_country_profile"),
+    # Words that only a summary, a path or a parameter of a national source
+    # names are no subject of the question.
+    ("inflation forecast", "macro_country_profile"),
+    ("inflation history since 1970", "macro_country_profile"),
+])
+def test_a_price_statistic_without_a_product_keeps_its_any_country_answer(
+    catalog, query: str, expected: str,
+) -> None:
+    top = search_catalog(catalog, query, limit=1)[0]["operation_id"]
+    assert top == expected, top
+
+
+def test_only_a_keyword_makes_a_national_source_the_subject() -> None:
+    """A word the national source names in its keywords lifts it above the
+    operation that takes the country; the same word in its summary keeps
+    its rank only."""
+    from sugra_api_mcp.catalog.models import Catalog, Endpoint, EndpointParameter
+
+    country = EndpointParameter(name="country", location="query")
+    takes = Endpoint(operation_id="world_widget", method="GET", path="/inflation",
+                     summary="Inflation", description="Inflation", parameters=[country])
+    keyed = Endpoint(operation_id="ine_widget", method="GET", path="/y",
+                     summary="Prices", description="Inflation", keywords=["coffee"])
+    worded = Endpoint(operation_id="ons_widget", method="GET", path="/z",
+                      summary="Prices coffee", description="Inflation")
+    results = search_catalog(Catalog(source="test", endpoints=[takes, keyed, worded]),
+                             "coffee inflation", limit=5)
+    assert [r["operation_id"] for r in results] == ["ine_widget", "world_widget", "ons_widget"], results
+    assert "lifted-above:any-country-answers" in results[0]["why"], results[0]["why"]
+    assert "clamped-below:subject-answers" in results[1]["why"], results[1]["why"]
+    assert not {"lifted-above:any-country-answers", "clamped-below:any-country-answers"} & set(
+        results[2]["why"]), results[2]["why"]
+
+
 @pytest.mark.parametrize("query,words", [
     ("GDP", {"gdp"}),
     ("CPI inflation", {"cpi", "inflation"}),

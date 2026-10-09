@@ -393,7 +393,7 @@ def _score(
     ratio_cues: frozenset[str] = frozenset(),
     spelled_statistics: frozenset[str] = frozenset(),
     place_answers: set[str] | None = None,
-    term_hits: dict[str, tuple[frozenset[str], frozenset[str]]] | None = None,
+    term_hits: dict[str, tuple[frozenset[str], frozenset[str], frozenset[str]]] | None = None,
 ) -> tuple[int, list[str]]:
     """Score one endpoint for the query.
 
@@ -416,7 +416,8 @@ def _score(
     question names in other words ("jobless rate"): an operation answers one
     when it names it in its own word or in one of those. ``term_hits``,
     when given, records the query words the endpoint matches in a field other
-    than its description, and those it matches in any field.
+    than its description, those it matches in any field, and those it matches
+    in its keywords.
     """
     alias_terms = [term for terms in aliases.values() for term in terms]
     all_terms = [*query_terms, *_tokens(" ".join(alias_terms))]
@@ -544,6 +545,7 @@ def _score(
 
     matched_query_terms: set[str] = set()
     strong_words: set[str] = set()
+    keyword_words: set[str] = set()
     matched_words: set[str] = set(alias_statistics)
     for term in all_terms:
         if term in silenced:
@@ -585,6 +587,8 @@ def _score(
                 and (term not in profile.ratio_bases or term in ratio_cues)):
             if hit:
                 strong_words.add(term)
+            if term in profile.keywords:
+                keyword_words.add(term)
             if hit or term in profile.description:
                 matched_words.add(term)
         # Coverage counts STRONG-field hits only (a description-only match
@@ -656,7 +660,8 @@ def _score(
             place_answers.add(endpoint.operation_id)
 
     if term_hits is not None:
-        term_hits[endpoint.operation_id] = (frozenset(strong_words), frozenset(matched_words))
+        term_hits[endpoint.operation_id] = (
+            frozenset(strong_words), frozenset(matched_words), frozenset(keyword_words))
 
     # Deprecation: never above the live replacement.
     if endpoint.deprecated and endpoint.replaced_by:
@@ -973,7 +978,7 @@ def search_catalog(
     scored: list[tuple[int, Endpoint, list[str]]] = []
     country_answers: set[str] = set()
     place_answers: set[str] = set()
-    term_hits: dict[str, tuple[frozenset[str], frozenset[str]]] = {}
+    term_hits: dict[str, tuple[frozenset[str], frozenset[str], frozenset[str]]] = {}
     for endpoint in catalog.endpoints:
         if not _in_scope(endpoint, toolset, source):
             continue
@@ -1053,32 +1058,44 @@ def search_catalog(
     # answer nothing the question asks ("GDP" found a weather product first).
     # The words that name a statistic in other words are the statistic, which
     # every one of those operations answers: "consumer" and "prices" in
-    # "consumer prices".
+    # "consumer prices". An operation that answers the statistic and names a
+    # word of the question in its keywords that none of those operations
+    # answers holds the subject of the question, so it takes the first of the
+    # slots: "coffee CPI" found the CPI of every country above FRED, which
+    # holds the coffee price index. A word only its other fields name is too
+    # weak for that ("forecast", "history"), and keeps its rank only.
     held: dict[str, tuple[bool, str]] = {}
     places = [i for i, (_, endpoint, _) in enumerate(scored)
               if endpoint.operation_id in place_answers]
     if places:
         answered = frozenset().union(
             *(term_hits[scored[i][1].operation_id][1] for i in places), *spelled.values())
+        subjects: list[int] = []
         national: list[int] = []
         for i, (_, endpoint, _) in enumerate(scored):
-            strong, matched = term_hits[endpoint.operation_id]
-            if (endpoint.operation_id not in place_answers
-                    and _source_country(endpoint) is not None
-                    and any_country_cues & matched and not strong - answered):
+            strong, matched, keywords = term_hits[endpoint.operation_id]
+            if endpoint.operation_id in place_answers or not any_country_cues & matched:
+                continue
+            if keywords - answered:
+                subjects.append(i)
+            elif _source_country(endpoint) is not None and not strong - answered:
                 national.append(i)
 
         def slot_of(i: int) -> tuple[int, bool, str]:
             return -scored[i][0], *tie_break(scored[i][1])
 
-        slots = sorted(slot_of(i) for i in [*places, *national])
-        ranked = [*sorted(places, key=slot_of), *sorted(national, key=slot_of)]
-        lifted = set(places)
+        slots = sorted(slot_of(i) for i in [*subjects, *places, *national])
+        ranked = [*sorted(subjects, key=slot_of), *sorted(places, key=slot_of),
+                  *sorted(national, key=slot_of)]
+        notes = {i: "lifted-above:any-country-answers" for i in subjects}
+        for i in places:
+            notes[i] = "lifted-above:national-sources"
         for slot, i in zip(slots, ranked, strict=True):
             if slot != slot_of(i):
                 _, endpoint, why = scored[i]
-                note = ("lifted-above:national-sources" if i in lifted
-                        else "clamped-below:any-country-answers")
+                note = notes.get(i, "clamped-below:any-country-answers")
+                if i in places and slot > slot_of(i):
+                    note = "clamped-below:subject-answers"
                 scored[i] = (-slot[0], endpoint, [*why, note])
                 held[endpoint.operation_id] = slot[1:]
 
