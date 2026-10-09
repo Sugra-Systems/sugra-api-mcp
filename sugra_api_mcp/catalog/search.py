@@ -10,6 +10,7 @@ from .aliases import (
     CENTRAL_BANK_PLACES,
     CENTRAL_BANK_PREFIX_BOOSTS,
     COMPOUND_NAMED_OPERATIONS,
+    COUNTRY_STATISTIC_WORDS,
     FX_CONVERT_OPERATION,
     MEETING_CALENDAR_OPERATIONS,
     OPERATION_INPUT_WORDS,
@@ -239,6 +240,34 @@ def _symbol_input_kind(endpoint: Endpoint) -> str | None:
     return None
 
 
+# A word named as the base of a ratio: "credit-to-GDP", "debt to GDP",
+# "percent of GDP", "% of GDP", "share of GDP".
+_RATIO_BASE_RE = re.compile(
+    r"(?:(?<![a-z0-9])to[\s_-]+|(?:(?<![a-z0-9])(?:percent|per\s+cent|share)|%)\s+of\s+)"
+    r"([a-z0-9]+)"
+)
+
+
+def _ratio_base_statistics(texts: list[str]) -> frozenset[str]:
+    """The country statistics the texts name only as the base of a ratio.
+
+    "Credit-to-GDP gaps" and "debt as percent of GDP" measure credit and
+    debt against GDP, so they answer no question about GDP itself. A
+    statistic the texts also name on its own ("GDP and debt to GDP") counts
+    as named.
+    """
+    bases: set[str] = set()
+    named: set[str] = set()
+    for text in texts:
+        lowered = text.lower()
+        in_ratio = {match.start(1) for match in _RATIO_BASE_RE.finditer(lowered)}
+        for match in TOKEN_RE.finditer(lowered):
+            word = match.group()
+            if word in COUNTRY_STATISTIC_WORDS:
+                (bases if match.start() in in_ratio else named).add(word)
+    return frozenset(bases - named)
+
+
 class _EndpointProfile:
     """The token sets of one endpoint's searchable fields, built once per endpoint.
 
@@ -252,7 +281,8 @@ class _EndpointProfile:
 
     __slots__ = (
         "description", "keywords", "operation_id", "params", "path",
-        "summary", "tags", "takes_country_param", "text", "text_normalized",
+        "ratio_bases", "summary", "tags", "takes_country_param", "text",
+        "text_normalized",
     )
 
     def __init__(self, endpoint: Endpoint) -> None:
@@ -272,6 +302,14 @@ class _EndpointProfile:
         self.takes_country_param = any(
             parameter.name.lower() == "country" for parameter in endpoint.parameters
         )
+        # Each field and parameter apart, so that no ratio spans two of them.
+        self.ratio_bases = _ratio_base_statistics([
+            endpoint.operation_id, endpoint.path, endpoint.summary,
+            endpoint.description, *endpoint.tags, endpoint.toolset,
+            endpoint.source_family, *endpoint.keywords,
+            *(text for parameter in endpoint.parameters
+              for text in (parameter.name, parameter.description)),
+        ])
         self.text = frozenset(text_tokens)
         self.text_normalized = " ".join(text_tokens)
 
@@ -348,6 +386,7 @@ def _score(
     macro_key_operations: dict[str, str] | None = None,
     country_answers: set[str] | None = None,
     any_country_cues: frozenset[str] = frozenset(),
+    ratio_cues: frozenset[str] = frozenset(),
     place_answers: set[str] | None = None,
     term_hits: dict[str, tuple[frozenset[str], frozenset[str]]] | None = None,
 ) -> tuple[int, list[str]]:
@@ -365,9 +404,12 @@ def _score(
     means: an operation that takes the country as a parameter, is no national
     source and matches one of those words in any field answers it, so it
     earns the country-parameter boost, and ``place_answers``, when given,
-    collects its operation_id. ``term_hits``, when given, records the query
-    words the endpoint matches in a field other than its description, and
-    those it matches in any field.
+    collects its operation_id. A word the operation names only as the base
+    of a ratio answers only a question that names it so as well, the words
+    of ``ratio_cues``: the credit-to-GDP gap answers "credit to GDP gap",
+    never "GDP". ``term_hits``, when given, records the query words the
+    endpoint matches in a field other than its description, and those it
+    matches in any field.
     """
     alias_terms = [term for terms in aliases.values() for term in terms]
     all_terms = [*query_terms, *_tokens(" ".join(alias_terms))]
@@ -531,7 +573,9 @@ def _score(
                 topic_hit = True
         if hit and term not in country_terms:
             topic_hit = True
-        if any_country_cues and term in query_terms and len(term) >= 3:
+        # The credit-to-GDP gap ranked first for "GDP".
+        if (any_country_cues and term in query_terms and len(term) >= 3
+                and (term not in profile.ratio_bases or term in ratio_cues)):
             if hit:
                 strong_words.add(term)
             if hit or term in profile.description:
@@ -896,6 +940,7 @@ def search_catalog(
         penalty_countries or central_bank_prefixes or has_ticker_token
         or query_names_united_states(query)
     ) else country_statistic_words(query)
+    ratio_cues = any_country_cues & _ratio_base_statistics([query])
 
     scored: list[tuple[int, Endpoint, list[str]]] = []
     country_answers: set[str] = set()
@@ -927,6 +972,7 @@ def search_catalog(
             macro_key_operations=macro_key_operations,
             country_answers=country_answers,
             any_country_cues=any_country_cues,
+            ratio_cues=ratio_cues,
             place_answers=place_answers,
             term_hits=term_hits if any_country_cues else None,
         )

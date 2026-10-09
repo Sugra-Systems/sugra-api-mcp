@@ -2495,6 +2495,45 @@ def test_an_equal_score_never_ranks_a_national_source_first() -> None:
     assert "clamped-below:any-country-answers" in results[2]["why"], results[2]["why"]
 
 
+@pytest.mark.parametrize(("texts", "bases"), [
+    (["Credit-to-GDP gaps"], {"gdp"}),
+    (["Government debt to GDP"], {"gdp"}),
+    (["credit_to_gdp"], {"gdp"}),
+    (["Debt as percent of GDP"], {"gdp"}),
+    (["Debt as per cent of GDP"], {"gdp"}),
+    (["Debt (% of GDP)"], {"gdp"}),
+    (["Exports as a share of GDP"], {"gdp"}),
+    (["GDP and debt to GDP"], set()),  # named on its own as well
+    (["Debt to GDP", "Quarterly GDP"], set()),  # in another field
+    (["Credit to", "GDP"], set()),  # a ratio never spans two fields
+    (["Converted into GDP terms"], set()),  # "into" is no ratio
+    (["Number of years of CPI"], set()),  # "of" alone is no ratio
+    (["Price to earnings"], set()),  # no country statistic
+])
+def test_a_statistic_named_only_as_the_base_of_a_ratio(texts: list[str], bases: set[str]) -> None:
+    from sugra_api_mcp.catalog.search import _ratio_base_statistics
+
+    assert _ratio_base_statistics(texts) == bases
+
+
+@pytest.mark.parametrize("query", ["GDP", "real GDP", "GDP forecast", "gdp per capita"])
+def test_a_ratio_to_gdp_answers_no_question_about_gdp(catalog, query: str) -> None:
+    """The credit-to-GDP gap ranked first for "GDP": it measures credit
+    against GDP and names GDP only as the base of the ratio."""
+    results = search_catalog(catalog, query, limit=200)
+    assert "bis_credit_gap" not in [r["operation_id"] for r in results[:5]], results[:5]
+    gap = next(r for r in results if r["operation_id"] == "bis_credit_gap")
+    assert "pattern:any-country->param" not in gap["why"], gap["why"]
+
+
+@pytest.mark.parametrize("query", ["credit to GDP gap", "credit-to-GDP gap"])
+def test_a_question_that_names_the_ratio_still_finds_it(catalog, query: str) -> None:
+    """A question that names GDP only as the base of a ratio asks for the
+    ratio, and the operation that names it so answers it."""
+    top = search_catalog(catalog, query, limit=1)[0]["operation_id"]
+    assert top == "bis_credit_gap", top
+
+
 # ---- Currency words, a country prefix, a singular strait ---------------------------
 
 def test_every_currency_named_in_words_is_known_by_its_code() -> None:
