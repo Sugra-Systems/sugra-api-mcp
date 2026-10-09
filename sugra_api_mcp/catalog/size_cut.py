@@ -27,7 +27,9 @@ whole response with its notice fits the cap. A big list beside small ones
 (hourly beside daily) is the one cut; lists of like size are cut alike. The
 result is measured once more to verify it. When it is still over, because
 the notice is estimated before it is written, the ceiling is lowered and the
-result measured again, at most MAX_SHRINK_PASSES times.
+result measured again, at most MAX_SHRINK_PASSES times. When those run out,
+the cut that keeps one record of each list is measured once more before the
+response is refused.
 
 Which end is kept: the end ``limit`` keeps (``response._limit_records``),
 the newest when the order of the list can be read, else the first records.
@@ -37,8 +39,9 @@ nearest today and the ones after it in time, then, when room is left, the
 ones before it, so a forecast keeps its next hours and not its last ones;
 ``kept_end`` is then ``nearest``. Today is the UTC date, and a caller may
 pass its own. The catalog entry this rule and the hints read is passed by
-call_endpoint only: fetch_data passes none yet, so its cuts keep the newest
-or first records and their hints name no parameter.
+call_endpoint, also when fetch_data runs an operation through it; the fixed
+tools pass none, so their cuts keep the newest or first records and their
+hints name no parameter.
 
 Where it runs and for how long: only off the event loop, on the shaping
 pool. call_endpoint runs it there after shaping
@@ -70,10 +73,18 @@ of the tool and parameters of the operation choose a smaller answer. Its
 cap on their own, at most _MAX_NAMED_FIELDS in a set and _MAX_NAMED_FIELDS
 sets of one, measured from the record sizes the cut already has: that list
 whole plus the response outside the lists plus the room the notice takes. A
-refusal says the size and the limit in characters and, when it can, where
-the size is and how to leave it out. Every refusal is measured too: one
-that would itself be over the cap, through a very long URL or key, says the
-size alone, with the URL cut to _MAX_URL_CHARS.
+refusal says the limit in characters, the size when the response was
+measured, and, when it can, where the size is and how to leave it out. When
+the first record each list keeps is what does not fit, it names the largest
+such record. Every refusal is measured too: one that would itself be over
+the cap, through a very long URL or key, says the size alone, with the URL
+cut to _MAX_URL_CHARS.
+
+What is not gated here: fetch_data's own answers that run no operation
+(needs_params, no_endpoint_found, stale_search_result,
+missing_required_parameter_groups). They are built from one catalog entry,
+the search's first three hits and a bounded query, so their size is bounded
+by the bundled catalog; a test holds the largest of them under half the cap.
 """
 
 from __future__ import annotations
@@ -254,7 +265,6 @@ class _List:
                 priority = _nearest_priority(days, today, self.order, tick)
                 self.kept_end = KEPT_NEAREST
         sizes = [response_chars(record) for record in _each(records, tick)]
-        self.largest = max(sizes)
         if priority is None:
             # The newest end: the tail of an ascending list, else the head.
             priority = list(range(self.n - 1, -1, -1)) if self.order == ORDER_ASC else list(range(self.n))
@@ -638,23 +648,49 @@ def _refuse_for_record(
     payload: Any,
     endpoint: Any,
     lists: list[_List],
-    shell_payload: dict[str, Any],
     shell: int,
+    reserve: int,
     tick: Tick,
 ) -> dict[str, Any]:
-    """The refusal when no cut fits although the rest of the response does:
-    a record is named only when it alone leaves no room beside the rest,
-    else the rest of the response is."""
-    worst = max(lists, key=lambda lst: lst.largest)
-    if worst.largest <= cap - shell:
-        return _refusal(url, size, cap, _rest_hint(shell_payload, shell, tick))
+    """The refusal when no cut fits although the rest of the response does.
+    No cut goes below the first record each list keeps, beside the rest of
+    the response and the notice's reserve. When one such record leaves no
+    room by itself, it is named, the largest when several do, and so is how
+    many other lists hold one; when each fits but together they do not, the
+    largest is named with their sum. Else the cut that keeps one record of
+    each list was measured and its notice took more than the reserve, which
+    is said with the same sizes."""
+    beside = shell + reserve
+    first = {lst.path: lst.prefix[1] for lst in _each(lists, tick)}
+    worst = max(_each(lists, tick), key=lambda lst: first[lst.path])
+    record = first[worst.path]
     where = _dotted(worst.path)
-    if worst.largest > cap:
-        hint = f"One record at {where} is larger than the limit by itself, about {worst.largest:,} characters."
+    alone = sum(1 for lst in _each(lists, tick) if first[lst.path] > cap - beside)
+    together = sum(first.values())
+    if alone:
+        if record > cap:
+            hint = f"One record at {where} is larger than the limit by itself, about {record:,} characters."
+        else:
+            hint = (
+                f"One record at {where}, about {record:,} characters, does not fit beside "
+                f"the rest of the response and the cut notice, about {beside:,} characters."
+            )
+        if alone == 2:
+            hint += " One more list holds a record that does not fit either."
+        elif alone > 2:
+            hint += f" {alone - 1:,} more lists hold a record that does not fit either."
+    elif together > cap - beside:
+        hint = (
+            f"Each list keeps at least one record, and those {len(lists):,} records, about "
+            f"{together:,} characters together, do not fit beside the rest of the response and "
+            f"the cut notice, about {beside:,} characters. The largest is at {where}, about "
+            f"{record:,} characters."
+        )
     else:
         hint = (
-            f"One record at {where}, about {worst.largest:,} characters, does not fit beside "
-            f"the rest of the response, about {shell:,} characters."
+            f"Even one record of each list, about {together:,} characters, with the rest of the "
+            f"response, about {shell:,} characters, and the cut notice is over the limit. The "
+            f"largest is at {where}, about {record:,} characters."
         )
     if endpoint is not None and _is_records_list(payload, worst.path):
         hint += " Pass fields naming only the keys you need from each record."
@@ -683,8 +719,8 @@ def cut_to_fit(
     between them. ``endpoint`` is the catalog entry of the operation called
     through call_endpoint; its parameters, and that tool's own limit and
     fields arguments, are what the hints may name, and its operation id
-    selects the nearest rule. None (fetch_data for now, and the fixed tools)
-    gives hints without any and keeps the newest or first records.
+    selects the nearest rule. None (the fixed tools) gives hints without any
+    and keeps the newest or first records.
     """
     tick = _ticker(_clock() + MAX_SHAPING_SECONDS)
     original = payload
@@ -745,20 +781,10 @@ def cut_to_fit(
         # What fields naming one list alone leaves that list: the cap less
         # the response outside the lists and less the notice's reserve.
         room = target - shell
-        ceiling = ceiling_for(target)
-        previous: dict[tuple[str, ...], int] | None = None
-        for _ in range(MAX_SHRINK_PASSES):
-            tick()
-            kept = {lst.path: lst.keep(ceiling) for lst in _each(lists, tick)}
+
+        def attempt(kept: dict[tuple[str, ...], int]) -> tuple[dict[str, Any], int]:
+            """The response keeping ``kept`` records of each list, and its size."""
             cut = [lst for lst in _each(lists, tick) if kept[lst.path] < lst.n]
-            if not cut:
-                break
-            if kept == previous:
-                if ceiling == 0:
-                    break
-                ceiling = ceiling * 9 // 10
-                continue
-            previous = kept
             primary = max(_each(cut, tick), key=lambda lst: lst.chars)
             replacements = {}
             for lst in _each(cut, tick):
@@ -776,8 +802,25 @@ def cut_to_fit(
             measured = response_chars(result)
             tick()
             kept_chars = _solve_kept_chars(measured)
+            notice["kept_chars"] = kept_chars
+            return result, kept_chars
+
+        ceiling = ceiling_for(target)
+        previous: dict[tuple[str, ...], int] | None = None
+        for _ in range(MAX_SHRINK_PASSES):
+            tick()
+            kept = {lst.path: lst.keep(ceiling) for lst in _each(lists, tick)}
+            cut = [lst for lst in _each(lists, tick) if kept[lst.path] < lst.n]
+            if not cut:
+                break
+            if kept == previous:
+                if ceiling == 0:
+                    break
+                ceiling = ceiling * 9 // 10
+                continue
+            previous = kept
+            result, kept_chars = attempt(kept)
             if kept_chars <= cap:
-                notice["kept_chars"] = kept_chars
                 return result
             target -= kept_chars - cap
             ceiling = min(ceiling_for(target), ceiling)
@@ -785,7 +828,16 @@ def cut_to_fit(
         # for any cut, or a record that has to stay is.
         if shell + reserve > cap:
             return _refusal(url, size, cap, _rest_hint(shell_payload, shell, tick))
-        return _refuse_for_record(url, size, cap, payload, endpoint, lists, shell_payload, shell, tick)
+        # The passes can run out before the cut reaches one record a list,
+        # so that cut is measured once before any record is blamed.
+        least = {lst.path: lst.keep(0) for lst in _each(lists, tick)}
+        if least != previous and any(least[lst.path] < lst.n for lst in _each(lists, tick)):
+            result, kept_chars = attempt(least)
+            if kept_chars <= cap:
+                return result
+        return _refuse_for_record(
+            url, size, cap, payload, endpoint, lists, shell, reserve, tick
+        )
     except _Expired:
         hint = "The response could not be cut in time."
         if endpoint is not None:

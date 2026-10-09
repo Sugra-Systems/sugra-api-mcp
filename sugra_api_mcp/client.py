@@ -551,9 +551,10 @@ def _enforce_size_limit(
     very read ``meta.shaped`` reports, so the two agree on the end kept.
 
     ``endpoint`` is the catalog entry of the operation called, passed by
-    call_endpoint only: the hints name its parameters and that tool's own
-    arguments, and its operation id selects the nearest rule. fetch_data
-    and the fixed tools pass None, so their hints name no parameter.
+    call_endpoint only, also when fetch_data runs an operation through it:
+    the hints name its parameters and that tool's own arguments, and its
+    operation id selects the nearest rule. The fixed tools pass None, so
+    their hints name no parameter.
     """
     if response_chars_within(payload, MAX_RESPONSE_CHARS) is not None:
         return payload

@@ -8,17 +8,21 @@ is no misspelling of one of its names, and that at most five operations
 declare. The hit must be a GET, declare every sent key, not be an open-query
 operation, and score at least half the top. A mismatch on common keys only
 (limit, currency) stays refused, and the refusal names the hits that would
-take every key. A success carries meta.fetch_data. Offline: the bundled
-catalog and the search, no HTTP.
+take every key. A success whose meta is an object or absent carries
+meta.fetch_data, inside the size cap and through a cut; a foreign meta comes
+back as is. Offline: the bundled catalog and the search, no HTTP.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from sugra_api_mcp.catalog import search
 from sugra_api_mcp.catalog.loader import load_catalog
 from sugra_api_mcp.catalog.models import Catalog, Endpoint
+from sugra_api_mcp.catalog.response import shape_response
 from sugra_api_mcp.catalog.search import search_catalog
+from sugra_api_mcp.client import MAX_RESPONSE_CHARS, response_chars
 from sugra_api_mcp.tools import gateway
 
 
@@ -435,6 +439,142 @@ def test_a_sent_body_skips_the_reselection() -> None:
 
     assert gateway._reselect(catalog, hits, top, params, None)[0] == "candidate_op"
     assert gateway._reselect(catalog, hits, top, params, {"item": 1}) is None
+
+
+# ---- the size gate counts the selection ----
+
+
+class _ServingClient(_RecordingClient):
+    def __init__(self, body: dict[str, Any]) -> None:
+        super().__init__()
+        self.body = body
+
+    async def get(
+        self, path: str, params: dict[str, Any] | None = None, **_kwargs: Any
+    ) -> dict[str, Any]:
+        self.calls.append((path, params))
+        return self.body
+
+
+def _serve(monkeypatch, body: dict[str, Any]) -> _ServingClient:
+    _patch(monkeypatch, [_gauge("top_op")], [{"operation_id": "top_op", "score": 40}])
+    client = _ServingClient(body)
+    monkeypatch.setattr(gateway, "get_client", lambda: client)
+    return client
+
+
+async def test_a_result_just_under_the_cap_stays_under_it_with_the_selection(monkeypatch) -> None:
+    rows = [{"id": index, "blob": "x" * 200} for index in range(80)]
+    body = {"data": rows, "meta": {}}
+    # Pad the last record so the shaped body alone is a few characters under
+    # the cap: the selection added after the gate went over it.
+    short = MAX_RESPONSE_CHARS - 5 - response_chars(shape_response(body))
+    rows[-1]["blob"] += "x" * short
+    assert response_chars(shape_response(body)) == MAX_RESPONSE_CHARS - 5
+    _serve(monkeypatch, body)
+
+    result = await gateway.fetch_data(query="gauge")
+
+    assert response_chars(result) <= MAX_RESPONSE_CHARS
+    assert result["meta"]["fetch_data"] == {"operation_id": "top_op", "selected_by": "query"}
+    assert "truncated" in result["meta"]
+
+
+async def test_a_cut_result_keeps_the_selection(monkeypatch) -> None:
+    body = {"data": [{"id": index, "blob": "x" * 200} for index in range(300)], "meta": {}}
+    _serve(monkeypatch, body)
+
+    result = await gateway.fetch_data(query="gauge")
+
+    assert response_chars(result) <= MAX_RESPONSE_CHARS
+    assert 0 < len(result["data"]) < 300
+    assert result["meta"]["truncated"]["original_count"] == 300
+    assert result["meta"]["fetch_data"] == {"operation_id": "top_op", "selected_by": "query"}
+
+
+async def test_a_call_endpoint_after_fetch_data_carries_no_selection(monkeypatch) -> None:
+    _serve(monkeypatch, {"data": [{"id": 1}], "meta": {}})
+
+    await gateway.fetch_data(query="gauge")
+    direct = await gateway.call_endpoint(operation_id="top_op")
+
+    assert gateway._FETCH_SELECTION.get() is None
+    assert "fetch_data" not in direct["meta"]
+
+
+def _hit(endpoint: Endpoint) -> dict[str, Any]:
+    """A search hit as search_catalog writes one, with a long why."""
+    return {
+        "operation_id": endpoint.operation_id,
+        "method": endpoint.method,
+        "path": endpoint.path,
+        "summary": endpoint.summary,
+        "toolset": "core",
+        "source_family": endpoint.source_family,
+        "sources": endpoint.sources or [endpoint.source_family],
+        "tags": endpoint.tags,
+        "required_parameters": endpoint.required_parameters,
+        **({"required_groups": [list(g) for g in endpoint.required_groups],
+            "groups_mutually_exclusive": endpoint.groups_mutually_exclusive}
+           if endpoint.required_groups else {}),
+        "score": 40,
+        "why": ["matched a summary word " * 3] * 6,
+    }
+
+
+async def test_fetch_data_answers_that_run_nothing_stay_under_half_the_cap(monkeypatch) -> None:
+    """needs_params, the group refusal, no_endpoint_found and stale_search_result
+    are not gated; the catalog and the query bound them."""
+    catalog = load_catalog()
+    asking = [endpoint for endpoint in catalog.endpoints
+              if endpoint.required_parameters or endpoint.request_body_required
+              or endpoint.required_groups]
+    assert len(asking) > 100
+    largest = sorted(catalog.endpoints, key=lambda endpoint: response_chars(_hit(endpoint)))[-2:]
+    others = [_hit(endpoint) for endpoint in largest]
+    hits: list[dict[str, Any]] = []
+
+    async def _search(_catalog, _query, **_kwargs):
+        return hits
+
+    monkeypatch.setattr(gateway, "_search_off_loop", _search)
+    client = _client(monkeypatch)
+    sizes = []
+    kinds = set()
+    for endpoint in asking:
+        hits[:] = [_hit(endpoint), *others]
+        result = await gateway.fetch_data(query="series")
+        kind = "needs_params" if "needs_params" in result else result.get("error")
+        assert kind in ("needs_params", "missing_required_parameter_groups"), endpoint.operation_id
+        kinds.add(kind)
+        sizes.append((response_chars(result), endpoint.operation_id))
+    assert kinds == {"needs_params", "missing_required_parameter_groups"}
+
+    # No hit at all, under the longest query the bound admits.
+    hits[:] = []
+    words = ["s" * 14] * (search.MAX_QUERY_TERMS - 1)
+    query = " ".join(words) + " " + "q" * (search.MAX_QUERY_CHARS - len(" ".join(words)) - 1)
+    assert len(query) == search.MAX_QUERY_CHARS
+    assert search.query_limit_error(query) is None
+    nothing = await gateway.fetch_data(query=query)
+    assert nothing["error"] == "no_endpoint_found"
+    sizes.append((response_chars(nothing), "no_endpoint_found"))
+    # A top hit the catalog does not hold, beside the two largest hits.
+    hits[:] = [{**others[0], "operation_id": "x" * 200}, *others]
+    stale = await gateway.fetch_data(query="series")
+    assert stale["error"] == "stale_search_result"
+    sizes.append((response_chars(stale), "stale_search_result"))
+
+    assert client.calls == []
+    assert max(sizes) < (MAX_RESPONSE_CHARS // 2, ""), max(sizes)
+
+
+async def test_a_foreign_meta_is_returned_as_is_without_a_selection(monkeypatch) -> None:
+    _serve(monkeypatch, {"data": [{"id": 1}], "meta": ["not", "an", "object"]})
+
+    result = await gateway.fetch_data(query="gauge")
+
+    assert result["meta"] == ["not", "an", "object"]
 
 
 def test_the_meta_helper_copies_and_leaves_a_foreign_meta_alone() -> None:
