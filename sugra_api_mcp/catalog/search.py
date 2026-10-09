@@ -10,6 +10,7 @@ from .aliases import (
     CENTRAL_BANK_PLACES,
     CENTRAL_BANK_PREFIX_BOOSTS,
     COMPOUND_NAMED_OPERATIONS,
+    COUNTRY_STATISTIC_SPELLINGS,
     COUNTRY_STATISTIC_WORDS,
     FX_CONVERT_OPERATION,
     MEETING_CALENDAR_OPERATIONS,
@@ -31,7 +32,9 @@ from .aliases import (
     matching_central_bank_prefixes,
     query_has_equity_context,
     query_names_united_states,
+    spelled_country_statistics,
     topic_default_operations,
+    with_statistic_words,
 )
 from .macro_keys import match_macro_keys
 from .models import Catalog, Endpoint, MacroKey
@@ -388,6 +391,7 @@ def _score(
     country_answers: set[str] | None = None,
     any_country_cues: frozenset[str] = frozenset(),
     ratio_cues: frozenset[str] = frozenset(),
+    spelled_statistics: frozenset[str] = frozenset(),
     place_answers: set[str] | None = None,
     term_hits: dict[str, tuple[frozenset[str], frozenset[str]]] | None = None,
 ) -> tuple[int, list[str]]:
@@ -408,9 +412,11 @@ def _score(
     collects its operation_id. A word the operation names only as the base
     of a ratio answers only a question that names it so as well, the words
     of ``ratio_cues``: the credit-to-GDP gap answers "credit to GDP gap",
-    never "GDP". ``term_hits``, when given, records the query words the
-    endpoint matches in a field other than its description, and those it
-    matches in any field.
+    never "GDP". Of those words, ``spelled_statistics`` are the ones the
+    question names in other words ("jobless rate"): an operation answers one
+    when it names it in its own word or in one of those. ``term_hits``,
+    when given, records the query words the endpoint matches in a field other
+    than its description, and those it matches in any field.
     """
     alias_terms = [term for terms in aliases.values() for term in terms]
     all_terms = [*query_terms, *_tokens(" ".join(alias_terms))]
@@ -590,6 +596,11 @@ def _score(
                 and term not in coverage_excluded
                 and term not in alias_consumed):
             matched_query_terms.add(term)
+    # "consumer prices" names the CPI as "CPI" does.
+    for statistic in spelled_statistics:
+        if any(_alias_matches_profile(profile, spelling)
+               for spelling in COUNTRY_STATISTIC_SPELLINGS[statistic]):
+            matched_words.add(statistic)
 
     # Coverage: breadth of DISTINCT query-term matches beats depth of
     # one term repeated across prose fields.
@@ -948,12 +959,16 @@ def search_catalog(
     # A question that names no place - no country in any spelling, no
     # currency's issuer, no market or port, no central bank, no listing - and
     # asks for a statistic every country reports asks for it for whichever
-    # country the user means.
-    any_country_cues = frozenset() if (
+    # country the user means, in its own word or in other words.
+    names_place = bool(
         penalty_countries or central_bank_prefixes or has_ticker_token
         or query_names_united_states(query)
-    ) else country_statistic_words(query)
-    ratio_cues = any_country_cues & _ratio_base_statistics([query])
+    )
+    spelled = {} if names_place else spelled_country_statistics(query)
+    any_country_cues = frozenset() if names_place else (
+        country_statistic_words(query) | frozenset(spelled)
+    )
+    ratio_cues = any_country_cues & _ratio_base_statistics([with_statistic_words(query)])
 
     scored: list[tuple[int, Endpoint, list[str]]] = []
     country_answers: set[str] = set()
@@ -964,7 +979,7 @@ def search_catalog(
             continue
         score, why = _score(
             endpoint,
-            terms,
+            [*terms, *sorted(frozenset(spelled) - set(terms))],
             aliases,
             boost_quotes_symbol=boost_quotes_symbol,
             boost_markets_toolset=boost_markets_toolset,
@@ -986,6 +1001,7 @@ def search_catalog(
             country_answers=country_answers,
             any_country_cues=any_country_cues,
             ratio_cues=ratio_cues,
+            spelled_statistics=frozenset(spelled),
             place_answers=place_answers,
             term_hits=term_hits if any_country_cues else None,
         )
@@ -1035,12 +1051,15 @@ def search_catalog(
     # never ranks a national source first: pushed below the weakest of those
     # operations instead, the national sources fell below operations that
     # answer nothing the question asks ("GDP" found a weather product first).
+    # The words that name a statistic in other words are the statistic, which
+    # every one of those operations answers: "consumer" and "prices" in
+    # "consumer prices".
     held: dict[str, tuple[bool, str]] = {}
     places = [i for i, (_, endpoint, _) in enumerate(scored)
               if endpoint.operation_id in place_answers]
     if places:
         answered = frozenset().union(
-            *(term_hits[scored[i][1].operation_id][1] for i in places))
+            *(term_hits[scored[i][1].operation_id][1] for i in places), *spelled.values())
         national: list[int] = []
         for i, (_, endpoint, _) in enumerate(scored):
             strong, matched = term_hits[endpoint.operation_id]

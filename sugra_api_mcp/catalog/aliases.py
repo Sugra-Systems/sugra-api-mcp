@@ -330,6 +330,68 @@ def country_statistic_words(query: str) -> frozenset[str]:
     return frozenset(_match_vocabulary(query, _COUNTRY_STATISTIC_CUES))
 
 
+# The one-word statistics in other words: "jobless rate" asks for
+# unemployment, "consumer prices" and "consumer price index" for the CPI,
+# "gross domestic product" for GDP. Each word matches a whole query word,
+# plural-tolerant.
+COUNTRY_STATISTIC_SPELLINGS: dict[str, tuple[str, ...]] = {
+    "cpi": ("consumer price",),
+    "gdp": ("gross domestic product",),
+    "unemployment": ("jobless",),
+}
+
+
+def spelled_country_statistics(query: str) -> dict[str, frozenset[str]]:
+    """The one-word statistics the query names in other words, each with
+    the query words that name it.
+
+    "jobless rate" names unemployment in the word "jobless", and so does
+    "unemployment and jobless claims", which names it in its own word too.
+    """
+    tokens = _WORD_TOKEN_RE.findall(query.lower())
+    spelled: dict[str, frozenset[str]] = {}
+    for statistic, spellings in COUNTRY_STATISTIC_SPELLINGS.items():
+        words = frozenset(
+            tokens[index]
+            for spelling in spellings
+            for start, end in _phrase_spans(tokens, spelling)
+            for index in range(start, end)
+        )
+        if words:
+            spelled[statistic] = words
+    return spelled
+
+
+# Each statistic's spellings as whole words, plural-tolerant, joined by any
+# separator, as ``_phrase_spans`` matches them in the query's words.
+_STATISTIC_SPELLING_RES: dict[str, re.Pattern[str]] = {
+    statistic: re.compile(
+        r"(?<![a-z0-9])(?:"
+        + "|".join(
+            r"[^a-z0-9]+".join(
+                rf"{re.escape(word)}(?:s|es)?" for word in spelling.split()
+            )
+            for spelling in spellings
+        )
+        + r")(?![a-z0-9])"
+    )
+    for statistic, spellings in COUNTRY_STATISTIC_SPELLINGS.items()
+}
+
+
+def with_statistic_words(query: str) -> str:
+    """The lowercased query with each statistic it names in other words
+    written as its own word.
+
+    "debt to gross domestic product" reads "debt to gdp", so a statistic
+    named as the base of a ratio reads the same in either spelling.
+    """
+    text = query.lower()
+    for statistic, pattern in _STATISTIC_SPELLING_RES.items():
+        text = pattern.sub(statistic, text)
+    return text
+
+
 def detect_query_countries(query: str) -> set[str]:
     """ISO2 countries the query explicitly names.
 
@@ -700,20 +762,29 @@ def detect_fx_request(query: str) -> FxRequest | None:
     )
 
 
+# The one-word country statistics in their own words and in other words.
+_COUNTRY_STATISTIC_NAMES: tuple[str, ...] = (
+    *_COUNTRY_STATISTIC_CUES,
+    *(spelling for spellings in COUNTRY_STATISTIC_SPELLINGS.values() for spelling in spellings),
+)
+
+
 def currency_statistic_places(query: str) -> tuple[frozenset[str], frozenset[str]]:
     """The countries whose currency the query names right before one of the
     one-word country statistics, and the words that name those currencies.
 
     "yen inflation" asks for the inflation of Japan, as "Japan inflation"
-    does. A currency named anywhere else is a unit or a market, not a place:
-    "GDP in dollars", "coffee price in dollars and inflation".
+    does, and "yen consumer prices" for its CPI. A currency named anywhere
+    else is a unit or a market, not a place: "GDP in dollars", "coffee price
+    in dollars and inflation".
     """
     tokens, mentions = _currency_mentions(query)
     places: set[str] = set()
     words: set[str] = set()
     for start, end, code in mentions:
         if code in _CURRENCY_ISSUERS and any(
-            _phrase_spans(tokens[end:end + 1], cue) for cue in _COUNTRY_STATISTIC_CUES
+            _phrase_spans(tokens[end:end + len(name.split())], name)
+            for name in _COUNTRY_STATISTIC_NAMES
         ):
             places.add(_CURRENCY_ISSUERS[code])
             words.update(tokens[start:end])

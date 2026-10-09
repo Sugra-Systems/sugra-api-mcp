@@ -2398,6 +2398,11 @@ _ANY_COUNTRY_NOTES = {"pattern:any-country->param", "lifted-above:national-sourc
     "AAPL inflation",  # a listing
     "us inflation",  # the United States, in any spelling
     "U.S. inflation",
+    # A statistic in other words, beside a place.
+    "Spain consumer prices",
+    "ECB consumer prices",
+    "Fed jobless claims",
+    "TLT consumer prices",
 ])
 def test_a_question_that_names_a_place_asks_for_no_other_country(catalog, query: str) -> None:
     for row in search_catalog(catalog, query, limit=2000):
@@ -2541,6 +2546,11 @@ def test_a_question_that_names_the_ratio_still_finds_it(catalog, query: str) -> 
     ("Mexican peso inflation", {"MX"}, {"mexican", "peso"}),
     ("GBP CPI", {"GB"}, {"gbp"}),
     ("yuan GDP", {"CN"}, {"yuan"}),
+    # The statistic in other words.
+    ("yen consumer prices", {"JP"}, {"yen"}),
+    ("dollar gross domestic product", {"US"}, {"dollar"}),
+    ("pound jobless rate", {"GB"}, {"pound"}),
+    ("yen consumer confidence", set(), set()),
     # A unit, a market, a weight or a word of several currencies: no place.
     ("GDP in dollars", set(), set()),
     ("coffee price in dollars and inflation", set(), set()),
@@ -2566,6 +2576,9 @@ def test_a_currency_right_before_a_country_statistic_names_its_issuer(
     ("pound inflation", "gb/cpi"),
     ("GBP CPI", "gb/cpi"),
     ("euro unemployment", "eu/unrate"),
+    ("yen consumer prices", "jp/cpi"),
+    ("euro jobless rate", "eu/unrate"),
+    ("dollar gross domestic product", "us/gdp"),
 ])
 def test_a_currency_before_a_statistic_asks_about_its_country(catalog, query: str, key: str) -> None:
     """"yen inflation" ranked the composite country profile first, for any
@@ -2637,6 +2650,124 @@ def test_a_bond_or_sector_fund_is_a_listing_without_an_equity_word(catalog, quer
 @pytest.mark.parametrize("query", ["PCE inflation", "HICP inflation", "TIPS inflation", "CPI inflation"])
 def test_a_statistic_acronym_is_no_listing(query: str) -> None:
     assert detect_tickers(query) == []
+
+
+# ---- A statistic named in other words ------------------------------------------------
+
+@pytest.mark.parametrize("query,spelled", [
+    ("consumer prices", {"cpi": {"consumer", "prices"}}),
+    ("consumer-price index", {"cpi": {"consumer", "price"}}),
+    ("gross domestic products", {"gdp": {"gross", "domestic", "products"}}),
+    ("jobless rate", {"unemployment": {"jobless"}}),
+    ("consumer prices and the jobless rate",
+     {"cpi": {"consumer", "prices"}, "unemployment": {"jobless"}}),
+    # Named in its own word as well: the other words still name it.
+    ("unemployment and jobless claims", {"unemployment": {"jobless"}}),
+    # Other statistics, part of a spelling, another word: none.
+    ("consumer confidence", {}),
+    ("producer prices", {}),
+    ("domestic product", {}),
+    ("joblessness", {}),
+    ("CPI", {}),
+])
+def test_a_statistic_named_in_other_words(query: str, spelled: dict[str, set[str]]) -> None:
+    from sugra_api_mcp.catalog.aliases import spelled_country_statistics
+
+    assert spelled_country_statistics(query) == {
+        statistic: frozenset(words) for statistic, words in spelled.items()
+    }
+
+
+@pytest.mark.parametrize("query,rewritten", [
+    ("debt to gross domestic product", "debt to gdp"),
+    ("Debt as percent of Gross-Domestic-Products", "debt as percent of gdp"),
+    ("consumer price index", "cpi index"),
+    ("jobless claims", "unemployment claims"),
+    ("domestic product", "domestic product"),
+    ("consumer pricing", "consumer pricing"),
+    ("superjobless rate", "superjobless rate"),
+])
+def test_a_statistic_in_other_words_is_written_as_its_word(query: str, rewritten: str) -> None:
+    from sugra_api_mcp.catalog.aliases import with_statistic_words
+
+    assert with_statistic_words(query) == rewritten
+
+
+@pytest.mark.parametrize("query,word", [
+    ("consumer prices", "CPI"),
+    ("consumer price index", "CPI"),
+    ("gross domestic product", "GDP"),
+    ("jobless rate", "unemployment rate"),
+    ("jobless claims", "unemployment claims"),
+    ("jobless rate and inflation", "unemployment rate and inflation"),
+    # The base of a ratio, in either spelling.
+    ("debt to gross domestic product", "debt to GDP"),
+    ("government debt as percent of gross domestic product", "government debt as percent of GDP"),
+    ("credit to gross domestic product gap", "credit to GDP gap"),
+    # Both spellings in one question.
+    ("gross domestic product and GDP growth", "GDP growth"),
+])
+def test_a_statistic_in_other_words_ranks_as_its_own_word(catalog, query: str, word: str) -> None:
+    """"consumer prices" ranked Spain's price index first and "jobless rate"
+    Finland's unemployment: the question names no place, as "CPI" and
+    "unemployment rate" name none."""
+    spelled = search_catalog(catalog, query, limit=1)[0]["operation_id"]
+    literal = search_catalog(catalog, word, limit=1)[0]["operation_id"]
+    assert spelled == literal, (spelled, literal)
+
+
+@pytest.mark.parametrize("query", [
+    "consumer prices", "consumer price index", "gross domestic product", "jobless rate",
+    "jobless claims", "GDP and gross domestic product per capita",
+])
+def test_a_statistic_in_other_words_asks_for_any_country(catalog, query: str) -> None:
+    """The question names no place: the operations that take the country
+    answer it, and no national source ranks among the first three."""
+    from sugra_api_mcp.catalog.search import _source_country
+
+    rows = search_catalog(catalog, query, limit=2000)
+    assert any("pattern:any-country->param" in row["why"] for row in rows), query
+    for row in rows[:3]:
+        assert _source_country(catalog.get(row["operation_id"])) is None, (query, row["operation_id"])
+
+
+def test_a_national_source_that_names_the_statistic_in_other_words_answers_it() -> None:
+    """A national source that writes the CPI as consumer prices answers
+    "consumer prices" as one that writes CPI does, so it gives its slot to
+    the operation that takes the country."""
+    from sugra_api_mcp.catalog.models import Catalog, Endpoint, EndpointParameter
+
+    country = EndpointParameter(name="country", location="query")
+    takes = Endpoint(operation_id="world_widget", method="GET", path="/x",
+                     summary="CPI", parameters=[country])
+    national = Endpoint(operation_id="ine_widget", method="GET", path="/consumer-prices",
+                        summary="Consumer prices", description="Consumer prices")
+    tiny = Catalog(source="test", endpoints=[national, takes])
+    results = search_catalog(tiny, "consumer prices", limit=5)
+    assert [r["operation_id"] for r in results] == ["world_widget", "ine_widget"], results
+    assert "clamped-below:any-country-answers" in results[1]["why"], results[1]["why"]
+
+
+@pytest.mark.parametrize("query", [
+    "Spain CPI", "Spain consumer prices", "Spain consumer price index",
+    "Spain GDP", "Spain gross domestic product",
+])
+def test_a_named_country_keeps_its_own_source_first_in_other_words(catalog, query: str) -> None:
+    """A question that names a place is read in its own words: Spain's own
+    source answers "Spain consumer prices" first, as it answers "Spain CPI"."""
+    from sugra_api_mcp.catalog.search import _source_country
+
+    top = search_catalog(catalog, query, limit=1)[0]["operation_id"]
+    assert _source_country(catalog.get(top)) == "ES", (query, top)
+
+
+@pytest.mark.parametrize("query", [
+    "consumer confidence", "consumer spending", "consumer credit", "producer prices",
+    "house price index", "domestic product", "national accounts",
+])
+def test_the_other_words_of_a_spelling_ask_for_no_country(catalog, query: str) -> None:
+    for row in search_catalog(catalog, query, limit=2000):
+        assert not _ANY_COUNTRY_NOTES & set(row["why"]), (row["operation_id"], row["why"])
 
 
 # ---- Currency words, a country prefix, a singular strait ---------------------------
