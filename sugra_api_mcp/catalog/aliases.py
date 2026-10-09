@@ -310,6 +310,10 @@ _COUNTRY_MACRO_CUES: tuple[str, ...] = (
     "current account", "bond yield",
 )
 _ISO2_CODES_ALL: frozenset[str] = frozenset(COUNTRY_QUERY_TERMS.values())
+_COUNTRY_STATISTIC_CUES: tuple[str, ...] = tuple(
+    cue for cue in _COUNTRY_MACRO_CUES if " " not in cue
+)
+COUNTRY_STATISTIC_WORDS: frozenset[str] = frozenset(_COUNTRY_STATISTIC_CUES)
 
 
 def country_statistic_words(query: str) -> frozenset[str]:
@@ -320,8 +324,7 @@ def country_statistic_words(query: str) -> frozenset[str]:
     country the user means. One word each, so that one query word matched in
     an operation's fields says the operation answers it.
     """
-    single = tuple(cue for cue in _COUNTRY_MACRO_CUES if " " not in cue)
-    return frozenset(_match_vocabulary(query, single))
+    return frozenset(_match_vocabulary(query, _COUNTRY_STATISTIC_CUES))
 
 
 def detect_query_countries(query: str) -> set[str]:
