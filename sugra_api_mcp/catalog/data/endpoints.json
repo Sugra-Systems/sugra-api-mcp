@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-10-10T07:34:36Z",
+  "built_at": "2026-10-10T12:13:41Z",
   "endpoint_count": 1625,
   "endpoints": [
     {
@@ -38397,7 +38397,7 @@
       "toolset": "trade"
     },
     {
-      "description": "IMF Direction of Trade Statistics (IMTS), via the public SDMX 3.0 API.\n\nSource: International Monetary Fund, Direction of Trade Statistics.",
+      "description": "IMF Direction of Trade Statistics (IMTS), via the public SDMX 3.0 API.\n\nGoods exports (FOB), imports (CIF) and the trade balance of any reporter\ncountry against its partner countries, monthly, quarterly or annual.\ndirection=balance (the default) returns the trade balance.\n\nSource: International Monetary Fund, Direction of Trade Statistics.",
       "method": "GET",
       "operation_id": "imf_direction_of_trade",
       "parameters": [
@@ -38524,7 +38524,7 @@
       "sources": [
         "trade"
       ],
-      "summary": "IMF Direction of Trade - bilateral goods trade",
+      "summary": "IMF Direction of Trade - bilateral goods trade and trade balance",
       "tags": [
         "Global Economy & Trade"
       ],
@@ -96237,5 +96237,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "7ebe5a2f9fd23b590538b0b4d43b0bf33752465c017fab159344427255cf7e4e"
+  "spec_sha256": "a6bd884c99c63b118ba3bc085d4be172b95e1c5bb1c500513c104eabbe43cc26"
 }

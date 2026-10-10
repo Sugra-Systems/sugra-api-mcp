@@ -2742,6 +2742,29 @@ def test_a_current_account_of_a_country_without_its_own_source_ranks_the_profile
     assert "air_quality_current" not in ids, ids
 
 
+@pytest.mark.parametrize("query", [
+    "trade balance",
+    "trade balance by country",
+    "goods trade balance",
+])
+def test_a_trade_balance_of_no_country_ranks_the_imf_direction_of_trade_first(
+    catalog, query: str,
+) -> None:
+    """The IMF Direction of Trade serves the trade balance of any reporter
+    country: "trade balance" ranked the US Census source first."""
+    results = search_catalog(catalog, query, limit=5)
+    ids = [r["operation_id"] for r in results]
+    assert ids[0] == "imf_direction_of_trade", ids
+    assert ids.index("census_trade_balance") > 0, ids
+
+
+def test_a_us_trade_balance_keeps_the_census_source_above_the_imf(catalog) -> None:
+    """A named place turns the any-country reading off: the US source stays
+    above the source of every country."""
+    ids = [r["operation_id"] for r in search_catalog(catalog, "US trade balance", limit=5)]
+    assert ids.index("census_trade_balance") < ids.index("imf_direction_of_trade"), ids
+
+
 def test_an_operation_that_answers_through_the_statistics_alias_takes_the_country(catalog) -> None:
     """The country profile answers "unemployment" with its jobless rate, a word
     of the statistic's alias. Counted by its own words alone, it would lose the
@@ -3293,6 +3316,7 @@ def test_several_listings_one_described_ask_for_their_prices(catalog) -> None:
     ("current accounts", {"current account": {"current", "accounts"}}),
     ("government bond yields", {"bond yield": {"bond", "yields"}}),
     ("10Y yield", {"bond yield": {"10y", "yield"}}),
+    ("trade balances", {"trade balance": {"trade", "balances"}}),
     # Other statistics, part of a spelling, another word: none.
     ("consumer confidence", {}),
     ("producer prices", {}),
