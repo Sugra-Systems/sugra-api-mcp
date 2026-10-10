@@ -762,6 +762,38 @@ def detect_fx_request(query: str) -> FxRequest | None:
     )
 
 
+# An exchange-rate question that names no currency and asks nothing else
+# asks for the rates of every currency: the currency reference panel answers
+# it, or the reference rates over time when it asks for a period. "exchange
+# rate" ranked Peru's sol against one currency first. A word beyond these
+# keeps its own answer ("real effective exchange rate", "Peru exchange rate").
+FX_PANEL_OPERATION = "forex_rates"
+FX_HISTORY_OPERATION = "forex_history"
+_EVERY_CURRENCY_WORDS: frozenset[str] = frozenset({
+    "a", "all", "are", "chart", "current", "currencies", "currency", "daily",
+    "foreign", "get", "global", "history", "historical", "is", "last",
+    "latest", "major", "me", "month", "months", "of", "over", "past", "show",
+    "since", "the", "time", "today", "trend", "week", "weeks", "what", "world",
+    "year", "years",
+})
+
+
+def detect_every_currency_request(query: str) -> tuple[str, frozenset[str]] | None:
+    """The operation that answers an exchange-rate question naming no
+    currency and nothing else, and the query words that ask it, or None.
+    The words are the whole question, so they score for that operation alone."""
+    tokens = [token.lower() for token in re.findall(r"[A-Za-z0-9]+", query)]
+    phrase = {index for start, end in _phrase_spans(tokens, "exchange rate")
+              for index in range(start, end)}
+    if not phrase or not all(
+        token in _EVERY_CURRENCY_WORDS or token.isdigit()
+        for index, token in enumerate(tokens) if index not in phrase
+    ):
+        return None
+    over_time = any(_phrase_spans(tokens, word) for word in _FX_HISTORY_WORDS)
+    return (FX_HISTORY_OPERATION if over_time else FX_PANEL_OPERATION), frozenset(tokens)
+
+
 # The one-word country statistics in their own words and in other words.
 _COUNTRY_STATISTIC_NAMES: tuple[str, ...] = (
     *_COUNTRY_STATISTIC_CUES,

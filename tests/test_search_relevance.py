@@ -1325,6 +1325,40 @@ def test_everyday_names_land_their_operation_top_1(catalog, query: str, expected
         f"{query!r}: top-5 {[(r['operation_id'], r['score']) for r in results]}")
 
 
+# An exchange rate asked of no currency asks for every currency: "exchange
+# rate" ranked Peru's sol against one currency first.
+@pytest.mark.parametrize("query,expected", [
+    ("exchange rate", "forex_rates"),
+    ("exchange rates", "forex_rates"),
+    ("currency exchange rate", "forex_rates"),
+    ("foreign exchange rates", "forex_rates"),
+    ("what is the exchange rate today", "forex_rates"),
+    ("exchange rate history", "forex_history"),
+    ("exchange rates since 2020", "forex_history"),
+])
+def test_an_exchange_rate_of_no_currency_ranks_every_currency_first(
+    catalog, query: str, expected: str,
+) -> None:
+    results = search_catalog(catalog, query, limit=5)
+    assert results and results[0]["operation_id"] == expected, (
+        f"{query!r}: top-5 {[(r['operation_id'], r['score']) for r in results]}")
+
+
+@pytest.mark.parametrize("query,expected", [
+    ("real effective exchange rate", "bis_fx_effective"),
+    ("Peru exchange rate", "central_banks_bcrp_fx_currency"),
+    ("dollar to yen exchange rate", "forex_convert"),
+    ("euro exchange rate", "forex_rates"),
+])
+def test_an_exchange_rate_that_names_more_keeps_its_answer(
+    catalog, query: str, expected: str,
+) -> None:
+    results = search_catalog(catalog, query, limit=5)
+    assert results and results[0]["operation_id"] == expected, (
+        f"{query!r}: top-5 {[(r['operation_id'], r['score']) for r in results]}")
+    assert not any(note == "name:exchange rates" for r in results for note in r["why"]), results
+
+
 @pytest.mark.parametrize("query,expected_prefix", [
     # Futures have operations of their own, which carry the benchmark names.
     ("WTI crude oil futures", "futures_root_"),
