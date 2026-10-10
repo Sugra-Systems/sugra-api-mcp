@@ -779,7 +779,7 @@ _EVERY_CURRENCY_WORDS: frozenset[str] = frozenset({
     "trend", "week", "weeks", "world", "year", "years",
 })
 _EVERY_CURRENCY_NOW_WORDS: frozenset[str] = frozenset({"current", "latest", "now", "today"})
-_EVERY_CURRENCY_QUESTION_WORDS: frozenset[str] = frozenset({"are", "is", "s", "what"})
+_EVERY_CURRENCY_QUESTION_WORDS: frozenset[str] = frozenset({"are", "is", "s", "was", "were", "what"})
 # The words that name the request; the period words keep scoring as words.
 _EVERY_CURRENCY_NAME_WORDS: frozenset[str] = frozenset({
     "currencies", "currency", "exchange", "foreign", "rate", "rates",
