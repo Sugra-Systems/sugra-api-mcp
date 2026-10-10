@@ -2720,6 +2720,150 @@ def test_a_question_that_names_the_ratio_still_finds_it(catalog, query: str) -> 
     assert top == "bis_credit_gap", top
 
 
+@pytest.mark.parametrize(("text", "numerators"), [
+    ("government debt to GDP", {"gdp": {"government", "debt"}}),
+    ("debt-to-GDP", {"gdp": {"debt"}}),
+    ("debt % of GDP", {"gdp": {"debt"}}),
+    ("debt as a percent of GDP", {"gdp": {"debt"}}),
+    ("budget deficit as a share of GDP", {"gdp": {"budget", "deficit"}}),
+    ("debt ratio to GDP", {"gdp": {"debt"}}),
+    ("credit to GDP gap", {"gdp": {"credit"}}),
+    ("credit to GDP and debt to GDP", {"gdp": {"credit", "debt"}}),
+    # Each base reads only the words back to the ratio before it.
+    ("credit to inflation and government debt to GDP",
+     {"inflation": {"credit"}, "gdp": {"government", "debt"}}),
+    ("debt to GDP and ratio to GDP", {"gdp": {"debt"}}),
+    ("ratio to GDP", {}),  # nothing before the ratio that measures
+    ("share of GDP", {}),
+    # Function words, request verbs, numbers and the words that say when,
+    # where or how much measure nothing.
+    ("what is the ratio to GDP", {}),
+    ("show me the share of GDP", {}),
+    ("what's the share of GDP", {}),
+    ("whats the ratio to GDP", {}),
+    ("get the ratio to GDP", {}),
+    ("2024 ratio to GDP", {}),
+    ("annual ratio to GDP", {}),
+    ("quarterly share of GDP", {}),
+    ("which country has the highest ratio to GDP", {}),
+    ("which country has the highest debt to GDP", {"gdp": {"debt"}}),
+    # Every phrasing of the numerator reads it.
+    ("government debt 80% of GDP", {"gdp": {"government", "debt"}}),
+    ("government debt is 80% of GDP", {"gdp": {"government", "debt"}}),
+    ("debt 2024 ratio to GDP", {"gdp": {"debt"}}),
+    ("debt and deficit to GDP", {"gdp": {"debt", "deficit"}}),
+    ("debt and budget deficit to GDP", {"gdp": {"debt", "budget", "deficit"}}),
+    ("exports or imports as a share of GDP", {"gdp": {"exports", "imports"}}),
+    ("debt, deficit and spending to GDP", {"gdp": {"debt", "deficit", "spending"}}),
+    ("in 2020, debt to GDP", {"gdp": {"debt"}}),
+    ("GDP and debt to GDP", {"gdp": {"debt"}}),  # a country statistic is none
+    ("M2 to GDP", {"gdp": {"m2"}}),
+    ("inflation to GDP", {}),  # a country statistic is no numerator
+    ("price to earnings", {}),  # no country statistic as the base
+    ("GDP", {}),
+])
+def test_the_numerator_of_a_ratio(text: str, numerators: dict[str, set[str]]) -> None:
+    from sugra_api_mcp.catalog.search import _ratio_numerators
+
+    assert _ratio_numerators(text) == numerators
+
+
+@pytest.mark.parametrize(("numerator", "token"), [
+    ("taxes", "tax"), ("tax", "taxes"), ("liabilities", "liability"), ("liability", "liabilities"),
+    ("debts", "debt"), ("debt", "debts"), ("expenses", "expense"), ("expense", "expenses"),
+    ("gases", "gas"), ("gas", "gases"), ("assets", "asset"), ("loss", "loss"),
+])
+def test_a_numerator_matches_its_singular_and_its_plural(numerator: str, token: str) -> None:
+    from sugra_api_mcp.catalog.search import _names_any
+
+    assert _names_any(frozenset({numerator}), frozenset({token}))
+
+
+@pytest.mark.parametrize(("numerator", "token"), [
+    ("rates", "rat"), ("loss", "los"), ("gas", "ga"), ("debt", "credit"),
+])
+def test_a_numerator_matches_no_other_word(numerator: str, token: str) -> None:
+    from sugra_api_mcp.catalog.search import _names_any
+
+    assert not _names_any(frozenset({numerator}), frozenset({token}))
+
+
+@pytest.mark.parametrize("query", [
+    "government debt to GDP",
+    "debt % of GDP",
+    "debt as a percent of GDP",
+    "debt-to-GDP",
+    "debts to GDP",
+    "household debt to GDP",
+    "deficit to GDP",
+    "budget deficit as a percent of GDP",
+    "exports to GDP",
+    "tax revenue as a percent of GDP",
+    "debt to gross domestic product",
+    "government debt 80% of GDP",
+    "government debt is 80% of GDP",
+    "debt and deficit to GDP",
+    "which country has the highest debt to GDP",
+])
+def test_a_ratio_with_another_numerator_answers_no_ratio_question(catalog, query: str) -> None:
+    """The credit-to-GDP gap ranked first for "government debt to GDP": it
+    names GDP as the base of a ratio, but of credit, never of debt."""
+    results = search_catalog(catalog, query, limit=200)
+    assert results[0]["operation_id"] != "bis_credit_gap", results[:3]
+    gap = next(r for r in results if r["operation_id"] == "bis_credit_gap")
+    assert "pattern:any-country->param" not in gap["why"], gap["why"]
+
+
+@pytest.mark.parametrize("query", [
+    "credit-to-GDP",
+    "private credit to GDP",
+    "credit to GDP ratio",
+    "bank credit as a percent of GDP",
+    "ratio to GDP",  # names no numerator
+    "what is the ratio to GDP",
+    "2024 ratio to GDP",
+])
+def test_a_ratio_question_with_its_own_numerator_finds_the_ratio(catalog, query: str) -> None:
+    top = search_catalog(catalog, query, limit=1)[0]["operation_id"]
+    assert top == "bis_credit_gap", top
+
+
+@pytest.mark.parametrize(("summary", "query", "answers"), [
+    ("Government debt to GDP", "government debt to GDP", True),
+    ("Government debts to GDP", "government debt to GDP", True),
+    ("Credit-to-GDP gaps", "government debt to GDP", False),
+    # The plural of either side: "taxes" and "tax", "liabilities" and "liability".
+    ("Tax revenue to GDP", "taxes to GDP", True),
+    ("Taxes to GDP", "tax to GDP", True),
+    ("External liabilities to GDP", "external liability to GDP", True),
+    ("Government expense to GDP", "government expenses to GDP", True),
+    # A number between the numerator and its base hides neither.
+    ("Credit-to-GDP gaps", "government debt 80% of GDP", False),
+    ("Government debt to GDP", "government debt 80% of GDP", True),
+    # Either of two numerators joined by "and" answers.
+    ("Government debt to GDP", "debt and deficit to GDP", True),
+    ("Credit-to-GDP gaps", "debt and deficit to GDP", False),
+    ("Government debt to GDP", "debt and budget deficit to GDP", True),
+    ("Government debt to GDP", "debt or private credit to GDP", True),
+    ("Credit-to-GDP gaps", "government debt is 80% of GDP", False),
+    ("Government debt to GDP", "government debt is 80% of GDP", True),
+    # A numerator answers only its own base: credit is measured against
+    # inflation here, and GDP against debt.
+    ("Credit-to-GDP gaps", "credit to inflation and government debt to GDP", False),
+    ("Government debt to GDP", "credit to inflation and government debt to GDP", True),
+])
+def test_an_operation_that_names_the_numerator_answers_the_ratio(
+    summary: str, query: str, answers: bool,
+) -> None:
+    from sugra_api_mcp.catalog.models import Catalog, Endpoint, EndpointParameter
+
+    country = EndpointParameter(name="country", location="query")
+    ratio = Endpoint(operation_id="world_ratio", method="GET", path="/ratio",
+                     summary=summary, parameters=[country])
+    results = search_catalog(Catalog(source="test", endpoints=[ratio]), query, limit=1)
+    assert ("pattern:any-country->param" in results[0]["why"]) is answers, results[0]["why"]
+
+
 @pytest.mark.parametrize("query,places,words", [
     ("yen inflation", {"JP"}, {"yen"}),
     ("JPY inflation", {"JP"}, {"jpy"}),

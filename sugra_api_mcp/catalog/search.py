@@ -284,6 +284,72 @@ def _ratio_base_statistics(texts: list[str]) -> frozenset[str]:
     return frozenset(bases - named)
 
 
+# The words of a question that measure nothing: function words, request
+# verbs, the words that say when or how, and the words that name where or
+# the data itself ("which country has the highest annual ratio to GDP").
+_RATIO_NON_MEASURES = _QUERY_STOPWORDS | _TWO_LETTER_FILLER | frozenset({
+    "calculate", "chart", "compare", "compute", "fetch", "find", "get", "give",
+    "list", "look", "need", "please", "plot", "see", "show", "tell", "want", "whats",
+    "annual", "average", "current", "daily", "historical", "latest", "monthly",
+    "quarterly", "recent", "today", "weekly", "year", "yearly",
+    "high", "higher", "highest", "low", "lower", "lowest", "much", "rank", "top",
+    "countries", "country", "global", "nation", "nations", "world",
+    "data", "figure", "figures", "indicator", "indicators", "level", "levels",
+    "number", "numbers", "ratio", "ratios", "series", "statistics", "value", "values",
+})
+
+
+def _measures(word: str) -> bool:
+    """Whether a word before a ratio can be what the ratio measures."""
+    return (len(word) > 1 and not word.isdigit() and word not in _RATIO_NON_MEASURES
+            and word not in COUNTRY_STATISTIC_WORDS)
+
+
+def _ratio_numerators(text: str) -> dict[str, frozenset[str]]:
+    """The words a text measures against each country statistic.
+
+    Every word before the ratio, back to the ratio before it or the start of
+    the text, that can measure something: "debt" in "debt-to-GDP", "debt as
+    a percent of GDP" and "government debt is 80% of GDP" ("government" too),
+    "debt" and "deficit" in "debt and budget deficit to GDP". No phrasing is
+    parsed, so an operation that names any of those words answers the ratio,
+    and a question whose words before the ratio all measure nothing ("what is
+    the ratio to GDP", "2024 share of GDP") names no numerator.
+    """
+    lowered = text.lower()
+    numerators: dict[str, set[str]] = {}
+    start = 0
+    for match in _RATIO_BASE_RE.finditer(lowered):
+        window = TOKEN_RE.findall(lowered[start:match.start()])
+        start = match.end()
+        base = match.group(1)
+        if base not in COUNTRY_STATISTIC_WORDS:
+            continue
+        words = {word for word in window if _measures(word)}
+        if words:
+            numerators.setdefault(base, set()).update(words)
+    return {base: frozenset(words) for base, words in numerators.items()}
+
+
+def _singulars(word: str) -> frozenset[str]:
+    """The word and every singular its plural ending may stand for: "taxes"
+    for "tax", "expenses" for "expense", "liabilities" for "liability"."""
+    forms = {word}
+    if len(word) > 4 and word.endswith("ies"):
+        forms.add(f"{word[:-3]}y")
+    if len(word) > 3 and word.endswith("es") and word[:-2].endswith(("s", "x", "z", "ch", "sh")):
+        forms.add(word[:-2])
+    if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
+        forms.add(word[:-1])
+    return frozenset(forms)
+
+
+def _names_any(words: frozenset[str], tokens: frozenset[str]) -> bool:
+    """Whether the tokens hold one of the words, in the singular or the plural."""
+    wanted = frozenset().union(*(_singulars(word) for word in words))
+    return any(not wanted.isdisjoint(_singulars(token)) for token in tokens)
+
+
 class _EndpointProfile:
     """The token sets of one endpoint's searchable fields, built once per endpoint.
 
@@ -404,6 +470,7 @@ def _score(
     country_answers: set[str] | None = None,
     any_country_cues: frozenset[str] = frozenset(),
     ratio_cues: frozenset[str] = frozenset(),
+    ratio_numerators: dict[str, frozenset[str]] | None = None,
     spelled_statistics: frozenset[str] = frozenset(),
     place_answers: set[str] | None = None,
     term_hits: dict[str, tuple[frozenset[str], frozenset[str], frozenset[str]]] | None = None,
@@ -425,7 +492,10 @@ def _score(
     collects its operation_id. A word the operation names only as the base
     of a ratio answers only a question that names it so as well, the words
     of ``ratio_cues``: the credit-to-GDP gap answers "credit to GDP gap",
-    never "GDP". Of those words, ``spelled_statistics`` are the ones the
+    never "GDP". When the question names what its ratio of that word
+    measures, the words ``ratio_numerators`` holds for it, the operation must
+    name one of them too: the credit-to-GDP gap answers no "government debt
+    to GDP". Of those words, ``spelled_statistics`` are the ones the
     question names in other words ("jobless rate"): an operation answers one
     when it names it in its own word or in one of those. ``term_hits``,
     when given, records the query words the endpoint matches in a field other
@@ -598,9 +668,13 @@ def _score(
                 topic_hit = True
         if hit and term not in country_terms:
             topic_hit = True
-        # The credit-to-GDP gap ranked first for "GDP".
+        # The credit-to-GDP gap ranked first for "GDP", and for "government
+        # debt to GDP".
         if (any_country_cues and term in query_terms and len(term) >= 3
-                and (term not in profile.ratio_bases or term in ratio_cues)):
+                and (term not in profile.ratio_bases
+                     or (term in ratio_cues
+                         and (not (ratio_numerators or {}).get(term)
+                              or _names_any(ratio_numerators[term], profile.text))))):
             if hit:
                 strong_words.add(term)
             if term in profile.keywords:
@@ -1013,6 +1087,7 @@ def search_catalog(
         country_statistic_words(query) | frozenset(spelled)
     )
     ratio_cues = any_country_cues & _ratio_base_statistics([with_statistic_words(query)])
+    ratio_numerators = _ratio_numerators(with_statistic_words(query)) if ratio_cues else {}
 
     scored: list[tuple[int, Endpoint, list[str]]] = []
     country_answers: set[str] = set()
@@ -1046,6 +1121,7 @@ def search_catalog(
             country_answers=country_answers,
             any_country_cues=any_country_cues,
             ratio_cues=ratio_cues,
+            ratio_numerators=ratio_numerators,
             spelled_statistics=frozenset(spelled),
             place_answers=place_answers,
             term_hits=term_hits if any_country_cues else None,
