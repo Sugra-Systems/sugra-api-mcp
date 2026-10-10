@@ -11,12 +11,15 @@ from .aliases import (
     CB_RATES_OPERATION,
     CB_RATES_OPERATIONS,
     CENTRAL_BANK_PLACES,
+    CENTRAL_BANK_POLICY_RATE_KEYS,
+    CENTRAL_BANK_POLICY_RATES,
     CENTRAL_BANK_PREFIX_BOOSTS,
     COMPOUND_NAMED_OPERATIONS,
     COUNTRY_STATISTIC_SPELLINGS,
     COUNTRY_STATISTIC_WORDS,
     ETF_TICKERS,
     FX_CONVERT_OPERATION,
+    FX_PANEL_OPERATION,
     LISTING_DEFAULT_OPERATION,
     LISTING_HISTORY_OPERATION,
     LISTINGS_DEFAULT_OPERATION,
@@ -993,6 +996,9 @@ def search_catalog(
     named_operations = dict(named.operations)
     if fx is not None and fx.pair and not fx.over_time:
         named_operations.setdefault(FX_CONVERT_OPERATION, "currency pair")
+    # A currency named alone asks what its rate is: the rate panel answers.
+    if fx is not None and fx.alone:
+        named_operations.setdefault(FX_PANEL_OPERATION, "currency")
     weather = detect_weather_request(query, terms)
     if weather is not None:
         named_operations.setdefault(weather.operation, weather.name)
@@ -1002,18 +1008,33 @@ def search_catalog(
     # alone, as a name's words do: "Bank Negara Malaysia interest rate" found
     # the bank's interbank rate.
     policy_rate = detect_policy_rate_request(query, terms, central_bank_prefixes)
+    # A country's interest rate, with nothing else asked, is its central
+    # bank's policy rate: "Canada interest rate" found the Bank of Canada's
+    # prime rate first and its policy rate fourth.
+    if not central_bank_prefixes:
+        places = detect_query_countries(query)
+        banks = [prefix for prefix, place in CENTRAL_BANK_PLACES.items()
+                 if place in places and (prefix in CENTRAL_BANK_POLICY_RATES
+                                         or prefix in CENTRAL_BANK_POLICY_RATE_KEYS)]
+        if len(places) == 1 and len(banks) == 1:
+            place_words = _country_terms(query, terms, places)
+            by_place = detect_policy_rate_request(
+                query, [term for term in terms if term not in place_words], banks)
+            # The country stands in for the bank's name only beside a rate
+            # word: "Canada decision" asks for no rate.
+            if (by_place.operations or by_place.keys) and by_place.words & {"rate", "rates"}:
+                policy_rate = by_place
     for operation, words in policy_rate.operations.items():
         named_operations.setdefault(operation, words)
     # Each name's words belong to the operations it points to.
     named_words = named.words | policy_rate.words
     own_named_words = dict(named.operation_words)
-    for operation in policy_rate.operations:
-        own_named_words[operation] = (
-            own_named_words.get(operation, frozenset()) | policy_rate.words
-        )
+    for operation, words in policy_rate.operation_words.items():
+        own_named_words[operation] = own_named_words.get(operation, frozenset()) | words
     # A meeting of the bank the query names is the calendar's question: the
-    # calendar counts as that bank's own operation, so the bank's name lifts
-    # it as it lifts the bank's rates ("when is the next Fed meeting").
+    # calendar joins the central-bank prefixes, so the prefix boost the bank's
+    # name gives its own operations lifts the calendar too ("when is the next
+    # Fed meeting"). Its words were recorded where it was named.
     if central_bank_prefixes and MEETING_CALENDAR_OPERATIONS & named_operations.keys():
         central_bank_prefixes = [*central_bank_prefixes, *sorted(MEETING_CALENDAR_OPERATIONS)]
     boost_forex = bool(currency_pairs) or fx is not None
