@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 
 from sugra_api_mcp.catalog.aliases import (
+    ETF_TICKERS,
     country_statistic_words,
     detect_currency_pairs,
     detect_tickers,
@@ -1979,8 +1980,9 @@ def test_every_named_target_is_a_bundled_operation(catalog) -> None:
     dead = [prefix for prefix in COMPOUND_NAMED_OPERATIONS
             if not any(op.startswith(prefix) for op in ids)]
     assert not dead, f"compound prefixes matching no bundled operation: {dead}"
-    for heads, tail in COMPOUND_NAMED_OPERATIONS.values():
-        assert heads and all(re.fullmatch(r"[a-z0-9]+", word) for word in (*heads, tail)), (heads, tail)
+    for heads, tails in COMPOUND_NAMED_OPERATIONS.values():
+        assert heads and tails and all(
+            re.fullmatch(r"[a-z0-9]+", word) for word in (*heads, *tails)), (heads, tails)
     assert set(NAMED_PLACES) <= set(NAMED_OPERATIONS)
 
 
@@ -3016,7 +3018,79 @@ def test_a_bond_or_sector_fund_is_a_listing_without_an_equity_word(catalog, quer
     reading and ranked the composite country profile first."""
     assert detect_tickers(query) == [ticker]
     top = search_catalog(catalog, query, limit=1)[0]
-    assert "pattern:ticker->quotes_symbol" in top["why"], top
+    assert {"pattern:ticker->quotes_symbol", "pattern:ticker->etf_symbol"} & set(top["why"]), top
+
+
+@pytest.mark.parametrize("query,first", [
+    ("SPY flows", "etf_symbol_flows"),
+    ("XLK flows", "etf_symbol_flows"),
+    ("TLT flows", "etf_symbol_flows"),
+    ("SPY snapshot", "etf_symbol_snapshot"),
+    ("QQQ quote", "etf_symbol_quote_cboe"),
+    ("XLF sector weightings", "etf_symbol_sector_weightings_history"),
+    ("SPY top holdings changes", "etf_symbol_top_holdings_changes"),
+    ("how did SPY's top holdings change", "etf_symbol_top_holdings_changes"),
+])
+def test_an_etf_ticker_reaches_the_etf_operations(catalog, query: str, first: str) -> None:
+    """"SPY flows" ranked a company cash flow statement first and the ETF's
+    own flows below the top 60: the ticker boosted only the quotes."""
+    top = search_catalog(catalog, query, limit=1)[0]
+    assert top["operation_id"] == first, top
+    assert "pattern:ticker->etf_symbol" in top["why"], top
+
+
+@pytest.mark.parametrize("query", [
+    "SPY holdings", "SPY top holdings", "Show me VOO's NAV, AUM and top holdings",
+])
+def test_holdings_are_no_change_in_them(catalog, query: str) -> None:
+    """The changes to an ETF's top holdings answer "top" and "holdings" only
+    beside a word for change: VOO's top holdings ranked the churn between two
+    dates first."""
+    rows = search_catalog(catalog, query, limit=2000)
+    assert rows[0]["operation_id"] == "etf_symbol_holdings_sec", rows[0]
+    changes = next(row for row in rows if row["operation_id"] == "etf_symbol_top_holdings_changes")
+    assert "pattern:ticker->etf_symbol" not in changes["why"], changes
+
+
+@pytest.mark.parametrize("query", ["SPY changes", "SPY churn", "what changed in SPY"])
+def test_a_change_is_no_holdings_change(catalog, query: str) -> None:
+    """And a word for change answers it only beside "top" or "holdings": "SPY
+    changes" says nothing about holdings."""
+    rows = search_catalog(catalog, query, limit=2000)
+    assert rows[0]["operation_id"] != "etf_symbol_top_holdings_changes", rows[0]
+    changes = next(row for row in rows if row["operation_id"] == "etf_symbol_top_holdings_changes")
+    assert "pattern:ticker->etf_symbol" not in changes["why"], changes
+
+
+@pytest.mark.parametrize("query,first", [
+    # The topic word picks the quotes.
+    ("SPY price", "quotes_symbol_price"),
+    ("SPY cash flow", "quotes_symbol_periodicity_cash_flow"),
+    ("SPY dividends", "quotes_symbol_actions"),
+    ("AAPL cash flow", "quotes_symbol_periodicity_cash_flow"),
+])
+def test_an_etf_ticker_keeps_the_quotes_its_topic_names(catalog, query: str, first: str) -> None:
+    assert search_catalog(catalog, query, limit=1)[0]["operation_id"] == first
+
+
+@pytest.mark.parametrize("query", ["TLT", "SPY today", "AAPL flows", "AAPL holdings", "NVDA snapshot"])
+def test_an_etf_boost_needs_an_etf_ticker_and_a_topic_word(catalog, query: str) -> None:
+    """A stock ticker never lifts the ETF operations, and an ETF ticker
+    alone, or beside a word only an ETF operation's description holds
+    ("today"), lifts none of them and keeps the quotes first."""
+    rows = search_catalog(catalog, query, limit=2000)
+    assert rows[0]["operation_id"].startswith("quotes_symbol_"), rows[0]
+    assert not [row for row in rows if "pattern:ticker->etf_symbol" in row["why"]]
+
+
+@pytest.mark.parametrize("query", ["SPY flows crypto", "SPY peering traceroute flows"])
+def test_crypto_or_network_context_suppresses_the_etf_boost(catalog, query: str) -> None:
+    """The ETF boost takes the ticker gate the quotes take, which crypto
+    context and network dominance switch off."""
+    assert ETF_TICKERS.intersection(detect_tickers(query))
+    rows = search_catalog(catalog, query, limit=2000)
+    assert not [row for row in rows if any(
+        reason in row["why"] for reason in ("pattern:ticker->etf_symbol", "pattern:ticker->quotes_symbol"))]
 
 
 @pytest.mark.parametrize("query", ["PCE inflation", "HICP inflation", "TIPS inflation", "CPI inflation"])
