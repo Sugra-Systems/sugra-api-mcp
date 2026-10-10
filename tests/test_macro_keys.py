@@ -339,3 +339,71 @@ def test_a_filter_that_leaves_the_key_out_leaves_the_us_macro_boost(keyed_catalo
     for hit in fred_hits:
         assert "pattern:us-macro->fred" in hit["why"], hit["operation_id"]
         assert not any(reason.startswith("clamped-below:") for reason in hit["why"]), hit["operation_id"]
+
+
+# ---- A question that names no place: the series one place alone holds ----
+
+CLAIMS_KEYS = [
+    MacroKey(key="us/initial-claims", title="Initial Claims for Unemployment Insurance", freq="weekly"),
+    MacroKey(key="us/continued-claims", title="Continued Claims (Insured Unemployment)", freq="weekly"),
+]
+
+
+def _with_keys(keys: list[MacroKey]) -> Catalog:
+    """The bundled catalog with ``keys`` on the macro operation and on no other."""
+    catalog = load_catalog()
+    return catalog.model_copy(update={"endpoints": [
+        endpoint.model_copy(update={"macro_keys": keys if endpoint.operation_id == MACRO_OPERATION else []})
+        for endpoint in catalog.endpoints
+    ]})
+
+
+@pytest.fixture(scope="module")
+def claims_catalog() -> Catalog:
+    return _with_keys([*KEYS, *CLAIMS_KEYS])
+
+
+@pytest.mark.parametrize("query", [
+    "jobless claims",
+    "unemployment claims",
+    "initial jobless claims",
+    "weekly jobless claims",
+])
+def test_a_claims_question_ranks_the_claims_key_right_after_the_first_answer(
+    claims_catalog: Catalog, query: str,
+) -> None:
+    """Only the US holds a claims series: its key ranks second, right after
+    the first answer for whichever country is meant, never in its place."""
+    results = search_catalog(claims_catalog, query, limit=5)
+
+    assert results[0]["operation_id"] != MACRO_OPERATION, _top_ids(results)
+    assert results[1]["operation_id"] == MACRO_OPERATION, _top_ids(results)
+    assert results[1]["macro_keys"][0]["key"] == "us/initial-claims"
+    assert f"clamped-below:{results[0]['operation_id']}" in results[1]["why"], results[1]["why"]
+    # The key names the US series; FRED's proxy gets no US boost from it.
+    for hit in results:
+        assert "pattern:us-macro->fred" not in hit["why"], hit["operation_id"]
+
+
+@pytest.mark.parametrize("query", [
+    "unemployment",
+    "unemployment rate",
+    "jobless rate",
+    # A word an operation for any country answers asks for that operation.
+    "youth unemployment",
+    # The core CPI leaves food out, so it holds no food inflation.
+    "food inflation",
+    # No statistic every country reports: a US series would be the US default.
+    "initial claims",
+    "nonfarm payrolls",
+])
+def test_a_question_that_names_no_place_ranks_no_key_otherwise(claims_catalog: Catalog, query: str) -> None:
+    results = search_catalog(claims_catalog, query, limit=10)
+    assert all("macro_keys" not in hit for hit in results), _top_ids(results)
+
+
+def test_a_series_two_places_hold_ranks_no_key_without_a_place() -> None:
+    """Claims series of two countries: the question does not say which."""
+    two = _with_keys([*CLAIMS_KEYS, MacroKey(key="ca/initial-claims", title="Initial Claims for Unemployment Insurance")])
+    results = search_catalog(two, "jobless claims", limit=10)
+    assert all("macro_keys" not in hit for hit in results), _top_ids(results)

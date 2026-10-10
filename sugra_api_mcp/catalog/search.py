@@ -46,7 +46,7 @@ from .aliases import (
     topic_default_operations,
     with_statistic_words,
 )
-from .macro_keys import match_macro_keys, query_names_euro_area
+from .macro_keys import match_macro_keys, match_unplaced_macro_keys, query_names_euro_area
 from .models import Catalog, Endpoint, MacroKey
 
 TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -1076,6 +1076,24 @@ def search_catalog(
                                          query_countries=query_countries, ignore=filler)
                 if found:
                     macro_matches[endpoint.operation_id] = found
+    # A question that names no place may still name a series only one place
+    # holds: "jobless claims" is the weekly US claims, which no other
+    # country's keys hold. Whether its key answers the question is decided
+    # after scoring (the unplaced key below). A topic the keys of two places
+    # answer ("unemployment rate") names no one series.
+    unplaced: dict[str, list[MacroKey]] = {}
+    if not (macro_matches or penalty_countries or has_ticker_token or boost_forex
+            or has_crypto_context or central_bank_prefixes or named_operations
+            or query_names_united_states(query)):
+        filler = _QUERY_STOPWORDS | _TWO_LETTER_FILLER
+        for endpoint in catalog.endpoints:
+            if endpoint.macro_keys and _in_scope(endpoint, toolset, source):
+                found = match_unplaced_macro_keys(query, endpoint.macro_keys, ignore=filler,
+                                                  limit=len(endpoint.macro_keys))
+                if found:
+                    unplaced[endpoint.operation_id] = found
+        if len({key.key.partition("/")[0] for found in unplaced.values() for key in found}) != 1:
+            unplaced = {}
     # The policy rate of a bank with no operation of its own is a curated key.
     if policy_rate.keys:
         for endpoint in catalog.endpoints:
@@ -1120,10 +1138,15 @@ def search_catalog(
     country_answers: set[str] = set()
     place_answers: set[str] = set()
     term_hits: dict[str, tuple[frozenset[str], frozenset[str], frozenset[str]]] = {}
-    for endpoint in catalog.endpoints:
-        if not _in_scope(endpoint, toolset, source):
-            continue
-        score, why = _score(
+
+    def score_endpoint(
+        endpoint: Endpoint,
+        key_operations: dict[str, str],
+        answers: set[str],
+        places_found: set[str],
+        hits: dict[str, tuple[frozenset[str], frozenset[str], frozenset[str]]] | None,
+    ) -> tuple[int, list[str]]:
+        return _score(
             endpoint,
             [*terms, *sorted(frozenset(spelled) - set(terms))],
             aliases,
@@ -1145,15 +1168,21 @@ def search_catalog(
             named_operations=named_operations,
             named_words=named_words,
             own_named_words=own_named_words.get(endpoint.operation_id, frozenset()),
-            macro_key_operations=macro_key_operations,
-            country_answers=country_answers,
+            macro_key_operations=key_operations,
+            country_answers=answers,
             any_country_cues=any_country_cues,
             ratio_cues=ratio_cues,
             ratio_numerators=ratio_numerators,
             spelled_statistics=frozenset(spelled),
-            place_answers=place_answers,
-            term_hits=term_hits if any_country_cues else None,
+            place_answers=places_found,
+            term_hits=hits,
         )
+
+    for endpoint in catalog.endpoints:
+        if not _in_scope(endpoint, toolset, source):
+            continue
+        score, why = score_endpoint(endpoint, macro_key_operations, country_answers,
+                                    place_answers, term_hits if any_country_cues else None)
         if score > 0:
             scored.append((score, endpoint, why))
 
@@ -1274,6 +1303,35 @@ def search_catalog(
             _, endpoint, why = scored[i]
             scored[i] = (-slot[0], endpoint, [*why, note])
             held[endpoint.operation_id] = slot[1:]
+
+    # The unplaced key: a question that names no place, asks for a statistic
+    # every country reports and names a word that no operation answering it
+    # for whichever country is meant answers, asks for the series one place
+    # alone holds under that word: "jobless claims" asks for the weekly US
+    # claims, not for the unemployment rate. A word one of them answers asks
+    # for that operation ("youth unemployment"). The key ranks right after
+    # the first of those operations, never above it, for it answers for a
+    # country the question never named, and its tie-break follows that
+    # operation's directly, so it takes the next slot.
+    if unplaced and places:
+        answered = frozenset().union(
+            *(term_hits[scored[i][1].operation_id][1] for i in places), *spelled.values())
+        if {term for term in terms if len(term) >= 3} - answered - _QUERY_STOPWORDS:
+            def order_of(i: int) -> tuple[int, bool, str]:
+                return -scored[i][0], *held.get(scored[i][1].operation_id, tie_break(scored[i][1]))
+
+            score, after_default, after_id = order_of(min(places, key=order_of))
+            macro_matches |= {op: found[:3] for op, found in unplaced.items()}
+            for endpoint in catalog.endpoints:
+                if endpoint.operation_id not in unplaced:
+                    continue
+                key = unplaced[endpoint.operation_id][0].key
+                own, why = score_endpoint(endpoint, {endpoint.operation_id: key}, set(), set(), None)
+                scored = [item for item in scored if item[1] is not endpoint]
+                if own >= -score:
+                    own, why = -score, [*why, f"clamped-below:{after_id}"]
+                    held[endpoint.operation_id] = (after_default, f"{after_id}\x00")
+                scored.append((own, endpoint, why))
 
     # Structural guarantee: a deprecated route never outranks its live
     # replacement, whatever the token luck (a query built from the legacy
