@@ -8,6 +8,8 @@ from typing import Any
 
 from ._countries import COUNTRY_QUERY_TERMS
 from .aliases import (
+    CB_RATES_OPERATION,
+    CB_RATES_OPERATIONS,
     CENTRAL_BANK_PLACES,
     CENTRAL_BANK_PREFIX_BOOSTS,
     COMPOUND_NAMED_OPERATIONS,
@@ -24,6 +26,7 @@ from .aliases import (
     SOURCE_COUNTRY_PREFIXES,
     country_statistic_words,
     currency_statistic_places,
+    detect_central_bank_rate_request,
     detect_currency_pairs,
     detect_every_currency_request,
     detect_fx_request,
@@ -1041,6 +1044,17 @@ def search_catalog(
             named_operations[operation] = "exchange rates"
             named_words |= words
             own_named_words[operation] = own_named_words.get(operation, frozenset()) | words
+    if not (penalty_countries or has_ticker_token or has_crypto_context
+            or central_bank_prefixes or named_operations):
+        # The words score for the BIS rates alone, the rates by country among
+        # them, as a benchmark name's words do.
+        cb_rate_words = detect_central_bank_rate_request(query)
+        if cb_rate_words is not None:
+            named_operations[CB_RATES_OPERATION] = "central bank policy rates"
+            named_words |= cb_rate_words
+            for operation in CB_RATES_OPERATIONS:
+                own_named_words[operation] = (
+                    own_named_words.get(operation, frozenset()) | cb_rate_words)
     # Country tokens are NOT consumed: consuming them would strip the CORRECT
     # national source of the coverage credit for the country the user typed.
     # The country-param boost reads them separately, to tell a query that is
