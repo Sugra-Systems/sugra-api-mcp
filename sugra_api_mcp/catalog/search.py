@@ -489,6 +489,7 @@ def _score(
     spelled_statistics: frozenset[str] = frozenset(),
     place_answers: set[str] | None = None,
     term_hits: dict[str, tuple[frozenset[str], frozenset[str], frozenset[str]]] | None = None,
+    query_ratio_bases: frozenset[str] = frozenset(),
 ) -> tuple[int, list[str]]:
     """Score one endpoint for the query.
 
@@ -515,7 +516,10 @@ def _score(
     when it names it in its own word or in one of those. ``term_hits``,
     when given, records the query words the endpoint matches in a field other
     than its description, those it matches in any field, and those it matches
-    in its keywords.
+    in its keywords. ``query_ratio_bases`` are the statistics the question
+    names as the base of a ratio: a word the operation names only so matches
+    its topic for a question that names it so too, and for no other, so the
+    credit-to-GDP gap earns no country-parameter boost for "Japan GDP".
     """
     alias_terms = [term for terms in aliases.values() for term in terms]
     all_terms = [*query_terms, *_tokens(" ".join(alias_terms))]
@@ -677,12 +681,16 @@ def _score(
             score += KEYWORD_FIELD_WEIGHT
             hit = True
             why.append(f"keyword:{term}")
+        # A word the operation names only as the base of a ratio is no topic
+        # of it unless the question names it so as well: the credit-to-GDP
+        # gap answers "credit to GDP gap for Japan", never "Japan GDP".
+        ratio_base_only = term in profile.ratio_bases and term not in query_ratio_bases
         if term in profile.description:
             score += 1
             why.append(f"description:{term}")
-            if term not in country_terms:
+            if term not in country_terms and not ratio_base_only:
                 topic_hit = True
-        if hit and term not in country_terms:
+        if hit and term not in country_terms and not ratio_base_only:
             topic_hit = True
         # The credit-to-GDP gap ranked first for "GDP", and for "government
         # debt to GDP".
@@ -1155,7 +1163,8 @@ def search_catalog(
     any_country_cues = frozenset() if names_place else (
         country_statistic_words(query) | frozenset(spelled)
     )
-    ratio_cues = any_country_cues & _ratio_base_statistics([with_statistic_words(query)])
+    query_ratio_bases = _ratio_base_statistics([with_statistic_words(query)])
+    ratio_cues = any_country_cues & query_ratio_bases
     ratio_numerators = _ratio_numerators(with_statistic_words(query)) if ratio_cues else {}
 
     scored: list[tuple[int, Endpoint, list[str]]] = []
@@ -1200,6 +1209,7 @@ def search_catalog(
             spelled_statistics=frozenset(spelled),
             place_answers=places_found,
             term_hits=hits,
+            query_ratio_bases=query_ratio_bases,
         )
 
     for endpoint in catalog.endpoints:
