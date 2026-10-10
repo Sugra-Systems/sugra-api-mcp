@@ -1330,14 +1330,14 @@ def search_catalog(
             first = min(places, key=order_of)
             score, after_default, after_tie = order_of(first)
             after_id = scored[first][1].operation_id
-            prior = {endpoint.operation_id: own for own, endpoint, _ in scored}
+            # An answer for any country, or a row already at or above the
+            # first of them by score and tie-break, keeps its place.
+            ahead = {scored[i][1].operation_id for i in range(len(scored))
+                     if order_of(i) <= (score, after_default, after_tie)}
             for endpoint in catalog.endpoints:
                 if endpoint.operation_id not in unplaced:
                     continue
-                # An answer for any country, or a row already at or above
-                # the first of them, keeps its place.
-                if (endpoint.operation_id in place_answers
-                        or prior.get(endpoint.operation_id, float("-inf")) >= -score):
+                if endpoint.operation_id in place_answers or endpoint.operation_id in ahead:
                     continue
                 macro_matches[endpoint.operation_id] = unplaced[endpoint.operation_id][:3]
                 key = unplaced[endpoint.operation_id][0].key

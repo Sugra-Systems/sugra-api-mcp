@@ -17,6 +17,7 @@ from typing import Any
 
 import pytest
 
+from sugra_api_mcp.catalog import search as search_module
 from sugra_api_mcp.catalog.aliases import detect_query_countries
 from sugra_api_mcp.catalog.builder import build_catalog_from_openapi
 from sugra_api_mcp.catalog.loader import load_catalog
@@ -407,6 +408,48 @@ def test_a_claims_question_ranks_the_claims_key_right_after_the_first_answer(
 def test_a_question_that_names_no_place_ranks_no_key_otherwise(claims_catalog: Catalog, query: str) -> None:
     results = search_catalog(claims_catalog, query, limit=10)
     assert all("macro_keys" not in hit for hit in results), _top_ids(results)
+
+
+def _macro_scores_before_its_key(monkeypatch: pytest.MonkeyPatch, score: int) -> None:
+    """The macro operation scores ``score`` until a key is read for it."""
+    real = search_module._score
+
+    def scored(endpoint: Endpoint, *args: Any, **kwargs: Any) -> tuple[int, list[str]]:
+        own, why = real(endpoint, *args, **kwargs)
+        if endpoint.operation_id == MACRO_OPERATION and not kwargs["macro_key_operations"]:
+            return score, ["test:fixed-score"]
+        return own, why
+
+    monkeypatch.setattr(search_module, "_score", scored)
+
+
+def test_a_key_operation_tied_with_the_first_answer_but_after_it_still_takes_the_key(
+    claims_catalog: Catalog, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An equal score that sorts after the first answer is below it, not at it."""
+    first = search_catalog(claims_catalog, "jobless claims", limit=1)[0]
+    assert first["operation_id"] < MACRO_OPERATION, first["operation_id"]
+    _macro_scores_before_its_key(monkeypatch, first["score"])
+
+    results = search_catalog(claims_catalog, "jobless claims", limit=5)
+
+    assert results[0]["operation_id"] == first["operation_id"], _top_ids(results)
+    assert results[1]["operation_id"] == MACRO_OPERATION, _top_ids(results)
+    assert results[1]["macro_keys"][0]["key"] == "us/initial-claims"
+    assert f"clamped-below:{first['operation_id']}" in results[1]["why"], results[1]["why"]
+
+
+def test_a_key_operation_already_above_the_first_answer_keeps_its_place(
+    claims_catalog: Catalog, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = search_catalog(claims_catalog, "jobless claims", limit=1)[0]
+    _macro_scores_before_its_key(monkeypatch, first["score"] + 1)
+
+    results = search_catalog(claims_catalog, "jobless claims", limit=5)
+
+    assert results[0]["operation_id"] == MACRO_OPERATION, _top_ids(results)
+    assert "macro_keys" not in results[0], results[0]
+    assert results[0]["why"] == ["test:fixed-score"], results[0]["why"]
 
 
 def test_a_series_two_places_hold_ranks_no_key_without_a_place() -> None:
