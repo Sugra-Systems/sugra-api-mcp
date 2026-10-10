@@ -2725,6 +2725,23 @@ def test_a_bond_yield_of_a_named_place_keeps_its_source(catalog, query: str, fir
     assert not _ANY_COUNTRY_NOTES & set(results[0]["why"]), results[0]["why"]
 
 
+@pytest.mark.parametrize("query", [
+    "Germany current account",
+    "India current account",
+    "UK current account",
+])
+def test_a_current_account_of_a_country_without_its_own_source_ranks_the_profile_first(
+    catalog, query: str,
+) -> None:
+    """The words of "current account" score only where the statistic is
+    spelled: "Germany current account" ranked the current air quality first,
+    on the word "current", and the country profile fourth."""
+    results = search_catalog(catalog, query, limit=5)
+    ids = [r["operation_id"] for r in results]
+    assert ids[0] == "macro_country_profile", ids
+    assert "air_quality_current" not in ids, ids
+
+
 def test_an_operation_that_answers_through_the_statistics_alias_takes_the_country(catalog) -> None:
     """The country profile answers "unemployment" with its jobless rate, a word
     of the statistic's alias. Counted by its own words alone, it would lose the
