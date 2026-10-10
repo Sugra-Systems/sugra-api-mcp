@@ -1148,7 +1148,8 @@ def search_catalog(
     # down: "EU inflation" listed the inflation of Argentina and US TIPS among
     # its first answers. It names no place above, since the euro area is no
     # country the operations that take a country boost for.
-    if query_names_euro_area(query):
+    names_euro_area = query_names_euro_area(query)
+    if names_euro_area:
         penalty_countries.add("EU")
     spelled ={} if names_place else spelled_country_statistics(query)
     any_country_cues = frozenset() if names_place else (
@@ -1297,7 +1298,11 @@ def search_catalog(
                 continue
             if (keywords - answered) & named_before:
                 subjects.append(i)
-            elif _source_country(endpoint) is not None and not strong - answered:
+            # The ECB answers for the euro area alone, one place the question
+            # never named: "bond yield" found the euro area yield curve first.
+            elif (_source_country(endpoint) is not None
+                  or (not names_euro_area and endpoint.operation_id.startswith("ecb_"))
+                  ) and not strong - answered:
                 national.append(i)
 
         def slot_of(i: int) -> tuple[int, bool, str]:
