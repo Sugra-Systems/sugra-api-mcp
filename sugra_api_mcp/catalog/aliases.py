@@ -484,7 +484,15 @@ def detect_query_countries(query: str) -> set[str]:
         cues = set(_match_vocabulary(query, _US_STATE_CUES))
         if cues:
             found -= set(_AMBIGUOUS_US_STATE_COUNTRIES.values())
+    # "U.S." with its dots is no word and no state: it names the United
+    # States as the full name does, while its tokens "u" and "s" match no
+    # term above ("U.S. current account" read no country).
+    if _DOTTED_US_RE.search(query):
+        found.add("US")
     return found
+
+
+_DOTTED_US_RE = re.compile(r"(?<![a-zA-Z0-9.])U\.S\.(?:A\.)?(?![a-zA-Z0-9])", re.IGNORECASE)
 
 # Strong-signal tokens that indicate an equity query when present near an
 # otherwise-ambiguous ticker. Kept narrow on purpose; expanding too far would
