@@ -2163,6 +2163,15 @@ CENTRAL_BANK_POLICY_RATE_KEYS: dict[str, str] = {"ecb_": "eu/ecbdfr"}
 _BANK_POLICY_RATE_PHRASES: dict[str, tuple[str, ...]] = {
     "ecb_": ("deposit rate", "deposit facility rate", "deposit facility"),
 }
+# Another series of a bank that only a curated key holds, by the words that
+# name it beside the bank's name alone: "ECB balance sheet" found the ECB's
+# insurance statistics, and the Eurosystem's assets are a series of the
+# country macro operation. Any other word left over drops the request below,
+# as for a policy rate: "ECB insurance assets" keeps the insurance statistics.
+CENTRAL_BANK_SERIES_KEYS: dict[str, dict[str, str]] = {
+    "ecb_": {"balance sheet": "eu/ecbassetsw", "total assets": "eu/ecbassetsw",
+             "assets": "eu/ecbassetsw"},
+}
 # A policy rate asked about by its date is a meeting's question ("when is the
 # next Fed rate decision"), and the meeting calendar answers it for the banks
 # it covers.
@@ -2223,6 +2232,15 @@ def detect_policy_rate_request(
     operation_words: dict[str, set[str]] = {}
     series_prefixes: set[str] = set()
     for prefix in prefixes:
+        # Beside another bank the words ask that bank too ("ECB and Fed
+        # balance sheet"), which no key holds.
+        own_series = [phrase for phrase in CENTRAL_BANK_SERIES_KEYS.get(prefix, {})
+                      if len(prefixes) == 1 and _phrase_spans(tokens, phrase)]
+        if own_series:
+            keys.update(CENTRAL_BANK_SERIES_KEYS[prefix][phrase] for phrase in own_series)
+            series_prefixes.add(prefix)
+            words |= covered(own_series)
+            continue
         asked = [
             phrase
             for phrase in (*POLICY_RATE_PHRASES, *_BANK_POLICY_RATE_PHRASES.get(prefix, ()))
