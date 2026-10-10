@@ -2405,6 +2405,25 @@ def test_a_product_named_elsewhere_in_the_question_is_no_subject(catalog, query:
                    for note in results[1]["why"]), results[1]["why"]
 
 
+def test_a_product_before_one_of_two_statistics_is_no_subject() -> None:
+    """In "coffee GDP; inflation" coffee comes before the GDP, so a national
+    source keyed on coffee that answers the inflation is not the subject of
+    the question, and both operations keep their own ranks."""
+    from sugra_api_mcp.catalog.models import Catalog, Endpoint, EndpointParameter
+
+    country = EndpointParameter(name="country", location="query")
+    takes = Endpoint(operation_id="world_widget", method="GET", path="/inflation",
+                     summary="Inflation", description="Inflation and GDP", parameters=[country])
+    keyed = Endpoint(operation_id="ine_widget", method="GET", path="/y",
+                     summary="Prices", description="Inflation", keywords=["coffee"])
+    results = search_catalog(Catalog(source="test", endpoints=[takes, keyed]),
+                             "coffee GDP; inflation", limit=5)
+    assert [r["operation_id"] for r in results] == ["world_widget", "ine_widget"], results
+    for result in results:
+        assert not any(note.startswith(("lifted-above:", "clamped-below:"))
+                       for note in result["why"]), result["why"]
+
+
 @pytest.mark.parametrize("query,expected", [
     ("CPI", "bis_cpi"),
     ("consumer prices", "bis_cpi"),

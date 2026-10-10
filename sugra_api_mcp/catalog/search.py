@@ -1075,11 +1075,13 @@ def search_catalog(
             *(term_hits[scored[i][1].operation_id][1] for i in places), *spelled.values())
         statistic_words = any_country_cues | frozenset().union(*spelled.values())
         # Right before means with only a space between: "coffee, CPI" asks
-        # for two things.
+        # for two things. A question that names more than one statistic
+        # ("coffee GDP; CPI") has no one statistic its subject belongs to.
         lowered = query.lower()
         named_before = frozenset(
             word.group() for word, after in pairwise(TOKEN_RE.finditer(lowered))
-            if word.group() not in statistic_words
+            if len(any_country_cues) == 1
+            and word.group() not in statistic_words
             and not lowered[word.end():after.start()].strip()
             and (after.group() in statistic_words
                  or after.group().removesuffix("s") in statistic_words)
