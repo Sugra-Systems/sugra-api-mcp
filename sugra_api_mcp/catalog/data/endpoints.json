@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-10-09T17:14:54Z",
+  "built_at": "2026-10-10T07:34:36Z",
   "endpoint_count": 1625,
   "endpoints": [
     {
@@ -19199,7 +19199,7 @@
       "toolset": "fundamentals"
     },
     {
-      "description": "Fetch and parse any document by its EDINET document ID. Pass doc_type for typed parsing (e.g. 120=annual, 350=holdings).",
+      "description": "Fetch and parse any document by its EDINET document ID. Pass doc_type for typed parsing (e.g. 120=annual, 350=holdings). An annual report carries its narrative sections whole under parsed.text_blocks, often more than one agent call can take: text_blocks=none answers the figures with a list of the sections and their lengths (parsed.text_blocks_available), and text_blocks=<names> returns only those sections.",
       "method": "GET",
       "operation_id": "edinet_ticker_document_doc_id",
       "parameters": [
@@ -19238,6 +19238,26 @@
             "description": "Doc type code (120, 140, 350, etc.) for typed parsing",
             "title": "Doc Type",
             "type": "string"
+          }
+        },
+        {
+          "description": "Optional. `none` drops the narrative text blocks; a comma-separated list of block names (case-insensitive) keeps only those, and a `none` among names is ignored. Either adds parsed.text_blocks_available: every block name with its length in characters. Omit for the whole document.",
+          "example": "none",
+          "location": "query",
+          "name": "text_blocks",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional. `none` drops the narrative text blocks; a comma-separated list of block names (case-insensitive) keeps only those, and a `none` among names is ignored. Either adds parsed.text_blocks_available: every block name with its length in characters. Omit for the whole document.",
+            "title": "Text Blocks"
           }
         }
       ],
@@ -52237,7 +52257,7 @@
       "parameters": [
         {
           "description": "Optional keywords; every word must occur in the symbol, its root (symbol_root), the country or the description (case-insensitive).",
-          "example": "inflation",
+          "example": "cpi",
           "location": "query",
           "name": "q",
           "required": false,
@@ -89739,7 +89759,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Every earnings report scheduled in the range, which in reporting season runs long. Narrow it with q (symbol or company name), limit and offset; a narrowed answer adds total beside count.",
       "method": "GET",
       "operation_id": "market_calendar_earnings",
       "parameters": [
@@ -89779,6 +89799,67 @@
             ],
             "description": "YYYY-MM-DD (default: today + 7 days). Max 31-day range.",
             "title": "To"
+          }
+        },
+        {
+          "description": "Optional keywords; every word must occur in the symbol or the company name (case-insensitive).",
+          "example": "micron",
+          "location": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional keywords; every word must occur in the symbol or the company name (case-insensitive).",
+            "title": "Q"
+          }
+        },
+        {
+          "description": "Optional maximum rows to return. Omit for every row.",
+          "example": 50,
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 1000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional maximum rows to return. Omit for every row.",
+            "title": "Limit"
+          }
+        },
+        {
+          "description": "Optional number of rows to skip (zero-indexed).",
+          "example": 0,
+          "location": "query",
+          "name": "offset",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional number of rows to skip (zero-indexed).",
+            "title": "Offset"
           }
         }
       ],
@@ -96156,5 +96237,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "4cb5820eb4f9d2cdabcd75b3d3aaf38fb1398661e3f83c1ced2ed36250a4c034"
+  "spec_sha256": "7ebe5a2f9fd23b590538b0b4d43b0bf33752465c017fab159344427255cf7e4e"
 }
