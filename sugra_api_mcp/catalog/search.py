@@ -1065,6 +1065,19 @@ def search_catalog(
             for operation in CB_RATES_OPERATIONS:
                 own_named_words[operation] = (
                     own_named_words.get(operation, frozenset()) | cb_rate_words)
+    # A statistic named in two words ("current account") scores its words
+    # only for the operations that spell it, as a name's words do: "Germany
+    # current account" ranked the current air quality first, on the word
+    # "current", and the country profile fourth.
+    for statistic, words in spelled_country_statistics(query).items():
+        if " " not in statistic:
+            continue
+        named_words |= words
+        for endpoint in catalog.endpoints:
+            if any(_alias_matches_profile(_profile(endpoint), spelling)
+                   for spelling in COUNTRY_STATISTIC_SPELLINGS[statistic]):
+                own_named_words[endpoint.operation_id] = (
+                    own_named_words.get(endpoint.operation_id, frozenset()) | words)
     # Country tokens are NOT consumed: consuming them would strip the CORRECT
     # national source of the coverage credit for the country the user typed.
     # The country-param boost reads them separately, to tell a query that is
