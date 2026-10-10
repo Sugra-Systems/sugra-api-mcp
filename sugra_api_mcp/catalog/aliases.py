@@ -762,6 +762,60 @@ def detect_fx_request(query: str) -> FxRequest | None:
     )
 
 
+# An exchange-rate question that names no currency and asks nothing else
+# asks for the rates of every currency: the currency reference panel answers
+# it, or the reference rates over time when it asks for a period or a year.
+# "exchange rate" ranked Peru's sol against one currency first. A word beyond
+# these keeps its own answer ("real effective exchange rate", "Peru exchange
+# rate", a currency code in capitals). A question word asks for the rates
+# only beside a word of time: "what is a currency exchange rate" asks what
+# one is, "what's the exchange rate today" asks for the rates. The "s" of
+# "what's" or "world's" asks nothing by itself: "what" carries the question.
+# A number is read only as a year from 1900 to 2099, a period; a question
+# with any other number ("in 99", a date such as 2020-01-01) is not read.
+FX_PANEL_OPERATION = "forex_rates"
+FX_HISTORY_OPERATION = "forex_history"
+_EVERY_CURRENCY_WORDS: frozenset[str] = frozenset({
+    "all", "chart", "currencies", "currency", "daily", "for", "foreign", "get",
+    "global", "history", "historical", "in", "last", "major", "me", "month",
+    "months", "of", "over", "past", "s", "show", "since", "the", "this", "time",
+    "trend", "week", "weeks", "world", "year", "years",
+})
+_EVERY_CURRENCY_NOW_WORDS: frozenset[str] = frozenset({"current", "latest", "now", "today"})
+_EVERY_CURRENCY_QUESTION_WORDS: frozenset[str] = frozenset({"are", "is", "was", "were", "what"})
+# The words that name the request; the period words keep scoring as words.
+_EVERY_CURRENCY_NAME_WORDS: frozenset[str] = frozenset({
+    "currencies", "currency", "exchange", "foreign", "rate", "rates",
+})
+_YEAR_RE = re.compile(r"(?:19|20)\d\d")
+
+
+def detect_every_currency_request(query: str) -> tuple[str, frozenset[str]] | None:
+    """The operation that answers an exchange-rate question naming no
+    currency and nothing else, and the query words that name it, or None."""
+    raw = re.findall(r"[A-Za-z0-9]+", query)
+    tokens = [token.lower() for token in raw]
+    phrase = {index for start, end in _phrase_spans(tokens, "exchange rate")
+              for index in range(start, end)}
+    rest = [(raw[index], token) for index, token in enumerate(tokens) if index not in phrase]
+    if not phrase or not all(
+        (token in _EVERY_CURRENCY_WORDS and not (len(word) == 3 and word.isupper()))
+        or token in _EVERY_CURRENCY_NOW_WORDS or token in _EVERY_CURRENCY_QUESTION_WORDS
+        or _YEAR_RE.fullmatch(token)
+        for word, token in rest
+    ):
+        return None
+    years = any(_YEAR_RE.fullmatch(token) for _, token in rest)
+    over_time = years or any(_phrase_spans(tokens, word) for word in _FX_HISTORY_WORDS)
+    asks = any(token in _EVERY_CURRENCY_QUESTION_WORDS for _, token in rest)
+    if asks and not (over_time or any(token in _EVERY_CURRENCY_NOW_WORDS for _, token in rest)):
+        return None
+    return (
+        FX_HISTORY_OPERATION if over_time else FX_PANEL_OPERATION,
+        frozenset(token for token in tokens if token in _EVERY_CURRENCY_NAME_WORDS),
+    )
+
+
 # The one-word country statistics in their own words and in other words.
 _COUNTRY_STATISTIC_NAMES: tuple[str, ...] = (
     *_COUNTRY_STATISTIC_CUES,
