@@ -396,6 +396,13 @@ def test_a_claims_question_ranks_the_claims_key_right_after_the_first_answer(
     # No statistic every country reports: a US series would be the US default.
     "initial claims",
     "nonfarm payrolls",
+    # The unanswered word is in no key's title.
+    "daily unemployment",
+    "weekly unemployment",
+    "unemployment benefits",
+    # A named place reads only its own keys.
+    "germany jobless claims",
+    "Germany unemployment claims",
 ])
 def test_a_question_that_names_no_place_ranks_no_key_otherwise(claims_catalog: Catalog, query: str) -> None:
     results = search_catalog(claims_catalog, query, limit=10)

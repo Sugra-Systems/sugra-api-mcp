@@ -1316,21 +1316,36 @@ def search_catalog(
     if unplaced and places:
         answered = frozenset().union(
             *(term_hits[scored[i][1].operation_id][1] for i in places), *spelled.values())
-        if {term for term in terms if len(term) >= 3} - answered - _QUERY_STOPWORDS:
+        unanswered = {term for term in terms if len(term) >= 3} - answered - _QUERY_STOPWORDS
+        named = frozenset(form for term in unanswered for form in _singulars(term))
+        # The unanswered word names the series: it is a word of its title.
+        unplaced = {
+            op: found for op, found in unplaced.items()
+            if named & {form for word in _tokens(found[0].title) for form in _singulars(word)}
+        }
+        if unplaced:
             def order_of(i: int) -> tuple[int, bool, str]:
                 return -scored[i][0], *held.get(scored[i][1].operation_id, tie_break(scored[i][1]))
 
-            score, after_default, after_id = order_of(min(places, key=order_of))
-            macro_matches |= {op: found[:3] for op, found in unplaced.items()}
+            first = min(places, key=order_of)
+            score, after_default, after_tie = order_of(first)
+            after_id = scored[first][1].operation_id
+            prior = {endpoint.operation_id: own for own, endpoint, _ in scored}
             for endpoint in catalog.endpoints:
                 if endpoint.operation_id not in unplaced:
                     continue
+                # An answer for any country, or a row already at or above
+                # the first of them, keeps its place.
+                if (endpoint.operation_id in place_answers
+                        or prior.get(endpoint.operation_id, float("-inf")) >= -score):
+                    continue
+                macro_matches[endpoint.operation_id] = unplaced[endpoint.operation_id][:3]
                 key = unplaced[endpoint.operation_id][0].key
                 own, why = score_endpoint(endpoint, {endpoint.operation_id: key}, set(), set(), None)
                 scored = [item for item in scored if item[1] is not endpoint]
                 if own >= -score:
                     own, why = -score, [*why, f"clamped-below:{after_id}"]
-                    held[endpoint.operation_id] = (after_default, f"{after_id}\x00")
+                    held[endpoint.operation_id] = (after_default, f"{after_tie}\x00")
                 scored.append((own, endpoint, why))
 
     # Structural guarantee: a deprecated route never outranks its live
