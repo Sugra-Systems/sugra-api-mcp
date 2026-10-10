@@ -401,6 +401,11 @@ def test_a_claims_question_ranks_the_claims_key_right_after_the_first_answer(
     "daily unemployment",
     "weekly unemployment",
     "unemployment benefits",
+    # It is in a title, but only qualifies the series the title is named for.
+    "initial unemployment",
+    "continued unemployment",
+    "insured unemployment",
+    "unemployment insurance",
     # A named place reads only its own keys.
     "germany jobless claims",
     "Germany unemployment claims",

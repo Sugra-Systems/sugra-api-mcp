@@ -348,6 +348,16 @@ def _singulars(word: str) -> frozenset[str]:
     return frozenset(forms)
 
 
+_TITLE_CLAUSE_RE = re.compile(r"[(:;,]|\b(?:for|in|of)\b")
+
+
+def _head_word(title: str) -> str:
+    """The noun a series title is named for: the last word before its first
+    clause, "claims" in "Initial Claims for Unemployment Insurance"."""
+    words = _tokens(_TITLE_CLAUSE_RE.split(title.lower(), maxsplit=1)[0])
+    return words[-1] if words else ""
+
+
 def _names_any(words: frozenset[str], tokens: frozenset[str]) -> bool:
     """Whether the tokens hold one of the words, in the singular or the plural."""
     wanted = frozenset().union(*(_singulars(word) for word in words))
@@ -1318,10 +1328,11 @@ def search_catalog(
             *(term_hits[scored[i][1].operation_id][1] for i in places), *spelled.values())
         unanswered = {term for term in terms if len(term) >= 3} - answered - _QUERY_STOPWORDS
         named = frozenset(form for term in unanswered for form in _singulars(term))
-        # The unanswered word names the series: it is a word of its title.
+        # The unanswered word names the series: it is the noun its title is
+        # named for, not a word that qualifies it ("initial unemployment").
         unplaced = {
             op: found for op, found in unplaced.items()
-            if named & {form for word in _tokens(found[0].title) for form in _singulars(word)}
+            if named & _singulars(_head_word(found[0].title))
         }
         if unplaced:
             def order_of(i: int) -> tuple[int, bool, str]:
