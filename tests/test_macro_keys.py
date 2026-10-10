@@ -217,12 +217,18 @@ def test_what_a_series_leaves_out_is_not_found_in_its_title(query: str) -> None:
      {"less", "shelter"}),
     ("Personal Consumption Expenditures (PCE) Excluding Food and Energy (Chain-Type Price Index)",
      {"excluding", "food", "energy"}),
+    ("CPI: All Items Except for Food and Energy in U.S. City Average", {"except", "food", "energy"}),
     ("Producer Price Index by Industry: General Freight Trucking, Long-Distance Less Than Truckload",
      set()),
 ])
 def test_only_the_clause_that_names_what_is_left_out_is_excluded(title: str, left_out: set[str]) -> None:
     read = _read_title("us/x", title)
     assert {read.words[i] for i in read.excluded} == left_out
+
+
+def test_a_series_except_for_food_answers_no_food_question() -> None:
+    keys = [MacroKey(key="us/core-cpi", title="CPI: All Items Except for Food and Energy")]
+    assert match_macro_keys("US food inflation", keys, query_countries=detect_query_countries("US food inflation")) == []
 
 
 @pytest.mark.parametrize("query,expected", [

@@ -218,7 +218,9 @@ def _read_title(key: str, title: str) -> _Title:
     left_out: set[int] = set()
     leaving_out = False
     for n, token in enumerate(raw):
-        if n in clause_starts or token in _SCOPE_WORDS:
+        # "Except for Food" leaves out food: a scope word right after the
+        # exclusion word belongs to it.
+        if n in clause_starts or (token in _SCOPE_WORDS and not (n and _starts_exclusion(raw, n - 1))):
             leaving_out = False
         if _starts_exclusion(raw, n):
             leaving_out = True
