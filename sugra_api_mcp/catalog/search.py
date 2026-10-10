@@ -24,6 +24,7 @@ from .aliases import (
     country_statistic_words,
     currency_statistic_places,
     detect_currency_pairs,
+    detect_every_currency_request,
     detect_fx_request,
     detect_named_operations,
     detect_network_terms,
@@ -942,6 +943,17 @@ def search_catalog(
         currency_countries, currency_words = currency_statistic_places(query)
         query_countries |= currency_countries
         penalty_countries |= currency_countries
+    # An exchange rate asked of no currency, place or bank names the rates of
+    # every currency, as a pair names the conversion; its words score for that
+    # operation alone, as a name's words do.
+    if fx is None and not (penalty_countries or has_ticker_token or has_crypto_context
+                           or central_bank_prefixes or named_operations):
+        every_currency = detect_every_currency_request(query)
+        if every_currency is not None:
+            operation, words = every_currency
+            named_operations[operation] = "exchange rates"
+            named_words |= words
+            own_named_words[operation] = own_named_words.get(operation, frozenset()) | words
     # Country tokens are NOT consumed: consuming them would strip the CORRECT
     # national source of the coverage credit for the country the user typed.
     # The country-param boost reads them separately, to tell a query that is
