@@ -2265,6 +2265,29 @@ def test_equal_scores_put_the_topic_default_operation_first() -> None:
     assert topic_default_operations("whether it rains") == frozenset()
 
 
+def test_a_foreign_euro_area_operation_never_sets_the_wrong_country_floor() -> None:
+    """The floor foreign operations are clamped to counted an ECB operation
+    as answering, so on a question about Japan its own low score became the
+    floor and pulled a national source with a higher score down to a tie
+    with it. Both already rank below the operation that answers."""
+    from sugra_api_mcp.catalog.models import Catalog, Endpoint, EndpointParameter
+
+    def endpoint(operation_id: str, path: str, *, country: bool = False) -> Endpoint:
+        params = [EndpointParameter(name="country", location="query", required=True)] if country else []
+        return Endpoint(operation_id=operation_id, method="GET", path=path, summary="Widget output",
+                        description="Widget output", toolset="macro", parameters=params)
+
+    widgets = Catalog(source="test", endpoints=[
+        endpoint("profile_widget", "/x", country=True),
+        endpoint("ecb_widget_output", "/widget/output"),
+        endpoint("statcan_widget_output", "/widget/output/series"),
+    ])
+    results = search_catalog(widgets, "Japan widget output series", limit=5)
+    assert [r["operation_id"] for r in results] == [
+        "profile_widget", "statcan_widget_output", "ecb_widget_output"]
+    assert results[1]["score"] > results[2]["score"]
+
+
 def test_a_compound_named_operation_answers_its_last_word_only_beside_its_first() -> None:
     """"space weather" is solar activity: an operation named for it must not
     answer the weather in Paris, and must still answer space weather."""

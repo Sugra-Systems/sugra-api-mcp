@@ -1343,12 +1343,15 @@ def search_catalog(
     answering = [score for score, endpoint, _ in scored
                  if endpoint.operation_id in country_answers]
     if answering:
-        floor = min(score for score, endpoint, _ in scored
-                    if not _is_foreign_source(endpoint, penalty_countries))
+        # The floor reads "foreign" as the clamp does, so a foreign euro-area
+        # operation never sets the floor the others are clamped to.
+        foreign = [_is_foreign_source(endpoint, penalty_countries) or _is_foreign_euro_area(
+                       endpoint, query_countries, penalty_countries, central_bank_prefixes)
+                   for _, endpoint, _ in scored]
+        floor = min(score for (score, endpoint, _), outside in zip(scored, foreign, strict=True)
+                    if not outside or endpoint.operation_id in country_answers)
         for i, (score, endpoint, why) in enumerate(scored):
-            foreign = _is_foreign_source(endpoint, penalty_countries) or _is_foreign_euro_area(
-                endpoint, query_countries, penalty_countries, central_bank_prefixes)
-            if foreign and score >= floor:
+            if foreign[i] and score >= floor:
                 scored[i] = (floor - 1, endpoint, [*why, "clamped-below:country-answers"])
 
     # Structural guarantee: beside a place and a statistic spelled in two
