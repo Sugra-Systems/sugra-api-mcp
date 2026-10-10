@@ -340,12 +340,15 @@ def country_statistic_words(query: str) -> frozenset[str]:
 # plural-tolerant. A statistic every country reports that has no one word
 # is its own spelling: "current account" ranked the Swiss National Bank's
 # current account first and the country profile, which holds the current
-# account to GDP of any country, 38th.
+# account to GDP of any country, 38th. So is a bond yield, which the profile
+# names as its "10Y yield": "government bond yields" ranked the Reserve Bank
+# of Australia's first and the profile 198th.
 COUNTRY_STATISTIC_SPELLINGS: dict[str, tuple[str, ...]] = {
     "cpi": ("consumer price",),
     "gdp": ("gross domestic product",),
     "unemployment": ("jobless",),
     "current account": ("current account",),
+    "bond yield": ("bond yield", "10y yield"),
 }
 
 
