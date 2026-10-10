@@ -460,6 +460,21 @@ def _is_foreign_source(endpoint: Endpoint, countries: set[str]) -> bool:
     )
 
 
+def _is_foreign_euro_area(
+    endpoint: Endpoint, countries: set[str], penalized: set[str], central_bank_prefixes: list[str],
+) -> bool:
+    """Whether the endpoint is the ECB's and the query names countries but
+    neither the euro area nor the ECB.
+
+    The ECB answers for the whole euro area, never for one country: its
+    yield curve came first for "Germany bond yields" and "France 10 year
+    yield", which the country profile answers.
+    """
+    return (bool(countries) and "EU" not in penalized
+            and endpoint.operation_id.startswith("ecb_")
+            and "ecb_" not in central_bank_prefixes)
+
+
 def _score(
     endpoint: Endpoint,
     query_terms: list[str],
@@ -522,7 +537,8 @@ def _score(
     credit-to-GDP gap earns no country-parameter boost for "Japan GDP".
     """
     alias_terms = [term for terms in aliases.values() for term in terms]
-    all_terms = [*query_terms, *_tokens(" ".join(alias_terms))]
+    # A word scores once, however often the question repeats it.
+    all_terms = [*dict.fromkeys(query_terms), *_tokens(" ".join(alias_terms))]
     why: list[str] = []
     score = 0
     profile = _profile(endpoint)
@@ -742,16 +758,22 @@ def _score(
     # an interest rate, not the funds toolset).
     # An EMPTY toolset made startswith('') true for every term
     # and handed the intent boost to toolset-less endpoints on any query.
+    # A name of several words pins it only when the query says two of them:
+    # "central" alone handed the central_banks toolset the boost, and "real"
+    # of "real home prices" the real_estate one.
     toolset_lower = endpoint.toolset.lower()
-    for term in query_terms if len(toolset_lower) >= 4 else ():
-        if term in coverage_excluded or term in silenced:
-            continue
-        if term == toolset_lower or (
-            len(term) >= 4 and (toolset_lower.startswith(term) or term.startswith(toolset_lower))
-        ):
-            score += TOOLSET_INTENT_BOOST
-            why.append(f"toolset-intent:{term}")
-            break
+    names = [term for term in query_terms
+             if term not in coverage_excluded and term not in silenced]
+
+    def says(word: str) -> str | None:
+        return next((term for term in names if term == word or (
+            len(term) >= 4 and (word.startswith(term) or term.startswith(word)))), None)
+
+    toolset_words = toolset_lower.split("_") if len(toolset_lower) >= 4 else []
+    said = [term for term in map(says, toolset_words) if term]
+    if said and len(said) >= min(len(toolset_words), 2):
+        score += TOOLSET_INTENT_BOOST
+        why.append(f"toolset-intent:{' '.join(said)}")
 
     # Geography: the query names a country; a NATIONAL source of a
     # different country is a silent substitution, never a top answer. The
@@ -762,6 +784,10 @@ def _score(
     if mismatched:
         score -= WRONG_COUNTRY_PENALTY
         why.append(f"geo-mismatch:{_source_country(endpoint)}")
+    elif _is_foreign_euro_area(endpoint, query_countries, penalized, central_bank_prefixes):
+        mismatched = True
+        score -= WRONG_COUNTRY_PENALTY
+        why.append("geo-mismatch:EU")
 
     if query_countries:
         # A generic country-parameterized endpoint can answer for WHATEVER
@@ -896,7 +922,6 @@ def search_catalog(
         if (len(term) < 3 or term not in _QUERY_STOPWORDS)
         and (term not in _TWO_LETTER_FILLER or term in capitalized)
     ]
-    aliases = matching_aliases(query)
 
     # Pattern detection runs against the raw query (preserves uppercase) so
     # tickers and currency codes can be identified before token-folding.
@@ -910,10 +935,11 @@ def search_catalog(
     # price" don't get pulled into quotes_symbol_* endpoints.
     crypto_phrase_terms = (
         "bitcoin", "ethereum", "solana", "cardano", "dogecoin", "ripple", "polkadot",
-        "crypto", "coin", "token", "blockchain", "altcoin", "stablecoin", "defi",
+        "crypto", "coin", "token", "blockchain", "altcoin", "stablecoin",
         "mempool", "onchain",
     )
-    crypto_symbol_pattern = re.compile(r"\b(btc|eth|sol|ada|xrp|doge|bnb|usdt|usdc|dai)\b")
+    # "defi" begins "deficit": a whole word only.
+    crypto_symbol_pattern = re.compile(r"\b(btc|eth|sol|ada|xrp|doge|bnb|usdt|usdc|dai|defi)\b")
     has_crypto_context = (
         any(t in lowered for t in crypto_phrase_terms)
         or bool(crypto_symbol_pattern.search(lowered))
@@ -994,6 +1020,7 @@ def search_catalog(
     boost_crypto = has_crypto_context
     boost_us_macro = detect_us_macro_query(query)
     query_countries = detect_query_countries(query)
+    aliases = matching_aliases(query, query_countries)
     # Geography resolves BEFORE the US-macro heuristic - the
     # word 'American' inside 'American Samoa' read as US context and the +30
     # FRED boost out-muscled the wrong-country penalty. An explicitly named
@@ -1159,7 +1186,7 @@ def search_catalog(
     names_euro_area = query_names_euro_area(query)
     if names_euro_area:
         penalty_countries.add("EU")
-    spelled ={} if names_place else spelled_country_statistics(query)
+    spelled = {} if names_place else spelled_country_statistics(query)
     any_country_cues = frozenset() if names_place else (
         country_statistic_words(query) | frozenset(spelled)
     )
@@ -1232,15 +1259,21 @@ def search_catalog(
                 scored[i] = (key_score - 1, endpoint, [*why, f"clamped-below:{key_operation}"])
 
     # Structural guarantee: a national source of a country the query does not
-    # name ranks below every operation that answers for the country it names:
+    # name ranks below every operation that answers for the country it names,
+    # and below every other operation that is no such source too:
     # "Venezuelan GDP" found the GDP of Spain above the World Bank and the
-    # composite country profile, which take Venezuela.
+    # composite country profile, which take Venezuela, and "Germany trade
+    # balance" the US and UK trade balances right after the one operation
+    # that answers it.
     answering = [score for score, endpoint, _ in scored
                  if endpoint.operation_id in country_answers]
     if answering:
-        floor = min(answering)
+        floor = min(score for score, endpoint, _ in scored
+                    if not _is_foreign_source(endpoint, penalty_countries))
         for i, (score, endpoint, why) in enumerate(scored):
-            if _is_foreign_source(endpoint, penalty_countries) and score >= floor:
+            foreign = _is_foreign_source(endpoint, penalty_countries) or _is_foreign_euro_area(
+                endpoint, query_countries, penalty_countries, central_bank_prefixes)
+            if foreign and score >= floor:
                 scored[i] = (floor - 1, endpoint, [*why, "clamped-below:country-answers"])
 
     # Equal scores: the default operation of a topic word the query names
@@ -1318,11 +1351,21 @@ def search_catalog(
         def slot_of(i: int) -> tuple[int, bool, str]:
             return -scored[i][0], *tie_break(scored[i][1])
 
+        # A question that names what its ratio measures asks for that measure:
+        # an operation that names it answers before one that names only the
+        # base. "government debt to GDP" found GDP per capita first, an
+        # operation that names no debt.
+        numerators = frozenset().union(*ratio_numerators.values())
+
+        def place_slot(i: int) -> tuple[bool, int, bool, str]:
+            names = not numerators or _names_any(numerators, _profile(scored[i][1]).text)
+            return not names, *slot_of(i)
+
         group = {i: "subject" for i in subjects} | {i: "place" for i in places} | {
             i: "national" for i in national}
         before = {i: slot_of(i) for i in group}
         after = dict(zip(
-            [*sorted(subjects, key=slot_of), *sorted(places, key=slot_of),
+            [*sorted(subjects, key=slot_of), *sorted(places, key=place_slot),
              *sorted(national, key=slot_of)],
             sorted(before.values()), strict=True))
         for i, slot in after.items():
@@ -1401,6 +1444,19 @@ def search_catalog(
             if score >= rep_score:
                 scored[i] = (rep_score - 1, endpoint,
                              [*why, f"clamped-below:{endpoint.replaced_by}"])
+    # A deprecated route that names no replacement ranks below every live
+    # answer: "geocode Berlin" ranked weather_geocode first, on the word its
+    # id spells, above geocoding_search. It stays in the results, for it may
+    # be the one operation that answers ("crude oil pipelines"): at a floor of
+    # 1 it keeps that score and its tie-break sorts it after the live answers.
+    live = [score for score, endpoint, _ in scored
+            if score > 0 and not endpoint.deprecated]
+    if live:
+        floor = min(live)
+        for i, (score, endpoint, why) in enumerate(scored):
+            if endpoint.deprecated and not endpoint.replaced_by and score >= floor:
+                scored[i] = (max(floor - 1, 1), endpoint, [*why, "clamped-below:live"])
+                held[endpoint.operation_id] = (True, f"\U0010ffff{endpoint.operation_id}")
 
     scored = [item for item in scored if item[0] > 0]
     # A slot the trade above handed over keeps its tie-break.
