@@ -121,6 +121,11 @@ _NARROWING_WORDS = _folded({
     "black", "capita", "female", "male", "men", "women", "youth",
 })
 
+# A title word that starts what the series leaves out: "CPI: All Items Less
+# Food & Energy" holds no food prices, so "food inflation" is not found in
+# it. "Less than" names a measure instead ("Less Than Truckload").
+_EXCLUSION_WORDS = frozenset({"ex", "except", "excluding", "less", "without"})
+
 # Other spellings of a query word, each matched as consecutive title words.
 # Keys are folded, like the query words they look up.
 _ALTERNATIVES: dict[str, tuple[str, ...]] = {
@@ -182,6 +187,7 @@ class _Title:
 
     words: tuple[str, ...]          # folded, function words out
     content: frozenset[int]         # indexes of the words that name the measure
+    excluded: frozenset[int]        # indexes of the words that name what it leaves out
     forms: frozenset[str]
     narrowing: frozenset[str]
     subtracts: bool
@@ -199,11 +205,15 @@ def _read_title(key: str, title: str) -> _Title:
     generic = _GENERIC_TITLE_WORDS | {
         _fold(word) for phrase in _place_phrases(country) for word in phrase
     }
-    words = tuple(_fold(token) for token in raw if token not in _STOPWORDS)
+    kept = [(n, token) for n, token in enumerate(raw) if token not in _STOPWORDS]
+    words = tuple(_fold(token) for _, token in kept)
+    leaves_out = next((n for n, token in enumerate(raw)
+                       if token in _EXCLUSION_WORDS and raw[n + 1:n + 2] != ["than"]), len(raw))
     return _Title(
         words=words,
         content=frozenset(i for i, word in enumerate(words)
                           if word not in _FORM_WORDS and word not in generic),
+        excluded=frozenset(i for i, (n, _) in enumerate(kept) if n >= leaves_out),
         forms=frozenset(word for word in words if word in _FORM_WORDS),
         narrowing=frozenset(word for word in words if word in _NARROWING_WORDS),
         subtracts="minus" in raw,
@@ -218,6 +228,7 @@ class _Query:
     topic: tuple[str, ...]
     forms: frozenset[str]
     subtraction: bool
+    exclusion: bool
 
 
 def _read_query(query: str, query_countries: set[str], ignore: frozenset[str]) -> _Query:
@@ -255,6 +266,7 @@ def _read_query(query: str, query_countries: set[str], ignore: frozenset[str]) -
         topic=tuple(topic),
         forms=frozenset(forms),
         subtraction=any(word in _SUBTRACTION_WORDS for word in words),
+        exclusion=any(word in _EXCLUSION_WORDS for word in words),
     )
 
 
@@ -273,7 +285,12 @@ def _rank(title: _Title, query: _Query) -> tuple[bool, int, int, bool, int] | No
                 singles.add(alternative[0])
                 found = found or alternative[0] in title.parts
             for start in _spans(title.words, alternative):
-                covered.update(range(start, start + len(alternative)))
+                span = range(start, start + len(alternative))
+                # What the series leaves out answers only a query that asks
+                # for something left out ("CPI less food").
+                if not query.exclusion and set(span) <= title.excluded:
+                    continue
+                covered.update(span)
                 found = True
         if not found:
             return None
