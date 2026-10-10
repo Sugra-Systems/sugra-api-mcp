@@ -1424,6 +1424,8 @@ EVERYDAY_NAME_TOP_1 = [
     ("ship calls at Rotterdam", "transport_ports_congestion"),
     ("Rotterdam port", "transport_ports_congestion"),
     ("Finnish port calls", "transport_ports_port_calls"),
+    # The FAO food prices answered first.
+    ("rent prices", "real_estate_rents_geo_type"),
 ]
 
 
@@ -2096,6 +2098,31 @@ def test_fx_request_names_its_words_and_issuers() -> None:
     assert fx.issuer_countries == {"US", "JP"}
 
 
+@pytest.mark.parametrize("query,currency", [
+    ("Mexican peso", "MXN"),
+    ("yen", "JPY"),
+    ("Indian rupee", "INR"),
+    ("British pound", "GBP"),
+    ("the dollar today", "USD"),
+])
+def test_a_currency_named_alone_asks_for_its_rate(catalog, query: str, currency: str) -> None:
+    """"Mexican peso" found no operation at all, and "yen" the futures."""
+    from sugra_api_mcp.catalog.aliases import detect_fx_request
+
+    fx = detect_fx_request(query)
+    assert fx is not None and fx.alone and fx.currencies == (currency,)
+    top = search_catalog(catalog, query, limit=1)[0]["operation_id"]
+    assert top == "forex_rates", top
+
+
+@pytest.mark.parametrize("query", ["euro exchange rate", "dollar to yen"])
+def test_a_rate_question_is_no_currency_named_alone(query: str) -> None:
+    from sugra_api_mcp.catalog.aliases import detect_fx_request
+
+    fx = detect_fx_request(query)
+    assert fx is not None and not fx.alone
+
+
 def test_every_detectable_currency_has_an_issuer() -> None:
     from sugra_api_mcp.catalog.aliases import _CURRENCY_ISSUERS, _KNOWN_CURRENCIES, CURRENCY_NAMES
 
@@ -2160,10 +2187,20 @@ WEATHER_TOP_1 = [
     ("is it raining in London", "v2_weather_forecast"),
     ("weather in New York", "v2_weather_forecast"),
     ("past weather in London", "v2_weather_history"),
+    # A past season: "last" read alone found the Polish central bank's last
+    # exchange rate and NOAA water temperature first.
+    ("Phoenix temperature last summer", "v2_weather_history"),
+    ("rain in London last winter", "v2_weather_history"),
     ("weather in USA", "weather_us_forecast"),
     ("temperature in US", "weather_us_forecast"),
     ("sea level forecast", "weather_marine_sea_level"),
     ("Weather Station Observations", "weather_nws_station_station_id_observations"),
+    # The storm's everyday names and a temperature anomaly: a mining-cost
+    # chart, the tsunami hazards and NOAA water temperature answered first.
+    ("hurricane damage cost", "hazards_tropical_cyclones"),
+    ("hurricane warning puerto rico", "hazards_tropical_cyclones"),
+    ("typhoon warning guam", "hazards_tropical_cyclones"),
+    ("global temperature anomaly", "climate_historical"),
 ]
 
 
@@ -2220,6 +2257,25 @@ def test_a_compound_named_operation_answers_its_last_word_only_beside_its_first(
     # Only the compound's operations go quiet on the word.
     _, why = _score(endpoint("v2_weather_widget"), ["paris", "weather"], {}, **_SCORE_FLAGS)
     assert "summary:weather" in why
+
+
+@pytest.mark.parametrize("statistic", ["GDP", "inflation", "CPI"])
+def test_french_names_france_not_the_fama_french_data(catalog, statistic) -> None:
+    """Fama-French is two people's names: "French GDP" asks what "France GDP"
+    asks, and no Fama-French dataset scores on the word "French"."""
+    rows = search_catalog(catalog, f"French {statistic}", limit=400)
+    france = search_catalog(catalog, f"France {statistic}", limit=1)
+    assert rows[0]["operation_id"] == france[0]["operation_id"], (rows[:3], france)
+    on_the_name = [r["operation_id"] for r in rows
+                   if r["operation_id"].startswith("fama_french_")
+                   and any(w.endswith(":french") for w in r["why"])]
+    assert not on_the_name, on_the_name
+
+
+@pytest.mark.parametrize("query", ["Fama French factors", "Ken French data library"])
+def test_the_fama_french_data_still_answers_its_own_name(catalog, query) -> None:
+    top = search_catalog(catalog, query, limit=1)[0]["operation_id"]
+    assert top.startswith("fama_french_"), top
 
 
 # ---- Weather questions in everyday words ---------------------------------------
@@ -2339,6 +2395,9 @@ POLICY_RATE_TOP_1 = [
     ("ECB interest rates", "macro_country_section", "eu/ecbdfr"),
     ("ECB deposit rate", "macro_country_section", "eu/ecbdfr"),
     ("ECB deposit facility rate", "macro_country_section", "eu/ecbdfr"),
+    # The series is the history; the words pass for it alone.
+    ("ECB interest rate history", "macro_country_section", "eu/ecbdfr"),
+    ("historical ECB deposit rate", "macro_country_section", "eu/ecbdfr"),
     ("BoJ rate decision", "boj_rates", None),
     ("SNB rate decision", "snb_policy_rate", None),
     ("Riksbank rate decision", "riksbank_policy_rate", None),
@@ -2384,6 +2443,83 @@ def test_a_qualified_rate_question_keeps_its_series_first(catalog, query: str, o
     assert top[0] == operation, top
 
 
+@pytest.mark.parametrize("query,operation", [
+    ("Canada interest rate", "boc_policy_rate"),
+    ("interest rate in Canada", "boc_policy_rate"),
+    ("Japan interest rate", "boj_rates"),
+    ("UK interest rate", "boe_rate"),
+    ("Brazil policy rate", "bcb_selic"),
+    ("Sweden interest rate decision", "riksbank_policy_rate"),
+])
+def test_a_countrys_interest_rate_is_its_central_banks_policy_rate(
+        catalog, query: str, operation: str) -> None:
+    """"Canada interest rate" found the Bank of Canada's prime rate first and
+    its policy rate fourth."""
+    top = [r["operation_id"] for r in search_catalog(catalog, query, limit=3)]
+    assert top[0] == operation, top
+    assert any(w.startswith("name:") for w in search_catalog(catalog, query, limit=1)[0]["why"])
+
+
+@pytest.mark.parametrize("query", [
+    "Canada interest rate history",
+    "Canada and Japan interest rates",
+    "Canada mortgage interest rate",
+    # The country stands in for the bank only beside a rate word.
+    "Canada decision",
+    "Japan decision",
+])
+def test_a_countrys_rate_question_that_asks_more_names_no_policy_rate(
+        catalog, query: str) -> None:
+    results = search_catalog(catalog, query, limit=10)
+    assert not any(w.startswith("name:") and r["operation_id"] in {"boc_policy_rate", "boj_rates"}
+                   for r in results for w in r["why"]), [
+        (r["operation_id"], r["why"]) for r in results]
+
+
+# "FOMC decision" tied four Federal Reserve releases at 15 and the policy rate
+# was not among them: a bank's "decision" is its rate decision.
+@pytest.mark.parametrize("query,expected", [
+    ("FOMC decision", "fed_rates_rate_type"),
+    ("Fed decision", "fed_rates_rate_type"),
+    ("BoJ decision", "boj_rates"),
+])
+def test_a_central_banks_decision_is_its_policy_rate(catalog, query: str, expected: str) -> None:
+    ids = [r["operation_id"] for r in search_catalog(catalog, query, limit=5)]
+    assert ids[0] == expected, ids
+
+
+# Each bank's rate operation owns the shared policy-rate words and its own
+# bank's phrase, never another bank's: the Fed's rate owned "deposit" and
+# "facility" of the ECB's deposit facility rate.
+def test_a_policy_rate_operation_owns_only_its_own_banks_words() -> None:
+    from sugra_api_mcp.catalog.aliases import (
+        detect_policy_rate_request,
+        matching_central_bank_prefixes,
+    )
+
+    query = "Fed interest rate and ECB deposit facility"
+    request = detect_policy_rate_request(
+        query, ["fed", "interest", "rate", "ecb", "deposit", "facility"],
+        matching_central_bank_prefixes(query))
+    assert request.operation_words == {"fed_rates_rate_type": frozenset({"interest", "rate"})}
+    assert request.keys == {"eu/ecbdfr"}
+    assert request.words == {"interest", "rate", "deposit", "facility"}
+
+
+# Two banks compared: "vs" and "compare" left the request, and the ECB's rate
+# fell below its catalog and dataset listings.
+@pytest.mark.parametrize("query,expected", [
+    ("ECB vs Fed rate decision", {"fed_rates_rate_type", "macro_country_section"}),
+    ("BoE vs ECB interest rates", {"boe_rate", "macro_country_section"}),
+    ("compare Fed and BoJ policy rates", {"fed_rates_rate_type", "boj_rates"}),
+    ("Fed interest rate and ECB deposit facility", {"fed_rates_rate_type", "macro_country_section"}),
+])
+def test_two_central_banks_compared_rank_both_policy_rates_first(
+        catalog, query: str, expected: set[str]) -> None:
+    ids = [r["operation_id"] for r in search_catalog(catalog, query, limit=5)]
+    assert set(ids[:2]) == expected, ids
+
+
 # The terms below are what search_catalog passes: the query's words with its
 # filler dropped.
 @pytest.mark.parametrize("query,terms,operations,keys,words", [
@@ -2412,6 +2548,13 @@ def test_detect_policy_rate_request(
     # Another word asks for another series of the bank.
     ("Norges Bank interest rate swaps", ["norges", "bank", "interest", "rate", "swaps"]),
     ("CNB policy rate history", ["cnb", "policy", "rate", "history"]),
+    # A history passes only when every bank named is answered by a series.
+    ("ECB and RBI interest rate history", ["ecb", "rbi", "interest", "rate", "history"]),
+    ("ECB deposit rate and RBI history", ["ecb", "deposit", "rate", "rbi", "history"]),
+    ("Fed and ECB interest rate history", ["fed", "ecb", "interest", "rate", "history"]),
+    # Every bank named must be answered: the RBI has no policy rate here.
+    ("ECB vs RBI interest rates", ["ecb", "vs", "rbi", "interest", "rates"]),
+    ("Fed and RBI interest rate", ["fed", "rbi", "interest", "rate"]),
     # No rate word.
     ("ECB yield curve", ["ecb", "yield", "curve"]),
     ("BoC meeting", ["boc", "meeting"]),

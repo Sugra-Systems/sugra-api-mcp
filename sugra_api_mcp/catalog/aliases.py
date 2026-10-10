@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from itertools import pairwise
 
@@ -29,6 +29,15 @@ ALIASES: dict[str, list[str]] = {
     # rate" lands on unemployment and not on a central bank's prime rate.
     "unemployment": ["jobless", "unemployment rate"],
     "realty": ["real estate"],
+    # "rent prices" found the FAO food prices first; the rents operation
+    # names a rent index.
+    "rent prices": ["rent index"],
+    # The storm's everyday names: the operations name a tropical cyclone, and
+    # "hurricane damage cost" ranked a blockchain mining-cost chart first.
+    "hurricane": ["tropical cyclone"],
+    "typhoon": ["tropical cyclone"],
+    # A temperature anomaly is a departure from a climate trend.
+    "temperature anomaly": ["temperature trends", "historical climate"],
     "treasury yield": ["treasury rates", "bond yield"],
     "ip geolocation": ["network atlas", "ip address", "asn"],
     "available data sources": ["list sources", "source catalog"],
@@ -724,6 +733,10 @@ _PAIR_CONNECTIVES: frozenset[str] = frozenset({
 # The conversion operation, and the wording that asks for a rate over time,
 # which the history operation answers instead.
 FX_CONVERT_OPERATION = "forex_convert"
+# The words a currency's name may stand beside and still ask only for its rate.
+_CURRENCY_ALONE_WORDS: frozenset[str] = frozenset({
+    "the", "today", "now", "current", "latest", "value",
+})
 _FX_HISTORY_WORDS: tuple[str, ...] = (
     "history", "historical", "trend", "chart", "past", "since", "ago",
     "over time", "last", "year", "month", "week",
@@ -738,6 +751,7 @@ class FxRequest:
     pair: bool                   # two currencies joined as a conversion
     over_time: bool              # asks for the rate over a period
     words: frozenset[str]        # the query tokens that named a currency
+    alone: bool = False          # the query is nothing but a currency's name
 
     @property
     def issuer_countries(self) -> frozenset[str]:
@@ -789,7 +803,14 @@ def detect_fx_request(query: str) -> FxRequest | None:
     cue = any(_phrase_spans(tokens, word) for word in _FX_CUES) or any(
         tokens[end:end + 1] == ["rate"] for _, end, _ in mentions
     )
-    if not (pair or (currencies and cue)):
+    # A question that is nothing but a currency's name asks for its rate:
+    # "Mexican peso" found no operation at all, "yen" the futures.
+    named = {index for start, end, _ in mentions for index in range(start, end)}
+    alone = bool(named) and all(
+        index in named or token in _CURRENCY_ALONE_WORDS
+        for index, token in enumerate(tokens) if token
+    )
+    if not (pair or (currencies and (cue or alone))):
         return None
     return FxRequest(
         currencies=currencies,
@@ -799,6 +820,7 @@ def detect_fx_request(query: str) -> FxRequest | None:
             [tokens[index] for start, end, _ in mentions for index in range(start, end)]
             + [code.lower() for found in iso_pairs for code in found]
         ),
+        alone=alone and not pair and not cue,
     )
 
 
@@ -1771,6 +1793,8 @@ TOPIC_DEFAULT_OPERATIONS: dict[str, str] = {"weather": "v2_weather_forecast"}
 # "SPY changes" asks nothing about holdings.
 COMPOUND_NAMED_OPERATIONS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "space_weather_": (("space",), ("weather",)),
+    # Fama-French is two people's names: "French GDP" asks about France.
+    "fama_french_": (("fama", "ken", "kenneth"), ("french",)),
     "real_estate_": (
         ("estate", "realty", "property", "properties", "home", "homes",
          "house", "houses", "housing"),
@@ -1867,6 +1891,7 @@ _WEATHER_TIME_WORDS: tuple[str, ...] = (
 _WEATHER_PAST_WORDS: tuple[str, ...] = (
     "past", "yesterday", "history", "historical", "ago",
     "last night", "last week", "last weekend", "last month", "last year",
+    "last summer", "last winter", "last spring", "last autumn", "last fall",
 )
 _WEATHER_QUESTION_WORDS: tuple[str, ...] = (
     "forecast", "like", "conditions", "outlook", "report", "going", "chance", "expected",
@@ -2103,7 +2128,9 @@ def matching_central_bank_prefixes(query: str) -> list[str]:
 # Bank Rate, a quarter point above the policy rate. A query that asks more
 # ("SARB prime interest rate", "Norges Bank interest rate swaps", "CNB policy
 # rate history") asks for another series of the bank and is ranked as before.
-POLICY_RATE_PHRASES: tuple[str, ...] = ("rate decision", "policy rate", "interest rate")
+POLICY_RATE_PHRASES: tuple[str, ...] = (
+    "rate decision", "policy rate", "interest rate", "decision",
+)
 # The operation that holds each bank's policy rate, by the bank's prefix.
 CENTRAL_BANK_POLICY_RATES: dict[str, str] = {
     "fed_": "fed_rates_rate_type",
@@ -2132,6 +2159,15 @@ _BANK_POLICY_RATE_PHRASES: dict[str, tuple[str, ...]] = {
 # next Fed rate decision"), and the meeting calendar answers it for the banks
 # it covers.
 _DATE_WORDS: tuple[str, ...] = ("when", "next", "upcoming", "date", "schedule", "calendar")
+# A curated series is a history: "ECB interest rate history" asks for that
+# series. A bank with an operation of its own may hold the history in another
+# one ("CNB policy rate history"), and a bank with neither has no history to
+# give ("ECB and RBI interest rate history"), so the words pass only when
+# every bank named is answered by a series.
+_HISTORY_WORDS: tuple[str, ...] = ("history", "historical")
+# Two banks named side by side are asked to be compared: "ECB vs Fed rate
+# decision" asks for both policy rates.
+_COMPARE_WORDS: tuple[str, ...] = ("vs", "versus", "compare", "compared", "comparison")
 
 
 @dataclass(frozen=True)
@@ -2141,6 +2177,10 @@ class PolicyRateRequest:
     operations: dict[str, str]   # operation_id -> the words that ask for it
     keys: frozenset[str]         # the curated macro keys that hold them
     words: frozenset[str]        # the query tokens of those words
+    # The tokens each operation owns: the shared policy-rate words and its own
+    # bank's phrase, never another bank's ("Fed interest rate and ECB deposit
+    # facility" gave the Fed's rate "deposit" and "facility").
+    operation_words: dict[str, frozenset[str]] = field(default_factory=dict)
 
 
 def detect_policy_rate_request(
@@ -2167,9 +2207,13 @@ def detect_policy_rate_request(
     names = covered(name for name, prefix in CENTRAL_BANK_PREFIX_BOOSTS.items()
                     if prefix in prefixes)
     dates = covered(_DATE_WORDS)
+    history = covered(_HISTORY_WORDS)
+    compare = covered(_COMPARE_WORDS) if len(prefixes) >= 2 else set()
     operations: dict[str, str] = {}
     keys: set[str] = set()
     words: set[str] = set()
+    operation_words: dict[str, set[str]] = {}
+    series_prefixes: set[str] = set()
     for prefix in prefixes:
         asked = [
             phrase
@@ -2179,15 +2223,29 @@ def detect_policy_rate_request(
         if not asked:
             continue
         if dates and prefix in _MEETING_CALENDAR_PREFIXES:
-            for operation in sorted(MEETING_CALENDAR_OPERATIONS):
-                operations.setdefault(operation, asked[0])
+            targets = sorted(MEETING_CALENDAR_OPERATIONS)
         elif prefix in CENTRAL_BANK_POLICY_RATES:
-            operations.setdefault(CENTRAL_BANK_POLICY_RATES[prefix], asked[0])
+            targets = [CENTRAL_BANK_POLICY_RATES[prefix]]
         elif prefix in CENTRAL_BANK_POLICY_RATE_KEYS:
             keys.add(CENTRAL_BANK_POLICY_RATE_KEYS[prefix])
+            series_prefixes.add(prefix)
+            targets = []
         else:
             continue
+        for operation in targets:
+            operations.setdefault(operation, asked[0])
+            operation_words.setdefault(operation, set()).update(covered(asked))
         words |= covered(asked)
-    if set(terms) - names - words - dates:
+    rest = set(terms) - names - words - dates - compare
+    # A bank named with no policy rate here leaves the question unanswered:
+    # "ECB vs RBI interest rates" read as the ECB's rate alone.
+    if any(prefix not in CENTRAL_BANK_POLICY_RATES
+           and prefix not in CENTRAL_BANK_POLICY_RATE_KEYS
+           and not (dates and prefix in _MEETING_CALENDAR_PREFIXES)
+           for prefix in prefixes):
         return PolicyRateRequest({}, frozenset(), frozenset())
-    return PolicyRateRequest(operations, frozenset(keys), frozenset(words))
+    if rest and not (series_prefixes == set(prefixes) and not operations and rest <= history):
+        return PolicyRateRequest({}, frozenset(), frozenset())
+    return PolicyRateRequest(
+        operations, frozenset(keys), frozenset(words),
+        {operation: frozenset(owned) for operation, owned in operation_words.items()})
