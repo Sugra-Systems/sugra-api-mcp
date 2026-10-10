@@ -1333,8 +1333,12 @@ def test_everyday_names_land_their_operation_top_1(catalog, query: str, expected
     ("currency exchange rate", "forex_rates"),
     ("foreign exchange rates", "forex_rates"),
     ("what is the exchange rate today", "forex_rates"),
+    ("what's the exchange rate today", "forex_rates"),
+    ("exchange rate for today", "forex_rates"),
     ("exchange rate history", "forex_history"),
     ("exchange rates since 2020", "forex_history"),
+    ("exchange rate 2020", "forex_history"),
+    ("exchange rates this week", "forex_history"),
 ])
 def test_an_exchange_rate_of_no_currency_ranks_every_currency_first(
     catalog, query: str, expected: str,
@@ -1342,6 +1346,7 @@ def test_an_exchange_rate_of_no_currency_ranks_every_currency_first(
     results = search_catalog(catalog, query, limit=5)
     assert results and results[0]["operation_id"] == expected, (
         f"{query!r}: top-5 {[(r['operation_id'], r['score']) for r in results]}")
+    assert "name:exchange rates" in results[0]["why"], results[0]
 
 
 @pytest.mark.parametrize("query,expected", [
@@ -1356,6 +1361,18 @@ def test_an_exchange_rate_that_names_more_keeps_its_answer(
     results = search_catalog(catalog, query, limit=5)
     assert results and results[0]["operation_id"] == expected, (
         f"{query!r}: top-5 {[(r['operation_id'], r['score']) for r in results]}")
+    assert not any(note == "name:exchange rates" for r in results for note in r["why"]), results
+
+
+@pytest.mark.parametrize("query", [
+    # What an exchange rate is, not what the rates are.
+    "what is a currency exchange rate",
+    "what is the exchange rate",
+    # A currency code in capitals names one currency.
+    "ALL exchange rate",
+])
+def test_an_exchange_rate_question_that_asks_no_rates_names_no_panel(catalog, query: str) -> None:
+    results = search_catalog(catalog, query, limit=5)
     assert not any(note == "name:exchange rates" for r in results for note in r["why"]), results
 
 
