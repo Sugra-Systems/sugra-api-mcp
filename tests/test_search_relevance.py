@@ -4003,3 +4003,32 @@ def test_in_a_question_with_two_names_each_operation_scores_its_own(
     results = {r["operation_id"]: r for r in search_catalog(catalog, query, limit=3)}
     assert operation in results, list(results)
     assert not _scored_words(results[operation]["why"]) & other_name, results[operation]["why"]
+
+
+@pytest.mark.parametrize("query", [
+    "Tesla stock", "Apple stock", "Microsoft stock", "Amazon stock chart", "Berkshire stock",
+    "Buy Tesla stock", "Is Tesla Stock up",
+])
+def test_a_company_named_before_stock_lands_its_listing(catalog, query: str) -> None:
+    """The query "Tesla stock" ranked the Japanese treasury-stock filings
+    first, on the word "stock": a company named before it asks for its listing."""
+    results = search_catalog(catalog, query, limit=3)
+    assert results and results[0]["operation_id"].startswith("quotes_symbol_"), (
+        [r["operation_id"] for r in results])
+
+
+@pytest.mark.parametrize("query", [
+    # A kind of stock, a stopword, a place, a word an operation names, crypto
+    # context, and the plural, which names a sector as often as a company.
+    "Treasury stock", "Common stock", "Penny stock", "Tech stock", "Which stock should I buy",
+    "My stock", "Chinese stock", "Bank stock", "Energy stock", "Bitcoin stock",
+    "Pharma stocks", "Tesla stocks",
+])
+def test_a_word_before_stock_that_names_no_company_reads_no_listing(catalog, query: str) -> None:
+    for result in search_catalog(catalog, query, limit=5):
+        assert "pattern:ticker->quotes_symbol" not in result["why"], (query, result["operation_id"])
+
+
+@pytest.mark.parametrize("query", ["treasury stock Toyota", "Toyota treasury stock"])
+def test_treasury_stock_with_a_company_keeps_the_filings(catalog, query: str) -> None:
+    assert search_catalog(catalog, query, limit=1)[0]["operation_id"] == "edinet_ticker_treasury_stock"

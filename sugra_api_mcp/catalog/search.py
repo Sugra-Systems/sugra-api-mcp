@@ -103,6 +103,18 @@ _TWO_LETTER_FILLER: frozenset[str] = frozenset({
 })
 _UPPERCASE_TWO_LETTER_RE = re.compile(r"\b[A-Z]{2}\b")
 
+# A capitalized name right before the singular "stock" names a company's
+# listing ("Tesla stock"). The plural names a sector as often as a company
+# ("Airline stocks"), so it is not read. The words below name a kind of stock
+# or a group of them, never a company.
+_COMPANY_LISTING_RE = re.compile(r"\b([A-Z][A-Za-z]+)\s+(?i:stock)\b")
+_NOT_A_COMPANY: frozenset[str] = frozenset({
+    "african", "all", "any", "asian", "biotech", "cap", "cheap", "chip", "common", "cyclical",
+    "defensive", "do", "domestic", "emerging", "foreign", "global", "hot", "is", "meme", "my",
+    "overvalued", "penny", "popular", "preferred", "semiconductor", "some", "tech", "treasury",
+    "undervalued",
+})
+
 # Boosts (additive on top of token-level score). Tuned empirically against
 # tests/test_search_relevance.py - see that file for the target queries.
 ALIAS_PHRASE_BOOST = 10
@@ -429,6 +441,25 @@ def _profile(endpoint: Endpoint) -> _EndpointProfile:
         _profiles.clear()
     _profiles[id(endpoint)] = (endpoint, profile)
     return profile
+
+
+def _names_a_company_listing(query: str, catalog: Catalog) -> bool:
+    """Whether the query names a company's listing by a capitalized name right
+    before "stock": "Tesla stock". A place, a kind of stock, and a word an
+    operation names as what it answers ("Bank stock", "Energy stock") name no
+    company."""
+    names = [match.group(1).lower() for match in _COMPANY_LISTING_RE.finditer(query)]
+    names = [name for name in names
+             if name not in _NOT_A_COMPANY and name not in _QUERY_STOPWORDS
+             and not detect_query_countries(name)]
+    if not names:
+        return False
+    named: set[str] = set()
+    for endpoint in catalog.endpoints:
+        profile = _profile(endpoint)
+        named |= profile.operation_id | profile.summary | profile.path | profile.keywords
+        named.update(_tokens(endpoint.toolset))
+    return any(name not in named for name in names)
 
 
 def _alias_matches_profile(profile: _EndpointProfile, expansion: str) -> bool:
@@ -976,6 +1007,10 @@ def search_catalog(
         and not has_crypto_context
         and any(p in lowered for p in ("stock price", "share price", "stock market cap", "market cap"))
     ):
+        boost_quotes_symbol = True
+    # A company named before the singular "stock" asks for its listing as
+    # "stock price" does: "Tesla stock" is not the treasury-stock filings.
+    if not boost_quotes_symbol and not has_crypto_context and _names_a_company_listing(query, catalog):
         boost_quotes_symbol = True
 
     boost_markets_toolset = boost_quotes_symbol
