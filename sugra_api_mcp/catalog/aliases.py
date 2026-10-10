@@ -337,11 +337,15 @@ def country_statistic_words(query: str) -> frozenset[str]:
 # The one-word statistics in other words: "jobless rate" asks for
 # unemployment, "consumer prices" and "consumer price index" for the CPI,
 # "gross domestic product" for GDP. Each word matches a whole query word,
-# plural-tolerant.
+# plural-tolerant. A statistic every country reports that has no one word
+# is its own spelling: "current account" ranked the Swiss National Bank's
+# current account first and the country profile, which holds the current
+# account to GDP of any country, 38th.
 COUNTRY_STATISTIC_SPELLINGS: dict[str, tuple[str, ...]] = {
     "cpi": ("consumer price",),
     "gdp": ("gross domestic product",),
     "unemployment": ("jobless",),
+    "current account": ("current account",),
 }
 
 
