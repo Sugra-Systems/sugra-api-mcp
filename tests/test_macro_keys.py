@@ -20,7 +20,7 @@ import pytest
 from sugra_api_mcp.catalog.aliases import detect_query_countries
 from sugra_api_mcp.catalog.builder import build_catalog_from_openapi
 from sugra_api_mcp.catalog.loader import load_catalog
-from sugra_api_mcp.catalog.macro_keys import match_macro_keys
+from sugra_api_mcp.catalog.macro_keys import _read_title, match_macro_keys
 from sugra_api_mcp.catalog.models import Catalog, Endpoint, MacroKey
 from sugra_api_mcp.catalog.search import US_MACRO_PROXY_OPERATION, search_catalog
 from sugra_api_mcp.tools import gateway
@@ -197,12 +197,32 @@ def _matched_excluding(query: str) -> list[str]:
 @pytest.mark.parametrize("query", [
     "US food inflation",
     "US energy inflation",
+    "US food and energy inflation",
     "US food and energy prices",
+    # "Less than" in a query compares; it asks for nothing left out.
+    "US food inflation less than energy inflation",
 ])
 def test_what_a_series_leaves_out_is_not_found_in_its_title(query: str) -> None:
     """The core CPI holds no food or energy prices, so it answers no question
     about them."""
     assert not {"us/core-cpi", "us/core-pce"} & set(_matched_excluding(query))
+
+
+@pytest.mark.parametrize("title,left_out", [
+    ("CPI: All Items Less Food & Energy", {"less", "food", "energy"}),
+    ("Sticky Price Consumer Price Index less Food, Energy, and Shelter",
+     {"less", "food", "energy", "shelter"}),
+    # The clause after what is left out still names the series.
+    ("Consumer Price Index for All Urban Consumers: All Items Less Shelter in U.S. City Average",
+     {"less", "shelter"}),
+    ("Personal Consumption Expenditures (PCE) Excluding Food and Energy (Chain-Type Price Index)",
+     {"excluding", "food", "energy"}),
+    ("Producer Price Index by Industry: General Freight Trucking, Long-Distance Less Than Truckload",
+     set()),
+])
+def test_only_the_clause_that_names_what_is_left_out_is_excluded(title: str, left_out: set[str]) -> None:
+    read = _read_title("us/x", title)
+    assert {read.words[i] for i in read.excluded} == left_out
 
 
 @pytest.mark.parametrize("query,expected", [

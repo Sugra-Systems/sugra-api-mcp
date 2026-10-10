@@ -123,8 +123,13 @@ _NARROWING_WORDS = _folded({
 
 # A title word that starts what the series leaves out: "CPI: All Items Less
 # Food & Energy" holds no food prices, so "food inflation" is not found in
-# it. "Less than" names a measure instead ("Less Than Truckload").
+# it. "Less than" names a measure instead ("Less Than Truckload"). What is
+# left out ends with its clause: "Less Shelter in U.S. City Average" still
+# covers the city average, and "Excluding Food and Energy (Chain-Type Price
+# Index)" is still a price index.
 _EXCLUSION_WORDS = frozenset({"ex", "except", "excluding", "less", "without"})
+_CLAUSE_BREAK_RE = re.compile(r"[(:;]")
+_SCOPE_WORDS = frozenset({"for", "in"})
 
 # Other spellings of a query word, each matched as consecutive title words.
 # Keys are folded, like the query words they look up.
@@ -175,6 +180,10 @@ def _place_phrases(place: str) -> tuple[tuple[str, ...], ...]:
     return tuple(sorted({tuple(_words(phrase)) for phrase in phrases} - {()}))
 
 
+def _starts_exclusion(words: Sequence[str], n: int) -> bool:
+    return words[n] in _EXCLUSION_WORDS and list(words[n + 1:n + 2]) != ["than"]
+
+
 def _spans(words: Sequence[str], phrase: tuple[str, ...]) -> list[int]:
     width = len(phrase)
     return [start for start in range(len(words) - width + 1)
@@ -201,19 +210,30 @@ def _read_title(key: str, title: str) -> _Title:
     text = title.lower()
     for pattern, replacement in _TITLE_REWRITES:
         text = pattern.sub(replacement, text)
-    raw = _words(text)
+    raw: list[str] = []
+    clause_starts: set[int] = set()
+    for clause in _CLAUSE_BREAK_RE.split(text):
+        clause_starts.add(len(raw))
+        raw.extend(_words(clause))
+    left_out: set[int] = set()
+    leaving_out = False
+    for n, token in enumerate(raw):
+        if n in clause_starts or token in _SCOPE_WORDS:
+            leaving_out = False
+        if _starts_exclusion(raw, n):
+            leaving_out = True
+        if leaving_out:
+            left_out.add(n)
     generic = _GENERIC_TITLE_WORDS | {
         _fold(word) for phrase in _place_phrases(country) for word in phrase
     }
     kept = [(n, token) for n, token in enumerate(raw) if token not in _STOPWORDS]
     words = tuple(_fold(token) for _, token in kept)
-    leaves_out = next((n for n, token in enumerate(raw)
-                       if token in _EXCLUSION_WORDS and raw[n + 1:n + 2] != ["than"]), len(raw))
     return _Title(
         words=words,
         content=frozenset(i for i, word in enumerate(words)
                           if word not in _FORM_WORDS and word not in generic),
-        excluded=frozenset(i for i, (n, _) in enumerate(kept) if n >= leaves_out),
+        excluded=frozenset(i for i, (n, _) in enumerate(kept) if n in left_out),
         forms=frozenset(word for word in words if word in _FORM_WORDS),
         narrowing=frozenset(word for word in words if word in _NARROWING_WORDS),
         subtracts="minus" in raw,
@@ -266,7 +286,7 @@ def _read_query(query: str, query_countries: set[str], ignore: frozenset[str]) -
         topic=tuple(topic),
         forms=frozenset(forms),
         subtraction=any(word in _SUBTRACTION_WORDS for word in words),
-        exclusion=any(word in _EXCLUSION_WORDS for word in words),
+        exclusion=any(_starts_exclusion(words, n) for n in range(len(words))),
     )
 
 
