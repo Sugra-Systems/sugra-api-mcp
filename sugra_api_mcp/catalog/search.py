@@ -440,6 +440,14 @@ def _alias_matches_profile(profile: _EndpointProfile, expansion: str) -> bool:
     return bool(normalized_phrase) and normalized_phrase in profile.text_normalized
 
 
+def _subject_words(endpoint: Endpoint) -> frozenset[str]:
+    """The words the endpoint names as what it answers: those of its id,
+    toolset, summary, path and keywords, the fields scoring reads them from."""
+    profile = _profile(endpoint)
+    return (profile.operation_id | profile.summary | profile.path | profile.keywords
+            | frozenset(_tokens(endpoint.toolset)))
+
+
 def _source_country(endpoint: Endpoint) -> str | None:
     """The country of the national source the endpoint belongs to, if any."""
     for prefix, country in SOURCE_COUNTRY_PREFIXES.items():
@@ -1450,6 +1458,32 @@ def search_catalog(
                     own, why = -score, [*why, f"clamped-below:{after_id}"]
                     held[endpoint.operation_id] = (after_default, f"{after_tie}\x00")
                 scored.append((own, endpoint, why))
+    # With no answer for any country, the series the US alone holds is the
+    # answer when the question names it by a word of its title that no
+    # operation names as what it answers: "nonfarm payrolls" and "housing
+    # starts" are the US series (owner, 2026-10-10: a term only the US keys
+    # hold reads as the US). Its key ranks on its own score. A question whose
+    # every word of the title an operation names keeps that operation's
+    # answer: "retail sales" and "retail sales numbers" are the national
+    # retail sales of whichever country is meant.
+    elif unplaced and not names_place:
+        words = {term for term in terms if len(term) >= 3} - _QUERY_STOPWORDS
+        # Every side in every singular form: "payrolls" is named by an
+        # operation that names "payroll".
+        named = frozenset(form for endpoint in catalog.endpoints
+                          for word in _subject_words(endpoint) for form in _singulars(word))
+        unnamed = frozenset(form for term in words if not _singulars(term) & named
+                            for form in _singulars(term))
+        for endpoint in catalog.endpoints:
+            found = unplaced.get(endpoint.operation_id)
+            if not found or found[0].key.partition("/")[0] != "us":
+                continue
+            if not unnamed & frozenset(form for word in _tokens(found[0].title) for form in _singulars(word)):
+                continue
+            macro_matches[endpoint.operation_id] = found[:3]
+            own, why = score_endpoint(endpoint, {endpoint.operation_id: found[0].key}, set(), set(), None)
+            scored = [item for item in scored if item[1] is not endpoint]
+            scored.append((own, endpoint, why))
 
     # Structural guarantee: a deprecated route never outranks its live
     # replacement, whatever the token luck (a query built from the legacy
