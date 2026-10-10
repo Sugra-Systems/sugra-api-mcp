@@ -350,7 +350,7 @@ COUNTRY_STATISTIC_SPELLINGS: dict[str, tuple[str, ...]] = {
     "gdp": ("gross domestic product",),
     "unemployment": ("jobless",),
     "current account": ("current account",),
-    "bond yield": ("bond yield", "10y yield"),
+    "bond yield": ("bond yield", "10y yield", "10 year yield"),
     "trade balance": ("trade balance",),
 }
 

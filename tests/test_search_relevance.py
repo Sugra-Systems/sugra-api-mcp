@@ -2695,6 +2695,8 @@ def test_a_current_account_of_a_named_place_keeps_its_source(catalog, query: str
     "government bond yield",
     "government bond yields",
     "sovereign bond yields",
+    "bond yield",
+    "10 year bond yield",
 ])
 def test_a_bond_yield_of_no_country_ranks_the_country_profile_first(catalog, query: str) -> None:
     """The country profile holds the 10-year yield of any country: "government
@@ -2707,17 +2709,30 @@ def test_a_bond_yield_of_no_country_ranks_the_country_profile_first(catalog, que
     assert "clamped-below:any-country-answers" in results[ranks["rba_bond_yields"]]["why"]
 
 
-def test_a_bond_yield_of_no_country_ranks_the_profile_beside_the_euro_area_curve(catalog) -> None:
-    """The euro area's yield curve is the source of no country, so nothing
-    clamps it: "bond yield" ranks it first and the profile second, above every
-    national source."""
-    ids = [r["operation_id"] for r in search_catalog(catalog, "bond yield", limit=5)]
-    assert ids[:2] == ["ecb_yield_curve", "macro_country_profile"], ids
+@pytest.mark.parametrize("query", ["10-year yield", "10 year yield", "10y yield"])
+def test_a_10_year_yield_of_no_country_ranks_the_country_profile_first(catalog, query: str) -> None:
+    """A 10-year yield names no bond, so no national bond source holds a strong
+    word of it to clamp; the profile, which names its "10Y yield", answers it."""
+    results = search_catalog(catalog, query, limit=5)
+    assert results[0]["operation_id"] == "macro_country_profile", [r["operation_id"] for r in results]
+    assert "pattern:any-country->param" in results[0]["why"], results[0]["why"]
+
+
+def test_a_bond_yield_of_no_country_clamps_the_euro_area_curve(catalog) -> None:
+    """The ECB answers for the euro area alone, one place the question never
+    named: "bond yield" ranked the euro area yield curve first and the
+    profile second."""
+    results = search_catalog(catalog, "bond yield", limit=5)
+    ids = [r["operation_id"] for r in results]
+    assert ids[:2] == ["macro_country_profile", "ecb_yield_curve"], ids
+    assert "clamped-below:any-country-answers" in results[1]["why"], results[1]["why"]
 
 
 @pytest.mark.parametrize(("query", "first"), [
     ("Australia bond yields", "rba_bond_yields"),
     ("euro area yield curve", "ecb_yield_curve"),
+    ("euro area bond yields", "ecb_yield_curve"),
+    ("ECB bond yields", "ecb_yield_curve"),
 ])
 def test_a_bond_yield_of_a_named_place_keeps_its_source(catalog, query: str, first: str) -> None:
     results = search_catalog(catalog, query, limit=5)
@@ -3316,6 +3331,7 @@ def test_several_listings_one_described_ask_for_their_prices(catalog) -> None:
     ("current accounts", {"current account": {"current", "accounts"}}),
     ("government bond yields", {"bond yield": {"bond", "yields"}}),
     ("10Y yield", {"bond yield": {"10y", "yield"}}),
+    ("10-year yield", {"bond yield": {"10", "year", "yield"}}),
     ("trade balances", {"trade balance": {"trade", "balances"}}),
     # Other statistics, part of a spelling, another word: none.
     ("consumer confidence", {}),
@@ -3326,7 +3342,6 @@ def test_several_listings_one_described_ask_for_their_prices(catalog) -> None:
     ("current price", {}),
     ("bond", {}),
     ("dividend yield", {}),
-    ("10-year yield", {}),
     ("CPI", {}),
 ])
 def test_a_statistic_named_in_other_words(query: str, spelled: dict[str, set[str]]) -> None:
