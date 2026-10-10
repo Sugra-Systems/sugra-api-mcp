@@ -2873,6 +2873,24 @@ def test_a_question_that_names_the_ratio_still_finds_it(catalog, query: str) -> 
     assert top == "bis_credit_gap", top
 
 
+@pytest.mark.parametrize("query", [
+    "Japan GDP", "Germany GDP", "GDP of France", "France GDP", "euro GDP", "Japan real GDP",
+])
+def test_a_ratio_to_gdp_answers_no_question_about_a_named_countrys_gdp(catalog, query: str) -> None:
+    """The credit-to-GDP gap ranked third for "Japan GDP" and second for
+    "GDP of France": GDP, the base of its ratio, earned it the country boost."""
+    results = search_catalog(catalog, query, limit=200)
+    assert "bis_credit_gap" not in [r["operation_id"] for r in results[:5]], results[:5]
+    gap = next((r for r in results if r["operation_id"] == "bis_credit_gap"), None)
+    assert gap is None or "pattern:country->param" not in gap["why"], gap["why"]
+
+
+@pytest.mark.parametrize("query", ["credit to GDP gap for Japan", "Japan credit to GDP gap"])
+def test_a_named_countrys_ratio_question_still_finds_the_ratio(catalog, query: str) -> None:
+    top = search_catalog(catalog, query, limit=1)[0]["operation_id"]
+    assert top == "bis_credit_gap", top
+
+
 @pytest.mark.parametrize(("text", "numerators"), [
     ("government debt to GDP", {"gdp": {"government", "debt"}}),
     ("debt-to-GDP", {"gdp": {"debt"}}),
