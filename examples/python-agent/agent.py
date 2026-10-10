@@ -17,7 +17,7 @@ from mcp import ClientSession
 from mcp.client.streamable_http import create_mcp_http_client, streamable_http_client
 
 # Hosted Sugra MCP endpoint (Streamable HTTP transport).
-SUGRA_MCP_URL = "https://app.sugra.ai/mcp"
+SUGRA_MCP_URL = "https://mcp.sugra.ai/mcp"
 
 # Change me: any current Anthropic model id works here.
 MODEL = "claude-sonnet-5"

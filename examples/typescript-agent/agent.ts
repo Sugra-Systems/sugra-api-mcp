@@ -12,7 +12,7 @@ import { config as loadEnv } from "dotenv";
 import { resolve } from "node:path";
 
 // Hosted Sugra MCP endpoint (Streamable HTTP transport).
-const SUGRA_MCP_URL = "https://app.sugra.ai/mcp";
+const SUGRA_MCP_URL = "https://mcp.sugra.ai/mcp";
 
 // Change me: any current Anthropic model id works here.
 const MODEL = "claude-sonnet-5";

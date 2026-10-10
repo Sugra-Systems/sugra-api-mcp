@@ -21,7 +21,7 @@ from typing import Any
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
-DEFAULT_URL = os.environ.get("SUGRA_MCP_URL", "https://app.sugra.ai/mcp")
+DEFAULT_URL = os.environ.get("SUGRA_MCP_URL", "https://mcp.sugra.ai/mcp")
 CALL_TIMEOUT_S = float(os.environ.get("SUGRA_EVAL_CALL_TIMEOUT", "60"))
 
 

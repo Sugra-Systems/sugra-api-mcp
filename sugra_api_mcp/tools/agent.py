@@ -9,7 +9,7 @@ Three thin read-only tools expose the internal agent plane to MCP agents:
 Unlike every other tool module, this one does NOT register at import. The
 plane requires the ``X-Internal-Token`` infrastructure credential
 (``SUGRA_AGENT_INTERNAL_TOKEN``) which exists ONLY on the hosted deployment
-(app.sugra.ai/mcp) and can never ship inside the public PyPI package, so:
+(mcp.sugra.ai/mcp) and can never ship inside the public PyPI package, so:
 
 1. ``__main__`` calls :func:`register_agent_tools` from the streamable-http
    branch only - a stdio process never registers these tools even if the env

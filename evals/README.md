@@ -1,6 +1,6 @@
 # Evals - hosted MCP agent surface
 
-Two on-demand harnesses against the LIVE hosted MCP (`app.sugra.ai/mcp`).
+Two on-demand harnesses against the LIVE hosted MCP (`mcp.sugra.ai/mcp`).
 Neither runs in CI: they need the live API, secrets, and (for the golden eval)
 an LLM. The CI-runnable part is `tests/test_evals_scoring.py` (manifest schema
 + scorecard math).
@@ -13,7 +13,7 @@ an LLM. The CI-runnable part is `tests/test_evals_scoring.py` (manifest schema
 | `ANTHROPIC_API_KEY` | golden eval only | The agent under test + the relevance judge |
 | `EVAL_MODEL` | no | Agent model (default `claude-opus-4-8`) |
 | `EVAL_JUDGE_MODEL` | no | Judge model (default = `EVAL_MODEL`) |
-| `SUGRA_MCP_URL` | no | Default `https://app.sugra.ai/mcp` |
+| `SUGRA_MCP_URL` | no | Default `https://mcp.sugra.ai/mcp` |
 | `SUGRA_EVAL_CALL_TIMEOUT` | no | HTTP timeout seconds for the MCP connection (default 60). NOT a complete hard bound on a tool-result wait - the SDK's SSE read timeout is separate; the agent eval adds a 600 s outer wait_for per query |
 
 The golden eval needs the `[mcp]` extra: `pip install "anthropic[mcp]"`.

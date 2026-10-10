@@ -5,7 +5,7 @@ This document is for operators who run the Streamable HTTP transport themselves
 for:
 
 - `pip install sugra-api-mcp` + stdio MCP clients
-- Hosted MCP at `https://app.sugra.ai/mcp`
+- Hosted MCP at `https://mcp.sugra.ai/mcp`
 - Public directory sandboxes (Glama Try in Browser, and similar)
 
 User-facing configuration is a single secret: `SUGRA_API_KEY`. See the
