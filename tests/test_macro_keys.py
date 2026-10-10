@@ -20,7 +20,7 @@ import pytest
 from sugra_api_mcp.catalog.aliases import detect_query_countries
 from sugra_api_mcp.catalog.builder import build_catalog_from_openapi
 from sugra_api_mcp.catalog.loader import load_catalog
-from sugra_api_mcp.catalog.macro_keys import match_macro_keys
+from sugra_api_mcp.catalog.macro_keys import _read_title, match_macro_keys
 from sugra_api_mcp.catalog.models import Catalog, Endpoint, MacroKey
 from sugra_api_mcp.catalog.search import US_MACRO_PROXY_OPERATION, search_catalog
 from sugra_api_mcp.tools import gateway
@@ -175,6 +175,81 @@ def test_a_query_naming_a_curated_series_matches_its_key(query: str, expected: s
 ])
 def test_a_query_naming_no_curated_series_matches_no_key(query: str) -> None:
     assert _matched(query) == []
+
+
+# Real titles that name what their series leaves out.
+EXCLUDING_KEYS = [
+    MacroKey(key="us/cpi", title="Consumer Price Index: All Items"),
+    MacroKey(key="us/core-cpi", title="CPI: All Items Less Food & Energy"),
+    MacroKey(key="us/core-pce", title="PCE: Excluding Food and Energy"),
+    MacroKey(key="us/dgorder", title="Manufacturers' New Orders: Durable Goods"),
+    MacroKey(key="us/adxtno", title="Manufacturers' New Orders: Durable Goods Excluding Transportation"),
+    MacroKey(key="us/pcu4841224841221",
+             title="Producer Price Index by Industry: General Freight Trucking, Long-Distance Less Than Truckload"),
+]
+
+
+def _matched_excluding(query: str) -> list[str]:
+    found = match_macro_keys(query, EXCLUDING_KEYS, query_countries=detect_query_countries(query))
+    return [key.key for key in found]
+
+
+@pytest.mark.parametrize("query", [
+    "US food inflation",
+    "US energy inflation",
+    "US food and energy inflation",
+    "US food and energy prices",
+    # "Less than" in a query compares; it asks for nothing left out.
+    "US food inflation less than energy inflation",
+])
+def test_what_a_series_leaves_out_is_not_found_in_its_title(query: str) -> None:
+    """The core CPI holds no food or energy prices, so it answers no question
+    about them."""
+    assert not {"us/core-cpi", "us/core-pce"} & set(_matched_excluding(query))
+
+
+@pytest.mark.parametrize("title,left_out", [
+    ("CPI: All Items Less Food & Energy", {"less", "food", "energy"}),
+    ("Sticky Price Consumer Price Index less Food, Energy, and Shelter",
+     {"less", "food", "energy", "shelter"}),
+    # The clause after what is left out still names the series.
+    ("Consumer Price Index for All Urban Consumers: All Items Less Shelter in U.S. City Average",
+     {"less", "shelter"}),
+    ("Personal Consumption Expenditures (PCE) Excluding Food and Energy (Chain-Type Price Index)",
+     {"excluding", "food", "energy"}),
+    ("CPI: All Items Except for Food and Energy in U.S. City Average", {"except", "food", "energy"}),
+    ("Producer Price Index by Industry: General Freight Trucking, Long-Distance Less Than Truckload",
+     set()),
+])
+def test_only_the_clause_that_names_what_is_left_out_is_excluded(title: str, left_out: set[str]) -> None:
+    read = _read_title("us/x", title)
+    assert {read.words[i] for i in read.excluded} == left_out
+
+
+def test_a_series_except_for_food_answers_no_food_question() -> None:
+    keys = [MacroKey(key="us/core-cpi", title="CPI: All Items Except for Food and Energy")]
+    assert match_macro_keys("US food inflation", keys, query_countries=detect_query_countries("US food inflation")) == []
+
+
+@pytest.mark.parametrize("query,expected", [
+    ("US core CPI", "us/core-cpi"),
+    ("US core PCE", "us/core-pce"),
+    ("US core inflation", "us/core-cpi"),
+    # A query that asks for something left out names the series that leaves it out.
+    ("US CPI less food and energy", "us/core-cpi"),
+    ("US PCE excluding food and energy", "us/core-pce"),
+    ("US durable goods excluding transportation", "us/adxtno"),
+    ("US durable goods orders", "us/dgorder"),
+    # "Less than" names the measure, not what it leaves out.
+    ("US producer price index general freight trucking less than truckload", "us/pcu4841224841221"),
+])
+def test_a_series_that_leaves_something_out_keeps_its_own_name(query: str, expected: str) -> None:
+    assert _matched_excluding(query)[:1] == [expected]
+
+
+def test_a_question_about_what_the_core_cpi_leaves_out_ranks_no_core_key(keyed_catalog: Catalog) -> None:
+    results = search_catalog(keyed_catalog, "US food inflation", limit=10)
+    assert not any(note.startswith("macro-key:") for hit in results for note in hit["why"]), results
 
 
 # ---- Ranking: the key's operation first, FRED's proxy beside it ----
