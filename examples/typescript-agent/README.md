@@ -10,7 +10,7 @@ is provider-agnostic - swap the LLM client and keep the MCP wiring.
 
 ## What you get
 
-The hosted Sugra MCP server at `https://app.sugra.ai/mcp` exposes eleven tools:
+The hosted Sugra MCP server at `https://mcp.sugra.ai/mcp` exposes eleven tools:
 eight gateway tools plus three composed agent tools.
 
 | Tool | What it does |

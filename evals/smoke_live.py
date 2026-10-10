@@ -1,6 +1,6 @@
 """Deterministic live smoke set for the hosted MCP agent surface.
 
-Run on demand against app.sugra.ai/mcp (never in CI - needs the live API and
+Run on demand against mcp.sugra.ai/mcp (never in CI - needs the live API and
 SUGRA_TEST_API_KEY):
 
     python -m evals.smoke_live

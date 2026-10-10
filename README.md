@@ -259,7 +259,7 @@ Or connect to the hosted endpoint without installing the package:
 ```bash
 gemini mcp add --scope user --transport http \
   --header "Authorization: Bearer sugra_xxx_yourkey..." \
-  sugra https://app.sugra.ai/mcp
+  sugra https://mcp.sugra.ai/mcp
 ```
 
 Run `gemini mcp list` to check the connection, then enter `/mcp` in an
@@ -319,9 +319,9 @@ The local package exposes eight gateway tools. The hosted endpoint adds three co
 - `max_concurrency` - advisory ceiling for parallel calls from one session
 - `bulk_cost` - on per-item bulk endpoints: 1 request credit per item in the request body (the API reports the total in the `X-RateLimit-Cost` response header)
 
-### Hosted-only agent tools (app.sugra.ai/mcp)
+### Hosted-only agent tools (mcp.sugra.ai/mcp)
 
-The hosted MCP endpoint at `https://app.sugra.ai/mcp` serves the same eight tools PLUS three composed agent tools that are not available on stdio or self-hosted installs:
+The hosted MCP endpoint at `https://mcp.sugra.ai/mcp` serves the same eight tools PLUS three composed agent tools that are not available on stdio or self-hosted installs:
 
 | Tool | Purpose |
 |---|---|
@@ -383,8 +383,9 @@ When running with `--transport streamable-http` the server allows unauthenticate
 - Raw API key (`sugra_...`) - passed through as the downstream `x-api-key`. Compatible with earlier local API-key setups.
 - OAuth JWT - signature verified against the issuer's JWKS. The audience must match `https://app.sugra.ai/mcp`, the token must include `sugra:read`, and hosted access is validated against APP before resolving the user's primary API key. Successful hosted OAuth requests update MCP connection activity in APP.
 
-Most users should use the hosted endpoint `https://app.sugra.ai/mcp` instead of
-self-hosting OAuth. If you run your own HTTP process, see
+Most users should use the hosted endpoint `https://mcp.sugra.ai/mcp` with an API
+key as Bearer instead of self-hosting OAuth; standalone OAuth clients sign in at
+the alias `https://app.sugra.ai/mcp` for now. If you run your own HTTP process, see
 [docs/self-hosting.md](docs/self-hosting.md).
 
 ## Timeouts and the error contract
@@ -468,7 +469,7 @@ sugra-api-mcp requires Python 3.11+. Check: `python --version`. If you have 3.10
 
 Then recreate your venv.
 
-**Hosted `app.sugra.ai/mcp` returns 5xx**
+**Hosted `mcp.sugra.ai/mcp` returns 5xx**
 
 The hosted endpoint can briefly restart after deploys. Wait 60 seconds and retry. If persistent, email support@sugra.systems.
 
