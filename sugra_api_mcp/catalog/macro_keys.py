@@ -220,13 +220,24 @@ class _Query:
     subtraction: bool
 
 
-def _read_query(query: str, query_countries: set[str], ignore: frozenset[str]) -> _Query:
+def _query_words(query: str) -> list[str]:
     text = query.lower()
     for pattern, replacement in _QUERY_REWRITES:
         text = pattern.sub(replacement, text)
-    words = _words(text)
+    return _words(text)
+
+
+def query_names_euro_area(query: str) -> bool:
+    """Whether the query names the euro area or the European Union, the place
+    the "eu" keys answer for."""
+    words = _query_words(query)
+    return any(_spans(words, tuple(_words(phrase))) for phrase in _EU_PHRASES)
+
+
+def _read_query(query: str, query_countries: set[str], ignore: frozenset[str]) -> _Query:
+    words = _query_words(query)
     places = {code.lower() for code in query_countries}
-    if any(_spans(words, tuple(_words(phrase))) for phrase in _EU_PHRASES):
+    if query_names_euro_area(query):
         places.add("eu")
     # A bare "US" is a country only when no other place is named: "show us
     # Japan GDP" asks about Japan.

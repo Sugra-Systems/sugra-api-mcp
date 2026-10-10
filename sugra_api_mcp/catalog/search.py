@@ -40,7 +40,7 @@ from .aliases import (
     topic_default_operations,
     with_statistic_words,
 )
-from .macro_keys import match_macro_keys
+from .macro_keys import match_macro_keys, query_names_euro_area
 from .models import Catalog, Endpoint, MacroKey
 
 TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -983,7 +983,14 @@ def search_catalog(
         penalty_countries or central_bank_prefixes or has_ticker_token
         or query_names_united_states(query)
     )
-    spelled = {} if names_place else spelled_country_statistics(query)
+    # The euro area or the EU, as the macro keys read it, is the place of no
+    # national source, "EU" as for the ECB, so every national source steps
+    # down: "EU inflation" listed the inflation of Argentina and US TIPS among
+    # its first answers. It names no place above, since the euro area is no
+    # country the operations that take a country boost for.
+    if query_names_euro_area(query):
+        penalty_countries.add("EU")
+    spelled ={} if names_place else spelled_country_statistics(query)
     any_country_cues = frozenset() if names_place else (
         country_statistic_words(query) | frozenset(spelled)
     )
