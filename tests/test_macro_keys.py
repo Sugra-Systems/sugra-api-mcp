@@ -21,7 +21,11 @@ from sugra_api_mcp.catalog import search as search_module
 from sugra_api_mcp.catalog.aliases import detect_query_countries
 from sugra_api_mcp.catalog.builder import build_catalog_from_openapi
 from sugra_api_mcp.catalog.loader import load_catalog
-from sugra_api_mcp.catalog.macro_keys import _read_title, match_macro_keys
+from sugra_api_mcp.catalog.macro_keys import (
+    _read_title,
+    match_macro_keys,
+    match_unplaced_macro_keys,
+)
 from sugra_api_mcp.catalog.models import Catalog, Endpoint, MacroKey
 from sugra_api_mcp.catalog.search import US_MACRO_PROXY_OPERATION, search_catalog
 from sugra_api_mcp.tools import gateway
@@ -455,6 +459,32 @@ def test_a_key_operation_already_above_the_first_answer_keeps_its_place(
     assert results[0]["operation_id"] == MACRO_OPERATION, _top_ids(results)
     assert "macro_keys" not in results[0], results[0]
     assert results[0]["why"] == ["test:fixed-score"], results[0]["why"]
+
+
+@pytest.mark.parametrize("query", [
+    "germany jobless claims",
+    "jobless claims in Canada",
+    "euro area jobless claims",
+    "US jobless claims",
+])
+def test_the_unplaced_reader_reads_nothing_for_a_query_that_names_a_place(query: str) -> None:
+    assert match_unplaced_macro_keys(query, CLAIMS_KEYS) == []
+
+
+def test_the_unplaced_reader_reads_the_series_for_a_query_that_names_no_place() -> None:
+    found = match_unplaced_macro_keys("jobless claims", CLAIMS_KEYS)
+    assert [key.key for key in found][:1] == ["us/initial-claims"], found
+
+
+@pytest.mark.parametrize(("title", "head"), [
+    ("Initial Claims for Unemployment Insurance", "claims"),
+    ("Continued Claims (Insured Unemployment)", "claims"),
+    ("Federal Surplus or Deficit [-]", "deficit"),
+    ("Retail Sales [Weekly]", "sales"),
+    ("Unemployment Rate", "rate"),
+])
+def test_a_title_is_named_for_the_last_word_before_its_first_clause(title: str, head: str) -> None:
+    assert search_module._head_word(title) == head
 
 
 def test_a_series_two_places_hold_ranks_no_key_without_a_place() -> None:

@@ -348,7 +348,7 @@ def _singulars(word: str) -> frozenset[str]:
     return frozenset(forms)
 
 
-_TITLE_CLAUSE_RE = re.compile(r"[(:;,]|\b(?:for|in|of)\b")
+_TITLE_CLAUSE_RE = re.compile(r"[\[(:;,]|\b(?:for|in|of)\b")
 
 
 def _head_word(title: str) -> str:
