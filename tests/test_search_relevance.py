@@ -2690,6 +2690,41 @@ def test_a_current_account_of_a_named_place_keeps_its_source(catalog, query: str
     assert not _ANY_COUNTRY_NOTES & set(results[0]["why"]), results[0]["why"]
 
 
+@pytest.mark.parametrize("query", [
+    "bond yields",
+    "government bond yield",
+    "government bond yields",
+    "sovereign bond yields",
+])
+def test_a_bond_yield_of_no_country_ranks_the_country_profile_first(catalog, query: str) -> None:
+    """The country profile holds the 10-year yield of any country: "government
+    bond yields" ranked the Reserve Bank of Australia's first and the profile
+    198th."""
+    results = search_catalog(catalog, query, limit=200)
+    assert results[0]["operation_id"] == "macro_country_profile", [r["operation_id"] for r in results[:5]]
+    assert "pattern:any-country->param" in results[0]["why"], results[0]["why"]
+    ranks = {r["operation_id"]: i for i, r in enumerate(results)}
+    assert "clamped-below:any-country-answers" in results[ranks["rba_bond_yields"]]["why"]
+
+
+def test_a_bond_yield_of_no_country_ranks_the_profile_beside_the_euro_area_curve(catalog) -> None:
+    """The euro area's yield curve is the source of no country, so nothing
+    clamps it: "bond yield" ranks it first and the profile second, above every
+    national source."""
+    ids = [r["operation_id"] for r in search_catalog(catalog, "bond yield", limit=5)]
+    assert ids[:2] == ["ecb_yield_curve", "macro_country_profile"], ids
+
+
+@pytest.mark.parametrize(("query", "first"), [
+    ("Australia bond yields", "rba_bond_yields"),
+    ("euro area yield curve", "ecb_yield_curve"),
+])
+def test_a_bond_yield_of_a_named_place_keeps_its_source(catalog, query: str, first: str) -> None:
+    results = search_catalog(catalog, query, limit=5)
+    assert results[0]["operation_id"] == first, [r["operation_id"] for r in results]
+    assert not _ANY_COUNTRY_NOTES & set(results[0]["why"]), results[0]["why"]
+
+
 def test_an_operation_that_answers_through_the_statistics_alias_takes_the_country(catalog) -> None:
     """The country profile answers "unemployment" with its jobless rate, a word
     of the statistic's alias. Counted by its own words alone, it would lose the
@@ -3239,6 +3274,8 @@ def test_several_listings_one_described_ask_for_their_prices(catalog) -> None:
     # Named in its own word as well: the other words still name it.
     ("unemployment and jobless claims", {"unemployment": {"jobless"}}),
     ("current accounts", {"current account": {"current", "accounts"}}),
+    ("government bond yields", {"bond yield": {"bond", "yields"}}),
+    ("10Y yield", {"bond yield": {"10y", "yield"}}),
     # Other statistics, part of a spelling, another word: none.
     ("consumer confidence", {}),
     ("producer prices", {}),
@@ -3246,6 +3283,9 @@ def test_several_listings_one_described_ask_for_their_prices(catalog) -> None:
     ("joblessness", {}),
     ("account", {}),
     ("current price", {}),
+    ("bond", {}),
+    ("dividend yield", {}),
+    ("10-year yield", {}),
     ("CPI", {}),
 ])
 def test_a_statistic_named_in_other_words(query: str, spelled: dict[str, set[str]]) -> None:
