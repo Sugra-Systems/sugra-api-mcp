@@ -591,16 +591,6 @@ def _group_violation(endpoint, params: dict[str, Any]) -> str | None:
     return None
 
 
-# Operations whose API handler reads filters from the raw query string beyond
-# the parameters it declares, so an undeclared key is a real filter there and
-# not a typo. The StatBank DK data endpoint takes the table's own dimension
-# codes (OMRÅDE, KØN, Tid, ...) this way. Every other operation ignores an
-# undeclared key without an error, which is why the gateway refuses one.
-_OPEN_QUERY_OPERATIONS: frozenset[str] = frozenset({
-    "statistical_agencies_statbank_dk_data_table_id",
-})
-
-
 def _unknown_params_error(
     operation_id: str, endpoint, params: dict[str, Any]
 ) -> dict[str, Any] | None:
@@ -608,9 +598,14 @@ def _unknown_params_error(
 
     The API drops an undeclared query parameter silently, so a misnamed
     filter (country for countries) returned the endpoint's default data
-    with no sign that the filter was never applied.
+    with no sign that the filter was never applied. An open-query operation
+    (endpoint.open_query, from the spec's x-sugra-open-query marker) reads
+    filters from the raw query string beyond the parameters it declares, so
+    an undeclared key is a real filter there and not a typo: the StatBank DK
+    data endpoint takes the table's own dimension codes (OMRÅDE, KØN, Tid,
+    ...) this way.
     """
-    if operation_id in _OPEN_QUERY_OPERATIONS:
+    if endpoint.open_query:
         return None
     accepted = [parameter.name for parameter in endpoint.parameters]
     unknown = [key for key in params if key not in accepted]
@@ -688,13 +683,11 @@ def _selectable(catalog: Any, operation_id: str, keys: Any) -> Any | None:
     open-query one, whose undeclared keys would pass as filters. The one place
     that decides it, for the reselection and the refusal's alternatives alike.
     """
-    if operation_id in _OPEN_QUERY_OPERATIONS:
-        return None
     try:
         endpoint = catalog.get(operation_id)
     except KeyError:
         return None
-    if endpoint.method != "GET":
+    if endpoint.open_query or endpoint.method != "GET":
         return None
     declared = {parameter.name for parameter in endpoint.parameters}
     if not set(keys) <= declared:
@@ -742,7 +735,7 @@ def _reselect(
     if not params or body is not None or top.method != "GET":
         return None
     top_id = _hit_operation_id(results[0])
-    if top_id is None or top_id in _OPEN_QUERY_OPERATIONS:
+    if top_id is None or top.open_query:
         return None
     accepted = [parameter.name for parameter in top.parameters]
     foreign = [
