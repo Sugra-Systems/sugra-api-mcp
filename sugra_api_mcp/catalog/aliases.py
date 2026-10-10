@@ -99,8 +99,8 @@ CENTRAL_BANK_PREFIX_BOOSTS: dict[str, str] = {
     "banco central brasil": "bcb_",
     "bcrp": "central_banks_bcrp_",
     "peru central bank": "central_banks_bcrp_",
-    "bcra": "bcra_",
-    "argentina central bank": "bcra_",
+    "bcra": "central_banks_bcra_",
+    "argentina central bank": "central_banks_bcra_",
     "rbi": "rbi_",
     "reserve bank of india": "rbi_",
 }
@@ -114,7 +114,8 @@ CENTRAL_BANK_PLACES: dict[str, str] = {
     "fed_": "US", "ecb_": "EU", "boj_": "JP", "boe_": "GB", "boc_": "CA",
     "rba_": "AU", "rbnz_": "NZ", "snb_": "CH", "riksbank_": "SE",
     "central_banks_sarb_": "ZA", "bnm_": "MY", "norges_bank_": "NO",
-    "cnb_": "CZ", "bcb_": "BR", "central_banks_bcrp_": "PE", "bcra_": "AR",
+    "cnb_": "CZ", "bcb_": "BR", "central_banks_bcrp_": "PE",
+    "central_banks_bcra_": "AR",
     "rbi_": "IN",
 }
 
@@ -355,12 +356,22 @@ COUNTRY_STATISTIC_SPELLINGS: dict[str, tuple[str, ...]] = {
 }
 
 
+# The words right after a statistic that say which side of it the question
+# asks for: "current account balance" asks for the current account, and the
+# Bank of Japan's balance sheet answered it on the word "balance".
+_STATISTIC_QUALIFIERS: frozenset[str] = frozenset({
+    "balance", "balances", "deficit", "deficits", "surplus", "surpluses",
+})
+
+
 def spelled_country_statistics(query: str) -> dict[str, frozenset[str]]:
     """The one-word statistics the query names in other words, each with
     the query words that name it.
 
     "jobless rate" names unemployment in the word "jobless", and so does
     "unemployment and jobless claims", which names it in its own word too.
+    A qualifier right after the spelling names it too: "deficit" in
+    "current account deficit".
     """
     tokens = _WORD_TOKEN_RE.findall(query.lower())
     spelled: dict[str, frozenset[str]] = {}
@@ -369,7 +380,8 @@ def spelled_country_statistics(query: str) -> dict[str, frozenset[str]]:
             tokens[index]
             for spelling in spellings
             for start, end in _phrase_spans(tokens, spelling)
-            for index in range(start, end)
+            for index in range(start, end + (
+                end < len(tokens) and tokens[end] in _STATISTIC_QUALIFIERS))
         )
         if words:
             spelled[statistic] = words
@@ -603,20 +615,34 @@ def _claim_names(tokens: list[str], names: Iterable[str]) -> list[tuple[int, int
     return sorted(found)
 
 
-def matching_aliases(query: str) -> dict[str, list[str]]:
+# Aliases that stand for one country's own source, by its country.
+NATIONAL_ALIASES: dict[str, str] = {"treasury yield": "US"}
+
+
+def matching_aliases(query: str, countries: Iterable[str] = ()) -> dict[str, list[str]]:
     """Alias phrases the query names as whole words.
 
     The phrase or one of its expansions must occur as consecutive query
     tokens, plural-tolerant. A substring test fired "cot" on "cotton",
     "currency" on "cryptocurrency", "environment" on "environmental" and
     "aqi" on "Iraqi".
+
+    A national alias the query reaches only through an expansion keeps, for
+    a question that names ``countries`` without its own, only the
+    expansions the query says: "bond yield" reaches the US Treasury's
+    rates, and "Germany bond yields" found the US Treasury first.
     """
     tokens = _WORD_TOKEN_RE.findall(query.lower())
-    return {
-        phrase: expansions
-        for phrase, expansions in ALIASES.items()
-        if any(_phrase_spans(tokens, term) for term in (phrase, *expansions))
-    }
+    places = set(countries)
+    found: dict[str, list[str]] = {}
+    for phrase, expansions in ALIASES.items():
+        if not any(_phrase_spans(tokens, term) for term in (phrase, *expansions)):
+            continue
+        country = NATIONAL_ALIASES.get(phrase)
+        if country and places and country not in places and not _phrase_spans(tokens, phrase):
+            expansions = [term for term in expansions if _phrase_spans(tokens, term)]
+        found[phrase] = expansions
+    return found
 
 
 # Everyday currency names -> ISO 4217 code. A bare word that is also common
@@ -785,8 +811,11 @@ def detect_fx_request(query: str) -> FxRequest | None:
 # only beside a word of time: "what is a currency exchange rate" asks what
 # one is, "what's the exchange rate today" asks for the rates. The "s" of
 # "what's" or "world's" asks nothing by itself: "what" carries the question.
-# A number is read only as a year from 1900 to 2099, a period; a question
-# with any other number ("in 99", a date such as 2020-01-01) is not read.
+# A number is read only as a year from 1900 to 2099 or as a part of a
+# period: a date ("on 2020-01-01", "March 2020"), a count of days, weeks,
+# months or years before "ago" or after "last" or "past" ("20 years ago",
+# "the last 5 years"), or "yesterday". A question with any other number
+# ("in 99", "5 years") is not read.
 FX_PANEL_OPERATION = "forex_rates"
 FX_HISTORY_OPERATION = "forex_history"
 _EVERY_CURRENCY_WORDS: frozenset[str] = frozenset({
@@ -802,6 +831,55 @@ _EVERY_CURRENCY_NAME_WORDS: frozenset[str] = frozenset({
     "currencies", "currency", "exchange", "foreign", "rate", "rates",
 })
 _YEAR_RE = re.compile(r"(?:19|20)\d\d")
+_DAY_OR_MONTH_RE = re.compile(r"\d{1,2}")
+_MONTH_NAMES: frozenset[str] = frozenset({
+    "january", "february", "march", "april", "may", "june", "july", "august",
+    "september", "october", "november", "december",
+    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
+})
+_PERIOD_UNITS: frozenset[str] = frozenset({
+    "day", "days", "week", "weeks", "month", "months", "year", "years",
+})
+
+
+def _period_words(tokens: list[str]) -> set[int]:
+    """The indices of the tokens that name a period other than a bare year:
+    a date and the "on" right before it, a count of days, weeks, months or
+    years before "ago" or after "last" or "past", and "yesterday"."""
+    found: set[int] = set()
+    for index, token in enumerate(tokens):
+        if token == "yesterday":
+            found.add(index)
+        elif _YEAR_RE.fullmatch(token) or token in _MONTH_NAMES:
+            # A date reads as a run of day or month numbers and month names
+            # around a year, or a month name beside one: "2020-01-01",
+            # "1 March 2020", "March 2020".
+            start = end = index
+            while start > 0 and (_DAY_OR_MONTH_RE.fullmatch(tokens[start - 1])
+                                 or tokens[start - 1] in _MONTH_NAMES):
+                start -= 1
+            while end + 1 < len(tokens) and (_DAY_OR_MONTH_RE.fullmatch(tokens[end + 1])
+                                             or tokens[end + 1] in _MONTH_NAMES):
+                end += 1
+            run = range(start, end + 1)
+            if token in _MONTH_NAMES:
+                years = [i for i in (start - 1, end + 1)
+                         if 0 <= i < len(tokens) and _YEAR_RE.fullmatch(tokens[i])]
+                if not years:
+                    continue
+                run = range(min(start, *years), max(end, *years) + 1)
+            elif start == end:
+                continue
+            found.update(run)
+            if run.start > 0 and tokens[run.start - 1] == "on":
+                found.add(run.start - 1)
+        elif (token.isdigit() and index + 1 < len(tokens) and tokens[index + 1] in _PERIOD_UNITS
+              and ((index + 2 < len(tokens) and tokens[index + 2] == "ago")
+                   or (index > 0 and tokens[index - 1] in ("last", "past")))):
+            found.update((index, index + 1))
+            if index + 2 < len(tokens) and tokens[index + 2] == "ago":
+                found.add(index + 2)
+    return found
 
 
 # A policy rate asked of no country asks for every central bank's: the BIS
@@ -840,7 +918,9 @@ def detect_every_currency_request(query: str) -> tuple[str, frozenset[str]] | No
     tokens = [token.lower() for token in raw]
     phrase = {index for start, end in _phrase_spans(tokens, "exchange rate")
               for index in range(start, end)}
-    rest = [(raw[index], token) for index, token in enumerate(tokens) if index not in phrase]
+    period = _period_words(tokens)
+    rest = [(raw[index], token) for index, token in enumerate(tokens)
+            if index not in phrase and index not in period]
     if not phrase or not all(
         (token in _EVERY_CURRENCY_WORDS and not (len(word) == 3 and word.isupper()))
         or token in _EVERY_CURRENCY_NOW_WORDS or token in _EVERY_CURRENCY_QUESTION_WORDS
@@ -849,7 +929,8 @@ def detect_every_currency_request(query: str) -> tuple[str, frozenset[str]] | No
     ):
         return None
     years = any(_YEAR_RE.fullmatch(token) for _, token in rest)
-    over_time = years or any(_phrase_spans(tokens, word) for word in _FX_HISTORY_WORDS)
+    over_time = years or bool(period) or any(
+        _phrase_spans(tokens, word) for word in _FX_HISTORY_WORDS)
     asks = any(token in _EVERY_CURRENCY_QUESTION_WORDS for _, token in rest)
     if asks and not (over_time or any(token in _EVERY_CURRENCY_NOW_WORDS for _, token in rest)):
         return None
@@ -2038,6 +2119,7 @@ CENTRAL_BANK_POLICY_RATES: dict[str, str] = {
     "cnb_": "cnb_policy_rate",
     "bcb_": "bcb_selic",
     "central_banks_bcrp_": "central_banks_bcrp_policy_rate",
+    "central_banks_bcra_": "central_banks_bcra_policy_rate",
 }
 # The ECB has no policy-rate operation: its policy rate, the deposit facility
 # rate, is a curated series of the country macro operation, and the name of

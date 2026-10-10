@@ -825,6 +825,27 @@ def test_source_country_prefixes_match_live_operations(catalog) -> None:
     assert not dead, f"country prefixes matching no bundled operation: {dead}"
 
 
+def test_central_bank_prefixes_match_live_operations(catalog) -> None:
+    """"BCRA policy rate" earned no namespace boost: the prefix bcra_ matched
+    no operation, the bank's live under central_banks_bcra_. The Reserve
+    Banks of New Zealand and India have no operation yet; their prefixes
+    keep the bank's place and the penalty on every other bank."""
+    from sugra_api_mcp.catalog.aliases import CENTRAL_BANK_PREFIX_BOOSTS
+
+    ids = [e.operation_id for e in catalog.endpoints]
+    dead = {p for p in CENTRAL_BANK_PREFIX_BOOSTS.values()
+            if not any(op.startswith(p) for op in ids)}
+    assert dead == {"rbnz_", "rbi_"}, dead
+
+
+def test_the_argentine_central_bank_answers_its_policy_rate(catalog) -> None:
+    for query in ("BCRA interest rate", "Argentina central bank interest rate"):
+        results = search_catalog(catalog, query, limit=3)
+        assert results[0]["operation_id"] == "central_banks_bcra_policy_rate", query
+        assert all(r["operation_id"].startswith("central_banks_bcra_") for r in results), (
+            query, [r["operation_id"] for r in results])
+
+
 def test_every_deprecated_operation_resolves_or_is_allowlisted(catalog) -> None:
     from sugra_api_mcp.catalog.builder import DEPRECATED_WITHOUT_REPLACEMENT
 
@@ -848,6 +869,52 @@ def test_empty_toolset_gets_no_intent_boost() -> None:
         boost_symbol_input=False, boost_forex=False, boost_crypto=False,
         boost_us_macro=False, central_bank_prefixes=[], query_countries=set())
     assert not any(w.startswith("toolset-intent") for w in why), why
+
+
+def _bare_score(endpoint, terms: list[str]) -> tuple[int, list[str]]:
+    from sugra_api_mcp.catalog.search import _score
+
+    return _score(
+        endpoint, terms, {},
+        boost_quotes_symbol=False, boost_markets_toolset=False,
+        boost_symbol_input=False, boost_forex=False, boost_crypto=False,
+        boost_us_macro=False, central_bank_prefixes=[], query_countries=set())
+
+
+def test_a_repeated_word_scores_once() -> None:
+    from sugra_api_mcp.catalog.models import Endpoint
+
+    endpoint = Endpoint(operation_id="gdp_op", method="GET", path="/gdp",
+                        summary="gdp by country", toolset="")
+    assert _bare_score(endpoint, ["gdp", "gdp"])[0] == _bare_score(endpoint, ["gdp"])[0]
+
+
+@pytest.mark.parametrize(("terms", "pinned"), [
+    (["central"], False),
+    (["real", "home", "prices"], False),
+    (["central", "bank", "rates"], True),
+    (["real", "estate"], True),
+    (["hedge", "funds"], True),
+])
+def test_a_toolset_of_several_words_needs_two_of_them(terms: list[str], pinned: bool) -> None:
+    """"central" alone handed the central_banks toolset its intent boost,
+    and "real" of "real home prices" the real_estate one."""
+    from sugra_api_mcp.catalog.models import Endpoint
+
+    toolset = {"central": "central_banks", "real": "real_estate",
+               "hedge": "hedge_fund_intelligence"}[terms[0]]
+    endpoint = Endpoint(operation_id="zz_op", method="GET", path="/zz",
+                        summary="unrelated", toolset=toolset)
+    why = _bare_score(endpoint, terms)[1]
+    assert any(w.startswith("toolset-intent") for w in why) is pinned, why
+
+
+def test_a_toolset_of_one_word_keeps_its_stem() -> None:
+    from sugra_api_mcp.catalog.models import Endpoint
+
+    endpoint = Endpoint(operation_id="zz_op", method="GET", path="/zz",
+                        summary="unrelated", toolset="markets")
+    assert "toolset-intent:market" in _bare_score(endpoint, ["market"])[1]
 
 
 # ---- Regression pins: country and code disambiguation -----------------------
@@ -898,6 +965,46 @@ def test_unmatched_replacement_clamps_the_deprecated_route_out(catalog) -> None:
             rep = next(e.replaced_by for e in catalog.endpoints
                        if e.operation_id == dep)
             assert rep in ids and ids.index(rep) < ids.index(dep)
+
+
+@pytest.mark.parametrize("query", ["geocode Berlin", "geocode a location name"])
+def test_a_deprecated_route_without_a_replacement_ranks_below_every_live_answer(
+        catalog, query: str) -> None:
+    """"geocode Berlin" ranked the deprecated weather_geocode first, on the
+    word its id spells, above geocoding_search."""
+    results = search_catalog(catalog, query, limit=50)
+    ids = [r["operation_id"] for r in results]
+    assert "geocoding_search" in ids, ids
+    live = [r["score"] for r in results
+            if not catalog.get(r["operation_id"]).deprecated]
+    for r in results:
+        if r["operation_id"] == "weather_geocode":
+            assert r["score"] < min(live), ids
+
+
+def test_a_deprecated_route_without_a_replacement_keeps_its_place_in_the_results(
+        catalog) -> None:
+    """The pipelines route is the one operation that answers pipelines:
+    ranked below the live answers, it is not dropped."""
+    ids = [r["operation_id"] for r in search_catalog(catalog, "crude oil pipelines", limit=50)]
+    assert "environment_osm_pipelines" in ids, ids
+    assert ids[0] != "environment_osm_pipelines", ids
+
+
+def test_geocode_a_city_ranks_a_live_geocoder_first(catalog) -> None:
+    top = search_catalog(catalog, "geocode Berlin", limit=1)[0]["operation_id"]
+    assert top.startswith("geocoding_"), top
+
+
+def test_a_deprecated_route_without_a_replacement_stays_when_nothing_live_matches(
+        catalog) -> None:
+    from sugra_api_mcp.catalog.models import Catalog, Endpoint
+
+    deprecated = Endpoint(operation_id="old_op", method="GET", path="/old",
+                          summary="zyxwv lookup", toolset="", deprecated=True)
+    alone = Catalog(source="test", endpoints=[deprecated])
+    ids = [r["operation_id"] for r in search_catalog(alone, "zyxwv", limit=5)]
+    assert ids == ["old_op"], ids
 
 
 def test_us_postal_country_collisions_resolve_by_intent() -> None:
@@ -1344,6 +1451,14 @@ def test_everyday_names_land_their_operation_top_1(catalog, query: str, expected
     ("what were exchange rates in 2020", "forex_history"),
     ("what was the exchange rate in 2020", "forex_history"),
     ("world's exchange rates", "forex_rates"),
+    # A date, a count before "ago" or after "last", and "yesterday" are periods.
+    ("what was the exchange rate on 2020-01-01", "forex_history"),
+    ("exchange rate 2020-01-01", "forex_history"),
+    ("exchange rate on 1 March 2020", "forex_history"),
+    ("exchange rate March 2020", "forex_history"),
+    ("what were exchange rates 20 years ago", "forex_history"),
+    ("exchange rates over the last 5 years", "forex_history"),
+    ("exchange rate yesterday", "forex_history"),
 ])
 def test_an_exchange_rate_of_no_currency_ranks_every_currency_first(
     catalog, query: str, expected: str,
@@ -1357,6 +1472,7 @@ def test_an_exchange_rate_of_no_currency_ranks_every_currency_first(
 @pytest.mark.parametrize("query,expected", [
     ("real effective exchange rate", "bis_fx_effective"),
     ("Peru exchange rate", "central_banks_bcrp_fx_currency"),
+    ("Peru exchange rate yesterday", "central_banks_bcrp_fx_currency"),
     ("dollar to yen exchange rate", "forex_convert"),
     ("euro exchange rate", "forex_rates"),
 ])
@@ -1375,10 +1491,11 @@ def test_an_exchange_rate_that_names_more_keeps_its_answer(
     "what is the exchange rate",
     "what was the exchange rate",
     "what's the exchange rate",
-    # A number that is not a year from 1900 to 2099, a date included.
+    # A number that is neither a year from 1900 to 2099 nor part of a period.
     "exchange rate in 1899",
     "exchange rate in 99",
-    "exchange rate 2020-01-01",
+    "exchange rates 5 years",
+    "exchange rate on Monday",
     # A currency code in capitals names one currency.
     "ALL exchange rate",
 ])
@@ -2741,6 +2858,37 @@ def test_a_bond_yield_of_a_named_place_keeps_its_source(catalog, query: str, fir
 
 
 @pytest.mark.parametrize("query", [
+    "Germany bond yields",
+    "Germany bond yield",
+    "France 10 year yield",
+    "Italy bond yield",
+    "Japan bond yields",
+    "UK bond yields",
+])
+def test_a_bond_yield_of_a_country_without_its_own_source_ranks_the_profile_first(
+    catalog, query: str,
+) -> None:
+    """Neither the euro area curve nor the US Treasury answers for another
+    country: "Germany bond yields" ranked the US Treasury's exchange rates
+    first, on the words "bond yield" reach through "treasury yield", and
+    "France 10 year yield" the euro area curve."""
+    results = search_catalog(catalog, query, limit=5)
+    ids = [r["operation_id"] for r in results]
+    assert ids[0] == "macro_country_profile", ids
+    assert "pattern:country->param" in results[0]["why"], results[0]["why"]
+    assert not any(i.startswith(("treasury_", "fixed_income_treasury_")) for i in ids), ids
+    if "ecb_yield_curve" in ids:
+        why = results[ids.index("ecb_yield_curve")]["why"]
+        assert "clamped-below:country-answers" in why or "geo-mismatch:EU" in why, why
+
+
+def test_a_national_alias_keeps_its_source_for_its_own_country(catalog) -> None:
+    """The US Treasury still answers the US's own bond yields."""
+    results = search_catalog(catalog, "US bond yields", limit=3)
+    assert results[0]["operation_id"] == "fixed_income_treasury_rates", [r["operation_id"] for r in results]
+
+
+@pytest.mark.parametrize("query", [
     "Germany current account",
     "India current account",
     "UK current account",
@@ -2755,6 +2903,36 @@ def test_a_current_account_of_a_country_without_its_own_source_ranks_the_profile
     ids = [r["operation_id"] for r in results]
     assert ids[0] == "macro_country_profile", ids
     assert "air_quality_current" not in ids, ids
+
+
+@pytest.mark.parametrize("query", [
+    "France current account deficit",
+    "Japan current account balance",
+    "Germany current account surplus",
+])
+def test_a_current_accounts_side_ranks_the_profile_first(catalog, query: str) -> None:
+    """A word right after the statistic names its side: "Japan current account
+    balance" ranked the Bank of Japan's balance sheet first, on the word
+    "balance", and "France current account deficit" the crypto operations, on
+    the "defi" that begins "deficit"."""
+    results = search_catalog(catalog, query, limit=5)
+    ids = [r["operation_id"] for r in results]
+    assert ids[0] == "macro_country_profile", ids
+    assert not any("balance" in w for r in results
+                   if r["operation_id"] == "boj_balance_sheet" for w in r["why"]), ids
+    assert not any("pattern:crypto" in w for r in results for w in r["why"]), ids
+
+
+@pytest.mark.parametrize(("query", "first"), [
+    ("Swiss current account", "snb_current_account"),
+    ("Japan balance sheet", "boj_balance_sheet"),
+    ("DeFi protocols", "defi_protocols"),
+    ("defi TVL", "defi_tvl"),
+])
+def test_the_words_of_a_current_accounts_side_keep_their_own_answers(
+    catalog, query: str, first: str,
+) -> None:
+    assert search_catalog(catalog, query, limit=3)[0]["operation_id"] == first
 
 
 @pytest.mark.parametrize("query", [
@@ -2780,6 +2958,30 @@ def test_a_us_trade_balance_keeps_the_census_source_above_the_imf(catalog) -> No
     assert ids.index("census_trade_balance") < ids.index("imf_direction_of_trade"), ids
 
 
+@pytest.mark.parametrize("query", [
+    "Germany trade balance",
+    "France trade balance",
+    "Japan trade balance",
+    "India trade balance",
+])
+def test_a_trade_balance_of_a_country_without_its_own_source_ranks_no_other_countrys(
+    catalog, query: str,
+) -> None:
+    """A national source of another country ranks below every operation that
+    is no such source: "Germany trade balance" ranked the US and UK trade
+    balances right after the IMF Direction of Trade."""
+    results = search_catalog(catalog, query, limit=5)
+    ids = [r["operation_id"] for r in results]
+    assert ids[0] == "imf_direction_of_trade", ids
+    assert not {"census_trade_balance", "ons_trade_balance", "stat_finland_trade_balance"} & set(ids[:3]), ids
+
+
+def test_a_uk_trade_balance_keeps_its_own_source_second(catalog) -> None:
+    ids = [r["operation_id"] for r in search_catalog(catalog, "UK trade balance", limit=5)]
+    assert ids[:2] == ["imf_direction_of_trade", "ons_trade_balance"], ids
+    assert "census_trade_balance" not in ids[:3], ids
+
+
 def test_an_operation_that_answers_through_the_statistics_alias_takes_the_country(catalog) -> None:
     """The country profile answers "unemployment" with its jobless rate, a word
     of the statistic's alias. Counted by its own words alone, it would lose the
@@ -2801,9 +3003,19 @@ def test_an_operation_in_neither_group_keeps_its_rank(catalog) -> None:
         assert ranks.get(operation, len(ranks)) > pwt, (operation, ranks.get(operation), pwt)
 
 
-def test_a_two_letter_word_keeps_no_national_source_in_place(catalog) -> None:
-    """Denmark's EU-harmonised price index names the EU in its summary; two
-    letters are too short to be a word that only it answers."""
+@pytest.mark.parametrize("query", ["GDP in bn", "bn GDP"])
+def test_a_two_letter_word_keeps_no_national_source_in_place(catalog, query: str) -> None:
+    """Denmark's GDP table names "bn" in its summary; two letters are too
+    short to be a word that only it answers."""
+    row = next(r for r in search_catalog(catalog, query, limit=200)
+               if r["operation_id"] == "statistical_agencies_statbank_dk_gdp")
+    assert "clamped-below:any-country-answers" in row["why"], row["why"]
+
+
+def test_the_euro_areas_penalty_ranks_denmarks_harmonised_index_below(catalog) -> None:
+    """Denmark's EU-harmonised price index names the EU in its summary;
+    "EU inflation" names the euro area, so the wrong-country penalty ranks
+    it below every operation that takes the country."""
     rows = search_catalog(catalog, "EU inflation", limit=100)
     ranks = {row["operation_id"]: i for i, row in enumerate(rows)}
     answers = [ranks[row["operation_id"]] for row in rows
@@ -2985,6 +3197,23 @@ def test_a_ratio_with_another_numerator_answers_no_ratio_question(catalog, query
     assert "pattern:any-country->param" not in gap["why"], gap["why"]
 
 
+@pytest.mark.parametrize("query", ["government debt to GDP", "debt to GDP"])
+def test_a_ratio_question_ranks_first_an_operation_that_names_its_measure(
+        catalog, query: str) -> None:
+    """GDP per capita ranked first for "government debt to GDP", an
+    operation that names GDP but no debt."""
+    from sugra_api_mcp.catalog.search import _profile
+
+    top = search_catalog(catalog, query, limit=1)[0]
+    assert "debt" in _profile(catalog.get(top["operation_id"])).text, top
+    assert "pattern:any-country->param" in top["why"], top["why"]
+
+
+def test_gdp_per_capita_keeps_the_operation_that_names_it_first(catalog) -> None:
+    top = search_catalog(catalog, "GDP per capita", limit=1)[0]["operation_id"]
+    assert top == "owid_growth_population", top
+
+
 @pytest.mark.parametrize("query", [
     "credit-to-GDP",
     "private credit to GDP",
@@ -3107,24 +3336,27 @@ def test_a_currency_before_a_statistic_lists_no_other_country(catalog, query: st
         assert country in (None, place), (query, row["operation_id"], country)
 
 
-@pytest.mark.parametrize(("query", "key"), [
-    ("EU inflation", "eu/cpi"),
-    ("euro area inflation", "eu/cpi"),
-    ("eurozone inflation", "eu/cpi"),
-    ("European Union inflation", "eu/cpi"),
-    ("EU unemployment", "eu/unrate"),
+@pytest.mark.parametrize("query", [
+    "EU inflation", "euro area inflation", "eurozone inflation", "European Union inflation",
 ])
-def test_the_euro_area_lists_no_other_country(catalog, query: str, key: str) -> None:
+def test_the_euro_area_lists_no_other_country(catalog, query: str) -> None:
     """"EU inflation" listed the inflation of Argentina and US TIPS among its
     first answers: the euro area is the place of no national source."""
     from sugra_api_mcp.catalog.search import _source_country
 
     rows = search_catalog(catalog, query, limit=10)
-    assert key in [series["key"] for series in rows[0].get("macro_keys") or []], rows[0]
-    if key == "eu/cpi":
-        for row in rows:
-            country = _source_country(catalog.get(row["operation_id"]))
-            assert country is None, (query, row["operation_id"], country)
+    assert "eu/cpi" in [series["key"] for series in rows[0].get("macro_keys") or []], rows[0]
+    for row in rows:
+        country = _source_country(catalog.get(row["operation_id"]))
+        assert country is None, (query, row["operation_id"], country)
+
+
+def test_the_euro_areas_unemployment_answers_first(catalog) -> None:
+    """Few operations answer unemployment, so national sources stay among
+    the first ten under the wrong-country penalty; the euro area's own
+    series answers first."""
+    rows = search_catalog(catalog, "EU unemployment", limit=1)
+    assert "eu/unrate" in [series["key"] for series in rows[0].get("macro_keys") or []], rows[0]
 
 
 @pytest.mark.parametrize(("query", "named"), [
