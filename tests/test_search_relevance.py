@@ -2663,6 +2663,33 @@ def test_every_central_bank_names_its_place() -> None:
         assert SOURCE_COUNTRY_PREFIXES.get(prefix, place) == place, prefix
 
 
+@pytest.mark.parametrize("query", [
+    "current account",
+    "current account balance",
+    "current account deficit",
+    "current account surplus",
+])
+def test_a_current_account_of_no_country_ranks_the_country_profile_first(catalog, query: str) -> None:
+    """The country profile holds the current account to GDP of any country:
+    "current account" ranked the Swiss National Bank's first and the profile
+    38th."""
+    results = search_catalog(catalog, query, limit=200)
+    assert results[0]["operation_id"] == "macro_country_profile", [r["operation_id"] for r in results[:5]]
+    assert "pattern:any-country->param" in results[0]["why"], results[0]["why"]
+    ranks = {r["operation_id"]: i for i, r in enumerate(results)}
+    assert "clamped-below:any-country-answers" in results[ranks["snb_current_account"]]["why"]
+
+
+@pytest.mark.parametrize(("query", "first"), [
+    ("Swiss current account", "snb_current_account"),
+    ("euro area current account", "ecb_balance_of_payments"),
+])
+def test_a_current_account_of_a_named_place_keeps_its_source(catalog, query: str, first: str) -> None:
+    results = search_catalog(catalog, query, limit=5)
+    assert results[0]["operation_id"] == first, [r["operation_id"] for r in results]
+    assert not _ANY_COUNTRY_NOTES & set(results[0]["why"]), results[0]["why"]
+
+
 def test_an_operation_that_answers_through_the_statistics_alias_takes_the_country(catalog) -> None:
     """The country profile answers "unemployment" with its jobless rate, a word
     of the statistic's alias. Counted by its own words alone, it would lose the
@@ -3211,11 +3238,14 @@ def test_several_listings_one_described_ask_for_their_prices(catalog) -> None:
      {"cpi": {"consumer", "prices"}, "unemployment": {"jobless"}}),
     # Named in its own word as well: the other words still name it.
     ("unemployment and jobless claims", {"unemployment": {"jobless"}}),
+    ("current accounts", {"current account": {"current", "accounts"}}),
     # Other statistics, part of a spelling, another word: none.
     ("consumer confidence", {}),
     ("producer prices", {}),
     ("domestic product", {}),
     ("joblessness", {}),
+    ("account", {}),
+    ("current price", {}),
     ("CPI", {}),
 ])
 def test_a_statistic_named_in_other_words(query: str, spelled: dict[str, set[str]]) -> None:
