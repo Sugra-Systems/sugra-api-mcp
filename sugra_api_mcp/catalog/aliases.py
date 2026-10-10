@@ -769,17 +769,18 @@ def detect_fx_request(query: str) -> FxRequest | None:
 # these keeps its own answer ("real effective exchange rate", "Peru exchange
 # rate", a currency code in capitals). A question word asks for the rates
 # only beside a word of time: "what is a currency exchange rate" asks what
-# one is, "what's the exchange rate today" asks for the rates.
+# one is, "what's the exchange rate today" asks for the rates. The "s" of
+# "what's" or "world's" asks nothing by itself: "what" carries the question.
 FX_PANEL_OPERATION = "forex_rates"
 FX_HISTORY_OPERATION = "forex_history"
 _EVERY_CURRENCY_WORDS: frozenset[str] = frozenset({
     "all", "chart", "currencies", "currency", "daily", "for", "foreign", "get",
     "global", "history", "historical", "in", "last", "major", "me", "month",
-    "months", "of", "over", "past", "show", "since", "the", "this", "time",
+    "months", "of", "over", "past", "s", "show", "since", "the", "this", "time",
     "trend", "week", "weeks", "world", "year", "years",
 })
 _EVERY_CURRENCY_NOW_WORDS: frozenset[str] = frozenset({"current", "latest", "now", "today"})
-_EVERY_CURRENCY_QUESTION_WORDS: frozenset[str] = frozenset({"are", "is", "s", "was", "were", "what"})
+_EVERY_CURRENCY_QUESTION_WORDS: frozenset[str] = frozenset({"are", "is", "was", "were", "what"})
 # The words that name the request; the period words keep scoring as words.
 _EVERY_CURRENCY_NAME_WORDS: frozenset[str] = frozenset({
     "currencies", "currency", "exchange", "foreign", "rate", "rates",
