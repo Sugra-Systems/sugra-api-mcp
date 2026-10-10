@@ -20,6 +20,7 @@ from sugra_api_mcp.catalog.aliases import (
     detect_us_macro_query,
     matching_central_bank_prefixes,
     query_names_a_period,
+    query_period_words,
 )
 from sugra_api_mcp.catalog.loader import load_catalog
 from sugra_api_mcp.catalog.search import search_catalog
@@ -3691,6 +3692,8 @@ def test_a_statistic_acronym_is_no_listing(query: str) -> None:
     "How has QQQ done over the past decade?", "AAPL in 2008",
     # Level with a description-only word ("aapl", "month"): the tie default.
     "AAPL over the last month",
+    # The period words narrow nothing: "last" and "year" found futures.
+    "Tesla stock last year", "Tesla stock 5 years", "Apple stock since 2020",
 ])
 def test_a_listing_and_a_period_ask_for_the_price_history(catalog, query: str) -> None:
     """"TLT since 2020" ranked the dividends and splits first: the ticker
@@ -3708,6 +3711,14 @@ def test_a_listing_and_a_period_ask_for_the_price_history(catalog, query: str) -
 ])
 def test_a_period_is_days_or_longer(query: str, named: bool) -> None:
     assert query_names_a_period(query) is named
+
+
+@pytest.mark.parametrize("query,words", [
+    ("Tesla stock last year", {"last", "year"}), ("TLT since 2020", {"since", "2020"}),
+    ("AAPL over the past five years", {"years"}), ("AAPL last close", set()),
+])
+def test_the_words_that_name_a_period(query: str, words: set[str]) -> None:
+    assert query_period_words(query) == words
 
 
 @pytest.mark.parametrize("query,first", [
@@ -4076,3 +4087,22 @@ def test_a_word_before_stock_that_names_no_company_reads_no_listing(catalog, que
 @pytest.mark.parametrize("query", ["treasury stock Toyota", "Toyota treasury stock"])
 def test_treasury_stock_with_a_company_keeps_the_filings(catalog, query: str) -> None:
     assert search_catalog(catalog, query, limit=1)[0]["operation_id"] == "edinet_ticker_treasury_stock"
+
+
+@pytest.mark.parametrize("query", ["Tesla stock", "TSLA stock", "Apple stock", "PEN stock",
+                                   "Buy Tesla stock"])
+def test_stock_after_a_listing_name_ranks_the_price_first(catalog, query: str) -> None:
+    """"Tesla stock" ranked the splits first, on the word "stock" their
+    summary holds, above the price."""
+    assert search_catalog(catalog, query, limit=1)[0]["operation_id"] == "quotes_symbol_price"
+
+
+def test_a_listing_question_that_names_the_splits_keeps_them_first(catalog) -> None:
+    assert search_catalog(catalog, "Tesla stock splits", limit=1)[0]["operation_id"] == (
+        "quotes_symbol_splits")
+
+
+def test_the_words_a_catalog_names_are_read_once(catalog) -> None:
+    from sugra_api_mcp.catalog.search import _catalog_named_words
+
+    assert _catalog_named_words(catalog) is _catalog_named_words(catalog)
