@@ -794,6 +794,35 @@ _EVERY_CURRENCY_NAME_WORDS: frozenset[str] = frozenset({
 _YEAR_RE = re.compile(r"(?:19|20)\d\d")
 
 
+# A policy rate asked of no country asks for every central bank's: the BIS
+# policy rates of all central banks answer it. "policy rate" ranked eight
+# operations of six national banks first and the BIS rates 37th. Only these
+# phrases, with "the" at most, are read; any other word keeps its own answer.
+CB_RATES_OPERATION = "bis_cb_rates"
+CB_RATES_OPERATIONS: tuple[str, ...] = (CB_RATES_OPERATION, "bis_cb_rates_country")
+_CB_RATE_PHRASES = (
+    "policy rate", "central bank rate", "central bank policy rate",
+    "central bank interest rate",
+)
+_CB_RATE_FILLER: frozenset[str] = frozenset({"the"})
+_CB_RATE_NAME_WORDS: frozenset[str] = frozenset({
+    "bank", "central", "interest", "policy", "rate", "rates",
+})
+
+
+def detect_central_bank_rate_request(query: str) -> frozenset[str] | None:
+    """The query words that name every central bank's policy rate, or None
+    when the query says anything beyond a policy-rate phrase."""
+    tokens = re.findall(r"[a-z0-9]+", query.lower())
+    covered = {index for phrase in _CB_RATE_PHRASES
+               for start, end in _phrase_spans(tokens, phrase)
+               for index in range(start, end)}
+    if not covered or any(token not in _CB_RATE_FILLER
+                          for index, token in enumerate(tokens) if index not in covered):
+        return None
+    return frozenset(token for token in tokens if token in _CB_RATE_NAME_WORDS)
+
+
 def detect_every_currency_request(query: str) -> tuple[str, frozenset[str]] | None:
     """The operation that answers an exchange-rate question naming no
     currency and nothing else, and the query words that name it, or None."""

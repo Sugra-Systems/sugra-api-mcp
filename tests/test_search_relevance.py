@@ -1387,6 +1387,40 @@ def test_an_exchange_rate_question_that_asks_no_rates_names_no_panel(catalog, qu
     assert not any(note == "name:exchange rates" for r in results for note in r["why"]), results
 
 
+# A policy rate asked of no country asks for every central bank's: "policy
+# rate" ranked eight operations of six national banks first.
+@pytest.mark.parametrize("query", [
+    "policy rate",
+    "policy rates",
+    "central bank rates",
+    "central bank policy rates",
+    "central bank interest rates",
+    "the policy rate",
+])
+def test_a_policy_rate_of_no_country_ranks_every_central_bank_first(catalog, query: str) -> None:
+    results = search_catalog(catalog, query, limit=5)
+    assert results and results[0]["operation_id"] == "bis_cb_rates", (
+        f"{query!r}: top-5 {[(r['operation_id'], r['score']) for r in results]}")
+    assert "name:central bank policy rates" in results[0]["why"], results[0]
+    # The rates by country follow, the answer once a country is named.
+    assert results[1]["operation_id"] == "bis_cb_rates_country", results
+
+
+@pytest.mark.parametrize("query", [
+    # A bank, a country or any other word keeps its own answer.
+    "Fed policy rate",
+    "Canada policy rate",
+    "policy rate history",
+    "current policy rate",
+    "interest rate",
+    "interest rates",
+    "mortgage interest rate",
+])
+def test_a_policy_rate_that_names_more_names_no_every_bank_panel(catalog, query: str) -> None:
+    results = search_catalog(catalog, query, limit=5)
+    assert not any(note == "name:central bank policy rates" for r in results for note in r["why"]), results
+
+
 @pytest.mark.parametrize("query,expected_prefix", [
     # Futures have operations of their own, which carry the benchmark names.
     ("WTI crude oil futures", "futures_root_"),
