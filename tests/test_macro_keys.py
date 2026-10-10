@@ -17,10 +17,15 @@ from typing import Any
 
 import pytest
 
+from sugra_api_mcp.catalog import search as search_module
 from sugra_api_mcp.catalog.aliases import detect_query_countries
 from sugra_api_mcp.catalog.builder import build_catalog_from_openapi
 from sugra_api_mcp.catalog.loader import load_catalog
-from sugra_api_mcp.catalog.macro_keys import _read_title, match_macro_keys
+from sugra_api_mcp.catalog.macro_keys import (
+    _read_title,
+    match_macro_keys,
+    match_unplaced_macro_keys,
+)
 from sugra_api_mcp.catalog.models import Catalog, Endpoint, MacroKey
 from sugra_api_mcp.catalog.search import US_MACRO_PROXY_OPERATION, search_catalog
 from sugra_api_mcp.tools import gateway
@@ -339,3 +344,151 @@ def test_a_filter_that_leaves_the_key_out_leaves_the_us_macro_boost(keyed_catalo
     for hit in fred_hits:
         assert "pattern:us-macro->fred" in hit["why"], hit["operation_id"]
         assert not any(reason.startswith("clamped-below:") for reason in hit["why"]), hit["operation_id"]
+
+
+# ---- A question that names no place: the series one place alone holds ----
+
+CLAIMS_KEYS = [
+    MacroKey(key="us/initial-claims", title="Initial Claims for Unemployment Insurance", freq="weekly"),
+    MacroKey(key="us/continued-claims", title="Continued Claims (Insured Unemployment)", freq="weekly"),
+]
+
+
+def _with_keys(keys: list[MacroKey]) -> Catalog:
+    """The bundled catalog with ``keys`` on the macro operation and on no other."""
+    catalog = load_catalog()
+    return catalog.model_copy(update={"endpoints": [
+        endpoint.model_copy(update={"macro_keys": keys if endpoint.operation_id == MACRO_OPERATION else []})
+        for endpoint in catalog.endpoints
+    ]})
+
+
+@pytest.fixture(scope="module")
+def claims_catalog() -> Catalog:
+    return _with_keys([*KEYS, *CLAIMS_KEYS])
+
+
+@pytest.mark.parametrize("query", [
+    "jobless claims",
+    "unemployment claims",
+    "initial jobless claims",
+    "weekly jobless claims",
+])
+def test_a_claims_question_ranks_the_claims_key_right_after_the_first_answer(
+    claims_catalog: Catalog, query: str,
+) -> None:
+    """Only the US holds a claims series: its key ranks second, right after
+    the first answer for whichever country is meant, never in its place."""
+    results = search_catalog(claims_catalog, query, limit=5)
+
+    assert results[0]["operation_id"] != MACRO_OPERATION, _top_ids(results)
+    assert results[1]["operation_id"] == MACRO_OPERATION, _top_ids(results)
+    assert results[1]["macro_keys"][0]["key"] == "us/initial-claims"
+    assert f"clamped-below:{results[0]['operation_id']}" in results[1]["why"], results[1]["why"]
+    # The key names the US series; FRED's proxy gets no US boost from it.
+    for hit in results:
+        assert "pattern:us-macro->fred" not in hit["why"], hit["operation_id"]
+
+
+@pytest.mark.parametrize("query", [
+    "unemployment",
+    "unemployment rate",
+    "jobless rate",
+    # A word an operation for any country answers asks for that operation.
+    "youth unemployment",
+    # The core CPI leaves food out, so it holds no food inflation.
+    "food inflation",
+    # No statistic every country reports: a US series would be the US default.
+    "initial claims",
+    "nonfarm payrolls",
+    # The unanswered word is in no key's title.
+    "daily unemployment",
+    "weekly unemployment",
+    "unemployment benefits",
+    # It is in a title, but only qualifies the series the title is named for.
+    "initial unemployment",
+    "continued unemployment",
+    "insured unemployment",
+    "unemployment insurance",
+    # A named place reads only its own keys.
+    "germany jobless claims",
+    "Germany unemployment claims",
+])
+def test_a_question_that_names_no_place_ranks_no_key_otherwise(claims_catalog: Catalog, query: str) -> None:
+    results = search_catalog(claims_catalog, query, limit=10)
+    assert all("macro_keys" not in hit for hit in results), _top_ids(results)
+
+
+def _macro_scores_before_its_key(monkeypatch: pytest.MonkeyPatch, score: int) -> None:
+    """The macro operation scores ``score`` until a key is read for it."""
+    real = search_module._score
+
+    def scored(endpoint: Endpoint, *args: Any, **kwargs: Any) -> tuple[int, list[str]]:
+        own, why = real(endpoint, *args, **kwargs)
+        if endpoint.operation_id == MACRO_OPERATION and not kwargs["macro_key_operations"]:
+            return score, ["test:fixed-score"]
+        return own, why
+
+    monkeypatch.setattr(search_module, "_score", scored)
+
+
+def test_a_key_operation_tied_with_the_first_answer_but_after_it_still_takes_the_key(
+    claims_catalog: Catalog, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An equal score that sorts after the first answer is below it, not at it."""
+    first = search_catalog(claims_catalog, "jobless claims", limit=1)[0]
+    assert first["operation_id"] < MACRO_OPERATION, first["operation_id"]
+    _macro_scores_before_its_key(monkeypatch, first["score"])
+
+    results = search_catalog(claims_catalog, "jobless claims", limit=5)
+
+    assert results[0]["operation_id"] == first["operation_id"], _top_ids(results)
+    assert results[1]["operation_id"] == MACRO_OPERATION, _top_ids(results)
+    assert results[1]["macro_keys"][0]["key"] == "us/initial-claims"
+    assert f"clamped-below:{first['operation_id']}" in results[1]["why"], results[1]["why"]
+
+
+def test_a_key_operation_already_above_the_first_answer_keeps_its_place(
+    claims_catalog: Catalog, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = search_catalog(claims_catalog, "jobless claims", limit=1)[0]
+    _macro_scores_before_its_key(monkeypatch, first["score"] + 1)
+
+    results = search_catalog(claims_catalog, "jobless claims", limit=5)
+
+    assert results[0]["operation_id"] == MACRO_OPERATION, _top_ids(results)
+    assert "macro_keys" not in results[0], results[0]
+    assert results[0]["why"] == ["test:fixed-score"], results[0]["why"]
+
+
+@pytest.mark.parametrize("query", [
+    "germany jobless claims",
+    "jobless claims in Canada",
+    "euro area jobless claims",
+    "US jobless claims",
+])
+def test_the_unplaced_reader_reads_nothing_for_a_query_that_names_a_place(query: str) -> None:
+    assert match_unplaced_macro_keys(query, CLAIMS_KEYS) == []
+
+
+def test_the_unplaced_reader_reads_the_series_for_a_query_that_names_no_place() -> None:
+    found = match_unplaced_macro_keys("jobless claims", CLAIMS_KEYS)
+    assert [key.key for key in found][:1] == ["us/initial-claims"], found
+
+
+@pytest.mark.parametrize(("title", "head"), [
+    ("Initial Claims for Unemployment Insurance", "claims"),
+    ("Continued Claims (Insured Unemployment)", "claims"),
+    ("Federal Surplus or Deficit [-]", "deficit"),
+    ("Retail Sales [Weekly]", "sales"),
+    ("Unemployment Rate", "rate"),
+])
+def test_a_title_is_named_for_the_last_word_before_its_first_clause(title: str, head: str) -> None:
+    assert search_module._head_word(title) == head
+
+
+def test_a_series_two_places_hold_ranks_no_key_without_a_place() -> None:
+    """Claims series of two countries: the question does not say which."""
+    two = _with_keys([*CLAIMS_KEYS, MacroKey(key="ca/initial-claims", title="Initial Claims for Unemployment Insurance")])
+    results = search_catalog(two, "jobless claims", limit=10)
+    assert all("macro_keys" not in hit for hit in results), _top_ids(results)

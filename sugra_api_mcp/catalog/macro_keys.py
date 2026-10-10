@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from ._countries import COUNTRY_QUERY_TERMS
-from .aliases import query_names_united_states
+from .aliases import detect_query_countries, query_names_united_states
 from .models import MacroKey
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -355,9 +355,36 @@ def match_macro_keys(
     read = _read_query(query, query_countries, ignore)
     if not read.places or not read.topic:
         return []
+    return _ranked(read, keys, limit)
+
+
+def match_unplaced_macro_keys(
+    query: str,
+    keys: Sequence[MacroKey],
+    *,
+    ignore: frozenset[str] = frozenset(),
+    limit: int = 3,
+) -> list[MacroKey]:
+    """The keys whose titles match the query, of every place, best first,
+    for a query that names no place; empty when it names one.
+
+    The caller decides what a match means: only a series one place alone
+    holds answers a question that names no place ("jobless claims" is the
+    weekly US claims), while "unemployment rate" matches the keys of every
+    country that has one.
+    """
+    read = _read_query(query, detect_query_countries(query), ignore)
+    if read.places or not read.topic:
+        return []
+    return _ranked(read, keys, limit)
+
+
+def _ranked(read: _Query, keys: Sequence[MacroKey], limit: int) -> list[MacroKey]:
+    """The keys ``read`` names, among the places it names or, when it names
+    none, among every place; best first."""
     ranked: list[tuple[tuple[bool, int, int, bool, int], int, MacroKey]] = []
     for index, key in enumerate(keys):
-        if key.key.partition("/")[0] not in read.places:
+        if read.places and key.key.partition("/")[0] not in read.places:
             continue
         rank = _rank(_read_title(key.key, key.title), read)
         if rank is not None:
