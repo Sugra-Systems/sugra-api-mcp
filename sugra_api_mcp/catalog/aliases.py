@@ -771,6 +771,8 @@ def detect_fx_request(query: str) -> FxRequest | None:
 # only beside a word of time: "what is a currency exchange rate" asks what
 # one is, "what's the exchange rate today" asks for the rates. The "s" of
 # "what's" or "world's" asks nothing by itself: "what" carries the question.
+# A number is a count ("last 5 years") or a year from 1900 to 2099; any
+# other number is not read.
 FX_PANEL_OPERATION = "forex_rates"
 FX_HISTORY_OPERATION = "forex_history"
 _EVERY_CURRENCY_WORDS: frozenset[str] = frozenset({
@@ -799,7 +801,7 @@ def detect_every_currency_request(query: str) -> tuple[str, frozenset[str]] | No
     if not phrase or not all(
         (token in _EVERY_CURRENCY_WORDS and not (len(word) == 3 and word.isupper()))
         or token in _EVERY_CURRENCY_NOW_WORDS or token in _EVERY_CURRENCY_QUESTION_WORDS
-        or token.isdigit()
+        or (token.isdigit() and (len(token) <= 2 or _YEAR_RE.fullmatch(token)))
         for word, token in rest
     ):
         return None

@@ -1342,6 +1342,7 @@ def test_everyday_names_land_their_operation_top_1(catalog, query: str, expected
     ("what were exchange rates in 2020", "forex_history"),
     ("what was the exchange rate in 2020", "forex_history"),
     ("world's exchange rates", "forex_rates"),
+    ("exchange rates over the last 5 years", "forex_history"),
 ])
 def test_an_exchange_rate_of_no_currency_ranks_every_currency_first(
     catalog, query: str, expected: str,
@@ -1373,6 +1374,8 @@ def test_an_exchange_rate_that_names_more_keeps_its_answer(
     "what is the exchange rate",
     "what was the exchange rate",
     "what's the exchange rate",
+    # A number that is neither a count nor a year from 1900 to 2099.
+    "exchange rate in 1899",
     # A currency code in capitals names one currency.
     "ALL exchange rate",
 ])
