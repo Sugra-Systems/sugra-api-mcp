@@ -952,6 +952,31 @@ def test_ambiguous_iso2_words_are_not_countries() -> None:
     assert detect_query_countries("US CPI inflation") == {"US"}
 
 
+@pytest.mark.parametrize(("query", "expected"), [
+    ("U.S. current account", {"US"}),
+    ("u.s. current account", {"US"}),
+    ("U.S.A. current account", {"US"}),
+    ("current account of the U.S.", {"US"}),
+    ("show us Japan GDP", {"JP"}),
+    ("U.S.S.R. history", set()),
+])
+def test_us_with_dots_names_the_united_states(query: str, expected: set[str]) -> None:
+    """"U.S. current account" read no country: its tokens "u" and "s" match
+    no term, so the country profile got no country parameter boost."""
+    from sugra_api_mcp.catalog.aliases import detect_query_countries
+
+    assert detect_query_countries(query) == expected
+
+
+@pytest.mark.parametrize("query", ["U.S. current account", "U.S.A. current account"])
+def test_a_current_account_of_the_dotted_us_ranks_the_profile_first(
+        catalog, query: str) -> None:
+    """The Swiss National Bank's current account ranked first on the dotted
+    spelling, which gave the country profile no country parameter boost."""
+    results = search_catalog(catalog, query, limit=5)
+    assert results[0]["operation_id"] == "macro_country_profile"
+
+
 def test_unmatched_replacement_clamps_the_deprecated_route_out(catalog) -> None:
     """A deprecated route whose replacement matches nothing must not
     stand on its legacy text alone."""
