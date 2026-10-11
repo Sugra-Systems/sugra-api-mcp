@@ -2241,8 +2241,13 @@ def matching_central_bank_prefixes(query: str) -> list[str]:
 # Bank Rate, a quarter point above the policy rate. A query that asks more
 # ("SARB prime interest rate", "Norges Bank interest rate swaps", "CNB policy
 # rate history") asks for another series of the bank and is ranked as before.
+# A bank's key or main rate is its policy rate too: "ECB main rate" found the
+# ECB's balance of payments and "Bank of Canada key rate" the Bank Rate. The
+# words name the rate only side by side, so "ECB main refinancing rate", a
+# rate no operation holds, is ranked as before.
 POLICY_RATE_PHRASES: tuple[str, ...] = (
     "rate decision", "policy rate", "interest rate", "decision",
+    "key rate", "main rate", "key interest rate", "main interest rate",
 )
 # The operation that holds each bank's policy rate, by the bank's prefix.
 CENTRAL_BANK_POLICY_RATES: dict[str, str] = {
