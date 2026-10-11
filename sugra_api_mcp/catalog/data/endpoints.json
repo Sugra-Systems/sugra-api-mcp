@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-10-10T21:54:24Z",
+  "built_at": "2026-10-11T06:31:56Z",
   "endpoint_count": 1625,
   "endpoints": [
     {
@@ -19238,7 +19238,7 @@
         },
         {
           "description": "EDINET document identifier.",
-          "example": "S100PVTL",
+          "example": "S100Z1LW",
           "location": "path",
           "name": "doc_id",
           "required": true,
@@ -19250,7 +19250,7 @@
         },
         {
           "description": "Doc type code (120, 140, 350, etc.) for typed parsing",
-          "example": "120",
+          "example": "220",
           "location": "query",
           "name": "doc_type",
           "required": false,
@@ -66122,7 +66122,7 @@
           }
         },
         {
-          "description": "Optional maximum nested markets per event (0 = none); markets_count still gives each event's full number. Omit for every market.",
+          "description": "Optional maximum number of markets nested in this one event (0 = none); markets_count still gives the event's full number. Omit for every market.",
           "example": 3,
           "location": "query",
           "name": "markets_limit",
@@ -66138,7 +66138,7 @@
                 "type": "null"
               }
             ],
-            "description": "Optional maximum nested markets per event (0 = none); markets_count still gives each event's full number. Omit for every market.",
+            "description": "Optional maximum number of markets nested in this one event (0 = none); markets_count still gives the event's full number. Omit for every market.",
             "title": "Markets Limit"
           }
         }
@@ -79054,7 +79054,7 @@
       "toolset": "public_finance"
     },
     {
-      "description": "Total public debt outstanding, updated daily. Returns the latest daily records, newest first. start_date and end_date narrow the answer to a record_date window: end_date=<a day a year back> with limit=1 answers the value on or before that day in one small call.",
+      "description": "Total public debt outstanding, updated daily. Returns the latest daily records, newest first. start_date and end_date narrow the answer to a record_date window: end_date=<a day a year back> with limit=1 answers the value on or before that day in one small call. A windowed call returns only the newest `limit` records inside the window, never the whole window: limit defaults to 10 and is at most 100, so a window with more days than `limit` is cut at its older end.",
       "method": "GET",
       "operation_id": "treasury_debt",
       "parameters": [
@@ -79099,14 +79099,14 @@
           }
         },
         {
-          "description": "Maximum number of daily records, newest first.",
+          "description": "Maximum number of daily records, newest first. Default 10, maximum 100. With a window, the newest `limit` records inside it are returned.",
           "example": 10,
           "location": "query",
           "name": "limit",
           "required": false,
           "schema": {
             "default": 10,
-            "description": "Maximum number of daily records, newest first.",
+            "description": "Maximum number of daily records, newest first. Default 10, maximum 100. With a window, the newest `limit` records inside it are returned.",
             "maximum": 100,
             "minimum": 1,
             "title": "Limit",
@@ -96418,5 +96418,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "6326722c7e487133293edd58849ab547484067db8fd1467b01d6fea778a4f60d"
+  "spec_sha256": "33d9f82b315148fb5fee4f75fede631a5f63a826748586222c29055655a71b01"
 }
