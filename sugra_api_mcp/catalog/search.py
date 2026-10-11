@@ -17,6 +17,7 @@ from .aliases import (
     COMPOUND_NAMED_OPERATIONS,
     COUNTRY_STATISTIC_SPELLINGS,
     COUNTRY_STATISTIC_WORDS,
+    CURRENCY_NAMES,
     ETF_TICKERS,
     FX_CONVERT_OPERATION,
     FX_PANEL_OPERATION,
@@ -140,6 +141,16 @@ LISTING_PERIOD_BOOST = 1
 CURRENCY_PAIR_FOREX_BOOST = 15
 CENTRAL_BANK_PREFIX_BOOST = 15
 CRYPTO_NAMESPACE_BOOST = 18
+# Crypto symbols that make a query a crypto question; "defi" begins "deficit",
+# so whole words only.
+_CRYPTO_SYMBOL_RE = re.compile(r"\b(btc|eth|sol|ada|xrp|doge|bnb|usdt|usdc|dai|defi)\b")
+# A currency's qualified name that holds a crypto symbol names the currency,
+# not the token: "peruvian sol to dollar" found the Solana token.
+_SYMBOL_CURRENCY_NAMES_RE = re.compile(r"\b(?:" + "|".join(
+    r"\s+".join(map(re.escape, name.split()))
+    for name in sorted(CURRENCY_NAMES)
+    if " " in name and _CRYPTO_SYMBOL_RE.search(name)
+) + r")\b")
 # Strongest boost on purpose: when query asks for US-specific macro data,
 # the generic FRED proxy reaches series that no country-specific endpoint
 # in our catalog covers (CPIAUCSL, GDP, UNRATE, etc.). Live ChatGPT MCP
@@ -1007,11 +1018,9 @@ def search_catalog(
         "crypto", "coin", "token", "blockchain", "altcoin", "stablecoin",
         "mempool", "onchain",
     )
-    # "defi" begins "deficit": a whole word only.
-    crypto_symbol_pattern = re.compile(r"\b(btc|eth|sol|ada|xrp|doge|bnb|usdt|usdc|dai|defi)\b")
     has_crypto_context = (
         any(t in lowered for t in crypto_phrase_terms)
-        or bool(crypto_symbol_pattern.search(lowered))
+        or bool(_CRYPTO_SYMBOL_RE.search(_SYMBOL_CURRENCY_NAMES_RE.sub(" ", lowered)))
     )
 
     # Network-domain dominance: when two or more distinct networking terms
