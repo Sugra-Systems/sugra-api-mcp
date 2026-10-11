@@ -1670,12 +1670,13 @@ def test_everyday_names_point_to_their_operation(query: str, operation: str, nam
 # price word (PRICED_SUBJECTS): the price word follows the subject, or comes
 # before it directly or through "of", "for" or "per", past qualifiers and, but
 # before "oil" alone, places and grades; the subject's phrase then ends at a
-# word such as a month, a place or a currency code. A subject joined to another
-# word by "and", "or" or "vs" or by a list mark keeps the names it had before
-# the rule, and so does crude oil whose phrase goes on past its price. The near
-# misses, in both word orders, put trucking before another noun, another oil
-# inside the subject, a word that claims the price before it or a traded
-# instrument after it.
+# word such as a month, a place or a currency code. A subject joined to other
+# list items by "and", "or" or "vs" or by a list mark is named by its own price
+# or by the price of the whole list; crude oil whose phrase goes on past its
+# price keeps the names it had before the rule. The near misses, in both word
+# orders, put trucking before another noun, another oil inside the subject, a
+# word that claims the price before it, a traded instrument after it or a list
+# item that makes it another product or a company.
 _OIL = "commodities_energy_petroleum"
 _TRUCKING = "fred_series_series_id"
 
@@ -1861,6 +1862,12 @@ PRICED_SUBJECT_NOT_NAMED = [
     ("oil and gas stock prices", _OIL),
     ("price of oil and gas stocks", _OIL),
     ("trucking and logistics stock prices", _TRUCKING),
+    ("price of oil and gas companies", _OIL),
+    ("price of oil and gas ETF", _OIL),
+    ("price of trucking and logistics stocks", _TRUCKING),
+    # Oil and vinegar is a dressing.
+    ("price of oil and vinegar", _OIL),
+    ("vinegar and oil prices", _OIL),
     ("trucking rate per share", _TRUCKING),
     ("price of trucking per share", _TRUCKING),
     ("price of trucking index fund", _TRUCKING),
@@ -1926,38 +1933,81 @@ def test_a_near_miss_names_no_priced_subject(catalog, query: str, operation: str
 
 
 @pytest.mark.parametrize("query,operation,name", [
+    # A price of its own.
     ("gold price and oil price", _OIL, "oil price"),
     ("gas price or oil price", _OIL, "oil price"),
-    ("coffee price and crude price", _OIL, "crude price"),
+    ("coffee price and crude price", _OIL, "oil price"),
     ("house and oil price", _OIL, "oil price"),
-    ("price of oil and house", _OIL, "price of oil"),
+    ("price of oil and house", _OIL, "oil price"),
     ("price of house and oil price", _OIL, "oil price"),
-    ("price of oil and house price", _OIL, "price of oil"),
-    ("price of oil and the dollar", _OIL, "price of oil"),
-    ("rail rates and trucking rates", _TRUCKING, "trucking rate"),
-    ("rail rates and trucking cost", _TRUCKING, "trucking cost"),
-    ("cost of trucking and rail", _TRUCKING, "cost of trucking"),
-    ("trucking and rail freight rates", _TRUCKING, "trucking"),
+    ("price of oil and house price", _OIL, "oil price"),
+    ("price of oil and the dollar", _OIL, "oil price"),
+    ("rail rates and trucking rates", _TRUCKING, "trucking price"),
+    ("rail rates and trucking cost", _TRUCKING, "trucking price"),
+    ("cost of trucking and rail", _TRUCKING, "trucking price"),
+    ("gold, crude price", _OIL, "oil price"),
+    ("rail rates, trucking cost", _TRUCKING, "trucking price"),
+    # A pair item with a price of its own claims nothing.
+    ("vinegar price and oil price", _OIL, "oil price"),
+    ("vinegar prices and oil prices", _OIL, "oil price"),
+    ("oil price and vinegar price", _OIL, "oil price"),
+    ("oil prices and vinegar prices", _OIL, "oil price"),
+    # The price of the whole list, before it or after it.
+    ("oil and gas prices", _OIL, "oil price"),
+    ("oil and natural gas prices", _OIL, "oil price"),
+    ("crude oil and palm oil prices", _OIL, "oil price"),
+    ("oil, gas and coal prices", _OIL, "oil price"),
+    ("trucking and rail freight rates", _TRUCKING, "trucking price"),
+    ("trucking & rail freight rates", _TRUCKING, "trucking price"),
+    ("price of gold and oil", _OIL, "oil price"),
+    ("price of palm oil and crude oil", _OIL, "oil price"),
+    ("price of gold, oil", _OIL, "oil price"),
+    ("price of gold, silver and oil", _OIL, "oil price"),
+    ("rates of rail freight, trucking", _TRUCKING, "trucking price"),
+    # A list item that makes the subject another product or a company's.
     ("oil and gas company prices", _OIL, None),
-    ("oil and the price of gold", _OIL, None),
+    ("oil and gas ETF prices", _OIL, None),
+    ("price of oil and gas companies", _OIL, None),
+    ("price of oil and gas ETF", _OIL, None),
     ("trucking and logistics stock prices", _TRUCKING, None),
-    ("trucking & rail freight rates", _TRUCKING, "trucking"),
-    ("price of gold, oil", _OIL, None),
-    ("gold, crude price", _OIL, "crude price"),
-    ("rail rates, trucking cost", _TRUCKING, "trucking cost"),
-    ("rates of rail freight, trucking", _TRUCKING, "trucking"),
-    ("gold and crude outlook; price of a barrel of oil", _OIL, None),
+    ("price of trucking and logistics stocks", _TRUCKING, None),
+    ("price of oil and vinegar", _OIL, None),
+    ("oil and vinegar prices", _OIL, None),
+    ("vinegar and oil prices", _OIL, None),
+    ("price of vinegar and oil", _OIL, None),
+    ("oil, salt and vinegar prices", _OIL, None),
+    ("price of vinegar, salt and oil", _OIL, None),
+    ("price of oil, gas and coal companies", _OIL, None),
+    ("oil and the price of gold", _OIL, None),
+    # Each run reads its own list.
+    ("gold and crude outlook; price of a barrel of oil", _OIL, "oil price"),
     ("oil and vinegar; price of oil paintings", _OIL, "price of oil"),
 ])
-def test_a_joined_priced_subject_keeps_its_names(
+def test_a_joined_priced_subject_reads_its_list(
     query: str, operation: str, name: str | None,
 ) -> None:
-    """A subject joined to another word by "and", "or" or "vs" or by a list
-    mark, on either side, is named only by its names in NAMED_OPERATIONS, as
-    before the price rule, and so is every other run of it in the query."""
+    """A subject joined to other list items by "and", "or" or "vs" or by a
+    list mark is named by a price of its own or by the price that precedes or
+    follows the whole list, unless an item makes it another product or names
+    a company or an instrument it modifies."""
     from sugra_api_mcp.catalog.aliases import detect_named_operations
 
     assert detect_named_operations(query).operations.get(operation) == name
+
+
+@pytest.mark.parametrize("query,words", [
+    ("price of gold and oil", {"price", "of", "oil"}),
+    ("price of gold, silver and oil", {"price", "of", "oil"}),
+    ("rates of rail freight, trucking", {"rates", "of", "trucking"}),
+    ("oil and gas prices", {"oil", "prices"}),
+])
+def test_a_list_price_leaves_the_other_items_their_words(query: str, words: set[str]) -> None:
+    """A subject named by the price of its list holds the price and its own
+    run, never the words of the other items, which keep their own score."""
+    from sugra_api_mcp.catalog.aliases import detect_named_operations
+
+    named = detect_named_operations(query)
+    assert set().union(*named.operation_words.values()) == words
 
 
 @pytest.mark.parametrize("query,name", [

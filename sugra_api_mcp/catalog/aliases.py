@@ -1005,10 +1005,10 @@ def currency_statistic_places(query: str) -> tuple[frozenset[str], frozenset[str
 # not at all (TTF is the World Bank's "Natural gas, Europe" series), so the
 # token score alone never finds them. A product points to its price only
 # with the word price: "crude oil" alone also opens questions about
-# pipelines, tankers and stocks. The names below that hold "crude", "oil",
-# "trucking" or "truckload" count only where a conjunction or a list mark
-# joins the subject to another word; elsewhere the subject is named by its
-# price (PRICED_SUBJECTS). "brent" and "wti" name crude oil everywhere.
+# pipelines, tankers and stocks. Crude oil and the trucking price index are
+# named by their price (PRICED_SUBJECTS); the names below that hold "crude" or
+# "oil" count only where crude oil's phrase goes on past the words its price
+# reaches (_goes_on). "brent" and "wti" name crude oil everywhere.
 NAMED_OPERATIONS: dict[str, tuple[str, ...]] = {
     "oil price": ("commodities_energy_petroleum",),
     "price of oil": ("commodities_energy_petroleum",),
@@ -1043,21 +1043,6 @@ NAMED_OPERATIONS: dict[str, tuple[str, ...]] = {
     # Singular: a query's plural matches a singular phrase, never the reverse.
     "turkish strait": ("maritime_chokepoints_activity",),
     "dardanelles": ("maritime_chokepoints_activity",),
-    # FRED holds these under series codes only (PCU484121484121, the
-    # producer price index of general freight trucking), so they name it only
-    # as a price of trucking: "trucking" and "truckload" alone count beside
-    # "freight" only (_NAME_CUES), because "trucking accidents" and "trucking
-    # jobs" ask about something else.
-    "trucking": ("fred_series_series_id",),
-    "truckload": ("fred_series_series_id",),
-    "truck freight": ("fred_series_series_id",),
-    "trucking rate": ("fred_series_series_id",),
-    "trucking price": ("fred_series_series_id",),
-    "trucking cost": ("fred_series_series_id",),
-    "truckload rate": ("fred_series_series_id",),
-    "truckload price": ("fred_series_series_id",),
-    "cost of trucking": ("fred_series_series_id",),
-    "price of trucking": ("fred_series_series_id",),
     # A central bank's meetings are in the meeting calendar, not among the
     # bank's own operations ("next FOMC meeting date").
     "meeting": ("macro_cb_calendar", "macro_cb_calendar_bank"),
@@ -1071,12 +1056,8 @@ _MEETING_CALENDAR_PREFIXES: frozenset[str] = frozenset({
 })
 
 # Names that point to their operations only when the query also holds one of
-# these words: "trucking freight rates" asks for the trucking price index,
-# "trucking employment" does not, and a meeting is the calendar's only when
-# a bank it covers holds it.
+# these words: a meeting is the calendar's only when a bank it covers holds it.
 _NAME_CUES: dict[str, tuple[str, ...]] = {
-    "trucking": ("freight",),
-    "truckload": ("freight",),
     "meeting": (
         "central bank",
         *(name for name, prefix in CENTRAL_BANK_PREFIX_BOOSTS.items()
@@ -1135,16 +1116,22 @@ class PricedSubject:
     stands there as often as a modifier ("what affects oil prices"); there the
     other subjects' words claim the price ("palm oil price").
 
-    A run joined to another word by "and", "or" or "versus" or by a list
-    mark, on either side ("gold price and oil price", "price of oil and gas
-    companies", "price of gold, oil"), is left to the subject's names in
-    NAMED_OPERATIONS, and with it every run of the subject in the query. A
-    list mark after a run whose price precedes it only ends the run's phrase
-    ("price of a barrel of oil, today"). A subject with open phrases leaves a
-    run to those names in the same way where its phrase goes on past a word
-    the run modifies or the price's own "of" would claim the price ("price of
-    oil California", "price of oil change", "oil price of California"); a
-    traded instrument or another subject there still claims it.
+    A run joined to other words by "and", "or", "vs" or "versus" or by a
+    list mark reads each of them as an item of one list (_joined_spans). A
+    run with a price of its own is named by it ("gold price and oil price",
+    "price of oil and gas"); one without shares the price that precedes or
+    follows the whole list ("price of gold and oil", "oil and natural gas
+    prices"). A joined item claims the price where it makes the run another
+    product, on either side ("oil and vinegar prices"), or where the item
+    after the run is a company or a traded instrument the run modifies
+    ("price of oil and gas companies", "oil and gas ETF prices"); a bare
+    company or instrument after the run is an item of its own ("price of oil
+    and stocks"). A subject with open phrases leaves a run to its names in
+    NAMED_OPERATIONS, and with it every run of the subject in the query,
+    where its phrase goes on past a word the run modifies or the price's own
+    "of" would claim the price ("price of oil California", "price of oil
+    change", "oil price of California"); a traded instrument or another
+    subject there still claims it.
     """
 
     operation: str
@@ -1157,6 +1144,7 @@ class PricedSubject:
     measures: frozenset[str] = frozenset()   # units a preceding price is given per
     modified_heads: tuple[str, ...] = ()     # heads places and modifiers may precede; () all
     open_phrases: bool = False               # a phrase going on past the price keeps the names
+    pairs: frozenset[str] = frozenset()      # words a run joined to is another product
 
 
 PRICED_SUBJECTS: tuple[PricedSubject, ...] = (
@@ -1190,6 +1178,8 @@ PRICED_SUBJECTS: tuple[PricedSubject, ...] = (
         # A place, a source or another noun after crude oil ("price of oil
         # California", "price of oil change") leaves it to its names.
         open_phrases=True,
+        # Oil and vinegar is a dressing.
+        pairs=_forms("vinegar"),
     ),
     # FRED holds the producer price index of general freight trucking under
     # its series code only (PCU484121484121). "truck" alone is a vehicle
@@ -1217,7 +1207,7 @@ PRICED_SUBJECTS: tuple[PricedSubject, ...] = (
 
 # The names in NAMED_OPERATIONS that hold a priced subject's head, and the
 # subject's operation: they name it only in a query that leaves the subject to
-# them (_joined, _goes_on).
+# them (_goes_on).
 _SUBJECT_NAMES: dict[str, str] = {
     name: subject.operation
     for subject in PRICED_SUBJECTS
@@ -1353,14 +1343,18 @@ _INSTRUMENTS: frozenset[str] = frozenset({
     "etfs", "etn", "etns", "futures", "option", "options", "swap", "swaps",
     "derivative", "derivatives", "cfd", "cfds", "bond", "bonds", "warrant", "warrants",
 })
+# Companies, which a joined run may modify as an instrument ("price of oil and
+# gas companies").
+_COMPANIES: frozenset[str] = _forms("firm", "corporation", "sector") | {"company", "companies"}
 
-# Conjunctions that join a run to another word ("gold and oil prices", "price
-# of oil and gas companies"), which leaves the run to its subject's names, and
-# the marks that join list items as they do ("price of gold, oil", "oil/gas
-# prices"). The word tokens drop the marks, so a mark is found by the number
-# of tokens before it (_list_marks).
+# Conjunctions that join a run to other list items ("gold and oil prices",
+# "price of oil and gas companies"), and the marks that join them as they do
+# ("price of gold, oil", "oil/gas prices"). The word tokens drop the marks, so
+# a mark is found by the number of tokens before it (_list_marks).
 _CONJUNCTIONS: frozenset[str] = frozenset({"and", "or", "versus", "vs"})
 _LIST_MARK_RE = re.compile(r"[,;/&+]")
+# Words that end a list item: function words and a price's link.
+_ITEM_ENDS: frozenset[str] = _FUNCTION_WORDS | _PRICE_LINKS
 
 
 def _list_marks(query: str) -> frozenset[int]:
@@ -1488,14 +1482,17 @@ def _phrase_start(tokens: list[str], end: int, phrases: Iterable[str]) -> int | 
     return None
 
 
-def _subject_runs(tokens: list[str], subject: PricedSubject) -> list[tuple[int, int]]:
-    """Runs of the subject's words that hold one of its heads and no other subject."""
+def _subject_runs(
+    tokens: list[str], subject: PricedSubject, marks: frozenset[int] = frozenset(),
+) -> list[tuple[int, int]]:
+    """Runs of the subject's words that hold one of its heads and no other
+    subject; a list mark ends a run ("rates of rail freight, trucking")."""
     runs: list[tuple[int, int]] = []
     index = 0
     while index < len(tokens):
         start = index
-        while index < len(tokens) and (tokens[index] in subject.words
-                                       or tokens[index] in subject.others):
+        while index < len(tokens) and (index == start or index not in marks) and (
+                tokens[index] in subject.words or tokens[index] in subject.others):
             index += 1
         if index == start:
             index += 1
@@ -1608,35 +1605,130 @@ def _priced_spans(
     own score and a place still credits its own national source.
     """
     spans: list[tuple[int, int]] = []
-    for start, end in _subject_runs(tokens, subject):
-        pieces = (_price_after(tokens, start, end, subject, marks)
-                  or _price_before(tokens, start, end, subject, marks) or [])
-        spans += [(first, last) for first, last in pieces if first < last]
+    for start, end in _subject_runs(tokens, subject, marks):
+        own = _price_after(tokens, start, end, subject, marks)
+        pieces = (None if _joined_claims(tokens, start, end, subject, marks, bool(own))
+                  else own
+                  or _price_before(tokens, start, end, subject, marks)
+                  or _joined_spans(tokens, start, end, subject, marks))
+        spans += [(first, last) for first, last in pieces or [] if first < last]
     return spans
 
 
-def _joined(
+def _item_before(
+    tokens: list[str], index: int, marks: frozenset[int] = frozenset(),
+) -> tuple[int, int] | None:
+    """The list item joined to the words at the token index by a conjunction
+    or a list mark before them: the span of its words back to a function
+    word or another mark, or None."""
+    if index in marks and index > 0:
+        end = index - 1 if tokens[index - 1] in _CONJUNCTIONS else index
+    elif index > 0 and tokens[index - 1] in _CONJUNCTIONS:
+        end = index - 1
+    else:
+        return None
+    start = end
+    while (start > 0 and tokens[start - 1] not in _ITEM_ENDS
+           and (start == end or start not in marks)):
+        start -= 1
+    return (start, end) if start < end else None
+
+
+def _item_after(
+    tokens: list[str], index: int, marks: frozenset[int] = frozenset(),
+    subject: PricedSubject | None = None,
+) -> tuple[int, int] | None:
+    """The list item joined to the words ending at the token index by a
+    conjunction or a list mark after them: the span of its words up to a
+    function word or another mark, or None. Given the subject, the item also
+    ends before one of its price words or a price qualifier."""
+    if index >= len(tokens) or not (index in marks or tokens[index] in _CONJUNCTIONS):
+        return None
+    start = index + 1 if tokens[index] in _CONJUNCTIONS else index
+    end = start
+    while (end < len(tokens) and tokens[end] not in _ITEM_ENDS
+           and (end == start or end not in marks)
+           and not (subject and (tokens[end] in _PRICE_QUALIFIERS
+                                 or _phrase_end(tokens, end, subject.prices) is not None))):
+        end += 1
+    return (start, end) if start < end else None
+
+
+def _joined_claims(
     tokens: list[str], start: int, end: int, subject: PricedSubject,
     marks: frozenset[int] = frozenset(),
+    priced: bool = False,
 ) -> bool:
-    """Whether a run is joined to another word by "and", "or", "versus" or a
-    list mark: a conjunction stands before the words that qualify the run, or
-    after the run, past an "'s" and words that qualify a price; a list mark
-    stands anywhere from the first of those words to the last. A list mark
-    after a run whose price precedes it only ends the run's phrase ("price of
-    oil, today")."""
-    before = _qualifier_start(tokens, start, subject)
-    after = end + 1 if tokens[end:end + 1] == ["s"] else end
-    while after < len(tokens) and tokens[after] in _PRICE_QUALIFIERS:
-        after += 1
-    if before > 0 and tokens[before - 1] in _CONJUNCTIONS:
-        return True
-    if after < len(tokens) and tokens[after] in _CONJUNCTIONS:
-        return True
-    if any(0 < mark < end for mark in marks if mark >= before):
-        return True
-    return (any(end <= mark <= after for mark in marks if mark < len(tokens))
-            and _price_before(tokens, start, end, subject, marks) is None)
+    """Whether a list item joined to the run claims its price: a word that
+    makes the run another product, in any item on either side ("oil and
+    vinegar prices", "price of vinegar and oil", "oil, salt and vinegar
+    prices"), or a company or a traded instrument the run modifies with an
+    item after it ("price of oil and gas companies"). An item before the run
+    that holds a price of its own ends the list ("vinegar price and oil
+    price"), and the items after a run whose price follows it are another
+    list ("oil price and vinegar price")."""
+    cut = _qualifier_start(tokens, start, subject)
+    while (item := _item_before(tokens, cut, marks)) is not None:
+        if any(_phrase_end(tokens, index, subject.prices) is not None
+               for index in range(*item)):
+            break
+        if any(token in subject.pairs for token in tokens[item[0]:item[1]]):
+            return True
+        cut = item[0]
+    if priced:
+        return False
+    last = end
+    while (item := _item_after(tokens, last, marks)) is not None:
+        words = tokens[item[0]:item[1]]
+        if (any(token in subject.pairs for token in words)
+                or any(token in _INSTRUMENTS or token in _COMPANIES for token in words[1:])):
+            return True
+        last = item[1]
+    return False
+
+
+def _joined_spans(
+    tokens: list[str], start: int, end: int, subject: PricedSubject,
+    marks: frozenset[int] = frozenset(),
+) -> list[tuple[int, int]] | None:
+    """The spans naming a run that has no price of its own through the price
+    of the list it is an item of: a price that precedes the first item
+    ("price of gold and oil", "rates of rail freight, trucking") or follows
+    the last ("oil and natural gas prices"). The run is read as if the other
+    items were not there, and its spans leave them out."""
+    first = _qualifier_start(tokens, start, subject)
+    cut = first
+    while (item := _item_before(tokens, cut, marks)) is not None:
+        cut = item[0]
+    if cut < first:
+        shift = first - cut
+        reduced = tokens[:cut] + tokens[first:]
+        kept = frozenset(mark for mark in marks if mark < cut) | frozenset(
+            mark - shift for mark in marks if mark > first
+        )
+        pieces = _price_before(reduced, start - shift, end - shift, subject, kept)
+        if pieces:
+            # A piece that crosses the cut is split around the removed items.
+            spans: list[tuple[int, int]] = []
+            for a, b in pieces:
+                if a < cut < b:
+                    spans += [(a, cut), (first, b + shift)]
+                else:
+                    spans.append((a if a < cut else a + shift, b if b <= cut else b + shift))
+            return spans
+    last = end
+    while (item := _item_after(tokens, last, marks, subject)) is not None:
+        last = item[1]
+    if last > end:
+        shift = last - end
+        reduced = tokens[:end] + tokens[last:]
+        kept = frozenset(mark for mark in marks if mark < end) | frozenset(
+            mark - shift for mark in marks if mark > last
+        )
+        pieces = _price_after(reduced, start, end, subject, kept)
+        if pieces:
+            return [(start, end), (last, pieces[0][1] + shift)]
+    return None
 
 
 def _goes_on(
@@ -1730,12 +1822,13 @@ def detect_named_operations(query: str) -> NamedRequest:
     tokens = _WORD_TOKEN_RE.findall(query.lower())
     not_spot = any(_phrase_spans(tokens, word) for word in _NOT_SPOT_PRICE_WORDS)
     marks = _list_marks(query)
-    joined = {
+    named_literally = {
         subject.operation
         for subject in PRICED_SUBJECTS
-        if any(_joined(tokens, start, end, subject, marks)
-               or (subject.open_phrases and _goes_on(tokens, start, end, subject, marks))
-               for start, end in _subject_runs(tokens, subject))
+        if subject.open_phrases and any(
+            _goes_on(tokens, start, end, subject, marks)
+            for start, end in _subject_runs(tokens, subject, marks)
+        )
     }
     operations: dict[str, str] = {}
     countries: set[str] = set()
@@ -1744,11 +1837,11 @@ def detect_named_operations(query: str) -> NamedRequest:
     names = [
         (start, end, name, NAMED_OPERATIONS[name])
         for start, end, name in _claim_names(_blank(tokens, _NAME_BLOCKERS), NAMED_OPERATIONS)
-        if name not in _SUBJECT_NAMES or _SUBJECT_NAMES[name] in joined
+        if name not in _SUBJECT_NAMES or _SUBJECT_NAMES[name] in named_literally
     ] + [
         (start, end, subject.label, (subject.operation,))
         for subject in PRICED_SUBJECTS
-        if subject.operation not in joined
+        if subject.operation not in named_literally
         for start, end in _priced_spans(tokens, subject, marks)
     ]
     for start, end, name, named in sorted(names):
