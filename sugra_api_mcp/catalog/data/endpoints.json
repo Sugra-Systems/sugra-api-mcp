@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-10-11T06:31:56Z",
+  "built_at": "2026-10-11T19:28:44Z",
   "endpoint_count": 1625,
   "endpoints": [
     {
@@ -8280,7 +8280,7 @@
       "toolset": "statistics"
     },
     {
-      "description": "Quarterly Summary of State and Local Government Tax Revenue (`timeseries/eits/qtax`). Default is QTAXCAT3 (state governments by state) and TOTAL taxes at the latest published quarter. `from` turns it into a series and requires `state=` for QTAXCAT3. Shares the EITS client of API-64.3.",
+      "description": "Quarterly Summary of State and Local Government Tax Revenue (`timeseries/eits/qtax`). Default is QTAXCAT3 (state governments by state) and TOTAL taxes at the latest published quarter. `from` turns it into a series and requires `state=` for QTAXCAT3.",
       "method": "GET",
       "operation_id": "census_public_finance_state_tax_quarterly",
       "parameters": [
@@ -11204,7 +11204,7 @@
       "sources": [
         "core"
       ],
-      "summary": "Films by genre slug — Wave 2 (deferred)",
+      "summary": "Films by genre slug (deferred)",
       "tags": [
         "Entertainment"
       ],
@@ -17127,7 +17127,7 @@
       "toolset": "statistics"
     },
     {
-      "description": "The member codes a classifying slice may name, from catalogue/values2variable. This is the list API-100 validates a slice against. A code absent from the committed snapshot is 404 without a GENESIS call. Caller-selected code: striped longtail_lock with reserved wait. A cache hit is free.",
+      "description": "The member codes a classifying slice may name, from catalogue/values2variable. This is the list a slice is validated against. A code absent from the committed snapshot is 404 without a GENESIS call. Caller-selected code: striped longtail_lock with reserved wait. A cache hit is free.",
       "method": "GET",
       "operation_id": "destatis_variables_code_values",
       "parameters": [
@@ -25317,7 +25317,7 @@
       "toolset": "markets"
     },
     {
-      "description": "Returns the full S&P 500 constituent list (503 entries) with GICS sector + sub-industry classifications + date-added + SEC EDGAR CIK identifiers. Sourced from public Wikipedia (CC-BY-SA-4.0) membership announcements via daily auto-refresh blob; hardcoded 503-entry snapshot serves as defence-in-depth fallback when the blob is unavailable. Filter by ``?sector=<GICS sector>`` or ``?sub_industry=<GICS sub-industry>`` to narrow the list. Use case: UC-2 Earnings Whiplash Map filters earnings calendar by SPX members; UC-1 Institutional Footprint cross-references CIK to /sec/13f endpoints. The ``data_source`` field exposes whether the response was served from the Wikipedia blob (``blob_wikipedia``) or the hardcoded fallback (``hardcoded_fallback``).",
+      "description": "Returns the full S&P 500 constituent list (503 entries) with GICS sector + sub-industry classifications + date-added + SEC EDGAR CIK identifiers. Sourced from public Wikipedia (CC-BY-SA-4.0) membership announcements via daily auto-refresh blob; hardcoded 503-entry snapshot serves as defence-in-depth fallback when the blob is unavailable. Filter by ``?sector=<GICS sector>`` or ``?sub_industry=<GICS sub-industry>`` to narrow the list. Use cases: filter the earnings calendar by SPX members; cross-reference CIK to /sec/13f endpoints. The ``data_source`` field exposes whether the response was served from the Wikipedia blob (``blob_wikipedia``) or the hardcoded fallback (``hardcoded_fallback``).",
       "method": "GET",
       "operation_id": "equities_sp500_constituents",
       "parameters": [
@@ -26326,7 +26326,7 @@
       "toolset": "fundamentals"
     },
     {
-      "description": "Returns the most-recent ICI Weekly Estimated Long-Term Flows + ETF Net Issuance release, including a 5-week history strip. Source: ICI public press release (Investment Company Institute, Tier I non-profit trade association). 6 buckets (Equity Domestic/World, Hybrid, Bond Taxable/Municipal, Commodity) + Total + a separate ETF net issuance figure. Cadence: weekly, ICI publishes Wednesday afternoon ET; ingest captures Thursday morning UTC. Use case: ``UC-3 Sector Rotation Detector`` aggregate macro context to complement per-ETF flow estimates.",
+      "description": "Returns the most-recent ICI Weekly Estimated Long-Term Flows + ETF Net Issuance release, including a 5-week history strip. Source: ICI public press release (Investment Company Institute, Tier I non-profit trade association). 6 buckets (Equity Domestic/World, Hybrid, Bond Taxable/Municipal, Commodity) + Total + a separate ETF net issuance figure. Cadence: weekly, ICI publishes Wednesday afternoon ET; ingest captures Thursday morning UTC. Use case: sector rotation detection, with aggregate macro context to complement per-ETF flow estimates.",
       "method": "GET",
       "operation_id": "etf_flows_aggregate",
       "parameters": [],
@@ -26344,7 +26344,7 @@
       "toolset": "funds"
     },
     {
-      "description": "Cross-sector ranking of US sector SPDR ETFs by trailing return over a configurable window. Walks the 11 canonical S&P GICS sector SPDRs (XLB, XLC, XLY, XLP, XLE, XLF, XLV, XLI, XLRE, XLK, XLU), extracts the matching ``returns_<window>`` field from each ETF's latest B5 snapshot (or a dated snapshot via ``?date=YYYY-MM-DD``), and ranks DESC. Sectors missing a return (delisted, snapshot blob absent, or ETF history shorter than the window) are surfaced in ``missing_symbols`` with a structured reason and do not contribute to leader / laggard / spread / median. Use case: ``UC-3 Sector Rotation Detector`` - capital rotation signal without N round-trips.",
+      "description": "Cross-sector ranking of US sector SPDR ETFs by trailing return over a configurable window. Walks the 11 canonical S&P GICS sector SPDRs (XLB, XLC, XLY, XLP, XLE, XLF, XLV, XLI, XLRE, XLK, XLU), extracts the matching ``returns_<window>`` field from each ETF's latest B5 snapshot (or a dated snapshot via ``?date=YYYY-MM-DD``), and ranks DESC. Sectors missing a return (delisted, snapshot blob absent, or ETF history shorter than the window) are surfaced in ``missing_symbols`` with a structured reason and do not contribute to leader / laggard / spread / median. Use case: sector rotation detection - capital rotation signal without N round-trips.",
       "method": "GET",
       "operation_id": "etf_sectors_relative_strength",
       "parameters": [
@@ -26412,7 +26412,7 @@
       "toolset": "funds"
     },
     {
-      "description": "Derived endpoint that computes per-ETF net flow estimates for one ETF over the requested lookback window by walking the ETF snapshot history and emitting ONE period per CHANGE of the SEC-derived (aum_usd, nav) pair. Formula per period: ``net_flow = Δ(shares_outstanding) × to_nav`` where ``shares_outstanding = aum_usd / nav``, ``from_date`` is the last snapshot carrying the old pair and ``to_date`` is the first snapshot carrying the new pair. This is the standard ETF creation/redemption proxy used by analysts; results are an ESTIMATE, not ICI-authoritative numbers. Snapshot aum_usd/nav derive from SEC filings (NPORT-P monthly, 485BPOS annual) and are constant between filings, so flows are reported on FILING CADENCE, not per calendar day (the previous per-day contract read 0.0 on every non-filing day). Consecutive snapshots with unchanged (aum_usd, nav) are a single plateau and produce NO entry. When fewer than 2 distinct plateaus exist in the window the response is 200 with ``period_flows=[]`` and ``total_net_flow_dollar_estimate=null`` (honest 'no change observed', not an error) - and since API-1.9 the BODY says why: ``reason`` (``single_filing_plateau`` / ``no_computable_shares``), ``plateaus_observed``, and the backing filing's ``rep_pd_date`` + ``accession``. Days where the snapshot blob is missing are silently skipped; plateaus span across missing dates. Use case: ``UC-3 Sector Rotation Detector`` per-ETF accumulation signal, complemented by ICI aggregate at /etf/flows/aggregate. BREAKING (DATA-N4.7.1): this endpoint replaced the per-calendar-day ``series`` contract with filing-cadence ``period_flows``, and renamed the ``days`` query param to ``lookback_days``. The old ``days`` param is SILENTLY IGNORED (FastAPI drops undeclared query params; it is not rejected) - a mid-migration client sending ``?days=30`` gets 200 with the default lookback window. Since API-1.14.5 the body also carries ``sec_monthly_flows`` - the fund's OFFICIAL monthly creations and redemptions from SEC Form NPORT-P Part B item B.6 (sales / reinvestment / redemption / net, USD, oldest month first, with ``rep_pd_date`` + ``accession``) - next to the estimated ``period_flows``; null with ``sec_monthly_flows_reason`` for 10-K filers, for symbols without an NPORT-P blob, and for blobs stored before B.6 parsing.",
+      "description": "Derived endpoint that computes per-ETF net flow estimates for one ETF over the requested lookback window by walking the ETF snapshot history and emitting ONE period per CHANGE of the SEC-derived (aum_usd, nav) pair. Formula per period: ``net_flow = Δ(shares_outstanding) × to_nav`` where ``shares_outstanding = aum_usd / nav``, ``from_date`` is the last snapshot carrying the old pair and ``to_date`` is the first snapshot carrying the new pair. This is the standard ETF creation/redemption proxy used by analysts; results are an ESTIMATE, not ICI-authoritative numbers. Snapshot aum_usd/nav derive from SEC filings (NPORT-P monthly, 485BPOS annual) and are constant between filings, so flows are reported on FILING CADENCE, not per calendar day (the previous per-day contract read 0.0 on every non-filing day). Consecutive snapshots with unchanged (aum_usd, nav) are a single plateau and produce NO entry. When fewer than 2 distinct plateaus exist in the window the response is 200 with ``period_flows=[]`` and ``total_net_flow_dollar_estimate=null`` (honest 'no change observed', not an error) - and the BODY says why: ``reason`` (``single_filing_plateau`` / ``no_computable_shares``), ``plateaus_observed``, and the backing filing's ``rep_pd_date`` + ``accession``. Days where the snapshot blob is missing are silently skipped; plateaus span across missing dates. Use case: sector rotation detection, a per-ETF accumulation signal, complemented by ICI aggregate at /etf/flows/aggregate. BREAKING: this endpoint replaced the per-calendar-day ``series`` contract with filing-cadence ``period_flows``, and renamed the ``days`` query param to ``lookback_days``. The old ``days`` param is SILENTLY IGNORED (FastAPI drops undeclared query params; it is not rejected) - a mid-migration client sending ``?days=30`` gets 200 with the default lookback window. The body also carries ``sec_monthly_flows`` - the fund's OFFICIAL monthly creations and redemptions from SEC Form NPORT-P Part B item B.6 (sales / reinvestment / redemption / net, USD, oldest month first, with ``rep_pd_date`` + ``accession``) - next to the estimated ``period_flows``; null with ``sec_monthly_flows_reason`` for 10-K filers, for symbols without an NPORT-P blob, and for blobs stored before B.6 parsing.",
       "method": "GET",
       "operation_id": "etf_symbol_flows",
       "parameters": [
@@ -26432,13 +26432,13 @@
           }
         },
         {
-          "description": "Lookback window in days (1..90, default 90). Bounded by the 90-day ETF snapshot retention - a wider window can never hold more data (dated snapshots are swept after 90 days). Out-of-range returns 400. NOTE: the pre-DATA-N4.7.1 param `days` is no longer declared, so it is silently ignored, not rejected.",
+          "description": "Lookback window in days (1..90, default 90). Bounded by the 90-day ETF snapshot retention - a wider window can never hold more data (dated snapshots are swept after 90 days). Out-of-range returns 400. NOTE: the former param `days` is no longer declared, so it is silently ignored, not rejected.",
           "location": "query",
           "name": "lookback_days",
           "required": false,
           "schema": {
             "default": 90,
-            "description": "Lookback window in days (1..90, default 90). Bounded by the 90-day ETF snapshot retention - a wider window can never hold more data (dated snapshots are swept after 90 days). Out-of-range returns 400. NOTE: the pre-DATA-N4.7.1 param `days` is no longer declared, so it is silently ignored, not rejected.",
+            "description": "Lookback window in days (1..90, default 90). Bounded by the 90-day ETF snapshot retention - a wider window can never hold more data (dated snapshots are swept after 90 days). Out-of-range returns 400. NOTE: the former param `days` is no longer declared, so it is silently ignored, not rejected.",
             "title": "Lookback Days",
             "type": "integer"
           }
@@ -26460,7 +26460,7 @@
       "toolset": "funds"
     },
     {
-      "description": "Full fund-holdings snapshot from the SEC's NPORT-P quarterly filing for one ETF underlier. Replaces the prior commercial fund-profile holdings field (Tier C, disabled in DATA-N1) with the SEC Tier S equivalent. NPORT-P carries the FULL holdings list (NOT top-10), CUSIP/ISIN/LEI, asset-cat + issuer-cat (for sector derivation), and ``invCountry`` (for country weightings). Public NPORT-P refreshes only ONCE per fiscal quarter (the SEC's month-3-of-quarter rule), so freshness is typically 3-5 months. Compare ``rep_pd_date`` against today to gauge staleness. Returns 404 ``holdings_unavailable`` when the ETF is a commodity-pool / grantor-trust structure (USO/UNG/GLD/SLV) that files 10-K/10-Q instead of NPORT-P.\n\nAPI-83: returns 410 Gone when this symbol's universe row records that it stopped trading - ``delisted`` with the filing date of the fund's own Form 25, or ``renamed`` naming the ticker the fund continues under. A symbol with NO universe row is unaffected: this route does not check membership, only whether we know the fund is gone.",
+      "description": "Full fund-holdings snapshot from the SEC's NPORT-P quarterly filing for one ETF underlier. Replaces the prior commercial fund-profile holdings field (Tier C, now disabled) with the SEC Tier S equivalent. NPORT-P carries the FULL holdings list (NOT top-10), CUSIP/ISIN/LEI, asset-cat + issuer-cat (for sector derivation), and ``invCountry`` (for country weightings). Public NPORT-P refreshes only ONCE per fiscal quarter (the SEC's month-3-of-quarter rule), so freshness is typically 3-5 months. Compare ``rep_pd_date`` against today to gauge staleness. Returns 404 ``holdings_unavailable`` when the ETF is a commodity-pool / grantor-trust structure (USO/UNG/GLD/SLV) that files 10-K/10-Q instead of NPORT-P.\n\nReturns 410 Gone when this symbol's universe row records that it stopped trading - ``delisted`` with the filing date of the fund's own Form 25, or ``renamed`` naming the ticker the fund continues under. A symbol with NO universe row is unaffected: this route does not check membership, only whether we know the fund is gone.",
       "method": "GET",
       "operation_id": "etf_symbol_holdings_sec",
       "parameters": [
@@ -26496,7 +26496,7 @@
       "toolset": "funds"
     },
     {
-      "description": "Static fund profile for one ETF underlier from the SEC's annual prospectus on Form 485BPOS (the post-effective amendment carrying the audited Financial Highlights). Surfaces the latest fiscal-year-end NAV per share, fund net assets, expense ratio, and net-investment-income ratio (the Tier S yield proxy), plus the fiscal-year-end date and an inception date extracted from the N-1A body. These same fields feed the canonical /etf/{symbol}/snapshot payload (NAV / AUM / expense ratio / yields / inception); this endpoint exposes the raw extract with its SEC provenance (cik / accession / fye_date). Figures are ANNUAL + period-stale by construction - compare fye_date against today to gauge freshness. Returns 404 profile_unavailable when the fund's Financial Highlights table could not be confidently located (per-sub-family filing reality) or the ETF files 10-K instead of N-1A (commodity-pool / grantor-trust structures: USO, UNG, GLD, SLV).\n\nAPI-83: returns 410 Gone when this symbol's universe row records that it stopped trading - ``delisted`` with the filing date of the fund's own Form 25, or ``renamed`` naming the ticker the fund continues under. A symbol with NO universe row is unaffected: this route does not check membership, only whether we know the fund is gone.",
+      "description": "Static fund profile for one ETF underlier from the SEC's annual prospectus on Form 485BPOS (the post-effective amendment carrying the audited Financial Highlights). Surfaces the latest fiscal-year-end NAV per share, fund net assets, expense ratio, and net-investment-income ratio (the Tier S yield proxy), plus the fiscal-year-end date and an inception date extracted from the N-1A body. These same fields feed the canonical /etf/{symbol}/snapshot payload (NAV / AUM / expense ratio / yields / inception); this endpoint exposes the raw extract with its SEC provenance (cik / accession / fye_date). Figures are ANNUAL + period-stale by construction - compare fye_date against today to gauge freshness. Returns 404 profile_unavailable when the fund's Financial Highlights table could not be confidently located (per-sub-family filing reality) or the ETF files 10-K instead of N-1A (commodity-pool / grantor-trust structures: USO, UNG, GLD, SLV).\n\nReturns 410 Gone when this symbol's universe row records that it stopped trading - ``delisted`` with the filing date of the fund's own Form 25, or ``renamed`` naming the ticker the fund continues under. A symbol with NO universe row is unaffected: this route does not check membership, only whether we know the fund is gone.",
       "method": "GET",
       "operation_id": "etf_symbol_profile_sec",
       "parameters": [
@@ -26532,7 +26532,7 @@
       "toolset": "funds"
     },
     {
-      "description": "Live (15-min delayed) spot quote for one ETF underlier from the exchange public delayed-quote service - bid/ask, OHLC, volume, 30-day implied volatility, last-trade timestamp. Replaces the prior commercial live-quote fields (Tier C, disabled in DATA-N1) with the exchange-sourced Tier S equivalent. Ingest fires Mon-Fri 21:30 UTC (post-US-close + 15-min delay buffer). Returns 404 ``quote_unavailable`` when the ETF is not on the exchange delayed-quote feed.\n\nAPI-83: returns 410 Gone when this symbol's universe row records that it stopped trading - ``delisted`` with the filing date of the fund's own Form 25, or ``renamed`` naming the ticker the fund continues under. This route serves the RAW quote blob, so without that check a fund whose feed froze years ago would keep answering from it - the same stale-price defect the snapshot path closed in API-82, reached through a different door.",
+      "description": "Live (15-min delayed) spot quote for one ETF underlier from the exchange public delayed-quote service - bid/ask, OHLC, volume, 30-day implied volatility, last-trade timestamp. Replaces the prior commercial live-quote fields (Tier C, now disabled) with the exchange-sourced Tier S equivalent. Ingest fires Mon-Fri 21:30 UTC (post-US-close + 15-min delay buffer). Returns 404 ``quote_unavailable`` when the ETF is not on the exchange delayed-quote feed.\n\nReturns 410 Gone when this symbol's universe row records that it stopped trading - ``delisted`` with the filing date of the fund's own Form 25, or ``renamed`` naming the ticker the fund continues under. This route serves the RAW quote blob, so without that check a fund whose feed froze years ago would keep answering from it - the same stale-price defect the snapshot path closes, reached through a different door.",
       "method": "GET",
       "operation_id": "etf_symbol_quote_cboe",
       "parameters": [
@@ -26628,7 +26628,7 @@
       "toolset": "funds"
     },
     {
-      "description": "Single ETF snapshot at the latest cycle (default) or at a specific calendar date via ``?date=YYYY-MM-DD``. Returns the full payload: pricing (nav, price, premium/discount), fund characteristics (AUM, expense ratio, yields), top-10 holdings sample, sector weightings (both raw + canonical), asset-class and country exposure, and trailing returns. Returns 410 Gone when the symbol is flagged as delisted_candidate by the upstream cycle, and also (API-83) when its universe row carries ``removed_at`` - the fund was delisted and the date in the response body is its own Form 25, the exchange's notice of removal from listing. Those rows stay listed by ``/etf/snapshot/universe`` with status ``removed`` rather than vanishing, so a client that integrated against a covered symbol gets a dated explanation instead of ``unknown_symbol``.\n\nSince DATA-N4.4 the canonical snapshot is rebuilt purely from Tier S sources (regulated-exchange price + SEC NPORT-P holdings), with no commercial aggregator in the chain. A field with no source yet is returned as ``null`` and tagged in the internal ``_sources.deferred`` map. That set has SHRUNK: ``nav``/``aum_usd`` (DATA-N4.3) and ``expense_ratio_pct``/``yield_dividend_pct``/``yield_distribution_pct``/``inception_date`` (DATA-N4.2) are now POPULATED from SEC filings, and ``premium_discount_pct`` is derived from the SEC NAV against the regulated-exchange price above. All are re-deferred only PER SYMBOL when that symbol's own input is missing. The following exceptions are deliberate rather than gaps: ``premium_discount_pct`` is null for a daily-reset leveraged or inverse fund because its NAV is period-stale (tag ``API-1.14.3``); ``premium_discount_pct`` is also null where the fund's share basis moved by a split that the filing we read for it does not carry, so the NAV and the price are on different bases and a ratio between them would be the split factor rather than a premium (tag ``API-1.14.9``; that symbol's deferred reason names the filing and the split's effective date); and ``inception_date`` is null wherever the filing states none for that fund (tag ``API-1.14.7``). Still deferred for every symbol: ``returns_*`` and ``fifty_two_week_high``/``fifty_two_week_low`` (DATA-N4.1).\n\nDATA-N4.8.1: when ``price`` is null but a NAV is available, an additive ``price_proxy`` block surfaces the NAV as an explicitly-stale proxy (``basis = nav`` with an ``as_of`` SEC-filing date that can be months old and a ``note`` disclaiming a current quote). ``price`` itself stays null - the proxy is never presented as a live quote. The block is absent when ``price`` is present or when ``nav`` is also null.\n\nAPI-82: ``price`` is also null when a quote WAS read and refused because nothing in it establishes that it is current. Five reasons, named in ``_sources.deferred.price`` with the upstream instant appended when one can be stated: ``no_trade_time`` (the feed's own placeholder instead of a last-trade time), ``last_trade_stale`` and ``quote_stale`` (the feed's timestamps are past the ceiling), ``quote_not_refetched`` (our own ingest has not re-read the symbol), and ``freshness_unverifiable`` (timestamps present but unreadable). On a refusal the ``_sources.price`` entry is ABSENT - it exists only for a published value - so read ``deferred.price``, not a missing ``as_of``, to detect the case. When ``price`` IS published, ``_sources.price.as_of`` is the feed's own timestamp in UTC (when it last rebuilt that quote), never our download time, which rides beside it as ``fetched_at``; ``as_of`` can be null when no upstream instant is available, and it does not fall back.",
+      "description": "Single ETF snapshot at the latest cycle (default) or at a specific calendar date via ``?date=YYYY-MM-DD``. Returns the full payload: pricing (nav, price, premium/discount), fund characteristics (AUM, expense ratio, yields), top-10 holdings sample, sector weightings (both raw + canonical), asset-class and country exposure, and trailing returns. Returns 410 Gone when the symbol is flagged as delisted_candidate by the upstream cycle, and also when its universe row carries ``removed_at`` - the fund was delisted and the date in the response body is its own Form 25, the exchange's notice of removal from listing. Those rows stay listed by ``/etf/snapshot/universe`` with status ``removed`` rather than vanishing, so a client that integrated against a covered symbol gets a dated explanation instead of ``unknown_symbol``.\n\nThe canonical snapshot is rebuilt purely from Tier S sources (regulated-exchange price + SEC NPORT-P holdings), with no commercial aggregator in the chain. A field with no source yet is returned as ``null`` and tagged in the internal ``_sources.deferred`` map. That set has SHRUNK: ``nav``/``aum_usd`` and ``expense_ratio_pct``/``yield_dividend_pct``/``yield_distribution_pct``/``inception_date`` are now POPULATED from SEC filings, and ``premium_discount_pct`` is derived from the SEC NAV against the regulated-exchange price above. All are re-deferred only PER SYMBOL when that symbol's own input is missing. The following exceptions are deliberate rather than gaps: ``premium_discount_pct`` is null for a daily-reset leveraged or inverse fund because its NAV is period-stale; ``premium_discount_pct`` is also null where the fund's share basis moved by a split that the filing we read for it does not carry, so the NAV and the price are on different bases and a ratio between them would be the split factor rather than a premium (that symbol's deferred reason names the filing and the split's effective date); and ``inception_date`` is null wherever the filing states none for that fund. Still deferred for every symbol: ``returns_*`` and ``fifty_two_week_high``/``fifty_two_week_low``.\n\nWhen ``price`` is null but a NAV is available, an additive ``price_proxy`` block surfaces the NAV as an explicitly-stale proxy (``basis = nav`` with an ``as_of`` SEC-filing date that can be months old and a ``note`` disclaiming a current quote). ``price`` itself stays null - the proxy is never presented as a live quote. The block is absent when ``price`` is present or when ``nav`` is also null.\n\n``price`` is also null when a quote WAS read and refused because nothing in it establishes that it is current. Five reasons, named in ``_sources.deferred.price`` with the upstream instant appended when one can be stated: ``no_trade_time`` (the feed's own placeholder instead of a last-trade time), ``last_trade_stale`` and ``quote_stale`` (the feed's timestamps are past the ceiling), ``quote_not_refetched`` (our own ingest has not re-read the symbol), and ``freshness_unverifiable`` (timestamps present but unreadable). On a refusal the ``_sources.price`` entry is ABSENT - it exists only for a published value - so read ``deferred.price``, not a missing ``as_of``, to detect the case. When ``price`` IS published, ``_sources.price.as_of`` is the feed's own timestamp in UTC (when it last rebuilt that quote), never our download time, which rides beside it as ``fetched_at``; ``as_of`` can be null when no upstream instant is available, and it does not fall back.",
       "method": "GET",
       "operation_id": "etf_symbol_snapshot",
       "parameters": [
@@ -30862,13 +30862,13 @@
           }
         },
         {
-          "description": "Max observations to return. FRED's hard cap is 100000; we cap at 1000 here for RAM safety and predictable response sizes. Default raised from 100: with sort_order=desc a daily series at 100 returned barely 3 months and read as its whole history. When the series holds more than `limit`, the response also carries `observations_truncated` and `observations_available`. observations_available is null when FRED reported no total.",
+          "description": "Max observations to return. FRED's hard cap is 100000; we cap at 1000 here for RAM safety and predictable response sizes. Default was raised from 100: with sort_order=desc a daily series at 100 returned barely 3 months and read as its whole history. When the series holds more than `limit`, the response also carries `observations_truncated` and `observations_available`. observations_available is null when FRED reported no total.",
           "location": "query",
           "name": "limit",
           "required": false,
           "schema": {
             "default": 500,
-            "description": "Max observations to return. FRED's hard cap is 100000; we cap at 1000 here for RAM safety and predictable response sizes. Default raised from 100: with sort_order=desc a daily series at 100 returned barely 3 months and read as its whole history. When the series holds more than `limit`, the response also carries `observations_truncated` and `observations_available`. observations_available is null when FRED reported no total.",
+            "description": "Max observations to return. FRED's hard cap is 100000; we cap at 1000 here for RAM safety and predictable response sizes. Default was raised from 100: with sort_order=desc a daily series at 100 returned barely 3 months and read as its whole history. When the series holds more than `limit`, the response also carries `observations_truncated` and `observations_available`. observations_available is null when FRED reported no total.",
             "maximum": 1000,
             "minimum": 1,
             "title": "Limit",
@@ -32570,7 +32570,7 @@
       "toolset": "news"
     },
     {
-      "description": "People and organizations recognized in the news by the GDELT Global Entity Graph (Google NL API), ranked by how many distinct articles mention them in the window (DATA-13). Each carries its type, Google Knowledge Graph MID (when available), max salience, last seen, and sample article URLs. Optional name= returns one entity's recent articles. period=1h reads the rolling window; 6h/24h merge daily shards.",
+      "description": "People and organizations recognized in the news by the GDELT Global Entity Graph (Google NL API), ranked by how many distinct articles mention them in the window. Each carries its type, Google Knowledge Graph MID (when available), max salience, last seen, and sample article URLs. Optional name= returns one entity's recent articles. period=1h reads the rolling window; 6h/24h merge daily shards.",
       "method": "GET",
       "operation_id": "gdelt_entities_trending",
       "parameters": [
@@ -32727,7 +32727,7 @@
       "toolset": "news"
     },
     {
-      "description": "Events ranked by how much media attention they are getting in the window, from the GDELT Mentions stream (DATA-12). Each event carries its mention count, distinct outlet count, up to five outlet names, up to five article links, average tone, and first/last seen time. Join global_event_id back to /gdelt/recent for event detail. period=1h reads the rolling window; 6h/24h merge daily shards. Omit lang, or pass en, eng, or english, for the English mentions file. A two-letter code maps onto a stored code. One of the 15 stored source languages ranks the translation mentions.",
+      "description": "Events ranked by how much media attention they are getting in the window, from the GDELT Mentions stream. Each event carries its mention count, distinct outlet count, up to five outlet names, up to five article links, average tone, and first/last seen time. Join global_event_id back to /gdelt/recent for event detail. period=1h reads the rolling window; 6h/24h merge daily shards. Omit lang, or pass en, eng, or english, for the English mentions file. A two-letter code maps onto a stored code. One of the 15 stored source languages ranks the translation mentions.",
       "method": "GET",
       "operation_id": "gdelt_events_trending",
       "parameters": [
@@ -32946,7 +32946,7 @@
           }
         },
         {
-          "description": "Multilingual mode (DATA-11). Comma-separated source-language codes (ISO 639-2/3, e.g. 'rus,zho,ara') to aggregate themes from non-English news. Omit for English-only (default). The response 'languages' field breaks counts down by language.",
+          "description": "Multilingual mode. Comma-separated source-language codes (ISO 639-2/3, e.g. 'rus,zho,ara') to aggregate themes from non-English news. Omit for English-only (default). The response 'languages' field breaks counts down by language.",
           "example": "rus,zho,ara",
           "location": "query",
           "name": "lang",
@@ -32960,7 +32960,7 @@
                 "type": "null"
               }
             ],
-            "description": "Multilingual mode (DATA-11). Comma-separated source-language codes (ISO 639-2/3, e.g. 'rus,zho,ara') to aggregate themes from non-English news. Omit for English-only (default). The response 'languages' field breaks counts down by language.",
+            "description": "Multilingual mode. Comma-separated source-language codes (ISO 639-2/3, e.g. 'rus,zho,ara') to aggregate themes from non-English news. Omit for English-only (default). The response 'languages' field breaks counts down by language.",
             "title": "Lang"
           }
         }
@@ -42562,7 +42562,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "Heikin-Ashi candle transform. Smoothed OHLC for trend visualization. Multi-line: ha_open/ha_high/ha_low/ha_close. time_period ignored (per-bar). Wave F.",
+      "description": "Heikin-Ashi candle transform. Smoothed OHLC for trend visualization. Multi-line: ha_open/ha_high/ha_low/ha_close. time_period ignored (per-bar).",
       "method": "GET",
       "operation_id": "indicators_heikinashi",
       "parameters": [
@@ -44732,7 +44732,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "Rolling max of close over time_period bars. time_period required (default 14). Wave F.",
+      "description": "Rolling max of close over time_period bars. time_period required (default 14).",
       "method": "GET",
       "operation_id": "indicators_max",
       "parameters": [
@@ -44830,7 +44830,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "Position (0..time_period-1) of max within rolling window. 0 = oldest bar in window. TA-Lib semantics. Wave F.",
+      "description": "Position (0..time_period-1) of max within rolling window. 0 = oldest bar in window. TA-Lib semantics.",
       "method": "GET",
       "operation_id": "indicators_maxindex",
       "parameters": [
@@ -45321,7 +45321,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "Rolling min of close over time_period bars. time_period required (default 14). Wave F.",
+      "description": "Rolling min of close over time_period bars. time_period required (default 14).",
       "method": "GET",
       "operation_id": "indicators_min",
       "parameters": [
@@ -45419,7 +45419,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "Position (0..time_period-1) of min within rolling window. See /maxindex. Wave F.",
+      "description": "Position (0..time_period-1) of min within rolling window. See /maxindex.",
       "method": "GET",
       "operation_id": "indicators_minindex",
       "parameters": [
@@ -64266,7 +64266,7 @@
       "toolset": "markets"
     },
     {
-      "description": "Derived endpoint that packages the standard option-implied move computation: ``implied_move = spot * ATM_IV * sqrt(T)`` where ``T = days_to_expiration / 365.25``. Reads the precomputed ``iv_surface[i].atm_iv`` for the chosen expiry from the latest B6 snapshot (or a dated snapshot via ``?date=YYYY-MM-DD``). Defaults to the nearest-term front expiry; pass ``?expiry=YYYY-MM-DD`` to select a different expiry from those listed in ``available_expiries``. Returns the move in dollar + percent terms plus the 1-sigma implied price range (low / high). Use case: ``UC-2 Earnings Whiplash Map`` - compare historical post-earnings realised moves vs current option-implied amplitude.",
+      "description": "Derived endpoint that packages the standard option-implied move computation: ``implied_move = spot * ATM_IV * sqrt(T)`` where ``T = days_to_expiration / 365.25``. Reads the precomputed ``iv_surface[i].atm_iv`` for the chosen expiry from the latest B6 snapshot (or a dated snapshot via ``?date=YYYY-MM-DD``). Defaults to the nearest-term front expiry; pass ``?expiry=YYYY-MM-DD`` to select a different expiry from those listed in ``available_expiries``. Returns the move in dollar + percent terms plus the 1-sigma implied price range (low / high). Use case: compare historical post-earnings realised moves vs current option-implied amplitude.",
       "method": "GET",
       "operation_id": "options_symbol_implied_move",
       "parameters": [
@@ -64493,7 +64493,7 @@
       "toolset": "markets"
     },
     {
-      "description": "25-delta skew computed IN DELTA SPACE from the snapshot's contract deltas: implied volatility is linearly interpolated at call delta +0.25 and put delta -0.25 between the adjacent bracketing contracts, and ``skew_25d = iv_put_25d - iv_call_25d`` (positive = downside protection priced over upside). The raw ``call_iv_skew``/``put_iv_skew`` strike rows of ``/iv-surface`` are the strike-space INPUT view; this endpoint answers in the delta convention practitioners quote. Contracts failing the shared IV plausibility gate (API-1.8) or missing a delta are excluded and counted - the literal-0.0 IV marker never enters the formula. A target outside the reliable chain's delta range yields null, never an extrapolated number. Defaults to the nearest expiry; error codes match ``/snapshot``.",
+      "description": "25-delta skew computed IN DELTA SPACE from the snapshot's contract deltas: implied volatility is linearly interpolated at call delta +0.25 and put delta -0.25 between the adjacent bracketing contracts, and ``skew_25d = iv_put_25d - iv_call_25d`` (positive = downside protection priced over upside). The raw ``call_iv_skew``/``put_iv_skew`` strike rows of ``/iv-surface`` are the strike-space INPUT view; this endpoint answers in the delta convention practitioners quote. Contracts failing the shared IV plausibility gate or missing a delta are excluded and counted - the literal-0.0 IV marker never enters the formula. A target outside the reliable chain's delta range yields null, never an extrapolated number. Defaults to the nearest expiry; error codes match ``/snapshot``.",
       "method": "GET",
       "operation_id": "options_symbol_skew",
       "parameters": [
@@ -64567,7 +64567,7 @@
       "toolset": "markets"
     },
     {
-      "description": "Single underlier options snapshot at the latest cycle (default) or at a specific calendar date via ``?date=YYYY-MM-DD``. Returns the full payload: underlier spot price, ATM IV, per-expiry calls/puts contracts with Greeks (Black-Scholes for the Sugra Finance feed, native for the VIX volatility feed), per-expiry aggregates (volume / OI / put-call ratios / max-pain strike), and precomputed IV surface + term structure. Passing ``?expiry=YYYY-MM-DD`` narrows the response to a single expiry block; an unmatched expiry returns 404. Returns 410 Gone when the symbol is flagged delisted_candidate by the upstream cycle. NOTE (API-1.15): the per-expiry aggregate block - total volume / OI, put-call ratios, max-pain - is ALREADY served here on every expiry, but only inside the full chain (~256 KB for a large underlier; ``?expiry=`` narrows expiries, not contracts). A contracts-free summary projection is a possible future tail. For single-contract selection use ``/strike-by-delta``; for the delta convention of skew use ``/skew``.",
+      "description": "Single underlier options snapshot at the latest cycle (default) or at a specific calendar date via ``?date=YYYY-MM-DD``. Returns the full payload: underlier spot price, ATM IV, per-expiry calls/puts contracts with Greeks (Black-Scholes for the Sugra Finance feed, native for the VIX volatility feed), per-expiry aggregates (volume / OI / put-call ratios / max-pain strike), and precomputed IV surface + term structure. Passing ``?expiry=YYYY-MM-DD`` narrows the response to a single expiry block; an unmatched expiry returns 404. Returns 410 Gone when the symbol is flagged delisted_candidate by the upstream cycle. NOTE: the per-expiry aggregate block - total volume / OI, put-call ratios, max-pain - is ALREADY served here on every expiry, but only inside the full chain (~256 KB for a large underlier; ``?expiry=`` narrows expiries, not contracts). A contracts-free summary projection is a possible future tail. For single-contract selection use ``/strike-by-delta``; for the delta convention of skew use ``/skew``.",
       "method": "GET",
       "operation_id": "options_symbol_snapshot",
       "parameters": [
@@ -64743,7 +64743,7 @@
       "toolset": "markets"
     },
     {
-      "description": "Returns the single contract whose delta is CLOSEST to the requested target on the requested expiry - the 'which strike is the 25-delta call' answer as one small response instead of the ~256 KB full chain plus a client-side search. Delta is SIGNED: positive selects from calls, negative from puts; the optional ``right`` parameter must agree with the sign when given. Contracts whose implied volatility fails the shared plausibility gate (including the upstream's literal 0.0 no-data marker, API-1.8) or that carry no usable delta are EXCLUDED before selection and disclosed in the ``dropped_*`` counters, so a gated chain can never silently select an empty contract. Error codes match ``/snapshot``: ``unknown_symbol``, ``expiry_not_in_snapshot``, ``snapshot_not_available``. ``unknown_symbol`` covers two different situations, told apart by the ``reason`` field of the error body: a symbol that does not resolve on this platform, and one that resolves but is not among the underliers options data is collected for. The body names the size of that roster and the endpoint listing it.",
+      "description": "Returns the single contract whose delta is CLOSEST to the requested target on the requested expiry - the 'which strike is the 25-delta call' answer as one small response instead of the ~256 KB full chain plus a client-side search. Delta is SIGNED: positive selects from calls, negative from puts; the optional ``right`` parameter must agree with the sign when given. Contracts whose implied volatility fails the shared plausibility gate (including the upstream's literal 0.0 no-data marker) or that carry no usable delta are EXCLUDED before selection and disclosed in the ``dropped_*`` counters, so a gated chain can never silently select an empty contract. Error codes match ``/snapshot``: ``unknown_symbol``, ``expiry_not_in_snapshot``, ``snapshot_not_available``. ``unknown_symbol`` covers two different situations, told apart by the ``reason`` field of the error body: a symbol that does not resolve on this platform, and one that resolves but is not among the underliers options data is collected for. The body names the size of that roster and the endpoint listing it.",
       "method": "GET",
       "operation_id": "options_symbol_strike_by_delta",
       "parameters": [
@@ -64842,7 +64842,7 @@
       "toolset": "markets"
     },
     {
-      "description": "Derived endpoint that flags contracts whose current per-contract volume materially exceeds the contract's own rolling average across the last ``baseline_window_days`` dated snapshots. Walks the latest B6 snapshot's per-contract volumes; for each contract (both calls and puts) computes ``baseline_avg = mean(volume across days the contract appeared with positive volume)`` and flags rows where ``current_volume / baseline_avg > threshold``. Per-row output carries OSI contract symbol + strike + expiry + current volume + baseline + ratio + supplementary Greeks (delta + IV). Sorted by ratio DESC; truncated to ``limit``. Use case: ``UC-4 Insider + Options Flow Confluence`` - bullish skew detection in concert with Form 4 insider purchases.",
+      "description": "Derived endpoint that flags contracts whose current per-contract volume materially exceeds the contract's own rolling average across the last ``baseline_window_days`` dated snapshots. Walks the latest B6 snapshot's per-contract volumes; for each contract (both calls and puts) computes ``baseline_avg = mean(volume across days the contract appeared with positive volume)`` and flags rows where ``current_volume / baseline_avg > threshold``. Per-row output carries OSI contract symbol + strike + expiry + current volume + baseline + ratio + supplementary Greeks (delta + IV). Sorted by ratio DESC; truncated to ``limit``. Use case: bullish skew detection in concert with Form 4 insider purchases.",
       "method": "GET",
       "operation_id": "options_symbol_unusual_volume",
       "parameters": [
@@ -72338,13 +72338,13 @@
           }
         },
         {
-          "description": "Top-N institutional managers by AUM to include in the scan (10..80, default 50). The ceiling is measured, not chosen: on prod, one request at a time, 80 answers in about 7s and 90 kills the worker outright (INFRA-46). The previous range allowed up to 300 and defaulted to 100, so the DEFAULT call took the whole API down. Raising this bound means re-measuring MemoryWorkingSet under a scan, not reasoning about it.",
+          "description": "Top-N institutional managers by AUM to include in the scan (10..80, default 50). The cap of 80 keeps one scan within memory, so the answer comes back in seconds.",
           "location": "query",
           "name": "filer_top_n",
           "required": false,
           "schema": {
             "default": 50,
-            "description": "Top-N institutional managers by AUM to include in the scan (10..80, default 50). The ceiling is measured, not chosen: on prod, one request at a time, 80 answers in about 7s and 90 kills the worker outright (INFRA-46). The previous range allowed up to 300 and defaulted to 100, so the DEFAULT call took the whole API down. Raising this bound means re-measuring MemoryWorkingSet under a scan, not reasoning about it.",
+            "description": "Top-N institutional managers by AUM to include in the scan (10..80, default 50). The cap of 80 keeps one scan within memory, so the answer comes back in seconds.",
             "maximum": 80,
             "minimum": 10,
             "title": "Filer Top N",
@@ -73369,7 +73369,7 @@
       "toolset": "fundamentals"
     },
     {
-      "description": "Dated legal name-change history from SEC submissions (formerNames), plus the current name, ticker symbols and exchanges - the primary-source company-identity changes a client tracks for re-mapping (e.g. Facebook Inc -> Meta Platforms, 2021-10-27). Ticker or CIK accepted. NOTE: the ticker-SYMBOL rename event stream (oldSymbol -> newSymbol by date) is not in submissions and is tracked separately (a forward-accumulating company_tickers.json diff, board DATA-5.9.1).",
+      "description": "Dated legal name-change history from SEC submissions (formerNames), plus the current name, ticker symbols and exchanges - the primary-source company-identity changes a client tracks for re-mapping (e.g. Facebook Inc -> Meta Platforms, 2021-10-27). Ticker or CIK accepted. NOTE: the ticker-SYMBOL rename event stream (oldSymbol -> newSymbol by date) is not in submissions and is tracked separately (a forward-accumulating company_tickers.json diff).",
       "method": "GET",
       "operation_id": "sec_edgar_ticker_or_cik_name_history",
       "parameters": [
@@ -90863,7 +90863,7 @@
       "request_body_required": true,
       "request_body_schema": {
         "additionalProperties": true,
-        "description": "Request body for the custom screener and visualization POST endpoints\n(API-1.13b / audit P1-12).\n\nBefore this model both routes took a bare ``Request`` and hand-parsed the\nJSON, so FastAPI emitted NO requestBody in the OpenAPI spec - the whole\nMCP describe/construct chain then had nothing to build and a body-less\ncall 400'd. A typed body makes the required `query` and the optional\npaging/sort fields discoverable in the spec.\n\n``extra='allow'`` because `query` is a Sugra Finance screener DSL\npassthrough and callers may carry additional DSL keys the connector\nforwards verbatim; the model shape is a discoverable floor, not a closed\ncontract.",
+        "description": "Request body for the custom screener and visualization POST endpoints.\n\nBefore this model both routes took a bare ``Request`` and hand-parsed the\nJSON, so FastAPI emitted NO requestBody in the OpenAPI spec - the whole\nMCP describe/construct chain then had nothing to build and a body-less\ncall 400'd. A typed body makes the required `query` and the optional\npaging/sort fields discoverable in the spec.\n\n``extra='allow'`` because `query` is a Sugra Finance screener DSL\npassthrough and callers may carry additional DSL keys the connector\nforwards verbatim; the model shape is a discoverable floor, not a closed\ncontract.",
         "properties": {
           "offset": {
             "anyOf": [
@@ -91369,7 +91369,7 @@
       "request_body_required": true,
       "request_body_schema": {
         "additionalProperties": true,
-        "description": "Request body for the custom screener and visualization POST endpoints\n(API-1.13b / audit P1-12).\n\nBefore this model both routes took a bare ``Request`` and hand-parsed the\nJSON, so FastAPI emitted NO requestBody in the OpenAPI spec - the whole\nMCP describe/construct chain then had nothing to build and a body-less\ncall 400'd. A typed body makes the required `query` and the optional\npaging/sort fields discoverable in the spec.\n\n``extra='allow'`` because `query` is a Sugra Finance screener DSL\npassthrough and callers may carry additional DSL keys the connector\nforwards verbatim; the model shape is a discoverable floor, not a closed\ncontract.",
+        "description": "Request body for the custom screener and visualization POST endpoints.\n\nBefore this model both routes took a bare ``Request`` and hand-parsed the\nJSON, so FastAPI emitted NO requestBody in the OpenAPI spec - the whole\nMCP describe/construct chain then had nothing to build and a body-less\ncall 400'd. A typed body makes the required `query` and the optional\npaging/sort fields discoverable in the spec.\n\n``extra='allow'`` because `query` is a Sugra Finance screener DSL\npassthrough and callers may carry additional DSL keys the connector\nforwards verbatim; the model shape is a discoverable floor, not a closed\ncontract.",
         "properties": {
           "offset": {
             "anyOf": [
@@ -93015,7 +93015,7 @@
       "toolset": "markets"
     },
     {
-      "description": "Calls and puts for a specific expiration date. Contract fields use snake_case (DATA-21); the seven historical camelCase names (``contractSymbol``, ``lastPrice``, ``percentChange``, ``openInterest``, ``impliedVolatility``, ``inTheMoney``, ``lastTradeDate``) remain as deprecated aliases with the same values until the next major API version.",
+      "description": "Calls and puts for a specific expiration date. Contract fields use snake_case; the seven historical camelCase names (``contractSymbol``, ``lastPrice``, ``percentChange``, ``openInterest``, ``impliedVolatility``, ``inTheMoney``, ``lastTradeDate``) remain as deprecated aliases with the same values until the next major API version.",
       "method": "GET",
       "operation_id": "quotes_symbol_options_date",
       "parameters": [
@@ -96418,5 +96418,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "33d9f82b315148fb5fee4f75fede631a5f63a826748586222c29055655a71b01"
+  "spec_sha256": "4f87605e41d0b768510d42b6ad25382759dfc4f09ba49fc45909a45ec0c63aaf"
 }
