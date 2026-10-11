@@ -2471,6 +2471,36 @@ def test_a_central_bank_rate_question_lands_its_policy_rate_first(
         assert top["macro_keys"][0]["key"] == key, top["macro_keys"]
 
 
+@pytest.mark.parametrize("query", [
+    "ECB balance sheet", "ECB total assets", "ECB assets",
+    "European Central Bank balance sheet", "ECB balance sheet history",
+])
+def test_the_ecb_balance_sheet_lands_the_eurosystem_assets(catalog, query: str) -> None:
+    """"ECB balance sheet" found the ECB's insurance statistics: the
+    Eurosystem's assets are a curated series of the country macro
+    operation."""
+    top = search_catalog(catalog, query, limit=1)[0]
+    assert top["operation_id"] == "macro_country_section"
+    assert top["macro_keys"][0]["key"] == "eu/ecbassetsw"
+
+
+@pytest.mark.parametrize("query", [
+    "ECB insurance assets", "ECB insurance corporations balance sheet",
+    "ECB pension fund assets", "ECB assets purchases",
+    "ECB deposit rate and total assets",
+])
+def test_assets_of_another_ecb_series_read_no_curated_key(catalog, query: str) -> None:
+    """A word left beside the bank and the assets names another series."""
+    for hit in search_catalog(catalog, query, limit=5):
+        assert "eu/ecbassetsw" not in [k["key"] for k in hit.get("macro_keys") or []]
+
+
+def test_a_balance_sheet_beside_two_banks_reads_no_curated_key(catalog) -> None:
+    """No key holds the Fed's side of "ECB and Fed balance sheet"."""
+    ids = [r["operation_id"] for r in search_catalog(catalog, "ECB and Fed balance sheet", limit=5)]
+    assert "fed_soma" in ids
+
+
 # A question that asks more than the policy rate asks for another series of
 # the bank, and keeps it first.
 POLICY_RATE_QUALIFIED_TOP_1 = [
