@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import re
 import threading
@@ -177,7 +178,7 @@ async def test_initialize_and_tools_list_are_counted_by_their_real_classes(monke
     assert _counts(counter, written) == {
         ("initialize", "200", "app.sugra.ai", "other", "openai", "chatgpt"): 1,
         ("other", "202", "app.sugra.ai", "other", "openai", "-"): 1,
-        ("tools/list", "200", "app.sugra.ai", "other", "openai", "-"): 2,
+        ("tools/list", "200", "app.sugra.ai", "other", "openai", "unknown"): 2,
     }
 
 
@@ -259,7 +260,7 @@ async def test_only_a_tracked_post_to_mcp_is_counted(written) -> None:
         await client.post("/mcp", json=tools_list, headers={"x-request-id": _rid(4)})
     assert _counts(counter, written) == {
         ("batch", "200", "loopback", "python", "none", "-"): 1,
-        ("tools/list", "200", "loopback", "python", "none", "-"): 1,
+        ("tools/list", "200", "loopback", "python", "none", "unknown"): 1,
     }
 
 
@@ -289,7 +290,7 @@ async def test_the_path_counted_is_mcp_once_trailing_slashes_are_removed(written
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8002") as client:
         response = await client.post(path, json=_message(1, "tools/list", {}), headers={"x-request-id": _rid(1)})
     assert response.status_code == 200
-    expected = {("tools/list", "200", "loopback", "python", "none", "-"): 1} if counted else {}
+    expected = {("tools/list", "200", "loopback", "python", "none", "unknown"): 1} if counted else {}
     assert _counts(counter, written) == expected
 
 
@@ -360,7 +361,7 @@ async def test_a_line_holds_classes_never_header_or_client_text(written) -> None
     assert counts == {
         ("initialize", "200", "other", "other", "other", "other"): 1,
         ("initialize", "200", "other", "other", "other", "none"): 1,
-        ("tools/list", "200", "other", "other", "other", "-"): 1,
+        ("tools/list", "200", "other", "other", "other", "unknown"): 1,
     }
     assert marker not in "\n".join(written)
     assert "secret_tool_name" not in "\n".join(written)
@@ -410,7 +411,7 @@ async def test_a_long_tools_list_answer_passes_unchanged_and_is_counted(written)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8002") as client:
         listed = await client.post("/mcp", json=_message(1, "tools/list", {}), headers={"x-request-id": _rid(1)})
     assert listed.content == whole
-    assert _counts(counter, written) == {("tools/list", "200", "loopback", "python", "none", "-"): 1}
+    assert _counts(counter, written) == {("tools/list", "200", "loopback", "python", "none", "unknown"): 1}
 
 
 def _list_answer(names: list[str]) -> bytes:
@@ -1102,7 +1103,9 @@ async def test_a_failed_send_is_not_counted_as_sent(written, failing: str | None
     else:
         with pytest.raises(OSError):
             await middleware(scope, receive, send)
-    assert _counts(counter, written) == {("tools/list", status, "none", "other", "none", "-"): 1}
+    # A line with no 2xx sent carries -, one with a 2xx the served digest.
+    column = "unknown" if status == "200" else "-"
+    assert _counts(counter, written) == {("tools/list", status, "none", "other", "none", column): 1}
 
 
 def test_the_classes_demand_takes_from_observability_are_pinned(monkeypatch) -> None:
@@ -1144,3 +1147,202 @@ def test_the_hosted_server_counts_through_the_gate_defaults(monkeypatch) -> None
     """The entry point passes no counter: the middleware and the lifespan share the default one."""
     middleware = gate.GateMiddleware(lambda scope, receive, send: None, max_body_bytes=1)
     assert middleware.demand is demand.default_counter
+
+
+# ---- The served tools digest ----
+
+
+def _answer_tools(response: httpx.Response) -> list[dict[str, Any]]:
+    """The tools of a tools/list answer, sent as JSON or as one SSE event."""
+    text = response.text
+    if response.headers.get("content-type", "").startswith("text/event-stream"):
+        text = "".join(line[5:].strip() for line in text.splitlines() if line.startswith("data:"))
+    return json.loads(text)["result"]["tools"]
+
+
+async def _listed(client: httpx.AsyncClient, number: int) -> list[dict[str, Any]]:
+    session = await _open(client, number)
+    listed = await client.post(
+        "/mcp",
+        json=_message(number + 1, "tools/list", {}),
+        headers={**HEADERS, **_SCANNER, **session, "x-request-id": _rid(number + 1)},
+    )
+    assert listed.status_code == 200
+    return _answer_tools(listed)
+
+
+def _probe_tool() -> str:
+    """A tool to add for a test."""
+    return "probe"
+
+
+def test_the_digest_is_order_independent_pinned_and_moves_with_any_field() -> None:
+    a = {"name": "a", "inputSchema": {"type": "object"}}
+    b = {"name": "b", "description": "x", "inputSchema": {"type": "object"}}
+    assert demand.tools_digest([a, b]) == demand.tools_digest([b, a])
+    assert demand.tools_digest([]) == "e3b0c442"
+    assert re.fullmatch(r"[0-9a-f]{8}", demand.tools_digest([a, b]))
+    assert demand.tools_digest([a, {**b, "description": "y"}]) != demand.tools_digest([a, b])
+    assert demand.tools_digest([a]) != demand.tools_digest([a, b])
+
+
+async def test_the_served_digest_is_that_of_a_real_tools_list_answer_and_moves_with_the_set(
+    monkeypatch, written
+) -> None:
+    async with _served(monkeypatch, demand.DemandCounter()) as client:
+        listed = await _listed(client, 1)
+    served = await gate.served_tool_definitions()
+    assert demand.tools_digest(listed) == demand.tools_digest(served)
+    server.mcp.add_tool(_probe_tool, name="demand_probe_tool")
+    try:
+        async with _served(monkeypatch, demand.DemandCounter()) as client:
+            listed_more = await _listed(client, 3)
+        served_more = await gate.served_tool_definitions()
+    finally:
+        server.mcp.remove_tool("demand_probe_tool")
+    assert demand.tools_digest(listed_more) == demand.tools_digest(served_more)
+    assert demand.tools_digest(served_more) != demand.tools_digest(served)
+
+
+@pytest.mark.parametrize(
+    ("method", "status", "column"),
+    [
+        ("tools/list", 200, "abcd1234"),
+        ("tools/list", 204, "abcd1234"),
+        ("tools/list", 404, "-"),
+        ("tools/list", 500, "-"),
+        ("ping", 200, "-"),
+    ],
+)
+async def test_only_a_2xx_tools_list_line_carries_the_served_digest(
+    written, method: str, status: int, column: str
+) -> None:
+    counter = demand.DemandCounter()
+    counter.served_digest = "abcd1234"
+
+    async def answer(request: Request) -> Response:
+        await request.body()
+        return Response(status_code=status)
+
+    app = Starlette(routes=[Route("/mcp", answer, methods=["POST"])])
+    app.add_middleware(gate.GateMiddleware, max_body_bytes=4096, summary=gate.GateSummary(), demand_counter=counter)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8002") as client:
+        await client.post("/mcp", json=_message(1, method, {}), headers={"x-request-id": _rid(1)})
+    bucket = "tools/list" if method == "tools/list" else "other"
+    assert _counts(counter, written) == {(bucket, str(status), "loopback", "python", "none", column): 1}
+
+
+async def test_the_digest_is_taken_after_the_app_starts_and_before_it_serves(flushes) -> None:
+    events: list[str] = []
+    counter = demand.DemandCounter()
+
+    @contextlib.asynccontextmanager
+    async def inner(app: object) -> AsyncIterator[None]:
+        events.append("started")
+        yield None
+
+    async def served() -> list[dict[str, Any]]:
+        events.append("digest")
+        return [{"name": "a"}]
+
+    lifespan = gate.wrap_lifespan(
+        inner, gate.GateSummary(), interval=3600, drain_seconds=0, flush_timeout=1,
+        demand_counter=counter, served_tools=served,
+    )
+    async with lifespan(object()):
+        events.append("serving")
+        assert counter.served_digest == demand.tools_digest([{"name": "a"}])
+    assert events == ["started", "digest", "serving"]
+
+
+async def test_a_tool_the_app_registers_at_startup_is_in_the_digest(flushes) -> None:
+    counter = demand.DemandCounter()
+    before = demand.tools_digest(await gate.served_tool_definitions())
+
+    @contextlib.asynccontextmanager
+    async def inner(app: object) -> AsyncIterator[None]:
+        server.mcp.add_tool(_probe_tool, name="demand_startup_tool")
+        try:
+            yield None
+        finally:
+            server.mcp.remove_tool("demand_startup_tool")
+
+    lifespan = gate.wrap_lifespan(
+        inner, gate.GateSummary(), interval=3600, drain_seconds=0, flush_timeout=1, demand_counter=counter
+    )
+    async with lifespan(object()):
+        with_tool = demand.tools_digest(await gate.served_tool_definitions())
+        assert counter.served_digest == with_tool
+    assert with_tool != before
+
+
+async def test_a_stalled_provider_leaves_unknown_and_the_app_still_starts(caplog, flushes) -> None:
+    counter = demand.DemandCounter()
+    counter.served_digest = "abcd1234"
+    never = asyncio.Event()
+
+    async def stalled() -> list[dict[str, Any]]:
+        await never.wait()
+        return []
+
+    lifespan = gate.wrap_lifespan(
+        _inner, gate.GateSummary(), interval=3600, drain_seconds=0, flush_timeout=1,
+        demand_counter=counter, served_tools=stalled, served_tools_timeout=0.05,
+    )
+    async with contextlib.AsyncExitStack() as stack:
+        # Bounded here, so a start that waits on the provider fails the test instead of hanging it.
+        await asyncio.wait_for(stack.enter_async_context(lifespan(object())), 2)
+        assert counter.served_digest == demand.UNKNOWN_TOOLS
+    assert "Served tools digest failed (TimeoutError)." in caplog.messages
+
+
+async def test_a_provider_that_holds_on_to_its_cancellation_neither_holds_the_start_nor_publishes(
+    caplog, flushes
+) -> None:
+    counter = demand.DemandCounter()
+    finished = asyncio.Event()
+
+    async def holds_on() -> list[dict[str, Any]]:
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            # Swallowed: it goes on and answers well past the bound.
+            await asyncio.sleep(0.3)
+        finished.set()
+        return [{"name": "late"}]
+
+    lifespan = gate.wrap_lifespan(
+        _inner, gate.GateSummary(), interval=3600, drain_seconds=0, flush_timeout=1,
+        demand_counter=counter, served_tools=holds_on, served_tools_timeout=0.05,
+    )
+    async with contextlib.AsyncExitStack() as stack:
+        started = time.monotonic()
+        await asyncio.wait_for(stack.enter_async_context(lifespan(object())), 2)
+        assert time.monotonic() - started < 0.25
+        assert counter.served_digest == demand.UNKNOWN_TOOLS
+        await asyncio.wait_for(finished.wait(), 2)
+        await asyncio.sleep(0)
+        assert counter.served_digest == demand.UNKNOWN_TOOLS
+    assert "Served tools digest failed (TimeoutError)." in caplog.messages
+
+
+async def test_a_failing_provider_after_a_success_resets_the_digest_to_unknown(caplog, flushes) -> None:
+    counter = demand.DemandCounter()
+    calls: list[int] = []
+
+    async def first_then_failing() -> list[dict[str, Any]]:
+        calls.append(1)
+        if len(calls) > 1:
+            raise RuntimeError("provider failed for user@example.com")
+        return [{"name": "a"}]
+
+    lifespan = gate.wrap_lifespan(
+        _inner, gate.GateSummary(), interval=3600, drain_seconds=0, flush_timeout=1,
+        demand_counter=counter, served_tools=first_then_failing,
+    )
+    async with lifespan(object()):
+        assert counter.served_digest == demand.tools_digest([{"name": "a"}])
+    async with lifespan(object()):
+        assert counter.served_digest == demand.UNKNOWN_TOOLS
+    assert "Served tools digest failed (RuntimeError)." in caplog.messages
+    assert "user@example.com" not in caplog.text

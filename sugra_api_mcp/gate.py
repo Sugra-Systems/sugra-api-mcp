@@ -49,7 +49,7 @@ import os
 import re
 import threading
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping
 from typing import Any
 
 from mcp.types import CallToolResult
@@ -73,6 +73,8 @@ MAX_BUFFERED_LINES = 20_000
 # and how long the telemetry flush after it may take.
 DRAIN_SECONDS = 1.0
 FLUSH_TIMEOUT_SECONDS = 10.0
+# How long the start may spend on the served tools digest (wrap_lifespan).
+SERVED_TOOLS_TIMEOUT_SECONDS = 5.0
 
 # The request scope state key under which GateMiddleware stores the request's
 # GateRecord, read at dispatch the way server.py reads the request's key.
@@ -461,7 +463,11 @@ class GateMiddleware:
                 _first_header(scope, b"origin"),
             )
             client = capture.client if parsed else demand.NOT_APPLICABLE
-            self.demand.add((method, demand.status_of(capture.status), host, ua, origin, client))
+            status = demand.status_of(capture.status)
+            if method == demand.TOOLS_LIST and status.startswith("2"):
+                # The set the process serves, never read from this answer (demand.py).
+                client = self.demand.served_digest
+            self.demand.add((method, status, host, ua, origin, client))
             # The request is counted above; its extra counts never undo that.
             with contextlib.suppress(Exception):
                 for extension in capture.extensions if parsed else ():
@@ -483,6 +489,58 @@ async def _write_every(
         demand.write_logged(demand_counter)
 
 
+async def served_tool_definitions() -> list[dict[str, Any]]:
+    """The tool definitions this process serves, as tools/list builds them (server.mcp.list_tools)."""
+    # Imported here: server imports this module.
+    from .server import mcp
+
+    return [tool.model_dump(mode="json", by_alias=True, exclude_none=True) for tool in await mcp.list_tools()]
+
+
+async def _take_served_digest(
+    counter: demand.DemandCounter,
+    served_tools: Callable[[], Awaitable[Iterable[Mapping[str, Any]]]],
+    timeout: float,
+) -> None:
+    """Set the counter's served tools digest; unknown when the provider fails or overruns timeout.
+
+    Reset to unknown first, so a start whose provider fails never keeps the
+    digest of an earlier start. The provider runs as a task of its own and is
+    waited on for at most timeout seconds: past that it is cancelled and never
+    awaited, so a provider that holds on to its cancellation can neither hold
+    the start nor publish a digest late. Nothing it raises but a cancellation
+    stops the start.
+    """
+    counter.served_digest = demand.UNKNOWN_TOOLS
+
+    async def provide() -> Iterable[Mapping[str, Any]]:
+        return await served_tools()
+
+    task = asyncio.create_task(provide())
+    try:
+        done, _ = await asyncio.wait({task}, timeout=timeout)
+    except BaseException:
+        task.cancel()
+        task.add_done_callback(_retrieve)
+        raise
+    if not done:
+        task.cancel()
+        task.add_done_callback(_retrieve)
+        logger.warning("Served tools digest failed (%s).", TimeoutError.__name__)
+        return
+    try:
+        counter.served_digest = demand.tools_digest(task.result())
+    except Exception as e:
+        # A cancellation is not an Exception, and passes.
+        logger.warning("Served tools digest failed (%s).", type(e).__name__)
+
+
+def _retrieve(task: asyncio.Task[Any]) -> None:
+    """Take the outcome of a provider task nobody awaits, so asyncio never reports it as lost."""
+    if not task.cancelled():
+        task.exception()
+
+
 async def _drain(summary: GateSummary, seconds: float) -> None:
     deadline = time.monotonic() + seconds
     while summary.open_requests > 0 and time.monotonic() < deadline:
@@ -498,10 +556,16 @@ def wrap_lifespan(
     flush_timeout: float = FLUSH_TIMEOUT_SECONDS,
     on_exit: Iterable[Callable[[], Awaitable[None]]] = (),
     demand_counter: demand.DemandCounter | None = None,
+    served_tools: Callable[[], Awaitable[Iterable[Mapping[str, Any]]]] = served_tool_definitions,
+    served_tools_timeout: float = SERVED_TOOLS_TIMEOUT_SECONDS,
 ) -> Callable[[Any], contextlib.AbstractAsyncContextManager[Any]]:
     """The app lifespan inner, plus the summaries and the exit work around it.
 
-    While the app runs, a summary and the demand count are written every
+    Once inner has started, and before the app serves, the served tools
+    digest is taken from served_tools for at most served_tools_timeout
+    seconds into the demand counter (demand.tools_digest); it is reset to
+    unknown first, and an exception or a timeout leaves it unknown and the app
+    still starts, while a cancellation stops the start. While the app runs, a summary and the demand count are written every
     interval seconds. On the way out, after inner has exited, it waits up to
     drain_seconds for tracked requests still finishing, writes the last
     summary and the demand count, awaits each on_exit
@@ -530,6 +594,7 @@ def wrap_lifespan(
         writer = asyncio.create_task(_write_every(gate_summary, interval, counter))
         try:
             async with inner(app) as state:
+                await _take_served_digest(counter, served_tools, served_tools_timeout)
                 yield state
         finally:
             writer.cancel()

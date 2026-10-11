@@ -35,7 +35,14 @@ spans carry; a User-Agent no pattern names is other.
 
 client is the class of the initialize clientInfo name (_CLIENT_NAME_PATTERNS),
 none when an initialize names no client, and - for every other method: only
-initialize carries clientInfo.
+initialize carries clientInfo. On a tools/list line whose status is a 2xx
+the same column holds the served tools digest instead: the first
+TOOLS_DIGEST_HEX hex characters of a sha256 over the tool definitions the
+process serves (tools_digest), taken once per start, after the app's own
+startup and before it serves (gate.wrap_lifespan). It is unknown until a
+start has taken it, and after a start whose take failed or timed out. It names the set the process serves, never read from
+an answer, so a tool registered after the start is not in it; a tools/list
+line with any other status keeps -.
 
 failed counts the requests whose demand step raised: such a request is in
 requests and in no line, and the answer it was sent is never touched by it.
@@ -70,8 +77,11 @@ names above, never a client name, a session id or a payload.
 from __future__ import annotations
 
 import contextlib
+import hashlib
+import json
 import logging
 import threading
+from collections.abc import Iterable, Mapping
 
 from . import observability
 
@@ -94,6 +104,8 @@ RECORD_MAX_CHARS = 32_000
 
 NOT_APPLICABLE = "-"
 _NONE = "none"
+UNKNOWN_TOOLS = "unknown"
+TOOLS_DIGEST_HEX = 8
 
 logger = logging.getLogger(COUNTER_LOGGER)
 # Set here, not inherited: on the hosted server the root logger stays at
@@ -185,6 +197,21 @@ def caller_classes(host: str | None, user_agent: str | None, origin: str | None)
     )
 
 
+def tools_digest(definitions: Iterable[Mapping[str, object]]) -> str:
+    """The served tools digest of a set of tool definitions, whatever their order.
+
+    Each definition is written as canonical JSON (sorted keys, no spaces), the
+    lines are sorted, and the digest is the first TOOLS_DIGEST_HEX hex
+    characters of the sha256 of them joined by newlines. A change to any field
+    of any tool, or a tool added or removed, moves it.
+    """
+    lines = sorted(
+        json.dumps(dict(definition), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        for definition in definitions
+    )
+    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()[:TOOLS_DIGEST_HEX]
+
+
 def status_of(status: object) -> str:
     """The HTTP status as digits, none when no answer started."""
     # isinstance, not type: the SDK sends some statuses as HTTPStatus members.
@@ -204,6 +231,9 @@ class DemandCounter:
     """
 
     def __init__(self) -> None:
+        # The served tools digest a 2xx tools/list line carries; set by
+        # gate.wrap_lifespan at each start, unknown until then.
+        self.served_digest = UNKNOWN_TOOLS
         self._counts: dict[Key, int] = {}
         self._extensions: dict[ExtensionKey, int] = {}
         self._failed = 0
