@@ -38,6 +38,11 @@ Without this, httpx exceptions propagate to the MCP framework which renders
 them as "Error executing tool call_endpoint: " with an EMPTY message
 (httpx.ReadTimeout stringifies to ""), leaving the agent unable to pick a
 retry strategy (field-test defect D2).
+
+Every failure dict, a transport failure or an HTTP one, is held to
+_ERROR_CHARS, under MAX_RESPONSE_CHARS (`_bounded_error`): a value too long
+to fit is cut and marked `<key>_truncated`, and no key is dropped, so no size
+gate further on refuses a failure.
 """
 
 from __future__ import annotations
@@ -236,15 +241,15 @@ def _retry_after(response: httpx.Response) -> int | str | None:
     Never raises. str.isdigit() alone is NOT a safe gate for int(): it accepts
     unicode digit characters (e.g. superscript two) that int() rejects with
     ValueError, and this helper runs outside the transport try/except - a
-    malformed header from a proxy must not break the error path. Hence the
-    additional isascii() check.
+    malformed header from a proxy must not break the error path. Hence
+    _int_header, which reads at most 15 ASCII digits: int() also raises past
+    4,300 digits, and 15 digits of seconds are already longer than any wait.
     """
     raw = str(response.headers.get("Retry-After", "")).strip()
     if not raw:
         return None
-    if raw.isascii() and raw.isdigit():
-        return int(raw)
-    return raw
+    seconds = _int_header(response, "Retry-After")
+    return raw if seconds is None else seconds
 
 
 # When an account's daily quota is spent the API answers 429 with a
@@ -587,6 +592,114 @@ def _chars_within(value: Any, room: int) -> int:
     return size
 
 
+# The most characters (response_chars) of a failure the client returns. Under
+# MAX_RESPONSE_CHARS by room for what a tool adds when it passes a failure on,
+# such as the sentence an entity tool makes of the status and the URL, so no
+# size gate further on refuses a failure. Far enough above twice _DETAIL_CHARS
+# that the largest detail _detail_fields carries stays whole beside one other
+# long value; a test pins it.
+_ERROR_CHARS = MAX_RESPONSE_CHARS - 1_000
+
+# What a value cut to fit ends with.
+_CUT_MARK = "..."
+
+
+def _bounded_error(result: dict[str, Any]) -> dict[str, Any]:
+    """A failure held to _ERROR_CHARS, with every key kept.
+
+    A failure that fits is returned as it is. Otherwise the room its keys
+    leave is shared out: each value no longer than the share stays whole, and
+    each longer one is cut to the share, as text that ends in _CUT_MARK, with
+    "<key>_truncated": true beside it. The share is the largest that keeps the
+    whole within the room (_ceiling), so the code, the status and the timings,
+    which are short, always stay as they are, and only what an exception, the
+    API or a header made long is cut. A value that is not text is cut as the
+    head of its JSON text.
+
+    The keys are this module's own and few, so a share is always far longer
+    than the mark. The work is bounded by _ERROR_CHARS, apart from a single
+    long string inside a value that is not text, which is escaped whole.
+    """
+    if _fits(result, _ERROR_CHARS):
+        return result
+    # The braces, and for each key its ": " and ", ", and room for a
+    # "<key>_truncated": true, as if every key were cut.
+    frame = 2 + sum(
+        len(_encode_string(key)) + 4 + len(_encode_string(f"{key}_truncated")) + 8
+        for key in result
+    )
+    sizes = {key: _chars(value, _ERROR_CHARS) for key, value in result.items()}
+    share = _ceiling(list(sizes.values()), _ERROR_CHARS - frame)
+    bounded: dict[str, Any] = {}
+    cut: list[str] = []
+    for key, value in result.items():
+        size = sizes[key]
+        if size is not None and size <= share:
+            bounded[key] = value
+        else:
+            bounded[key] = _cut(value, share)
+            cut.append(key)
+    for key in cut:
+        bounded[f"{key}_truncated"] = True
+    return bounded
+
+
+def _ceiling(sizes: list[int | None], room: int) -> int:
+    """The largest share c with sum(min(size, c)) <= room, where None stands
+    for a size longer than any share; the longest size when all of them fit.
+
+    The sizes are taken shortest first, and each is kept whole while it is no
+    longer than an equal part of the room left to it and the longer ones; the
+    rest then share what is left in equal parts. So every size kept whole is
+    at most the share, and every other one is longer than it.
+    """
+    known = sorted(size for size in sizes if size is not None)
+    left = len(sizes)
+    for size in known:
+        if size * left > room:
+            break
+        room -= size
+        left -= 1
+    if left == 0:
+        return max(known, default=0)
+    return room // left
+
+
+def _cut(value: Any, room: int) -> str:
+    """The head of value with _CUT_MARK after it, at most room characters
+    (response_chars) when room holds the mark. A value that is not text is
+    cut as the head of its JSON text."""
+    text = value if isinstance(value, str) else _json_head(value, room)
+    # The longest head that fits, found by halving: the measure grows with the
+    # length of the head, by one to twelve characters a character.
+    low, high = 0, min(len(text), room)
+    while low < high:
+        middle = (low + high + 1) // 2
+        if len(_encode_string(text[:middle] + _CUT_MARK)) <= room:
+            low = middle
+        else:
+            high = middle - 1
+    return text[:low] + _CUT_MARK
+
+
+def _json_head(value: Any, room: int) -> str:
+    """The first room characters of the JSON text of value (json.dumps),
+    encoded piece by piece and no further, so of a long value only a single
+    long string is ever encoded whole. Where the encoding fails, too deep to
+    walk or not JSON at all, the text ends."""
+    pieces: list[str] = []
+    length = 0
+    try:
+        for piece in json.JSONEncoder().iterencode(value):
+            pieces.append(piece)
+            length += len(piece)
+            if length >= room:
+                break
+    except (RecursionError, TypeError, ValueError):
+        pass
+    return "".join(pieces)[:room]
+
+
 def _on_event_loop() -> bool:
     """Whether this thread runs an event loop: the shaping pool's threads do
     not, the thread serving the tools does."""
@@ -870,8 +983,8 @@ class SugraClient:
         # (gateway.call_endpoint) passes enforce_size=False and gates it
         # itself once its own `fields` / `limit` projection has run, so the
         # raw, unprojected body is never what gets measured for it. A failure
-        # dict is gated the same way: it carries the API's error text, which
-        # has no bound of its own.
+        # dict is already held to _ERROR_CHARS (_bounded_error), under the
+        # cap, so the gate returns it as it is.
         if not enforce_size:
             return result
         return await _gate_off_loop(result, str(response.request.url))
@@ -886,7 +999,8 @@ class SugraClient:
         retry_hint: str,
         extra: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Build the structured error dict for a transport-layer failure."""
+        """Build the structured error dict for a transport-layer failure,
+        held to _ERROR_CHARS."""
         message = str(exc).strip()
         reason = f"{type(exc).__name__}: {message}" if message else type(exc).__name__
         result: dict[str, Any] = {
@@ -899,7 +1013,7 @@ class SugraClient:
         }
         if extra:
             result.update(extra)
-        return result
+        return _bounded_error(result)
 
     def _request_url(self, exc: httpx.HTTPError, path: str) -> str:
         try:
@@ -940,7 +1054,7 @@ class SugraClient:
                 quota["status_code"] = response.status_code
                 if retry_after is not None:
                     quota["retry_after"] = retry_after
-                return quota
+                return _bounded_error(quota)
             error = carried.pop("error", error)
             result: dict[str, Any] = {
                 "error": error or f"HTTP {response.status_code}",
@@ -957,7 +1071,7 @@ class SugraClient:
             request_id = response.headers.get("X-Request-ID")
             if request_id:
                 result["request_id"] = str(request_id)
-            return result
+            return _bounded_error(result)
         return _with_quota(payload, response)
 
     async def aclose(self) -> None:
