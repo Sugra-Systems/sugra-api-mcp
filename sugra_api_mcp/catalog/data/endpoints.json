@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-10-11T19:28:44Z",
+  "built_at": "2026-10-11T21:15:14Z",
   "endpoint_count": 1625,
   "endpoints": [
     {
@@ -12430,7 +12430,7 @@
       "toolset": "commodities"
     },
     {
-      "description": "EIA Short-Term Energy Outlook - production, consumption and price projections as long-format series rows (date, symbol, title, value, unit). Defaults to headline indicators; pass `series` for specific EIA STEO seriesIds. Data from US Energy Information Administration (EIA).",
+      "description": "EIA Short-Term Energy Outlook - production, consumption and price projections as long-format series rows (date, symbol, title, value, unit). Defaults to headline indicators; pass `series` for specific EIA STEO seriesIds. Crude oil production by country: COPR_ followed by EIA's country code for an OPEC+ member (COPR_SA Saudi Arabia, COPR_RS Russia, COPR_IR Iran), PAPR_ followed by the code for total oil and liquids production (PAPR_US, PAPR_NO Norway, PAPR_CA Canada, PAPR_BR Brazil, PAPR_CH China) and PAPR_WORLD for the world. Data from US Energy Information Administration (EIA).",
       "method": "GET",
       "operation_id": "commodities_energy_steo",
       "parameters": [
@@ -12489,7 +12489,7 @@
       "sources": [
         "commodities"
       ],
-      "summary": "Short-Term Energy Outlook (STEO)",
+      "summary": "Short-Term Energy Outlook (STEO): oil production by country, consumption and prices",
       "tags": [
         "Commodities"
       ],
@@ -36689,7 +36689,7 @@
       "toolset": "statistics"
     },
     {
-      "description": "Mean monthly earnings from ILO dataflow DF_EAR_EMTA_SEX_AGE_CUR_NB. The CUR dimension selects currency conversion: CUR_TYPE_LCU (local currency), CUR_TYPE_USD (US dollar), CUR_TYPE_PPP (PPP-adjusted US dollar), CUR_TYPE_EUR (Euro). Leave `currency` empty to return all currencies side-by-side.",
+      "description": "The average wage of employees by country: mean monthly earnings from ILO dataflow DF_EAR_EMTA_SEX_AGE_CUR_NB. The CUR dimension selects currency conversion: CUR_TYPE_LCU (local currency), CUR_TYPE_USD (US dollar), CUR_TYPE_PPP (PPP-adjusted US dollar), CUR_TYPE_EUR (Euro). Leave `currency` empty to return all currencies side-by-side.",
       "method": "GET",
       "operation_id": "ilostat_earnings",
       "parameters": [
@@ -36837,7 +36837,7 @@
       "sources": [
         "statistics"
       ],
-      "summary": "Mean monthly earnings of employees",
+      "summary": "Mean monthly earnings of employees (average wages)",
       "tags": [
         "Statistical Agencies"
       ],
@@ -96418,5 +96418,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "4f87605e41d0b768510d42b6ad25382759dfc4f09ba49fc45909a45ec0c63aaf"
+  "spec_sha256": "2e288dfc2d354c092a8ceb8a371dcf181e59ae7d94cd281e637e5e0ad8d1bbf7"
 }
