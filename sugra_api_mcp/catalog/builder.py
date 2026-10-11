@@ -203,6 +203,9 @@ def build_catalog_from_openapi(
                         for item in (operation.get("x-sugra-macro-keys") or [])
                         if isinstance(item, dict) and item.get("key")
                     ],
+                    # x-sugra-open-query marks a handler that reads filters
+                    # from the raw query string; only a literal true counts.
+                    open_query=operation.get("x-sugra-open-query") is True,
                 )
             )
 

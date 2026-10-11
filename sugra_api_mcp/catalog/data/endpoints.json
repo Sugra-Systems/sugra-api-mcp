@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-10-10T12:13:41Z",
+  "built_at": "2026-10-10T21:54:24Z",
   "endpoint_count": 1625,
   "endpoints": [
     {
@@ -4210,7 +4210,7 @@
       "toolset": "central_banks"
     },
     {
-      "description": "Target for the overnight rate (series `V39079`, end-of-month) alongside the monthly average overnight rate (`V122514`). The overnight rate target is the Bank of Canada's primary monetary-policy instrument, set eight times per year at scheduled decisions plus ad-hoc moves when warranted.\n\nDecision dates follow the published Bank of Canada calendar; values change in increments of 25 basis points as the normal rule.",
+      "description": "Target for the overnight rate (series `V39079`, end-of-month) alongside the monthly average overnight rate (`V122514`). The overnight rate target is the Bank of Canada's primary monetary-policy instrument, set eight times per year at scheduled decisions plus ad-hoc moves when warranted.\n\nDecision dates follow the published Bank of Canada calendar; values change in increments of 25 basis points as the normal rule.\n\nThe answer holds every dated observation, oldest first, of the `recent_years` window (default 5 years). Pass the optional `limit` to keep only the newest observations of that window, e.g. limit=1 for the latest target.",
       "method": "GET",
       "operation_id": "boc_policy_rate",
       "parameters": [
@@ -4227,6 +4227,27 @@
             "minimum": 1,
             "title": "Recent Years",
             "type": "integer"
+          }
+        },
+        {
+          "description": "Optional: keep only the newest N observations of the recent_years window. Omit for the whole window.",
+          "example": 1,
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 5000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional: keep only the newest N observations of the recent_years window. Omit for the whole window.",
+            "title": "Limit"
           }
         }
       ],
@@ -51636,10 +51657,92 @@
       "toolset": "predictions"
     },
     {
-      "description": "Return all supported macro series with full policy metadata.\nNo FRED API call. Always fast.\n\nEach entry includes: unit_type, supported_transforms, default_transforms,\ndefault_last_n, max_last_n, and cache TTL policy.",
+      "description": "Return all supported macro series with full policy metadata.\nNo FRED API call. Always fast.\n\nEach entry includes: unit_type, supported_transforms, default_transforms,\ndefault_last_n, max_last_n, and cache TTL policy. Every country together\nis several hundred entries: narrow them with q or frequency and page them\nwith limit and offset (or ask /catalog/{country}); the answer then also\ncarries `total`.",
       "method": "GET",
       "operation_id": "macro_catalog",
-      "parameters": [],
+      "parameters": [
+        {
+          "description": "Optional keywords; every word must occur in the section, title, series ID or units (case-insensitive).",
+          "example": "inflation",
+          "location": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional keywords; every word must occur in the section, title, series ID or units (case-insensitive).",
+            "title": "Q"
+          }
+        },
+        {
+          "description": "Optional comma-separated frequencies: daily, weekly, monthly, quarterly or annual.",
+          "example": "monthly",
+          "location": "query",
+          "name": "frequency",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional comma-separated frequencies: daily, weekly, monthly, quarterly or annual.",
+            "title": "Frequency"
+          }
+        },
+        {
+          "description": "Optional maximum entries to return. Omit for every matching entry.",
+          "example": 50,
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 500,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional maximum entries to return. Omit for every matching entry.",
+            "title": "Limit"
+          }
+        },
+        {
+          "description": "Optional number of matching entries to skip (zero-indexed).",
+          "example": 0,
+          "location": "query",
+          "name": "offset",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional number of matching entries to skip (zero-indexed).",
+            "title": "Offset"
+          }
+        }
+      ],
       "path": "/api/v1/macro/catalog",
       "request_body_required": false,
       "required_parameters": [],
@@ -51965,7 +52068,7 @@
       "toolset": "macro"
     },
     {
-      "description": "A one-call macroeconomic snapshot for a country: GDP (level + QoQ/YoY growth), inflation (CPI/core YoY), retail sales, industrial production, policy rate, 10Y yield, government debt to GDP, current account to GDP, and the jobless rate. Pass a country name or ISO code; comma-separate for several (max 8). Set latest=false for the full history of each indicator. Growth/rate fields are normalized fractions (0.025 = 2.5%).",
+      "description": "A one-call macroeconomic snapshot for a country: GDP (level + QoQ/YoY growth), inflation (CPI/core YoY), retail sales, industrial production, policy rate, 10Y yield, government debt to GDP, current account to GDP, and the jobless rate. Pass a country name or ISO code; comma-separate for several (max 8). Keep latest=true (the default) for the latest value of each indicator, one row per country. latest=false returns one row per date across the whole history of every indicator: hundreds of thousands of characters for a single country, more than one agent tool call takes. For a dated window ask GET /api/v1/macro/indicators with symbol, country, start_date and end_date instead. Growth/rate fields are normalized fractions (0.025 = 2.5%).",
       "method": "GET",
       "operation_id": "macro_country_profile",
       "parameters": [
@@ -51985,13 +52088,13 @@
           }
         },
         {
-          "description": "If true (default) return only the latest value per indicator; if false return the full history.",
+          "description": "If true (default) return only the latest value per indicator; if false return the full history of every indicator, which is too large for one agent tool call - keep latest=true unless the history is needed.",
           "location": "query",
           "name": "latest",
           "required": false,
           "schema": {
             "default": true,
-            "description": "If true (default) return only the latest value per indicator; if false return the full history.",
+            "description": "If true (default) return only the latest value per indicator; if false return the full history of every indicator, which is too large for one agent tool call - keep latest=true unless the history is needed.",
             "title": "Latest",
             "type": "boolean"
           }
@@ -62929,7 +63032,7 @@
       "toolset": "digital_infra"
     },
     {
-      "description": "UK headline consumer prices from Office for National Statistics. Returns CPIH index (L522) and annual rate (L55O), CPI index (D7BT) and annual rate (D7G7), and RPI index (CHAW). All monthly. CPIH is the ONS primary inflation measure and is published mid-month roughly 18-20 days after the reference month.",
+      "description": "UK headline consumer prices from Office for National Statistics. Returns CPIH index (L522) and annual rate (L55O), CPI index (D7BT) and annual rate (D7G7), and RPI index (CHAW). All monthly. CPIH is the ONS primary inflation measure and is published mid-month roughly 18-20 days after the reference month. The window is `limit` (default 24): the most recent observations per series, and at most as many of each quarterly or annual rollup a series carries. Pass a smaller `limit` for less, e.g. limit=1 for the latest value of each series.",
       "method": "GET",
       "operation_id": "ons_cpi",
       "parameters": [
@@ -63030,7 +63133,7 @@
       "toolset": "statistics"
     },
     {
-      "description": "UK Average Weekly Earnings from Office for National Statistics. Whole-economy total pay SA in GBP per week (KAB9), regular pay excluding bonuses SA (KAI7), and three-month-average annual growth of total pay (KAC3). Released with the labour-market bulletin on the third Tuesday each month.",
+      "description": "UK Average Weekly Earnings from Office for National Statistics. Whole-economy total pay SA in GBP per week (KAB9), regular pay excluding bonuses SA (KAI7), and three-month-average annual growth of total pay (KAC3). Released with the labour-market bulletin on the third Tuesday each month. The window is `limit` (default 24): the most recent observations per series, and at most as many of each quarterly or annual rollup a series carries. Pass a smaller `limit` for less, e.g. limit=1 for the latest value of each series.",
       "method": "GET",
       "operation_id": "ons_earnings",
       "parameters": [
@@ -66016,6 +66119,27 @@
             "description": "Event identifier.",
             "title": "Event Id",
             "type": "string"
+          }
+        },
+        {
+          "description": "Optional maximum nested markets per event (0 = none); markets_count still gives each event's full number. Omit for every market.",
+          "example": 3,
+          "location": "query",
+          "name": "markets_limit",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional maximum nested markets per event (0 = none); markets_count still gives each event's full number. Omit for every market.",
+            "title": "Markets Limit"
           }
         }
       ],
@@ -78162,6 +78286,7 @@
     {
       "description": "Execute a StatBank data query against any table by passing dimension filters as query parameters. Dimension codes are Danish and case-sensitive (e.g. `OMRÅDE`, `KØN`, `SÆSON`, `VAREGR`, `TRANSAKT`, `Tid`). Pass comma-separated values (`Tid=2026M01,2026M02,2026M03`) or `*` for all values. Time input accepts both K-form (`2025K4`) and Q-form (`2025Q4`); Sugra converts to K for upstream.\n\nSpecial parameters:\n- `lang` = `en` (default) or `da`.\n- `last_n` = convenience: return the most recent N time periods when `Tid` is not otherwise supplied. Applies only when the table has a time dimension.\n\nFor non-elimination dimensions you MUST supply at least one value. Discover the schema via `GET /tableinfo/{table_id}`.",
       "method": "GET",
+      "open_query": true,
       "operation_id": "statistical_agencies_statbank_dk_data_table_id",
       "parameters": [
         {
@@ -78929,10 +79054,66 @@
       "toolset": "public_finance"
     },
     {
-      "description": "Total public debt outstanding, updated daily. Returns the latest daily records, newest first.",
+      "description": "Total public debt outstanding, updated daily. Returns the latest daily records, newest first. start_date and end_date narrow the answer to a record_date window: end_date=<a day a year back> with limit=1 answers the value on or before that day in one small call.",
       "method": "GET",
       "operation_id": "treasury_debt",
-      "parameters": [],
+      "parameters": [
+        {
+          "description": "Optional. Earliest record_date to return (YYYY-MM-DD).",
+          "example": "2025-10-01",
+          "location": "query",
+          "name": "start_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional. Earliest record_date to return (YYYY-MM-DD).",
+            "title": "Start Date"
+          }
+        },
+        {
+          "description": "Optional. Latest record_date to return (YYYY-MM-DD).",
+          "example": "2025-10-10",
+          "location": "query",
+          "name": "end_date",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional. Latest record_date to return (YYYY-MM-DD).",
+            "title": "End Date"
+          }
+        },
+        {
+          "description": "Maximum number of daily records, newest first.",
+          "example": 10,
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 10,
+            "description": "Maximum number of daily records, newest first.",
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
       "path": "/api/v1/treasury/debt",
       "request_body_required": false,
       "required_parameters": [],
@@ -96237,5 +96418,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "a6bd884c99c63b118ba3bc085d4be172b95e1c5bb1c500513c104eabbe43cc26"
+  "spec_sha256": "6326722c7e487133293edd58849ab547484067db8fd1467b01d6fea778a4f60d"
 }

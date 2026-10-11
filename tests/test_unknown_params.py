@@ -167,6 +167,7 @@ async def test_open_query_operation_still_forwards_dimension_filters(monkeypatch
             {"name": "last_n", "location": "query", "required": False},
         ],
         required_parameters=["table_id"],
+        open_query=True,
     )
     seen = _patch(monkeypatch, gw, ep)
     result = await gw.call_endpoint(
@@ -175,6 +176,25 @@ async def test_open_query_operation_still_forwards_dimension_filters(monkeypatch
     )
     assert "error" not in result
     assert seen["params"] == {"OMRÅDE": "000", "Tid": "2025K1"}
+
+
+@pytest.mark.anyio
+async def test_the_marker_not_the_name_opens_the_query(monkeypatch):
+    """The same operation without the catalog's open_query flag is refused."""
+    import sugra_api_mcp.tools.gateway as gw
+
+    op = "statistical_agencies_statbank_dk_data_table_id"
+    ep = _endpoint(
+        operation_id=op,
+        path="/api/v1/statistical-agencies/statbank-dk/data/{table_id}",
+        parameters=[{"name": "table_id", "location": "path", "required": True}],
+        required_parameters=["table_id"],
+    )
+    seen = _patch(monkeypatch, gw, ep)
+    result = await gw.call_endpoint(
+        operation_id=op, params={"table_id": "FOLK1A", "OMRÅDE": "000"})
+    assert result["error"] == "unknown_parameters"
+    assert seen["calls"] == 0
 
 
 @pytest.mark.anyio
@@ -197,14 +217,32 @@ async def test_fetch_data_delegation_gets_the_same_refusal(monkeypatch):
     assert seen["calls"] == 0
 
 
-def test_open_query_operations_exist_in_the_bundled_catalog():
-    """A renamed operation would silently lose its exception."""
+def test_the_bundled_catalog_marks_exactly_the_open_query_operations():
+    """The bundle carries the API's x-sugra-open-query marker; a dropped
+    marker would turn the StatBank dimension filters into refusals."""
     from sugra_api_mcp.catalog.loader import load_catalog
-    from sugra_api_mcp.tools.gateway import _OPEN_QUERY_OPERATIONS
 
     catalog = load_catalog()
-    for operation_id in _OPEN_QUERY_OPERATIONS:
-        assert catalog.get(operation_id).operation_id == operation_id
+    marked = {e.operation_id for e in catalog.endpoints if e.open_query}
+    assert marked == {"statistical_agencies_statbank_dk_data_table_id"}
+
+
+def test_the_builder_reads_only_a_literal_true_marker():
+    from sugra_api_mcp.catalog.builder import build_catalog_from_openapi
+
+    def _spec(marker: Any) -> dict[str, Any]:
+        op: dict[str, Any] = {"operationId": "op", "tags": ["Statistical Agencies"]}
+        if marker is not None:
+            op["x-sugra-open-query"] = marker
+        return {"openapi": "3.1.0", "paths": {"/api/v1/x": {"get": op}}}
+
+    assert build_catalog_from_openapi(_spec(True), source="t").get("op").open_query is True
+    for marker in (None, False, "true", 1):
+        assert build_catalog_from_openapi(_spec(marker), source="t").get("op").open_query is False, marker
+    endpoint = build_catalog_from_openapi(_spec(True), source="t").get("op")
+    assert endpoint.to_dict()["open_query"] is True
+    assert type(endpoint).from_dict(endpoint.to_dict()).open_query is True
+    assert "open_query" not in build_catalog_from_openapi(_spec(None), source="t").get("op").to_dict()
 
 
 def test_unknown_parameters_code_in_observability_allowlist():

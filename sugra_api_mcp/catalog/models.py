@@ -118,6 +118,10 @@ class Endpoint(BaseModel):
     # against their titles and names the matching keys in the hit. Hundreds
     # of entries, so describe_endpoint leaves them out (see to_dict).
     macro_keys: list[MacroKey] = Field(default_factory=list)
+    # From the spec's x-sugra-open-query extension: the API handler reads
+    # filters from the raw query string beyond its declared parameters, so an
+    # undeclared key is a real filter there and the gateway passes it on.
+    open_query: bool = False
 
     @property
     def required_parameters(self) -> list[str]:
@@ -159,6 +163,7 @@ class Endpoint(BaseModel):
                 for item in (data.get("macro_keys") or [])
                 if isinstance(item, dict) and item.get("key")
             ],
+            open_query=data.get("open_query") is True,
         )
 
     def to_dict(self, *, include_macro_keys: bool = False) -> dict[str, Any]:
@@ -196,6 +201,8 @@ class Endpoint(BaseModel):
                 result["groups_mutually_exclusive"] = True
         if self.keywords:
             result["keywords"] = self.keywords
+        if self.open_query:
+            result["open_query"] = True
         if include_macro_keys and self.macro_keys:
             result["macro_keys"] = [item.to_dict() for item in self.macro_keys]
         return result
