@@ -32,6 +32,12 @@ ALIASES: dict[str, list[str]] = {
     # "rent prices" found the FAO food prices first; the rents operation
     # names a rent index.
     "rent prices": ["rent index"],
+    # "housing prices" found the FAO food prices and "UK house prices" the
+    # same; the BIS series, which takes the country, names residential
+    # property prices, and a national house price index the words of the
+    # question.
+    "house prices": ["residential property prices", "house price"],
+    "housing prices": ["residential property prices", "house price"],
     # The storm's everyday names: the operations name a tropical cyclone, and
     # "hurricane damage cost" ranked a blockchain mining-cost chart first.
     "hurricane": ["tropical cyclone"],
@@ -354,7 +360,8 @@ def country_statistic_words(query: str) -> frozenset[str]:
 # names as its "10Y yield": "government bond yields" ranked the Reserve Bank
 # of Australia's first and the profile 198th. So is a trade balance, which
 # the IMF Direction of Trade serves for any reporter country: "trade balance"
-# ranked the US Census source first.
+# ranked the US Census source first. So is a house price, which the BIS
+# serves for 61 countries: "house prices" ranked Statistics Finland's first.
 COUNTRY_STATISTIC_SPELLINGS: dict[str, tuple[str, ...]] = {
     "cpi": ("consumer price",),
     "gdp": ("gross domestic product",),
@@ -362,6 +369,7 @@ COUNTRY_STATISTIC_SPELLINGS: dict[str, tuple[str, ...]] = {
     "current account": ("current account",),
     "bond yield": ("bond yield", "10y yield", "10 year yield"),
     "trade balance": ("trade balance",),
+    "house price": ("house price", "housing price", "residential property price"),
 }
 
 
