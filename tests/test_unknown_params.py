@@ -198,6 +198,22 @@ async def test_the_marker_not_the_name_opens_the_query(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_the_marker_opens_only_a_get_operation(monkeypatch):
+    """A marked operation that is not GET still refuses an undeclared key."""
+    import sugra_api_mcp.tools.gateway as gw
+
+    ep = _endpoint(method="POST", open_query=True)
+    seen = _patch(monkeypatch, gw, ep)
+    result = await gw.call_endpoint(
+        operation_id="labour_dataflow",
+        params={"dataflow_id": "DF_UNE", "country": "PRT"},
+    )
+    assert result["error"] == "unknown_parameters"
+    assert result["unknown"] == ["country"]
+    assert seen["calls"] == 0
+
+
+@pytest.mark.anyio
 async def test_fetch_data_delegation_gets_the_same_refusal(monkeypatch):
     import sugra_api_mcp.tools.gateway as gw
 
