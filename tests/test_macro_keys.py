@@ -398,9 +398,9 @@ def test_a_claims_question_ranks_the_claims_key_right_after_the_first_answer(
     "youth unemployment",
     # The core CPI leaves food out, so it holds no food inflation.
     "food inflation",
-    # No statistic every country reports: a US series would be the US default.
-    "initial claims",
-    "nonfarm payrolls",
+    # An operation naming a word in one number names it in the other: the
+    # government payroll operation names "payroll".
+    "payrolls",
     # The unanswered word is in no key's title.
     "daily unemployment",
     "weekly unemployment",
@@ -416,6 +416,61 @@ def test_a_claims_question_ranks_the_claims_key_right_after_the_first_answer(
 ])
 def test_a_question_that_names_no_place_ranks_no_key_otherwise(claims_catalog: Catalog, query: str) -> None:
     results = search_catalog(claims_catalog, query, limit=10)
+    assert all("macro_keys" not in hit for hit in results), _top_ids(results)
+
+
+US_ONLY_KEYS = [
+    MacroKey(key="us/housing-starts", title="Housing Starts: Total - New Privately Owned", freq="monthly"),
+    MacroKey(key="us/polvoilusdm", title="Global price of Olive Oil", freq="monthly"),
+    MacroKey(key="us/retail-sales", title="Advance Retail Sales: Retail Trade", freq="monthly"),
+]
+
+
+@pytest.fixture(scope="module")
+def us_only_catalog() -> Catalog:
+    return _with_keys([*KEYS, *CLAIMS_KEYS, *US_ONLY_KEYS])
+
+
+@pytest.mark.parametrize(("query", "key"), [
+    ("nonfarm payrolls", "us/payrolls"),
+    ("housing starts", "us/housing-starts"),
+    ("housing start", "us/housing-starts"),
+    ("housing starts numbers", "us/housing-starts"),
+    ("olive oil price", "us/polvoilusdm"),
+    ("initial claims", "us/initial-claims"),
+    ("job openings", "us/jtsjol"),
+])
+def test_a_series_only_the_us_holds_is_the_answer_to_a_question_naming_no_place(
+    us_only_catalog: Catalog, query: str, key: str,
+) -> None:
+    """A word of its title no operation names as what it answers, in a series
+    the US alone holds, reads as the US series (owner, 2026-10-10)."""
+    results = search_catalog(us_only_catalog, query, limit=5)
+
+    assert results[0]["operation_id"] == MACRO_OPERATION, _top_ids(results)
+    assert results[0]["macro_keys"][0]["key"] == key, results[0]["macro_keys"]
+
+
+@pytest.mark.parametrize("query", [
+    # An operation for any country names every word: the national series of
+    # whichever country is meant answers first.
+    "retail sales",
+    # The word no operation names is not in the series' title.
+    "retail sales numbers",
+    "inflation",
+    "unemployment",
+    "government payroll",
+])
+def test_a_question_an_operation_answers_keeps_that_answer(us_only_catalog: Catalog, query: str) -> None:
+    results = search_catalog(us_only_catalog, query, limit=5)
+    assert results[0]["operation_id"] != MACRO_OPERATION, _top_ids(results)
+
+
+def test_a_series_another_country_alone_holds_is_no_default() -> None:
+    """The owner's rule reads the US alone: a series only Japan holds is not
+    the answer to a question that names no place."""
+    catalog = _with_keys([MacroKey(key="jp/housing-starts", title="Housing Starts: Total - New Privately Owned")])
+    results = search_catalog(catalog, "housing starts", limit=10)
     assert all("macro_keys" not in hit for hit in results), _top_ids(results)
 
 
