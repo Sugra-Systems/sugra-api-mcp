@@ -2199,6 +2199,28 @@ def test_a_rate_question_is_no_currency_named_alone(query: str) -> None:
     assert fx is not None and not fx.alone
 
 
+_CRYPTO_PREFIXES = ("crypto_", "onchain_", "mempool_")
+
+
+@pytest.mark.parametrize("query,expected", [
+    ("peruvian sol to dollar", "forex_convert"),
+    ("Peruvian sol to USD", "forex_convert"),
+    ("convert peruvian sol to euro", "forex_convert"),
+    ("Peruvian sol", "forex_rates"),
+])
+def test_the_peruvian_sol_is_no_crypto_token(catalog, query: str, expected: str) -> None:
+    """"peruvian sol to dollar" found the Solana token."""
+    ids = [hit["operation_id"] for hit in search_catalog(catalog, query, limit=3)]
+    assert ids[0] == expected, ids
+    assert not any(op.startswith(_CRYPTO_PREFIXES) for op in ids), ids
+
+
+@pytest.mark.parametrize("query", ["sol usd", "sol to usd", "SOL price", "peruvian sol vs bitcoin"])
+def test_a_bare_sol_stays_the_solana_token(catalog, query: str) -> None:
+    top = search_catalog(catalog, query, limit=1)[0]["operation_id"]
+    assert top.startswith(_CRYPTO_PREFIXES), top
+
+
 def test_every_detectable_currency_has_an_issuer() -> None:
     from sugra_api_mcp.catalog.aliases import _CURRENCY_ISSUERS, _KNOWN_CURRENCIES, CURRENCY_NAMES
 
