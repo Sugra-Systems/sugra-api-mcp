@@ -1863,12 +1863,24 @@ _YEAR_PREPOSITIONS = frozenset({
 def query_names_a_period(query: str) -> bool:
     """Whether the query names a period of days or longer: a year after a
     word that dates, or a period word."""
+    return bool(query_period_words(query))
+
+
+def query_period_words(query: str) -> frozenset[str]:
+    """The query's words that name a period of days or longer: a year with
+    the word that dates it, and the words of a period phrase."""
     tokens = _WORD_TOKEN_RE.findall(query.lower())
-    return any(
-        _YEAR_RE.fullmatch(token) and index > 0
-        and tokens[index - 1] in _YEAR_PREPOSITIONS
+    words = {
+        word
         for index, token in enumerate(tokens)
-    ) or any(_phrase_spans(tokens, word) for word in _PERIOD_WORDS)
+        if _YEAR_RE.fullmatch(token) and index > 0
+        and tokens[index - 1] in _YEAR_PREPOSITIONS
+        for word in tokens[index - 1:index + 1]
+    }
+    for phrase in _PERIOD_WORDS:
+        for start, end in _phrase_spans(tokens, phrase):
+            words.update(tokens[start:end])
+    return frozenset(words)
 
 
 # An everyday weather question names the worldwide forecast, or the history

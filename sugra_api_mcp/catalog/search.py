@@ -43,8 +43,8 @@ from .aliases import (
     matching_aliases,
     matching_central_bank_prefixes,
     query_has_equity_context,
-    query_names_a_period,
     query_names_united_states,
+    query_period_words,
     spelled_country_statistics,
     topic_default_operations,
     with_statistic_words,
@@ -454,12 +454,30 @@ def _names_a_company_listing(query: str, catalog: Catalog) -> bool:
              and not detect_query_countries(name)]
     if not names:
         return False
+    named = _catalog_named_words(catalog)
+    return any(name not in named for name in names)
+
+
+# Keyed by object identity and holding the catalog itself, as _profiles is.
+_NAMED_WORDS_CACHE_LIMIT = 64
+_named_words: dict[int, tuple[Catalog, frozenset[str]]] = {}
+
+
+def _catalog_named_words(catalog: Catalog) -> frozenset[str]:
+    """The words the catalog's operations name as what they answer: their
+    operation ids, summaries, paths, keywords and toolsets."""
+    cached = _named_words.get(id(catalog))
+    if cached is not None and cached[0] is catalog:
+        return cached[1]
     named: set[str] = set()
     for endpoint in catalog.endpoints:
         profile = _profile(endpoint)
         named |= profile.operation_id | profile.summary | profile.path | profile.keywords
         named.update(_tokens(endpoint.toolset))
-    return any(name not in named for name in names)
+    if len(_named_words) >= _NAMED_WORDS_CACHE_LIMIT:
+        _named_words.clear()
+    _named_words[id(catalog)] = (catalog, frozenset(named))
+    return _named_words[id(catalog)][1]
 
 
 def _alias_matches_profile(profile: _EndpointProfile, expansion: str) -> bool:
@@ -1029,13 +1047,24 @@ def search_catalog(
     # "stock price" does: "Tesla stock" is not the treasury-stock filings.
     if not boost_quotes_symbol and not has_crypto_context and _names_a_company_listing(query, catalog):
         boost_quotes_symbol = True
+    # In a listing question "stock" right after the name only marks the
+    # listing, so it narrows nothing: "Tesla stock" ranked the splits first,
+    # on the word their summary holds, above the price.
+    if boost_quotes_symbol and any(
+            match.group(1).lower() not in _NOT_A_COMPANY
+            for match in _COMPANY_LISTING_RE.finditer(query)):
+        terms = [term for term in terms if term != "stock"]
 
     boost_markets_toolset = boost_quotes_symbol
     # A question about one listing that names a period asks for its price
     # history; several listings with a period still ask for their prices.
-    listing_period = (
-        boost_quotes_symbol and len(tickers) <= 1 and query_names_a_period(query)
-    )
+    period_words = query_period_words(query)
+    listing_period = boost_quotes_symbol and len(tickers) <= 1 and bool(period_words)
+    # Its period words then ask for the history and narrow nothing else:
+    # "Tesla stock last year" ranked futures contracts first, on "last" and
+    # "year" in their keywords.
+    if listing_period:
+        terms = [term for term in terms if term not in period_words]
     # Everyday names: a currency named in words, and the benchmarks, waterways,
     # ports and measures of detect_named_operations. Crypto context keeps
     # "convert bitcoin to dollars" a crypto price. A pair asks for a
