@@ -603,9 +603,11 @@ def _unknown_params_error(
     filters from the raw query string beyond the parameters it declares, so
     an undeclared key is a real filter there and not a typo: the StatBank DK
     data endpoint takes the table's own dimension codes (OMRÅDE, KØN, Tid,
-    ...) this way.
+    ...) this way. Only a GET operation is opened by the marker: the reader
+    is a query-string reader, and a marked POST still refuses an undeclared
+    key.
     """
-    if endpoint.open_query:
+    if endpoint.open_query and endpoint.method == "GET":
         return None
     accepted = [parameter.name for parameter in endpoint.parameters]
     unknown = [key for key in params if key not in accepted]
