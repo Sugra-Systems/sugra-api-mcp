@@ -2781,8 +2781,9 @@ def test_real_beside_a_property_word_ranks_real_estate_first(catalog, query: str
 
 
 def test_real_house_prices_rank_a_house_price_series_first(catalog) -> None:
+    """The BIS residential property prices are the house prices of 61 countries."""
     top = search_catalog(catalog, "real house prices", limit=1)[0]["operation_id"]
-    assert top.endswith("_house_prices"), top
+    assert top.endswith("_house_prices") or top == "bis_property", top
 
 
 def test_real_answers_the_real_estate_operations_only_beside_a_property_word() -> None:
@@ -3309,6 +3310,39 @@ def test_a_uk_trade_balance_keeps_its_own_source_second(catalog) -> None:
     ids = [r["operation_id"] for r in search_catalog(catalog, "UK trade balance", limit=5)]
     assert ids[:2] == ["imf_direction_of_trade", "ons_trade_balance"], ids
     assert "census_trade_balance" not in ids[:3], ids
+
+
+@pytest.mark.parametrize("query", [
+    "house prices",
+    "housing prices",
+    "house prices by country",
+    "UK house prices",
+    "house prices in Germany",
+    "Swiss house prices",
+])
+def test_a_house_price_of_no_country_or_a_bis_country_without_its_own_series_ranks_the_bis_first(
+    catalog, query: str,
+) -> None:
+    """The BIS serves the residential property prices of 61 countries, the UK,
+    Germany and Switzerland among them:
+    "house prices" ranked Statistics Finland's first, and "housing prices"
+    and "UK house prices" the FAO food prices."""
+    ids = [r["operation_id"] for r in search_catalog(catalog, query, limit=5)]
+    assert ids[0] == "bis_property", ids
+    assert "faostat_prices" not in ids, ids
+
+
+@pytest.mark.parametrize("query,first", [
+    ("Norway house prices", "statistical_agencies_ssb_house_prices"),
+    ("Sweden house prices", "scb_house_prices"),
+    ("Denmark house prices", "statistical_agencies_statbank_dk_house_prices"),
+    ("Finland house prices", "stat_finland_house_prices"),
+])
+def test_a_house_price_of_a_country_with_its_own_series_keeps_it_first(
+    catalog, query: str, first: str,
+) -> None:
+    ids = [r["operation_id"] for r in search_catalog(catalog, query, limit=5)]
+    assert ids[:2] == [first, "bis_property"], ids
 
 
 def test_an_operation_that_answers_through_the_statistics_alias_takes_the_country(catalog) -> None:
