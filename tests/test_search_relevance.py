@@ -3066,6 +3066,25 @@ def test_a_current_accounts_side_ranks_the_profile_first(catalog, query: str) ->
     assert not any("pattern:crypto" in w for r in results for w in r["why"]), ids
 
 
+@pytest.mark.parametrize("query", [
+    "US current account",
+    "United States current account",
+    "US current account deficit",
+])
+def test_a_current_account_of_the_united_states_ranks_the_profile_first(
+    catalog, query: str,
+) -> None:
+    """An operation matching only the place's words ranks below the best
+    operation spelling the statistic: "US current account" ranked the
+    Fama-French US portfolios and the US weather forecasts first, on the word
+    "us" alone."""
+    results = search_catalog(catalog, query, limit=5)
+    ids = [r["operation_id"] for r in results]
+    assert ids[0] == "macro_country_profile", ids
+    assert all("clamped-below:statistic" in r["why"] for r in results
+               if r["operation_id"].startswith("weather_us_")), ids
+
+
 @pytest.mark.parametrize(("query", "first"), [
     ("Swiss current account", "snb_current_account"),
     ("Japan balance sheet", "boj_balance_sheet"),

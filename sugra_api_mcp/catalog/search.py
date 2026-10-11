@@ -463,6 +463,15 @@ def _is_foreign_source(endpoint: Endpoint, countries: set[str]) -> bool:
     )
 
 
+def _matches_only_place_words(why: list[str], place_words: frozenset[str]) -> bool:
+    """Whether every reason an operation scored is a field matching one of
+    the place's words, or the coverage those words give it."""
+    return bool(why) and all(
+        reason.partition(":")[2] in place_words or reason.startswith("coverage:")
+        for reason in why
+    )
+
+
 def _is_foreign_euro_area(
     endpoint: Endpoint, countries: set[str], penalized: set[str], central_bank_prefixes: list[str],
 ) -> bool:
@@ -1125,6 +1134,7 @@ def search_catalog(
     # only for the operations that spell it, as a name's words do: "Germany
     # current account" ranked the current air quality first, on the word
     # "current", and the country profile fourth.
+    spelling_operations: set[str] = set()
     for statistic, words in spelled_country_statistics(query).items():
         if " " not in statistic:
             continue
@@ -1132,6 +1142,7 @@ def search_catalog(
         for endpoint in catalog.endpoints:
             if any(_alias_matches_profile(_profile(endpoint), spelling)
                    for spelling in COUNTRY_STATISTIC_SPELLINGS[statistic]):
+                spelling_operations.add(endpoint.operation_id)
                 own_named_words[endpoint.operation_id] = (
                     own_named_words.get(endpoint.operation_id, frozenset()) | words)
     # Country tokens are NOT consumed: consuming them would strip the CORRECT
@@ -1296,6 +1307,21 @@ def search_catalog(
                 endpoint, query_countries, penalty_countries, central_bank_prefixes)
             if foreign and score >= floor:
                 scored[i] = (floor - 1, endpoint, [*why, "clamped-below:country-answers"])
+
+    # Structural guarantee: beside a place and a statistic spelled in two
+    # words, an operation that matches nothing but the place's words ranks
+    # below the best operation that spells the statistic: "US current account"
+    # ranked the US weather forecasts first, on the word "us" alone, and the
+    # country profile, which answers it for the place by its country
+    # parameter, sixth.
+    spelled_scores = [score for score, endpoint, _ in scored
+                      if endpoint.operation_id in spelling_operations]
+    if spelled_scores and country_terms:
+        best = max(spelled_scores)
+        for i, (score, endpoint, why) in enumerate(scored):
+            if (score >= best and endpoint.operation_id not in spelling_operations
+                    and _matches_only_place_words(why, country_terms)):
+                scored[i] = (best - 1, endpoint, [*why, "clamped-below:statistic"])
 
     # Equal scores: the default operation of a topic word the query names
     # comes first ("weather" -> the worldwide forecast), and in a listing
