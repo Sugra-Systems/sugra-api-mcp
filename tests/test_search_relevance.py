@@ -2529,6 +2529,15 @@ POLICY_RATE_TOP_1 = [
     ("Fed funds rate", "fed_rates_rate_type", None),
     ("Bank Negara Malaysia interest rate", "bnm_opr", None),
     ("BCB interest rate", "bcb_selic", None),
+    # A bank's key or main rate is its policy rate.
+    ("ECB main rate", "macro_country_section", "eu/ecbdfr"),
+    ("ECB key rate", "macro_country_section", "eu/ecbdfr"),
+    ("ECB key rates", "macro_country_section", "eu/ecbdfr"),
+    ("ECB key interest rate", "macro_country_section", "eu/ecbdfr"),
+    ("ECB main interest rate", "macro_country_section", "eu/ecbdfr"),
+    ("Bank of Canada key rate", "boc_policy_rate", None),
+    ("SNB main rate", "snb_policy_rate", None),
+    ("Fed key rate", "fed_rates_rate_type", None),
 ]
 
 
@@ -2594,8 +2603,15 @@ def test_a_qualified_rate_question_keeps_its_series_first(catalog, query: str, o
     assert top[0] == operation, top
 
 
+def test_the_main_refinancing_rate_is_not_read_as_the_deposit_rate(catalog) -> None:
+    """"main" and "rate" apart name another ECB rate, which no curated key holds."""
+    for hit in search_catalog(catalog, "ECB main refinancing rate", limit=5):
+        assert "eu/ecbdfr" not in [k["key"] for k in hit.get("macro_keys") or []]
+
+
 @pytest.mark.parametrize("query,operation", [
     ("Canada interest rate", "boc_policy_rate"),
+    ("Canada key rate", "boc_policy_rate"),
     ("interest rate in Canada", "boc_policy_rate"),
     ("Japan interest rate", "boj_rates"),
     ("UK interest rate", "boe_rate"),
