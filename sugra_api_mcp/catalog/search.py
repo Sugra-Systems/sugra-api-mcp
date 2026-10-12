@@ -46,6 +46,7 @@ from .aliases import (
     query_has_equity_context,
     query_names_united_states,
     query_period_words,
+    read_home_prices_as_house_prices,
     spelled_country_statistics,
     topic_default_operations,
     with_statistic_words,
@@ -997,6 +998,16 @@ def query_limit_error(query: str) -> dict[str, Any] | None:
     }
 
 
+def _bounded_reading(query: str) -> str:
+    """The query as search reads it, never past the bounds it was accepted under.
+
+    "house" is one letter longer than "home": a reading past the bounds leaves
+    the accepted query as it is.
+    """
+    reading = read_home_prices_as_house_prices(query)
+    return reading if query_limit_error(reading) is None else query
+
+
 def search_catalog(
     catalog: Catalog,
     query: str,
@@ -1012,6 +1023,7 @@ def search_catalog(
     """
     if query_limit_error(query) is not None:
         raise ValueError("query_too_long: the query is past the search bounds")
+    query = _bounded_reading(query)
     terms = _tokens(query)
     if not terms:
         return []

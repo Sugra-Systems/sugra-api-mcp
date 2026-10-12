@@ -2195,6 +2195,26 @@ def query_names_united_states(query: str) -> bool:
     return bool(_US_CONTEXT_PATTERN.search(query))
 
 
+_HOME_PRICE_RE = re.compile(r"\bhome(?=\s+prices?\b)", re.IGNORECASE)
+
+
+def read_home_prices_as_house_prices(query: str) -> str:
+    """The query with "home prices" read as "house prices" beside another country.
+
+    The home value index behind "home prices" covers United States regions
+    only: "UK home prices" ranked it first, another country's figures. Beside
+    a named country other than the United States the words ask what "house
+    prices" asks, and the BIS series that takes the country answers. Without
+    a country, or with the United States, the query stays as it is.
+    """
+    if not _HOME_PRICE_RE.search(query):
+        return query
+    countries = detect_query_countries(query)
+    if not countries or "US" in countries or query_names_united_states(query):
+        return query
+    return _HOME_PRICE_RE.sub("house", query)
+
+
 # Macro-data keywords that, combined with US context, indicate the user wants
 # US-specific macroeconomic data from a primary source (FRED). Kept narrow on
 # purpose - we don't want generic words like "data" or "rate" alone triggering
