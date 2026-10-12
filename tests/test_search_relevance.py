@@ -4625,3 +4625,38 @@ def test_each_series_of_a_question_is_asked_for_the_places_it_names(
     top = search_catalog(catalog, query, limit=3)[0]
     assert top["operation_id"] == "macro_multi", top
     assert {key["key"] for key in top["macro_keys"]} == series, top
+
+
+@pytest.mark.parametrize("query,word_only", [
+    ("daily streamflow Potomac", {"sec_edgar_daily_index_by_form", "short_interest_daily_volume"}),
+    ("cost of trucking accidents", {"blockchain_charts_mining"}),
+    ("Phoenix temperature last summer", {"nbp_fx_last"}),
+])
+def test_a_generic_word_alone_carries_no_hit_beside_a_subject(catalog, query: str, word_only: set[str]) -> None:
+    """"daily", "cost" and "last" name no subject: an operation they alone
+    matched ranked above the one that says streamflow or road events."""
+    ids = [hit["operation_id"] for hit in search_catalog(catalog, query, limit=5)]
+    assert word_only.isdisjoint(ids), ids
+
+
+@pytest.mark.parametrize("query,first", [
+    ("status", "geocoding_status"),
+    ("market status", "market_status"),
+    ("daily", "sec_edgar_daily_index_by_form"),
+])
+def test_a_generic_word_with_no_subject_beside_it_still_finds_its_operations(
+        catalog, query: str, first: str) -> None:
+    ids = [hit["operation_id"] for hit in search_catalog(catalog, query, limit=5)]
+    assert ids[0] == first, ids
+
+
+def test_a_clamped_retired_operation_is_no_subject_word(catalog) -> None:
+    """A retired operation with no successor is marked when it is clamped
+    below the live ones; that mark is not a word the question said, so it
+    must not drop the live daily tables and leave the retired one alone."""
+    retired = catalog.model_copy(update={"endpoints": [
+        endpoint.model_copy(update={"deprecated": True, "replaced_by": None})
+        if endpoint.operation_id == "short_interest_daily_volume" else endpoint
+        for endpoint in catalog.endpoints]})
+    ids = [hit["operation_id"] for hit in search_catalog(retired, "daily", limit=5)]
+    assert ids[0] == "sec_edgar_daily_index_by_form", ids

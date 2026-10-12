@@ -113,6 +113,10 @@ _TWO_LETTER_FILLER: frozenset[str] = frozenset({
 })
 _UPPERCASE_TWO_LETTER_RE = re.compile(r"\b[A-Z]{2}\b")
 
+# Words that ask for a quality any series can have, its step, its state, its
+# reach, its latest value or its price, and name no subject of their own.
+_GENERIC_WORDS: frozenset[str] = frozenset({"daily", "status", "global", "last", "cost"})
+
 # A capitalized name right before the singular "stock" names a company's
 # listing ("Tesla stock"). The plural names a sector as often as a company
 # ("Airline stocks"), so it is not read. The words below name a kind of stock
@@ -1770,6 +1774,20 @@ def search_catalog(
                 scored[i] = (max(floor - 1, 1), endpoint, [*why, "clamped-below:live"])
                 held[endpoint.operation_id] = (True, f"\U0010ffff{endpoint.operation_id}")
 
+    # A generic word carries no hit on its own once another hit matches a word
+    # of three letters or more that is not generic: "daily streamflow Potomac"
+    # listed every daily table above the one operation that says streamflow.
+    # A clamp above is a mark on the hit, not a word the question said.
+    def matched(why: list[str]) -> list[str]:
+        return [reason.partition(":")[2] for reason in why if not reason.startswith("clamped-below:")]
+
+    def generic_only(why: list[str]) -> bool:
+        words = matched(why)
+        return bool(words) and all(word in _GENERIC_WORDS for word in words)
+
+    if any(len(value) >= 3 and value not in _GENERIC_WORDS
+           for _, _, why in scored for value in matched(why)):
+        scored = [item for item in scored if not generic_only(item[2])]
     scored = [item for item in scored if item[0] > 0]
     # A slot the trade above handed over keeps its tie-break.
     scored.sort(key=lambda item: (
