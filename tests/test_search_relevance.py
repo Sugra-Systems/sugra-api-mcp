@@ -3634,6 +3634,15 @@ def test_a_ratio_question_ranks_first_an_operation_that_names_its_measure(
     assert "pattern:any-country->param" in top["why"], top["why"]
 
 
+@pytest.mark.parametrize("query", ["national debt to GDP", "domestic debt to GDP"])
+def test_a_nation_word_names_no_national_source(catalog, query: str) -> None:
+    """"national debt to GDP" ranked Spain's quarterly national accounts
+    first, on the word their summary holds: the word says the debt is a
+    nation's, whichever nation the question means."""
+    top = search_catalog(catalog, query, limit=1)[0]
+    assert top["operation_id"] == "macro_country_profile", top
+
+
 def test_gdp_per_capita_keeps_the_operation_that_names_it_first(catalog) -> None:
     top = search_catalog(catalog, "GDP per capita", limit=1)[0]["operation_id"]
     assert top == "owid_growth_population", top
