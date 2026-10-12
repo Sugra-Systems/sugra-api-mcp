@@ -2643,6 +2643,34 @@ def test_a_countrys_rate_question_that_asks_more_names_no_policy_rate(
         (r["operation_id"], r["why"]) for r in results]
 
 
+@pytest.mark.parametrize("query", [
+    "euro area interest rate", "eurozone interest rate", "euro zone interest rate",
+    "interest rate in the euro area", "euro area policy rate", "eurozone key rate",
+    "EU interest rate",
+    # The series is the history, as for the ECB by name.
+    "euro area interest rate history",
+])
+def test_the_euro_areas_interest_rate_is_the_ecb_policy_rate(catalog, query: str) -> None:
+    """The euro area is no country: "eurozone interest rate" found the
+    prediction markets' open interest, "euro area interest rate" the yield
+    curve."""
+    top = search_catalog(catalog, query, limit=3)
+    assert top[0]["operation_id"] == "macro_country_section", [r["operation_id"] for r in top]
+    assert top[0]["macro_keys"][0]["key"] == "eu/ecbdfr", top[0]["macro_keys"]
+
+
+@pytest.mark.parametrize("query", [
+    "euro area interest rate swaps", "eurozone mortgage interest rate",
+    "Germany and euro area interest rates",
+    # The euro area stands in for the bank only beside a rate word.
+    "eurozone decision",
+])
+def test_a_euro_area_rate_question_that_asks_more_reads_no_policy_rate(
+        catalog, query: str) -> None:
+    for hit in search_catalog(catalog, query, limit=5):
+        assert "eu/ecbdfr" not in [k["key"] for k in hit.get("macro_keys") or []], query
+
+
 # "FOMC decision" tied four Federal Reserve releases at 15 and the policy rate
 # was not among them: a bank's "decision" is its rate decision.
 @pytest.mark.parametrize("query,expected", [
