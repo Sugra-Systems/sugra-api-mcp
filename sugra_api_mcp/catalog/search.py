@@ -26,6 +26,7 @@ from .aliases import (
     LISTING_HISTORY_OPERATION,
     LISTINGS_DEFAULT_OPERATION,
     MEETING_CALENDAR_OPERATIONS,
+    OPERATION_COUNTRY_COVERAGE,
     OPERATION_INPUT_WORDS,
     SOURCE_ALSO_SERVES,
     SOURCE_COUNTRY_PREFIXES,
@@ -562,6 +563,15 @@ def _is_foreign_source(endpoint: Endpoint, countries: set[str]) -> bool:
     )
 
 
+def _uncovered_countries(endpoint: Endpoint, countries: set[str]) -> list[str]:
+    """The countries named, when the endpoint's fixed coverage holds none of
+    them: the BIS property prices hold no figures for Nigeria."""
+    coverage = OPERATION_COUNTRY_COVERAGE.get(endpoint.operation_id)
+    if coverage is None or not coverage.isdisjoint(countries):
+        return []
+    return sorted(countries)
+
+
 def _matches_only_place_words(why: list[str], place_words: frozenset[str]) -> bool:
     """Whether every reason an operation scored is a field matching one of
     the place's words, or the coverage those words give it."""
@@ -903,6 +913,15 @@ def _score(
         mismatched = True
         score -= WRONG_COUNTRY_PENALTY
         why.append("geo-mismatch:EU")
+    elif uncovered := _uncovered_countries(endpoint, penalized):
+        # A cross-country operation of a fixed set, none of whose countries the
+        # query names: it ranks below an operation that covers them, and says
+        # which countries it lacks. It is no foreign source, so where nothing
+        # covers them it still ranks above the national sources of other
+        # countries, which would answer with another country's figures. The
+        # reason goes first, where the six reasons a hit shows keep it.
+        score -= WRONG_COUNTRY_PENALTY
+        why.insert(0, f"geo-uncovered:{','.join(uncovered)}")
 
     if query_countries:
         # A generic country-parameterized endpoint can answer for WHATEVER
