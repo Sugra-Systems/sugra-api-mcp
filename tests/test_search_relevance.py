@@ -4350,3 +4350,38 @@ def test_the_words_a_catalog_names_are_read_once(catalog) -> None:
     from sugra_api_mcp.catalog.search import _catalog_named_words
 
     assert _catalog_named_words(catalog) is _catalog_named_words(catalog)
+
+
+@pytest.mark.parametrize("query", [
+    "MSFT revenue", "MSFT revenue over the last five years", "NVDA revenue growth",
+    "AAPL quarterly revenue", "AAPL sales", "AAPL profit margin", "TSLA operating margin",
+    "Tesla stock profit",
+])
+def test_a_listing_revenue_sales_profit_or_margin_is_its_income_statement(
+        catalog, query: str) -> None:
+    """"MSFT revenue" ranked the batch quotes first, on the ticker their
+    description names, and "AAPL sales" the fund purchase info, on its "sales
+    loads": the income statement names those words in its description alone."""
+    top = search_catalog(catalog, query, limit=1)[0]
+    assert top["operation_id"] == "quotes_symbol_periodicity_income_statement", top
+    assert "pattern:statement-word->income-statement" in top["why"], top
+
+
+@pytest.mark.parametrize("query,expected", [
+    # A word an operation's id, summary and path all hold still picks it.
+    ("AAPL revenue estimates", "quotes_symbol_forward_estimates"),
+    ("AAPL revenue timeseries", "quotes_symbol_timeseries"),
+    ("AAPL profit margin statistics", "quotes_symbol_statistics"),
+    # A fund has no income statement.
+    ("SPY sales", "quotes_symbol_fund_purchase_info"),
+])
+def test_a_listing_statement_word_beside_a_stronger_word_or_a_fund(
+        catalog, query: str, expected: str) -> None:
+    top = search_catalog(catalog, query, limit=1)[0]
+    assert top["operation_id"] == expected, top
+
+
+@pytest.mark.parametrize("query", ["retail sales", "tax revenue", "US retail sales"])
+def test_a_statement_word_with_no_listing_is_no_income_statement(catalog, query: str) -> None:
+    ids = [hit["operation_id"] for hit in search_catalog(catalog, query, limit=3)]
+    assert "quotes_symbol_periodicity_income_statement" not in ids, ids

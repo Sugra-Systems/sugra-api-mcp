@@ -144,6 +144,19 @@ LISTING_PERIOD_BOOST = 1
 _PRICE_WORDS: frozenset[str] = frozenset({"price", "prices"})
 _CURRENT_PRICE_ALIASES: frozenset[str] = frozenset({"stock price", "share price"})
 _NOW_WORDS: frozenset[str] = frozenset({"current", "currently", "latest", "now", "today"})
+# Beside one company's listing its revenue, sales, profit or margin is a line
+# of its income statement, which names them in its description alone, so
+# "MSFT revenue" ranked the batch quotes first, on the ticker their description
+# names, and "AAPL sales" the fund purchase info, on its "sales loads". The
+# lift tops a word one strong field holds (3) and the period boost, and stays
+# below a word an operation's id, summary and path all hold: "AAPL revenue
+# estimates" is the forward estimates.
+LISTING_STATEMENT_BOOST = 4
+LISTING_STATEMENT_OPERATION = "quotes_symbol_periodicity_income_statement"
+_LISTING_STATEMENT_WORDS: frozenset[str] = frozenset({
+    "margin", "margins", "profit", "profits", "revenue", "revenues", "sales"})
+# A fund has no income statement, and its "sales loads" are a purchase fee.
+_FUND_WORDS: frozenset[str] = frozenset({"etf", "etfs", "fund", "funds", "load", "loads"})
 CURRENCY_PAIR_FOREX_BOOST = 15
 CENTRAL_BANK_PREFIX_BOOST = 15
 CRYPTO_NAMESPACE_BOOST = 18
@@ -568,6 +581,7 @@ def _score(
     *,
     boost_quotes_symbol: bool,
     boost_listing_history: bool = False,
+    boost_listing_statement: bool = False,
     boost_markets_toolset: bool,
     boost_symbol_input: bool,
     boost_forex: bool,
@@ -690,6 +704,9 @@ def _score(
         if boost_listing_history and endpoint.operation_id == LISTING_HISTORY_OPERATION:
             score += LISTING_PERIOD_BOOST
             why.append("pattern:period->history")
+        if boost_listing_statement and endpoint.operation_id == LISTING_STATEMENT_OPERATION:
+            score += LISTING_STATEMENT_BOOST
+            why.append("pattern:statement-word->income-statement")
     elif boost_markets_toolset and endpoint.toolset == "markets":
         score += TICKER_MARKETS_TOOLSET_BOOST
         why.append("pattern:ticker->markets")
@@ -1085,6 +1102,12 @@ def search_catalog(
     if listing_period:
         terms = [term for term in terms if term not in period_words
                  and not (price_over_period and term in _PRICE_WORDS)]
+    # One company's revenue, sales, profit or margin asks for its income
+    # statement; a fund's sales are its sales loads.
+    query_words = set(_tokens(query))
+    listing_statement = (
+        boost_quotes_symbol and len(tickers) <= 1 and ETF_TICKERS.isdisjoint(tickers)
+        and bool(_LISTING_STATEMENT_WORDS & query_words) and not _FUND_WORDS & query_words)
     # Everyday names: a currency named in words, and the benchmarks, waterways,
     # ports and measures of detect_named_operations. Crypto context keeps
     # "convert bitcoin to dollars" a crypto price. A pair asks for a
@@ -1342,6 +1365,7 @@ def search_catalog(
             aliases,
             boost_quotes_symbol=boost_quotes_symbol,
             boost_listing_history=listing_period,
+            boost_listing_statement=listing_statement,
             boost_markets_toolset=boost_markets_toolset,
             boost_symbol_input=has_ticker_token,
             boost_etf_symbol=has_ticker_token and not ETF_TICKERS.isdisjoint(tickers),
