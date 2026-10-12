@@ -22,6 +22,11 @@ Exit codes are chosen so the gate cannot die quietly:
   0  SKIPPED - only for a TRANSIENT fetch failure (connection reset, timeout,
      5xx). An outage must not read as "the catalog drifted"; the scheduled run
      retries it.
+
+With --drift-output FILE (catalog-parity.yml passes $GITHUB_OUTPUT) the verdict
+is appended to FILE as drift=true or drift=false, and DRIFT exits 0: the
+workflow acts on drift=true by opening the resync PR. A check that could not
+run still exits 1 and appends nothing, so a broken gate stays red.
 """
 
 from __future__ import annotations
@@ -95,10 +100,21 @@ def read_spec(source: str) -> bytes:
     return path.read_bytes()
 
 
+def record_drift(path: Path | None, drift: bool) -> None:
+    """Append drift=true|false to a workflow output file, when one was given."""
+    if path is not None:
+        with path.open("a", encoding="utf-8", newline="\n") as handle:
+            handle.write(f"drift={'true' if drift else 'false'}\n")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Check bundled catalog against an API spec.")
     parser.add_argument("--spec", default=DEFAULT_SPEC, help="Spec path or http(s) URL.")
     parser.add_argument("--bundle", type=Path, default=BUNDLE)
+    parser.add_argument(
+        "--drift-output", type=Path, default=None,
+        help="Append drift=true or drift=false to this file and exit 0 on drift.",
+    )
     args = parser.parse_args()
 
     bundle = load_bundle(args.bundle)
@@ -115,6 +131,7 @@ def main() -> int:
     except SpecUnavailable as exc:
         print(f"SKIPPED: {exc}")
         print("  Transient - the scheduled parity run will retry.")
+        record_drift(args.drift_output, False)
         return 0
 
     # The stamp authenticates the SOURCE BYTES, not the generated catalog, so it
@@ -152,6 +169,7 @@ def main() -> int:
               f"(ids, paths, parameters, bodies); spec sha256 {spec_sha[:12]}... "
               + ("matches the bundle stamp." if stamp_matches
                  else "differs from the bundle stamp (spec text changed, catalog did not)."))
+        record_drift(args.drift_output, False)
         return 0
 
     print(f"DRIFT: bundled catalog does not match {args.spec}")
@@ -181,6 +199,11 @@ def main() -> int:
             print(f"    ... and {len(changed) - 10} more")
     print("  Rebuild the bundle:  python scripts/build_endpoint_catalog.py "
           f"--source {args.spec}")
+    if args.drift_output is not None:
+        # The workflow treats drift as work to do, not as a failure: it opens
+        # the resync PR on drift=true.
+        record_drift(args.drift_output, True)
+        return 0
     return 1
 
 

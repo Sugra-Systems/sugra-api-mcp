@@ -7,9 +7,12 @@ name: Catalog parity
 # while every check stays green.
 #
 # On DRIFT the `resync` job opens or updates a single resync PR (branch
-# ci/catalog-resync, author Arman Obosyan via the catalog token) and then still
-# fails. The red run is the alarm; the PR is the landing path. test.yml on
-# pull_request stays a fail-on-drift gate and does not open PRs.
+# ci/catalog-resync, author Arman Obosyan via the catalog token) and the run
+# ends green with a notice: the PR is the landing path. A run is red only when
+# something is broken - the parity check could not run, the token fetch failed,
+# or the PR could not be opened or updated. Outside main no PR is opened, so
+# drift fails the run there. test.yml on pull_request stays a fail-on-drift
+# gate and does not open PRs.
 #
 # The catalog token lives in Azure Key Vault. Only the `resync` job can read it:
 # it runs only on drift and only from main, in the `catalog` environment, and
@@ -39,7 +42,7 @@ jobs:
   parity:
     runs-on: ubuntu-latest
     outputs:
-      drift: ${{ steps.parity.outcome == 'failure' }}
+      drift: ${{ steps.parity.outputs.drift == 'true' }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -51,13 +54,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev,http]"
+      # Drift is an output, not a failure: the step is red only when the check
+      # could not run.
       - name: Compare the bundled catalog with the live spec
         id: parity
-        continue-on-error: true
-        run: python scripts/check_catalog_parity.py
-      # On main the `resync` job carries the failure, after it has opened the PR.
+        run: python scripts/check_catalog_parity.py --drift-output "$GITHUB_OUTPUT"
+      # On main the `resync` job opens or updates the PR instead.
       - name: Fail the job on drift outside main
-        if: steps.parity.outcome == 'failure' && github.ref != 'refs/heads/main'
+        if: steps.parity.outputs.drift == 'true' && github.ref != 'refs/heads/main'
         run: |
           echo "Catalog drifted from the live spec. A resync PR is opened only from main."
           exit 1
@@ -113,7 +117,6 @@ jobs:
       - name: Remove the token file
         if: always()
         run: rm -f "$RUNNER_TEMP/catalog_token"
-      - name: Fail the job on drift
-        run: |
-          echo "Catalog drifted from the live spec. The resync PR on ci/catalog-resync is opened or updated."
-          exit 1
+      # Reached only after the PR was opened or updated, so drift ends green.
+      - name: Report the drift
+        run: echo "::notice title=Catalog drift::Catalog drifted from the live spec. The resync PR on ci/catalog-resync is opened or updated."
