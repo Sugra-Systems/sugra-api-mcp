@@ -3858,6 +3858,35 @@ def test_an_etf_ticker_reaches_the_etf_operations(catalog, query: str, first: st
     assert "pattern:ticker->etf_symbol" in top["why"], top
 
 
+@pytest.mark.parametrize("query", ["SPY ETF", "TLT ETF", "XLK ETF", "SPY ETFs"])
+def test_an_etf_ticker_beside_etf_alone_ranks_the_snapshot_first(catalog, query: str) -> None:
+    """The word "etf" lifts every per-ETF operation equally; the derived
+    flows came first on operation_id order."""
+    top = search_catalog(catalog, query, limit=1)[0]["operation_id"]
+    assert top == "etf_symbol_snapshot", (query, top)
+
+
+@pytest.mark.parametrize("query,expected", [
+    ("SPY", "quotes_symbol_price"),
+    ("SPY flows", "etf_symbol_flows"),
+    ("SPY ETF flows", "etf_symbol_flows"),
+    ("AAPL SPY", "quotes_symbol_multiple"),
+    ("SPY vs TLT", "quotes_symbol_multiple"),
+])
+def test_an_etf_ticker_asked_more_than_etf_keeps_its_first_answer(
+        catalog, query: str, expected: str) -> None:
+    top = search_catalog(catalog, query, limit=1)[0]["operation_id"]
+    assert top == expected, (query, top)
+
+
+@pytest.mark.parametrize("query", ["SPY ETF price", "SPY TLT ETF"])
+def test_the_snapshot_wins_no_tie_beyond_one_ticker_and_etf(catalog, query: str) -> None:
+    """Another word or another ticker leaves the ties on operation_id order:
+    the Cboe quote stays ahead of the snapshot it ties."""
+    ids = [r["operation_id"] for r in search_catalog(catalog, query, limit=10)]
+    assert ids.index("etf_symbol_quote_cboe") < ids.index("etf_symbol_snapshot"), ids
+
+
 @pytest.mark.parametrize("query", [
     "SPY holdings", "SPY top holdings", "Show me VOO's NAV, AUM and top holdings",
 ])

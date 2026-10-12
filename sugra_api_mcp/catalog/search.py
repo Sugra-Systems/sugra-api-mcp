@@ -18,6 +18,7 @@ from .aliases import (
     COUNTRY_STATISTIC_SPELLINGS,
     COUNTRY_STATISTIC_WORDS,
     CURRENCY_NAMES,
+    ETF_DEFAULT_OPERATION,
     ETF_TICKERS,
     FX_CONVERT_OPERATION,
     FX_PANEL_OPERATION,
@@ -157,6 +158,7 @@ _LISTING_STATEMENT_WORDS: frozenset[str] = frozenset({
     "margin", "margins", "profit", "profits", "revenue", "revenues", "sales"})
 # A fund has no income statement, and its "sales loads" are a purchase fee.
 _FUND_WORDS: frozenset[str] = frozenset({"etf", "etfs", "fund", "funds", "load", "loads"})
+_ETF_WORDS: frozenset[str] = frozenset({"etf", "etfs"})
 CURRENCY_PAIR_FOREX_BOOST = 15
 CENTRAL_BANK_PREFIX_BOOST = 15
 CRYPTO_NAMESPACE_BOOST = 18
@@ -1459,6 +1461,12 @@ def search_catalog(
             else LISTING_HISTORY_OPERATION if listing_period
             else LISTING_DEFAULT_OPERATION
         }
+    # One ETF's ticker beside the word ETF and nothing else ("SPY ETF"): its
+    # snapshot before the other per-ETF operations it ties.
+    rest = set(terms) - {ticker.lower() for ticker in tickers}
+    if (has_ticker_token and len(tickers) == 1 and not ETF_TICKERS.isdisjoint(tickers)
+            and rest and rest <= _ETF_WORDS):
+        defaults |= {ETF_DEFAULT_OPERATION}
 
     def tie_break(endpoint: Endpoint) -> tuple[bool, str]:
         return endpoint.operation_id not in defaults, endpoint.operation_id
