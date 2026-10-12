@@ -599,6 +599,22 @@ def _is_foreign_euro_area(
             and "ecb_" not in central_bank_prefixes)
 
 
+def _expansion_terms(profile: _EndpointProfile, expansion: str,
+                     query_terms: list[str]) -> list[str]:
+    """The words of an alias expansion that score for the endpoint. "index"
+    ending a longer one, in a question that does not say "index" itself,
+    scores only beside another of its words: the "index" of "consumer price
+    index" alone lifted an index quote into the first answers of "inflation
+    in Italy"."""
+    tokens = _tokens(expansion)
+    if len(tokens) <= 1:
+        return tokens
+    held = [t for t in tokens if t in profile.text or t + "s" in profile.text]
+    if held == [tokens[-1]] and tokens[-1] == "index" and "index" not in query_terms:
+        return tokens[:-1]
+    return tokens
+
+
 def _score(
     endpoint: Endpoint,
     query_terms: list[str],
@@ -661,12 +677,13 @@ def _score(
     its topic for a question that names it so too, and for no other, so the
     credit-to-GDP gap earns no country-parameter boost for "Japan GDP".
     """
-    alias_terms = [term for terms in aliases.values() for term in terms]
+    profile = _profile(endpoint)
+    alias_terms = [token for terms in aliases.values() for term in terms
+                   for token in _expansion_terms(profile, term, query_terms)]
     # A word scores once, however often the question repeats it.
-    all_terms = [*dict.fromkeys(query_terms), *_tokens(" ".join(alias_terms))]
+    all_terms = [*dict.fromkeys(query_terms), *alias_terms]
     why: list[str] = []
     score = 0
-    profile = _profile(endpoint)
     # Whether the endpoint matched the query's topic - anything the query
     # asks besides the country names it (see COUNTRY_PARAM_BOOST).
     topic_hit = False
