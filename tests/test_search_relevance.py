@@ -3817,6 +3817,24 @@ def test_the_word_that_names_the_currency_is_no_topic(catalog, query: str) -> No
     assert "pattern:country->param" not in row["why"], row["why"]
 
 
+@pytest.mark.parametrize("query,key", [
+    ("Japan consumer price index", "jp/cpi"),
+    ("consumer price index Japan", "jp/cpi"),
+    ("UK consumer price index", "gb/cpi"),
+    ("Germany consumer prices index", "de/cpi"),
+    ("Japan CPI index", "jp/cpi"),
+    ("yen consumer price index", "jp/cpi"),
+    ("US consumer price index", "us/cpi"),
+])
+def test_the_consumer_price_index_spelled_out_is_the_cpi(catalog, query: str, key: str) -> None:
+    """Titles outside the US say "Consumer Prices" and no "index": "Japan
+    consumer price index" found no key and ranked an equity index quote
+    first on the word "index", while "Japan CPI" found jp/cpi."""
+    top = search_catalog(catalog, query, limit=1)[0]
+    assert top["operation_id"] == "macro_country_section", top
+    assert top["macro_keys"][0]["key"] == key, top
+
+
 @pytest.mark.parametrize(("query", "place"), [
     ("yen inflation", "JP"),
     ("franc inflation", "CH"),

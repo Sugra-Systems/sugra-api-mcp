@@ -49,6 +49,9 @@ _QUERY_REWRITES: tuple[tuple[re.Pattern[str], str], ...] = (
                 r"(?:19|20)\d\ds?\b"), " "),
     (re.compile(r"\b(?:over\s+time|year\s+to\s+date|ytd)\b"), " "),
     (re.compile(r"\b(inflation|growth)\s+rates?\b"), r"\1"),
+    # "Consumer price index" names the CPI, whose titles outside the US say
+    # "Consumer Prices" and no "index".
+    (re.compile(r"\b(?:consumer\s+prices?\s+|cpi\s+)ind(?:ex|ices|exes)\b"), "cpi"),
 )
 
 # "(19 countries)" in a euro area title counts the members; it names nothing.
