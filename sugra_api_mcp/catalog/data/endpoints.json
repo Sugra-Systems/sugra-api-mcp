@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-10-11T21:15:14Z",
+  "built_at": "2026-10-12T05:32:13Z",
   "endpoint_count": 1625,
   "endpoints": [
     {
@@ -11204,7 +11204,7 @@
       "sources": [
         "core"
       ],
-      "summary": "Films by genre slug (deferred)",
+      "summary": "Films by genre slug",
       "tags": [
         "Entertainment"
       ],
@@ -26344,7 +26344,7 @@
       "toolset": "funds"
     },
     {
-      "description": "Cross-sector ranking of US sector SPDR ETFs by trailing return over a configurable window. Walks the 11 canonical S&P GICS sector SPDRs (XLB, XLC, XLY, XLP, XLE, XLF, XLV, XLI, XLRE, XLK, XLU), extracts the matching ``returns_<window>`` field from each ETF's latest B5 snapshot (or a dated snapshot via ``?date=YYYY-MM-DD``), and ranks DESC. Sectors missing a return (delisted, snapshot blob absent, or ETF history shorter than the window) are surfaced in ``missing_symbols`` with a structured reason and do not contribute to leader / laggard / spread / median. Use case: sector rotation detection - capital rotation signal without N round-trips.",
+      "description": "Cross-sector ranking of US sector SPDR ETFs by trailing return over a configurable window. Walks the 11 canonical S&P GICS sector SPDRs (XLB, XLC, XLY, XLP, XLE, XLF, XLV, XLI, XLRE, XLK, XLU), extracts the matching ``returns_<window>`` field from each ETF's latest ETF snapshot (or a dated snapshot via ``?date=YYYY-MM-DD``), and ranks DESC. Sectors missing a return (delisted, snapshot blob absent, or ETF history shorter than the window) are surfaced in ``missing_symbols`` with a structured reason and do not contribute to leader / laggard / spread / median. Use case: sector rotation detection - capital rotation signal without N round-trips.",
       "method": "GET",
       "operation_id": "etf_sectors_relative_strength",
       "parameters": [
@@ -64266,7 +64266,7 @@
       "toolset": "markets"
     },
     {
-      "description": "Derived endpoint that packages the standard option-implied move computation: ``implied_move = spot * ATM_IV * sqrt(T)`` where ``T = days_to_expiration / 365.25``. Reads the precomputed ``iv_surface[i].atm_iv`` for the chosen expiry from the latest B6 snapshot (or a dated snapshot via ``?date=YYYY-MM-DD``). Defaults to the nearest-term front expiry; pass ``?expiry=YYYY-MM-DD`` to select a different expiry from those listed in ``available_expiries``. Returns the move in dollar + percent terms plus the 1-sigma implied price range (low / high). Use case: compare historical post-earnings realised moves vs current option-implied amplitude.",
+      "description": "Derived endpoint that packages the standard option-implied move computation: ``implied_move = spot * ATM_IV * sqrt(T)`` where ``T = days_to_expiration / 365.25``. Reads the precomputed ``iv_surface[i].atm_iv`` for the chosen expiry from the latest options snapshot (or a dated snapshot via ``?date=YYYY-MM-DD``). Defaults to the nearest-term front expiry; pass ``?expiry=YYYY-MM-DD`` to select a different expiry from those listed in ``available_expiries``. Returns the move in dollar + percent terms plus the 1-sigma implied price range (low / high). Use case: compare historical post-earnings realised moves vs current option-implied amplitude.",
       "method": "GET",
       "operation_id": "options_symbol_implied_move",
       "parameters": [
@@ -64842,7 +64842,7 @@
       "toolset": "markets"
     },
     {
-      "description": "Derived endpoint that flags contracts whose current per-contract volume materially exceeds the contract's own rolling average across the last ``baseline_window_days`` dated snapshots. Walks the latest B6 snapshot's per-contract volumes; for each contract (both calls and puts) computes ``baseline_avg = mean(volume across days the contract appeared with positive volume)`` and flags rows where ``current_volume / baseline_avg > threshold``. Per-row output carries OSI contract symbol + strike + expiry + current volume + baseline + ratio + supplementary Greeks (delta + IV). Sorted by ratio DESC; truncated to ``limit``. Use case: bullish skew detection in concert with Form 4 insider purchases.",
+      "description": "Derived endpoint that flags contracts whose current per-contract volume materially exceeds the contract's own rolling average across the last ``baseline_window_days`` dated snapshots. Walks the latest options snapshot's per-contract volumes; for each contract (both calls and puts) computes ``baseline_avg = mean(volume across days the contract appeared with positive volume)`` and flags rows where ``current_volume / baseline_avg > threshold``. Per-row output carries OSI contract symbol + strike + expiry + current volume + baseline + ratio + supplementary Greeks (delta + IV). Sorted by ratio DESC; truncated to ``limit``. Use case: bullish skew detection in concert with Form 4 insider purchases.",
       "method": "GET",
       "operation_id": "options_symbol_unusual_volume",
       "parameters": [
@@ -71981,13 +71981,13 @@
           }
         },
         {
-          "description": "Ticker symbol used to fetch per-quarter average daily close (required in v1; CUSIP->ticker resolver is B1.1 backlog).",
+          "description": "Ticker symbol used to fetch per-quarter average daily close (required: the CUSIP is not yet resolved to a ticker).",
           "example": "AAPL",
           "location": "query",
           "name": "ticker",
           "required": true,
           "schema": {
-            "description": "Ticker symbol used to fetch per-quarter average daily close (required in v1; CUSIP->ticker resolver is B1.1 backlog).",
+            "description": "Ticker symbol used to fetch per-quarter average daily close (required: the CUSIP is not yet resolved to a ticker).",
             "pattern": "^[A-Za-z][A-Za-z0-9.\\-^]{0,9}$",
             "title": "Ticker",
             "type": "string"
@@ -72933,7 +72933,7 @@
       "toolset": "fundamentals"
     },
     {
-      "description": "Browse SEC EDGAR daily-index master.idx parsed metadata. Returns all filings on a given date matching the optional form code and CIK filters. For B2 v1 high-value forms (Form 4/4-A, 8-K/A, SC 13D/G/A) the rows reflect deep-parse status (``parse_attempted``, ``parse_status``). For PASSTHROUGH forms (10-K, 6-K, S-1, etc.) the rows carry master-idx metadata only - use form-specific endpoints for deep data. A date before the first held index answers 422 ``outside_retention_window`` naming that date; a date inside the held range with no index (weekend, holiday) answers 404 ``no_daily_index_for_date`` naming the held range; a date after the last held index may not be published yet and answers 503, retry after the next cycle.",
+      "description": "Browse SEC EDGAR daily-index master.idx parsed metadata. Returns all filings on a given date matching the optional form code and CIK filters. For the high-value forms (Form 4/4-A, 8-K/A, SC 13D/G/A) the rows reflect deep-parse status (``parse_attempted``, ``parse_status``). For PASSTHROUGH forms (10-K, 6-K, S-1, etc.) the rows carry master-idx metadata only - use form-specific endpoints for deep data. A date before the first held index answers 422 ``outside_retention_window`` naming that date; a date inside the held range with no index (weekend, holiday) answers 404 ``no_daily_index_for_date`` naming the held range; a date after the last held index may not be published yet and answers 503, retry after the next cycle.",
       "method": "GET",
       "operation_id": "sec_edgar_daily_index_by_form",
       "parameters": [
@@ -79362,7 +79362,7 @@
       "toolset": "hedge_fund_intelligence"
     },
     {
-      "description": "Snapshot of the most recent reported month from the US Treasury TIC short-term banking series. Returns each country's latest short-term US Treasury holdings broken down into Treasury bills and other short-term claims, plus aggregate totals. Source: Treasury TIC bulk ingest with B4 schema v2 envelope. 503 with `tic_banking_not_initialised` if the upstream banking series is not present in the current snapshot.",
+      "description": "Snapshot of the most recent reported month from the US Treasury TIC short-term banking series. Returns each country's latest short-term US Treasury holdings broken down into Treasury bills and other short-term claims, plus aggregate totals. Source: Treasury TIC bulk ingest (schema v2 envelope). 503 with `tic_banking_not_initialised` if the upstream banking series is not present in the current snapshot.",
       "method": "GET",
       "operation_id": "treasury_tic_banking_latest",
       "parameters": [
@@ -96418,5 +96418,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "2e288dfc2d354c092a8ceb8a371dcf181e59ae7d94cd281e637e5e0ad8d1bbf7"
+  "spec_sha256": "efe54ba8e3ee8e5240b5c32ff06cb4a37481aadfd726876efde8b6b44c72691f"
 }
