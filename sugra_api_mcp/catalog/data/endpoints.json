@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-10-12T07:53:42Z",
+  "built_at": "2026-10-12T15:39:27Z",
   "endpoint_count": 1625,
   "endpoints": [
     {
@@ -24641,7 +24641,7 @@
       "toolset": "environment"
     },
     {
-      "description": "Daily statistically derived values, one row per calendar day per (site, parameter). Record often goes back to the 1900s. Values marked 'A' are approved, 'P' are provisional. Dual-path: legacy WaterServices primary, OGC `daily` fallback.",
+      "description": "Daily statistically derived values, such as mean daily streamflow (discharge), one row per calendar day per (site, parameter). Record often goes back to the 1900s. Values marked 'A' are approved, 'P' are provisional. Dual-path: legacy WaterServices primary, OGC `daily` fallback.",
       "method": "GET",
       "operation_id": "environment_usgs_water_dv",
       "parameters": [
@@ -24715,7 +24715,7 @@
       "sources": [
         "environment"
       ],
-      "summary": "Daily values (mean/max/min/median)",
+      "summary": "Daily values: streamflow, gage height (mean/max/min/median)",
       "tags": [
         "Environment"
       ],
@@ -24794,7 +24794,7 @@
       "toolset": "environment"
     },
     {
-      "description": "Live sensor readings from automated USGS gages, typically 5-15 minute cadence. Default window is last 1 day when no date range is given. Values marked with qualifier 'P' are provisional and may be revised. Dual-path: legacy WaterServices primary, OGC `continuous` collection fallback.",
+      "description": "Live sensor readings from automated USGS gages, such as streamflow (discharge), gage height and water temperature, typically 5-15 minute cadence. Default window is last 1 day when no date range is given. Values marked with qualifier 'P' are provisional and may be revised. Dual-path: legacy WaterServices primary, OGC `continuous` collection fallback.",
       "method": "GET",
       "operation_id": "environment_usgs_water_iv",
       "parameters": [
@@ -24868,7 +24868,7 @@
       "sources": [
         "environment"
       ],
-      "summary": "Instantaneous values (live sensor feed)",
+      "summary": "Instantaneous values: streamflow, gage height (live sensor feed)",
       "tags": [
         "Environment"
       ],
@@ -96440,5 +96440,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "8ed1dd503478bf5fa1fe8def56e6a96c1ae74426068974d4ba7403094eb1cca3"
+  "spec_sha256": "5d4be82b3c761cba94dd6937754d39ba8f3bdeeb1c63d4be067a21a894da1cfc"
 }
