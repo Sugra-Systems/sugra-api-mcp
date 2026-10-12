@@ -4558,3 +4558,52 @@ def test_a_listing_statement_word_beside_a_stronger_word_or_a_fund(
 def test_a_statement_word_with_no_listing_is_no_income_statement(catalog, query: str) -> None:
     ids = [hit["operation_id"] for hit in search_catalog(catalog, query, limit=3)]
     assert "quotes_symbol_periodicity_income_statement" not in ids, ids
+
+
+@pytest.mark.parametrize("query,series", [
+    ("compare US and Japan GDP", "us/gdp,jp/gdp"),
+    ("US GDP vs Japan GDP", "us/gdp,jp/gdp"),
+    ("US unemployment and inflation", "us/unrate,us/cpi"),
+    ("US CPI and core CPI", "us/cpi,us/core-cpi"),
+    ("Compare unemployment in the US vs the Eurozone", "us/unrate,eu/unrate"),
+])
+def test_a_question_about_several_series_calls_them_in_one(catalog, query: str, series: str) -> None:
+    """Two series, or one series of two places: the multi-series operation
+    answers first, and every key it names calls it with the same series value."""
+    top = search_catalog(catalog, query, limit=3)[0]
+    assert top["operation_id"] == "macro_multi", top
+    assert "first:several-series" in top["why"], top
+    assert [key["key"] for key in top["macro_keys"]] == series.split(","), top
+    assert {key["params"]["series"] for key in top["macro_keys"]} == {series}, top
+
+
+@pytest.mark.parametrize("query", [
+    # A join the series' own title spells.
+    "US imports of goods and services",
+    "US CPI less food and energy",
+    # One spread series.
+    "US 10-year vs 2-year treasury",
+    # A part that names only a span of time.
+    "US federal debt level now and its 10-year trend",
+    "US GDP",
+    # A part that names only a place every topic already has: which series it
+    # asks for is not read, so nothing is routed rather than part of it.
+    "US GDP and Japan inflation compared with US",
+])
+def test_a_question_about_one_series_stays_off_the_multi_series_operation(catalog, query: str) -> None:
+    ids = [hit["operation_id"] for hit in search_catalog(catalog, query, limit=3)]
+    assert ids[0] != "macro_multi", ids
+
+
+@pytest.mark.parametrize("query,series", [
+    # A list of places apart from the topics: every topic for every place.
+    ("Compare GDP and inflation in the US and Japan", {"us/gdp", "jp/gdp", "us/cpi", "jp/cpi"}),
+    # Each part names its own place.
+    ("US GDP and Japan inflation", {"us/gdp", "jp/cpi"}),
+    ("US unemployment and inflation in Japan", {"us/unrate", "jp/cpi"}),
+])
+def test_each_series_of_a_question_is_asked_for_the_places_it_names(
+        catalog, query: str, series: set[str]) -> None:
+    top = search_catalog(catalog, query, limit=3)[0]
+    assert top["operation_id"] == "macro_multi", top
+    assert {key["key"] for key in top["macro_keys"]} == series, top

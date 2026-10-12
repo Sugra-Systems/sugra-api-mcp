@@ -55,6 +55,7 @@ from .aliases import (
 )
 from .macro_keys import (
     euro_area_words,
+    match_macro_key_series,
     match_macro_keys,
     match_unplaced_macro_keys,
     query_names_euro_area,
@@ -189,6 +190,8 @@ US_MACRO_FED_BOOST = 20
 # FRED's generic proxy: beside a macro key's hit it keeps the US-macro boost,
 # clamped below that hit (see search_catalog).
 US_MACRO_PROXY_OPERATION = "fred_series_series_id"
+# Several curated series in one call, by their keys ("us/gdp,jp/gdp").
+MACRO_MULTI_OPERATION = "macro_multi"
 # Ranking mechanisms:
 # - COVERAGE: matching MORE DISTINCT query terms must beat one token repeated
 #   across prose fields ('address' x4 in a crypto endpoint outranked the
@@ -1034,6 +1037,14 @@ def _bounded_reading(query: str) -> str:
     return reading if query_limit_error(reading) is None else query
 
 
+def _key_params(operation_id: str, key: MacroKey, found: list[MacroKey]) -> dict[str, str]:
+    """The values to call a found key by: its country and section, or on the
+    multi-series operation every found key in one ``series`` value."""
+    if operation_id == MACRO_MULTI_OPERATION:
+        return {"series": ",".join(item.key for item in found)}
+    return key.params
+
+
 def search_catalog(
     catalog: Catalog,
     query: str,
@@ -1365,6 +1376,22 @@ def search_catalog(
                 found = [key for key in endpoint.macro_keys if key.key in policy_rate.keys]
                 if found:
                     macro_matches[endpoint.operation_id] = found
+    # A question about several curated series - of two places, or two of one
+    # place - is answered in one call by the multi-series operation, which
+    # takes the same keys: "US GDP vs Japan GDP" found both keys on the
+    # one-series operation, and "US unemployment and inflation" no key.
+    elif not (has_ticker_token or boost_forex or has_crypto_context
+              or central_bank_prefixes or named_operations):
+        filler = _QUERY_STOPWORDS | _TWO_LETTER_FILLER | currency_words
+        multi = next((endpoint for endpoint in catalog.endpoints
+                      if endpoint.operation_id == MACRO_MULTI_OPERATION), None)
+        for endpoint in catalog.endpoints if multi and _in_scope(multi, toolset, source) else ():
+            if endpoint.macro_keys:
+                found = match_macro_key_series(query, endpoint.macro_keys,
+                                               query_countries=query_countries, ignore=filler)
+                if found:
+                    macro_matches[MACRO_MULTI_OPERATION] = found
+                    break
     macro_key_operations = {op: found[0].key for op, found in macro_matches.items()}
     # The key names the series the US-macro boost reaches for through FRED's
     # generic proxy, so the boost stays on the proxy alone, below the key's
@@ -1464,6 +1491,14 @@ def search_catalog(
         for i, (score, endpoint, why) in enumerate(scored):
             if endpoint.operation_id == US_MACRO_PROXY_OPERATION and score >= key_score:
                 scored[i] = (key_score - 1, endpoint, [*why, f"clamped-below:{key_operation}"])
+
+    # Structural guarantee: a question about several curated series ranks the
+    # one call that answers them all first.
+    if MACRO_MULTI_OPERATION in macro_matches and scored:
+        top = max(score for score, _, _ in scored)
+        for i, (score, endpoint, why) in enumerate(scored):
+            if endpoint.operation_id == MACRO_MULTI_OPERATION and score <= top:
+                scored[i] = (top + 1, endpoint, [*why, "first:several-series"])
 
     # Structural guarantee: a national source of a country the query does not
     # name ranks below every operation that answers for the country it names,
@@ -1739,7 +1774,8 @@ def search_catalog(
                if endpoint.required_groups else {}),
             # The series the query names, best first, with the values to call
             # them by.
-            **({"macro_keys": [{**key.to_dict(), "params": key.params}
+            **({"macro_keys": [{**key.to_dict(), "params": _key_params(
+                                   endpoint.operation_id, key, macro_matches[endpoint.operation_id])}
                                for key in macro_matches[endpoint.operation_id]]}
                if endpoint.operation_id in macro_matches else {}),
             "score": score,
