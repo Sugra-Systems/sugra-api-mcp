@@ -38,6 +38,10 @@ ALIASES: dict[str, list[str]] = {
     # question.
     "house prices": ["residential property prices", "house price"],
     "housing prices": ["residential property prices", "house price"],
+    # "home prices" found the FAO producer prices; the home value index names
+    # home values. Not the house-price words: they ranked the BIS series over
+    # the real-estate index for "real home prices".
+    "home prices": ["home values"],
     # The storm's everyday names: the operations name a tropical cyclone, and
     # "hurricane damage cost" ranked a blockchain mining-cost chart first.
     "hurricane": ["tropical cyclone"],
