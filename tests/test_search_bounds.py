@@ -159,6 +159,17 @@ def test_search_catalog_itself_refuses_an_oversized_query() -> None:
         search.search_catalog(load_catalog(), "x" * (search.MAX_QUERY_CHARS + 1))
 
 
+def test_a_home_prices_query_at_the_bounds_is_searched_as_it_is() -> None:
+    """Read as house prices, the accepted query would be one character past the bounds."""
+    head = "UK home prices "
+    query = head + "q" * (search.MAX_QUERY_CHARS - len(head))
+    assert search.query_limit_error(query) is None
+    assert search.query_limit_error(aliases.read_home_prices_as_house_prices(query)) is not None
+    assert search._bounded_reading(query) == query
+    assert search._bounded_reading("UK home prices") == "UK house prices"
+    assert search.search_catalog(load_catalog(), query, limit=3)
+
+
 def test_the_cli_search_refuses_an_oversized_query(monkeypatch, capsys) -> None:
     from sugra_api_mcp.__main__ import main
 

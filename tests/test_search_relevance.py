@@ -2793,6 +2793,39 @@ def test_home_prices_rank_the_home_value_index_first(catalog, query: str) -> Non
     assert top == "real_estate_home_values_geo_type", (query, top)
 
 
+@pytest.mark.parametrize("query", [
+    "UK home prices", "Germany home prices", "home prices in Canada",
+    "home prices Germany", "Swiss home prices", "UK home price index",
+])
+def test_home_prices_of_another_country_rank_the_bis_series_first(catalog, query: str) -> None:
+    """The home value index covers United States regions only, and "UK home
+    prices" ranked it first."""
+    top = search_catalog(catalog, query, limit=1)[0]["operation_id"]
+    assert top == "bis_property", (query, top)
+
+
+@pytest.mark.parametrize("query", ["real home prices", "home prices in Atlanta"])
+def test_home_prices_without_another_country_keep_the_home_value_index(catalog, query: str) -> None:
+    top3 = [hit["operation_id"] for hit in search_catalog(catalog, "home prices", limit=3)]
+    assert top3 == [
+        "real_estate_home_values_geo_type",
+        "central_banks_sarb_home_rates",
+        "real_estate_top_metric_geo_type",
+    ], top3
+    top = search_catalog(catalog, query, limit=1)[0]["operation_id"]
+    assert top == "real_estate_home_values_geo_type", (query, top)
+
+
+@pytest.mark.parametrize("query", [
+    "home prices", "US home prices", "home prices in Atlanta", "home prices in the US and UK",
+    "eurozone home prices", "UK homes for sale",
+])
+def test_home_prices_stay_as_asked_without_another_country_alone(query: str) -> None:
+    from sugra_api_mcp.catalog.aliases import read_home_prices_as_house_prices
+
+    assert read_home_prices_as_house_prices(query) == query
+
+
 def test_real_answers_the_real_estate_operations_only_beside_a_property_word() -> None:
     from sugra_api_mcp.catalog.models import Endpoint
     from sugra_api_mcp.catalog.search import _score
