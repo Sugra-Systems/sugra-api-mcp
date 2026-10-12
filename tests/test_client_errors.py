@@ -11,6 +11,7 @@ One test per failure class: timeout, connect error, mid-stream disconnect,
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -20,6 +21,8 @@ from sugra_api_mcp.client import (
     _DETAIL_CHARS,
     SugraClient,
     _detail_fields,
+    _enforce_size_limit,
+    _gate_off_loop,
     response_chars,
 )
 from sugra_api_mcp.config import Config
@@ -133,6 +136,86 @@ async def test_transport_error_without_request_falls_back_to_config_url() -> Non
 
     assert result["error"] == "upstream_transport_error"
     assert result["url"] == "https://api.test/api/v1/fred/series"
+
+
+async def test_a_query_over_the_url_limit_returns_structured_error_and_sends_nothing() -> None:
+    """httpx refuses a URL over 65,536 characters with InvalidURL, which is
+    not an httpx.HTTPError; the request is never built, so nothing is sent
+    and the url is the configured one, without the query."""
+    sent: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return httpx.Response(200, json={"data": []}, request=request)
+
+    client = _client(handler)
+    try:
+        result = await client.get("/api/v1/thing", params={"q": "x" * 70_000})
+    finally:
+        await client.aclose()
+
+    assert sent == []
+    assert result["error"] == "invalid_request_url"
+    assert result["reason"].startswith("InvalidURL: ")
+    assert result["status_code"] is None
+    assert result["url"] == "https://api.test/api/v1/thing"
+    assert "65,536" in result["retry_hint"]
+    assert set(result) >= _TRANSPORT_ERROR_KEYS
+
+
+async def test_a_body_nested_too_deep_to_decode_is_read_as_not_json(monkeypatch) -> None:
+    """A body nested past what the JSON decoder accepts raises RecursionError,
+    not ValueError; it is read as a body that is not JSON, as a failure and
+    as a success. The depth at which the decoder gives up follows the C stack
+    on Python 3.14, so it differs by platform; the decoder is made to raise."""
+    body = ("[" * 1_000 + "]" * 1_000).encode()
+
+    def too_deep(self: httpx.Response, **kwargs: Any) -> Any:
+        raise RecursionError("maximum recursion depth exceeded")
+
+    monkeypatch.setattr(httpx.Response, "json", too_deep)
+
+    def answer(status: int) -> Callable[[httpx.Request], httpx.Response]:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                status, content=body, headers={"content-type": "application/json"}, request=request
+            )
+
+        return handler
+
+    for status in (400, 200):
+        client = _client(answer(status))
+        try:
+            result = await client.get("/api/v1/thing")
+        finally:
+            await client.aclose()
+        assert result["error"] == "[" * 500
+        if status == 400:
+            assert result["status_code"] == 400
+
+
+async def test_a_response_nested_too_deep_to_measure_is_refused_not_raised() -> None:
+    """The size gate walks the response; one nested past the recursion
+    limit cannot be measured or cut, so both gates answer response_too_deep."""
+    deep: list[Any] = []
+    for _ in range(5_000):
+        deep = [deep]
+    url = "https://api.test/api/v1/thing"
+    start = time.perf_counter() - 2.0
+
+    for result in (
+        _enforce_size_limit(deep, url),
+        _enforce_size_limit(deep, url, start=start),
+        await _gate_off_loop(deep, url, start),
+    ):
+        assert result["error"] == "response_too_deep"
+        assert result["url"] == url
+        assert isinstance(result["elapsed_ms"], int)
+        assert result["retry_hint"]
+    # Counted from the start the caller passed, else from the gate's own.
+    assert _enforce_size_limit(deep, url)["elapsed_ms"] < 2_000
+    assert _enforce_size_limit(deep, url, start=start)["elapsed_ms"] >= 2_000
+    assert (await _gate_off_loop(deep, url, start))["elapsed_ms"] >= 2_000
 
 
 # ---- HTTP status errors keep their structure and gain telemetry ----

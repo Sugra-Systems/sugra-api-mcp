@@ -323,6 +323,8 @@ def test_known_error_code_is_passed_through(monkeypatch) -> None:
         "upstream_timeout",
         "upstream_connect_error",
         "upstream_transport_error",
+        "invalid_request_url",
+        "response_too_deep",
         "tool_execution_failed",
         "agent_plane_unavailable",
     ],
