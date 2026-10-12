@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-10-12T05:32:13Z",
+  "built_at": "2026-10-12T07:53:42Z",
   "endpoint_count": 1625,
   "endpoints": [
     {
@@ -51775,6 +51775,8 @@
               "gb",
               "jp",
               "de",
+              "fr",
+              "it",
               "cn",
               "ca",
               "in",
@@ -52245,7 +52247,7 @@
       "toolset": "macro"
     },
     {
-      "description": "Time series for one or more indicators across one or more countries. Pass indicator roots (e.g. GDP, CPI, URATE - discover them via the indicators catalog) as symbol, and country names or ISO codes as country; both accept comma-separated lists. Optional transform: toya (YoY), tpop (period change), tpgp (percent of GDP), tusd (USD). Percent series are returned as normalized fractions (0.05 = 5%).",
+      "description": "Time series for one or more indicators across one or more countries. Pass indicator roots (e.g. GDP, CPI, URATE, GBAL for the budget balance or deficit, EXP for exports - discover them via the indicators catalog) as symbol, and country names or ISO codes as country; both accept comma-separated lists. Optional transform: toya (YoY), tpop (period change), tpgp (percent of GDP), tusd (USD). Percent series are returned as normalized fractions (0.05 = 5%).",
       "method": "GET",
       "operation_id": "macro_indicators",
       "parameters": [
@@ -55412,6 +55414,26 @@
           "freq": "quarterly",
           "key": "au/qaur628bis",
           "title": "Real Residential Property Prices for Australia"
+        },
+        {
+          "freq": "quarterly",
+          "key": "fr/clvmnacscab1gqfr",
+          "title": "Real Gross Domestic Product for France"
+        },
+        {
+          "freq": "quarterly",
+          "key": "fr/cpmnacscab1gqfr",
+          "title": "Gross Domestic Product for France"
+        },
+        {
+          "freq": "quarterly",
+          "key": "it/clvmnacscab1gqit",
+          "title": "Real Gross Domestic Product for Italy"
+        },
+        {
+          "freq": "quarterly",
+          "key": "it/cpmnacscab1gqit",
+          "title": "Gross Domestic Product for Italy"
         }
       ],
       "method": "GET",
@@ -96418,5 +96440,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "efe54ba8e3ee8e5240b5c32ff06cb4a37481aadfd726876efde8b6b44c72691f"
+  "spec_sha256": "8ed1dd503478bf5fa1fe8def56e6a96c1ae74426068974d4ba7403094eb1cca3"
 }
