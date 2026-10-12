@@ -305,6 +305,33 @@ SOURCE_ALSO_SERVES: dict[str, frozenset[str]] = {
     )
 }
 
+# The countries a cross-country operation covers, by exact operation_id: a
+# query that names only countries outside the set finds no answer there, and
+# search demotes it like a foreign national source. "Nigeria house prices"
+# ranked the BIS residential property prices first, a set without Nigeria.
+# Curated from the live data (REF_AREA, 2026-10-12); the euro area is "EU",
+# the code query detection gives it, and the BIS aggregates are left out.
+OPERATION_COUNTRY_COVERAGE: dict[str, frozenset[str]] = {
+    "bis_property": frozenset({
+        "AT", "AU", "BE", "BG", "BR", "CA", "CH", "CL", "CN", "CO", "CY", "CZ",
+        "DE", "DK", "EE", "ES", "EU", "FI", "FR", "GB", "GR", "HK", "HR", "HU",
+        "ID", "IE", "IL", "IN", "IS", "IT", "JP", "KR", "LT", "LU", "LV", "MA",
+        "MK", "MT", "MX", "MY", "NL", "NO", "NZ", "PE", "PH", "PL", "PT", "RO",
+        "RS", "RU", "SE", "SG", "SI", "SK", "TH", "TR", "US", "ZA",
+    }),
+    "bis_property_detail": frozenset({
+        "AR", "AT", "AU", "BE", "BG", "CA", "CH", "CL", "CO", "CY", "CZ", "DE",
+        "DK", "EE", "ES", "EU", "FI", "FR", "GB", "GR", "HK", "HR", "HU", "ID",
+        "IN", "IT", "JP", "LT", "LU", "LV", "MA", "MK", "MT", "MX", "MY", "NL",
+        "NO", "NZ", "PE", "PH", "PL", "PT", "RO", "RS", "RU", "SA", "SE", "SG",
+        "SI", "SK", "US",
+    }),
+    "bis_property_commercial": frozenset({
+        "AE", "AR", "CH", "CZ", "DE", "DK", "ES", "EU", "FR", "ID", "IS", "JP",
+        "MA", "NL", "PH", "SA", "SG", "SI", "TR", "US",
+    }),
+}
+
 # Query-side country vocabulary: a comprehensive generated module, because
 # a closed 30-entry list recreated silent substitution for every omitted
 # country - Netherlands CPI still returned the UK ons_cpi.

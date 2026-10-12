@@ -2854,6 +2854,55 @@ def test_home_prices_stay_as_asked_without_another_country_alone(query: str) -> 
     assert read_home_prices_as_house_prices(query) == query
 
 
+@pytest.mark.parametrize("query,country", [
+    ("Nigeria house prices", "NG"),
+    ("Kenya housing prices", "KE"),
+    ("house prices in Vietnam", "VN"),
+])
+def test_house_prices_of_an_uncovered_country_say_so(catalog, query: str, country: str) -> None:
+    """The BIS property prices ranked first for Nigeria, a country they lack;
+    the national house prices of another country must not take their place."""
+    from sugra_api_mcp.catalog.aliases import SOURCE_COUNTRY_PREFIXES
+
+    hits = search_catalog(catalog, query, limit=5)
+    assert hits[0]["why"][0] == f"geo-uncovered:{country}", (query, hits[0])
+    national = [h["operation_id"] for h in hits
+                if h["operation_id"].startswith(tuple(SOURCE_COUNTRY_PREFIXES))]
+    assert not national, (query, national)
+
+
+@pytest.mark.parametrize("query", [
+    "UK house prices", "house prices in Germany", "Thailand house prices", "euro area house prices",
+])
+def test_house_prices_of_a_covered_country_rank_bis_first(catalog, query: str) -> None:
+    top = search_catalog(catalog, query, limit=1)[0]
+    assert top["operation_id"] == "bis_property", (query, top["operation_id"])
+    assert not [r for r in top["why"] if r.startswith("geo-uncovered:")], top["why"]
+
+
+def test_an_operation_that_covers_the_country_ranks_above_one_that_does_not(catalog) -> None:
+    """The commercial property prices lack Thailand; the residential ones hold it."""
+    ids = [h["operation_id"] for h in search_catalog(catalog, "Thailand commercial property prices")]
+    assert ids.index("bis_property") < ids.index("bis_property_commercial"), ids
+
+
+def test_a_question_naming_the_us_beside_another_country_keeps_the_us_index(catalog) -> None:
+    """The coverage marks the BIS series only; the US housing market keeps
+    answering a question that names the United States."""
+    top = search_catalog(catalog, "home prices in the US and UK", limit=1)[0]["operation_id"]
+    assert top == "real_estate_home_values_geo_type", top
+
+
+def test_country_coverage_names_live_operations_and_countries(catalog) -> None:
+    """A renamed operation would silently drop its coverage."""
+    from sugra_api_mcp.catalog.aliases import OPERATION_COUNTRY_COVERAGE
+
+    ids = {endpoint.operation_id for endpoint in catalog.endpoints}
+    assert set(OPERATION_COUNTRY_COVERAGE) <= ids, set(OPERATION_COUNTRY_COVERAGE) - ids
+    for operation_id, countries in OPERATION_COUNTRY_COVERAGE.items():
+        assert all(len(code) == 2 and code.isupper() for code in countries), operation_id
+
+
 def test_real_answers_the_real_estate_operations_only_beside_a_property_word() -> None:
     from sugra_api_mcp.catalog.models import Endpoint
     from sugra_api_mcp.catalog.search import _score
