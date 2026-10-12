@@ -1956,6 +1956,11 @@ def topic_default_operations(query: str) -> frozenset[str]:
 LISTING_DEFAULT_OPERATION = "quotes_symbol_price"
 LISTING_HISTORY_OPERATION = "quotes_symbol_historical"
 LISTINGS_DEFAULT_OPERATION = "quotes_symbol_multiple"
+# One ETF's ticker beside the word ETF and nothing else ("SPY ETF") lifts every
+# per-ETF operation equally, since each carries the word, and their
+# operation_id order put the derived flows first: the snapshot holds the
+# fund's price, NAV, AUM and expense ratio.
+ETF_DEFAULT_OPERATION = "etf_symbol_snapshot"
 _PERIOD_WORDS: tuple[str, ...] = (
     "days", "weeks", "months", "years", "decade", "over time",
     "last week", "past week", "week ago", "last month", "past month",
