@@ -1641,6 +1641,24 @@ def test_alias_phrases_still_match_their_own_words(query: str, present: str) -> 
     assert present in matching_aliases(query)
 
 
+@pytest.mark.parametrize("query,limit", [
+    ("inflation in Italy", 5),
+    ("rent prices", 3),
+    ("rent prices in Austin", 3),
+])
+def test_the_index_of_an_alias_expansion_alone_lifts_no_index_quote(catalog, query: str, limit: int) -> None:
+    """"inflation" expands to "consumer price index" and "rent" to a rent
+    index; their "index" alone lifted the index quote into these answers."""
+    ids = [h["operation_id"] for h in search_catalog(catalog, query, limit=limit)]
+    assert "cboe_index_symbol" not in ids, ids
+
+
+@pytest.mark.parametrize("query", ["Japan CPI index", "S&P 500 index"])
+def test_a_question_that_says_index_keeps_the_index_quote(catalog, query: str) -> None:
+    ids = [h["operation_id"] for h in search_catalog(catalog, query, limit=5)]
+    assert "cboe_index_symbol" in ids, ids
+
+
 @pytest.mark.parametrize("query", [
     "TTF gas price", "European natural gas price TTF this winter", "WTI crude oil price",
 ])
