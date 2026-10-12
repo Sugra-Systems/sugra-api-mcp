@@ -2786,6 +2786,13 @@ def test_real_house_prices_rank_a_house_price_series_first(catalog) -> None:
     assert top.endswith("_house_prices") or top == "bis_property", top
 
 
+@pytest.mark.parametrize("query", ["home prices", "US home prices"])
+def test_home_prices_rank_the_home_value_index_first(catalog, query: str) -> None:
+    """"home prices" ranked the FAO agricultural producer prices first."""
+    top = search_catalog(catalog, query, limit=1)[0]["operation_id"]
+    assert top == "real_estate_home_values_geo_type", (query, top)
+
+
 def test_real_answers_the_real_estate_operations_only_beside_a_property_word() -> None:
     from sugra_api_mcp.catalog.models import Endpoint
     from sugra_api_mcp.catalog.search import _score
