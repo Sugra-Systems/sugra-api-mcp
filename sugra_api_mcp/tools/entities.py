@@ -26,6 +26,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import Field
 
+from ..client import _bounded_error
 from ..errors import is_error_payload
 from ..observability import trace_mcp_tool
 from ..server import get_client, mcp, read_only
@@ -71,7 +72,9 @@ def _clean_error(payload: dict[str, Any]) -> dict[str, Any]:
     """Normalize a client error payload into a clean {error, detail} dict.
 
     Never raises and never leaks the entity envelope shape so an agent can branch
-    cleanly on `result.get("error")`.
+    cleanly on `result.get("error")`. str() of an error that is not text can be
+    longer than the client's bounded original, and detail can repeat it, so the
+    result is held by _bounded_error again.
     """
     error = payload.get("error") or "request_failed"
     detail_bits: list[str] = []
@@ -105,7 +108,7 @@ def _clean_error(payload: dict[str, Any]) -> dict[str, Any]:
         value = payload.get(key)
         if value is not None:
             result[key] = value
-    return result
+    return _bounded_error(result)
 
 
 def _disclaimer_of(meta: dict[str, Any]) -> str:

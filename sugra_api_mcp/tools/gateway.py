@@ -23,7 +23,7 @@ from ..catalog.place import place_gap
 from ..catalog.response import ProjectionTooLargeError, compile_fields, shape_response
 from ..catalog.search import known_sources, known_toolsets, query_limit_error, search_catalog
 from ..catalog.toolsets import ordered_toolsets
-from ..client import _cut_on_pool, _enforce_size_limit
+from ..client import _bounded_error, _cut_on_pool, _enforce_size_limit
 from ..errors import is_error_payload, projection_too_large_error, server_busy_error
 from ..observability import trace_mcp_tool
 from ..server import current_caller, get_client, mcp, read_only
@@ -605,7 +605,8 @@ def _unknown_params_error(
     data endpoint takes the table's own dimension codes (OMRÅDE, KØN, Tid,
     ...) this way. Only a GET operation is opened by the marker: the reader
     is a query-string reader, and a marked POST still refuses an undeclared
-    key.
+    key. The refusal echoes the caller's keys, so it is held by
+    _bounded_error.
     """
     if endpoint.open_query and endpoint.method == "GET":
         return None
@@ -631,7 +632,7 @@ def _unknown_params_error(
         "have returned unfiltered data. Rename or drop the unknown keys; "
         "describe_endpoint(operation_id) lists every parameter."
     )
-    return payload
+    return _bounded_error(payload)
 
 
 def _closest_declared(key: str, accepted: list[str]) -> str | None:
@@ -948,7 +949,7 @@ async def describe_endpoint(
     try:
         endpoint = catalog.get(operation_id)
     except KeyError:
-        return {"error": "unknown_operation_id", "operation_id": operation_id}
+        return _bounded_error({"error": "unknown_operation_id", "operation_id": operation_id})
     described = endpoint.to_dict()
     described["agent_hints"] = hints_for(endpoint)
     return described
@@ -1068,7 +1069,7 @@ async def call_endpoint(
         try:
             endpoint = catalog.get(operation_id)
         except KeyError:
-            return {"error": "unknown_operation_id", "operation_id": operation_id}
+            return _bounded_error({"error": "unknown_operation_id", "operation_id": operation_id})
 
         # The count, length and depth of fields need no response: a request
         # past one of them is refused here, before any request is made.
@@ -1120,11 +1121,11 @@ async def call_endpoint(
             {key: value for key, value in clean_params.items() if key in path_param_names},
         )
         if "{" in path:
-            return {
+            return _bounded_error({
                 "error": "unresolved_path_parameters",
                 "operation_id": operation_id,
                 "path": path,
-            }
+            })
 
         query_params = {
             key: value
@@ -1181,13 +1182,14 @@ async def call_endpoint(
             int((time.perf_counter() - start) * 1000),
         )
     except Exception as exc:
-        return {
+        # operation_id is the caller's when the catalog itself failed to load.
+        return _bounded_error({
             "error": "tool_execution_failed",
             "operation_id": operation_id,
             "exception_type": type(exc).__name__,
             "reason": str(exc)[:300].strip() or type(exc).__name__,
             "elapsed_ms": int((time.perf_counter() - start) * 1000),
-        }
+        })
 
 
 def toolsets_payload() -> dict[str, Any]:
@@ -1487,7 +1489,7 @@ async def fetch_data(
             alternatives = _alternatives(
                 catalog, results, operation_id, clean_params, result.get("unknown"))
             if alternatives:
-                result = {**result, "alternatives": alternatives}
+                result = _bounded_error({**result, "alternatives": alternatives})
         return result
     except Exception as exc:
         return {
