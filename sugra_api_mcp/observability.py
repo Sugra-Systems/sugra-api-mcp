@@ -344,6 +344,10 @@ _KNOWN_ERROR_CODES: frozenset[str] = frozenset({
     "upstream_timeout",
     "upstream_connect_error",
     "upstream_transport_error",
+    # A request httpx refuses to build (most often a query over its URL
+    # length limit), and a response nested too deeply to measure.
+    "invalid_request_url",
+    "response_too_deep",
     # Gateway safety net for unexpected exceptions inside call_endpoint.
     "tool_execution_failed",
     # The end-to-end per-call budget fired and the call was

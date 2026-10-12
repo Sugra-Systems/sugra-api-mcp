@@ -25,7 +25,7 @@ used for HTTP 4xx/5xx responses:
 
     {
         "error": "upstream_timeout" | "upstream_connect_error"
-                 | "upstream_transport_error",
+                 | "upstream_transport_error" | "invalid_request_url",
         "reason": "<exception class>: <message>",   # class name only if empty
         "status_code": None,                        # no HTTP status received
         "elapsed_ms": 30012,
@@ -37,7 +37,13 @@ used for HTTP 4xx/5xx responses:
 Without this, httpx exceptions propagate to the MCP framework which renders
 them as "Error executing tool call_endpoint: " with an EMPTY message
 (httpx.ReadTimeout stringifies to ""), leaving the agent unable to pick a
-retry strategy (field-test defect D2).
+retry strategy (field-test defect D2). `invalid_request_url` is a request
+httpx refuses to build, most often a query over its 65,536-character URL
+limit: nothing was sent.
+
+A response body nested deeper than the JSON decoder accepts is read as a
+body that is not JSON, and one nested too deeply to measure is answered
+with `response_too_deep` (`_too_deep`) instead of being returned.
 
 Every failure dict, a transport failure or an HTTP one, is held to
 _ERROR_CHARS, under MAX_RESPONSE_CHARS (`_bounded_error`): a value too long
@@ -710,8 +716,26 @@ def _on_event_loop() -> bool:
     return True
 
 
+def _too_deep(url: str, start: float) -> dict[str, Any]:
+    """The failure for a response nested too deeply to measure, and so to
+    cut: both walk it, and past the recursion limit neither can. Its
+    elapsed_ms counts from start."""
+    return _bounded_error({
+        "error": "response_too_deep",
+        "message": "The response is nested too deeply to measure, so it is not returned.",
+        "url": url,
+        "elapsed_ms": _elapsed_ms(start),
+        "retry_hint": "Retry once; if it persists, report the url field.",
+    })
+
+
 def _enforce_size_limit(
-    payload: Any, url: str, *, unshaped: Any = None, endpoint: Any = None
+    payload: Any,
+    url: str,
+    *,
+    unshaped: Any = None,
+    endpoint: Any = None,
+    start: float | None = None,
 ) -> Any:
     """Return payload whole when it fits MAX_RESPONSE_CHARS, else cut it to
     fit, else the ``response_too_large`` refusal.
@@ -739,8 +763,17 @@ def _enforce_size_limit(
     the hints name its parameters and that tool's own arguments, and its
     operation id selects the nearest rule. The fixed tools pass None, so
     their hints name no parameter.
+
+    A payload nested too deeply to measure is answered with ``_too_deep``,
+    its elapsed_ms counted from ``start``, the time the call began, when the
+    caller passes it, else from the gate's own start.
     """
-    if response_chars_within(payload, MAX_RESPONSE_CHARS) is not None:
+    begun = time.perf_counter() if start is None else start
+    try:
+        fits = response_chars_within(payload, MAX_RESPONSE_CHARS) is not None
+    except RecursionError:
+        return _too_deep(url, begun)
+    if fits:
         return payload
     # Imported here, not at the top: the catalog package imports this module.
     from .catalog.size_cut import cut_to_fit, refuse_unmeasured
@@ -789,17 +822,23 @@ class _StartGate:
             return self.started_at
 
 
-async def _gate_off_loop(payload: Any, url: str) -> Any:
+async def _gate_off_loop(payload: Any, url: str, start: float) -> Any:
     """The size gate for a response the client returns as it came, a success
     or a failure: measured on the event loop only up to the cap, and when
     over it measured and cut on the shaping pool, as call_endpoint's are; a
     full pool answers server_busy.
 
-    The wait is bounded, see _cut_on_pool.
+    The wait is bounded, see _cut_on_pool. A payload nested too deeply to
+    measure is answered with ``_too_deep``; start is the time the request
+    began, which its elapsed_ms counts from.
     """
-    if response_chars_within(payload, MAX_RESPONSE_CHARS) is not None:
+    try:
+        fits = response_chars_within(payload, MAX_RESPONSE_CHARS) is not None
+    except RecursionError:
+        return _too_deep(url, start)
+    if fits:
         return payload
-    return await _cut_on_pool(partial(_enforce_size_limit, payload, url), url)
+    return await _cut_on_pool(partial(_enforce_size_limit, payload, url, start=start), url)
 
 
 async def _cut_on_pool(call: Callable[[], Any], url: str, *, clocks: int = 1) -> Any:
@@ -977,6 +1016,20 @@ class SugraClient:
                     "Retry once; if it persists, report the reason field."
                 ),
             )
+        # Not an httpx.HTTPError: raised while the request is built, before
+        # anything is sent.
+        except httpx.InvalidURL as exc:
+            return self._transport_error(
+                "invalid_request_url",
+                exc,
+                start,
+                path,
+                retry_hint=(
+                    "The request was not sent: its URL is not valid, most often because "
+                    "the parameters make it longer than 65,536 characters. Send fewer or "
+                    "shorter parameter values, or split the request into several."
+                ),
+            )
         result = self._handle(response, elapsed_ms=_elapsed_ms(start))
         # Enforced HERE by default - the backstop every caller gets for free.
         # A caller that shapes its own response after the fact
@@ -987,12 +1040,12 @@ class SugraClient:
         # cap, so the gate returns it as it is.
         if not enforce_size:
             return result
-        return await _gate_off_loop(result, str(response.request.url))
+        return await _gate_off_loop(result, str(response.request.url), start)
 
     def _transport_error(
         self,
         code: str,
-        exc: httpx.HTTPError,
+        exc: httpx.HTTPError | httpx.InvalidURL,
         start: float,
         path: str,
         *,
@@ -1015,18 +1068,21 @@ class SugraClient:
             result.update(extra)
         return _bounded_error(result)
 
-    def _request_url(self, exc: httpx.HTTPError, path: str) -> str:
+    def _request_url(self, exc: httpx.HTTPError | httpx.InvalidURL, path: str) -> str:
         try:
             return str(exc.request.url)
-        except RuntimeError:
-            # httpx raises RuntimeError when the exception carries no request.
+        except (RuntimeError, AttributeError):
+            # httpx raises RuntimeError when the exception carries no request,
+            # and an InvalidURL has no request attribute at all.
             return f"{self._config.api_base}{path}"
 
     @staticmethod
     def _handle(response: httpx.Response, *, elapsed_ms: int) -> dict[str, Any]:
         try:
             payload = response.json()
-        except ValueError:
+        # A body nested deeper than the decoder accepts is read as one that is
+        # not JSON.
+        except (ValueError, RecursionError):
             payload = {"error": response.text[:500]}
         # Any non-2xx answer is an HTTP failure. The client never follows
         # redirects and a 3xx carries no JSON body, so under the old `>= 400`
