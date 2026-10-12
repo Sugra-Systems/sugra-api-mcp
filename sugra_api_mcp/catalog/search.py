@@ -527,6 +527,10 @@ def _subject_words(endpoint: Endpoint) -> frozenset[str]:
             | frozenset(_tokens(endpoint.toolset)))
 
 
+# Words that say a statistic is a nation's, whichever nation the question means.
+_NATION_WORDS: frozenset[str] = frozenset({"domestic", "national", "nationwide"})
+
+
 def _source_country(endpoint: Endpoint) -> str | None:
     """The country of the national source the endpoint belongs to, if any."""
     for prefix, country in SOURCE_COUNTRY_PREFIXES.items():
@@ -1515,9 +1519,12 @@ def search_catalog(
                 subjects.append(i)
             # The ECB answers for the euro area alone, one place the question
             # never named: "bond yield" found the euro area yield curve first.
+            # A word that says the statistic is a nation's names no source of
+            # one nation: "national debt to GDP" found Spain's quarterly
+            # national accounts first, on the word their summary holds.
             elif (_source_country(endpoint) is not None
                   or (not names_euro_area and endpoint.operation_id.startswith("ecb_"))
-                  ) and not strong - answered:
+                  ) and not strong - answered - _NATION_WORDS:
                 national.append(i)
 
         def slot_of(i: int) -> tuple[int, bool, str]:
