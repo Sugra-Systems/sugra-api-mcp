@@ -23,6 +23,7 @@ from sugra_api_mcp.catalog.builder import build_catalog_from_openapi
 from sugra_api_mcp.catalog.loader import load_catalog
 from sugra_api_mcp.catalog.macro_keys import (
     _read_title,
+    match_macro_key_series,
     match_macro_keys,
     match_unplaced_macro_keys,
 )
@@ -547,3 +548,19 @@ def test_a_series_two_places_hold_ranks_no_key_without_a_place() -> None:
     two = _with_keys([*CLAIMS_KEYS, MacroKey(key="ca/initial-claims", title="Initial Claims for Unemployment Insurance")])
     results = search_catalog(two, "jobless claims", limit=10)
     assert all("macro_keys" not in hit for hit in results), _top_ids(results)
+
+
+@pytest.mark.parametrize("query,expected", [
+    ("US unemployment and inflation", ["us/unrate", "us/cpi"]),
+    ("US CPI and core CPI", ["us/cpi", "us/core-cpi"]),
+    ("US CPI, unemployment rate", ["us/cpi", "us/unrate"]),
+    # The title spells "Food & Energy": one series.
+    ("US CPI less food and energy", []),
+    # The spread names both maturities: one series.
+    ("US 10-year vs 2-year treasury", []),
+    ("US unemployment and its 10-year trend", []),
+    ("US unemployment rate", []),
+])
+def test_each_joined_part_of_a_question_names_its_own_series(query: str, expected: list[str]) -> None:
+    found = match_macro_key_series(query, KEYS, query_countries=detect_query_countries(query))
+    assert [key.key for key in found] == expected

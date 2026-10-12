@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 
 from ._countries import COUNTRY_QUERY_TERMS
@@ -388,6 +388,98 @@ def match_unplaced_macro_keys(
     if read.places or not read.topic:
         return []
     return _ranked(read, keys, limit)
+
+
+# What joins the names of two series in one question: "US GDP vs Japan GDP",
+# "US unemployment and inflation", "US CPI, core CPI".
+_SERIES_JOIN_RE = re.compile(
+    r",|&|\+|\b(?:and|vs|versus|compared\s+(?:to|with))\b\.?", re.IGNORECASE)
+_JOIN_TOKEN_RE = re.compile(r"[a-z0-9]+|[,&+]")
+_JOIN_TOKENS = frozenset({"and", ",", "&", "+"})
+# Words that ask to set series side by side and name none of them.
+_COMPARE_WORDS = _folded({"both", "compare", "comparison"})
+# A part that says only a span of time ("and its 10-year trend") names no
+# series of its own.
+_SPAN_WORDS = _folded({"day", "decade", "month", "quarter", "week", "year"})
+
+
+@lru_cache(maxsize=4096)
+def _title_joins(title: str) -> frozenset[tuple[str, str]]:
+    """The word pairs a title joins with "and", "&", "+" or a comma: "Imports of
+    Goods and Services" joins ("good", "service")."""
+    tokens = _JOIN_TOKEN_RE.findall(title.lower())
+    return frozenset(
+        (_fold(tokens[n - 1]), _fold(tokens[n + 1]))
+        for n in range(1, len(tokens) - 1) if tokens[n] in _JOIN_TOKENS
+    )
+
+
+def _series_parts(query: str, keys: Sequence[MacroKey]) -> list[str]:
+    """The query cut at each word that joins two series. A join a title spells
+    ("goods and services", "food and energy") joins words of one series."""
+    spelled = frozenset().union(*(_title_joins(key.title) for key in keys))
+    parts: list[str] = []
+    start = 0
+    for join in _SERIES_JOIN_RE.finditer(query):
+        before = _words(query[start:join.start()])
+        after = _words(query[join.end():])
+        if before and after and (_fold(before[-1]), _fold(after[0])) in spelled:
+            continue
+        parts.append(query[start:join.start()])
+        start = join.end()
+    parts.append(query[start:])
+    return [part for part in parts if part.strip()]
+
+
+def match_macro_key_series(
+    query: str,
+    keys: Sequence[MacroKey],
+    *,
+    query_countries: set[str],
+    ignore: frozenset[str] = frozenset(),
+    limit: int = 5,
+) -> list[MacroKey]:
+    """The keys of the several series a query names in parts joined by "and",
+    "vs" or a comma, one per place each part asks about, in the order read;
+    empty unless they are two to ``limit`` and every part names a key for
+    every place it asks about.
+
+    A part that names no place asks about the places of the whole query ("US
+    unemployment and inflation"). When the parts that name a topic leave a
+    place of the query to none of them, the query lists its places apart
+    from its topics, and every topic asks about every place ("compare US and
+    Japan GDP", "GDP and inflation in the US and Japan"). A question a
+    spread answers ("US 10-year vs 2-year") names one series.
+    """
+    parts = _series_parts(query, keys)
+    if len(parts) < 2:
+        return []
+    ignore = ignore | _COMPARE_WORDS
+    whole = _read_query(query, query_countries, ignore)
+    if not whole.places:
+        return []
+    spread = _ranked(whole, keys, 1)
+    if spread and _read_title(spread[0].key, spread[0].title).subtracts:
+        return []
+    reads = [_read_query(part, detect_query_countries(part), ignore) for part in parts]
+    topical = [read for read in reads
+               if any(not word.isdigit() and word not in _SPAN_WORDS for word in read.topic)]
+    shared = not whole.places <= {place for read in topical for place in read.places}
+    if not shared and any(read.places for read in reads if read not in topical):
+        # A part that names only a place, when every place already has a topic
+        # ("US GDP and Japan inflation compared with US"), asks about a topic
+        # this reading cannot tell: route nothing rather than part of it.
+        return []
+    chosen: list[MacroKey] = []
+    for read in topical:
+        places = whole.places if shared or not read.places else read.places
+        best: dict[str, MacroKey] = {}
+        for key in _ranked(replace(read, places=places), keys, len(keys)):
+            best.setdefault(key.key.partition("/")[0], key)
+        if set(best) != set(places):
+            return []
+        chosen.extend(key for key in best.values() if key not in chosen)
+    return chosen if 2 <= len(chosen) <= limit else []
 
 
 def _ranked(read: _Query, keys: Sequence[MacroKey], limit: int) -> list[MacroKey]:
