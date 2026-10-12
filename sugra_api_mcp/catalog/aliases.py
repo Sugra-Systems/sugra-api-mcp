@@ -362,6 +362,8 @@ def country_statistic_words(query: str) -> frozenset[str]:
 # the IMF Direction of Trade serves for any reporter country: "trade balance"
 # ranked the US Census source first. So is a house price, which the BIS
 # serves for 61 countries: "house prices" ranked Statistics Finland's first.
+# A wage is a salary too: the ILO serves the average wage of any country,
+# and "average salary" ranked Statistics Sweden's first.
 COUNTRY_STATISTIC_SPELLINGS: dict[str, tuple[str, ...]] = {
     "cpi": ("consumer price",),
     "gdp": ("gross domestic product",),
@@ -370,6 +372,7 @@ COUNTRY_STATISTIC_SPELLINGS: dict[str, tuple[str, ...]] = {
     "bond yield": ("bond yield", "10y yield", "10 year yield"),
     "trade balance": ("trade balance",),
     "house price": ("house price", "housing price", "residential property price"),
+    "wage": ("wage", "salary"),
 }
 
 

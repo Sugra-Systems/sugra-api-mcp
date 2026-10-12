@@ -3345,6 +3345,61 @@ def test_a_house_price_of_a_country_with_its_own_series_keeps_it_first(
     assert ids[:2] == [first, "bis_property"], ids
 
 
+@pytest.mark.parametrize("query", [
+    "wages",
+    "average wages",
+    "wages by country",
+    "average salary",
+    "average wages in France",
+    "Nigeria wages",
+    "UK wages",
+])
+def test_a_wage_of_no_country_or_a_country_without_its_own_series_ranks_the_ilo_first(
+    catalog, query: str,
+) -> None:
+    """The ILO serves the average monthly wage of employees in any country:
+    "wages" ranked Statistics Finland's first, and "average wages in France"
+    the company earnings."""
+    ids = [r["operation_id"] for r in search_catalog(catalog, query, limit=5)]
+    assert ids[0] == "ilostat_earnings", ids
+    assert "earnings" not in ids, ids
+
+
+@pytest.mark.parametrize("query,first", [
+    ("Australia wages", "abs_wages"),
+    ("Finland wages", "stat_finland_wages"),
+    ("Norway real wages", "statistical_agencies_ssb_wages"),
+])
+def test_a_wage_of_a_country_with_its_own_series_keeps_it_first(
+    catalog, query: str, first: str,
+) -> None:
+    ids = [r["operation_id"] for r in search_catalog(catalog, query, limit=5)]
+    assert ids[0] == first, ids
+    assert "ilostat_earnings" in ids[:3], ids
+
+
+@pytest.mark.parametrize("query", [
+    "oil production",
+    "crude oil production",
+    "oil production by country",
+    "Saudi Arabia oil production",
+    "Russia oil production",
+    "US oil production",
+    "world oil production",
+    "OPEC oil production",
+])
+def test_an_oil_production_question_ranks_the_energy_outlook_first(catalog, query: str) -> None:
+    """The EIA Short-Term Energy Outlook serves crude oil production by
+    country: "oil production" ranked the FAO crop production first."""
+    ids = [r["operation_id"] for r in search_catalog(catalog, query, limit=5)]
+    assert ids[0] == "commodities_energy_steo", ids
+
+
+def test_an_oil_price_question_keeps_the_petroleum_prices_first(catalog) -> None:
+    ids = [r["operation_id"] for r in search_catalog(catalog, "oil price", limit=5)]
+    assert ids[0] == "commodities_energy_petroleum", ids
+
+
 def test_an_operation_that_answers_through_the_statistics_alias_takes_the_country(catalog) -> None:
     """The country profile answers "unemployment" with its jobless rate, a word
     of the statistic's alias. Counted by its own words alone, it would lose the
