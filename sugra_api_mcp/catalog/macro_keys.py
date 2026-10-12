@@ -267,6 +267,17 @@ def query_names_euro_area(query: str) -> bool:
     return any(_spans(words, tuple(_words(phrase))) for phrase in _EU_PHRASES)
 
 
+def euro_area_words(query: str) -> frozenset[str]:
+    """The query's words that name the euro area or the European Union."""
+    words = _query_words(query)
+    return frozenset(
+        word
+        for phrase in _EU_PHRASES
+        for start in _spans(words, tuple(_words(phrase)))
+        for word in words[start:start + len(_words(phrase))]
+    )
+
+
 def _read_query(query: str, query_countries: set[str], ignore: frozenset[str]) -> _Query:
     words = _query_words(query)
     places = {code.lower() for code in query_countries}

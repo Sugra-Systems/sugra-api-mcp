@@ -50,7 +50,12 @@ from .aliases import (
     topic_default_operations,
     with_statistic_words,
 )
-from .macro_keys import match_macro_keys, match_unplaced_macro_keys, query_names_euro_area
+from .macro_keys import (
+    euro_area_words,
+    match_macro_keys,
+    match_unplaced_macro_keys,
+    query_names_euro_area,
+)
 from .models import Catalog, Endpoint, MacroKey
 
 TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -1146,6 +1151,17 @@ def search_catalog(
                 query, [term for term in terms if term not in place_words], banks)
             # The country stands in for the bank's name only beside a rate
             # word: "Canada decision" asks for no rate.
+            if (by_place.operations or by_place.keys) and by_place.words & {"rate", "rates"}:
+                policy_rate = by_place
+        # The euro area is no country, so its interest rate is read here: the
+        # ECB's policy rate ("eurozone interest rate" found the prediction
+        # markets' open interest, "euro area interest rate" the yield curve).
+        elif not places and (place_words := euro_area_words(query)):
+            banks = [prefix for prefix, place in CENTRAL_BANK_PLACES.items()
+                     if place == "EU" and (prefix in CENTRAL_BANK_POLICY_RATES
+                                           or prefix in CENTRAL_BANK_POLICY_RATE_KEYS)]
+            by_place = detect_policy_rate_request(
+                query, [term for term in terms if term not in place_words], banks)
             if (by_place.operations or by_place.keys) and by_place.words & {"rate", "rates"}:
                 policy_rate = by_place
     for operation, words in policy_rate.operations.items():
