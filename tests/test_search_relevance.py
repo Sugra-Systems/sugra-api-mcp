@@ -3924,6 +3924,10 @@ def test_a_statistic_acronym_is_no_listing(query: str) -> None:
     "AAPL over the last month",
     # The period words narrow nothing: "last" and "year" found futures.
     "Tesla stock last year", "Tesla stock 5 years", "Apple stock since 2020",
+    # "price" beside a period asks for the prices over it: the word, and the
+    # aliases that read it as the current quote, ranked the quote first.
+    "AAPL price since 2020", "TLT price over the last five years", "AAPL prices since 2020",
+    "Apple stock price since 2020", "Tesla share price last year",
 ])
 def test_a_listing_and_a_period_ask_for_the_price_history(catalog, query: str) -> None:
     """"TLT since 2020" ranked the dividends and splits first: the ticker
@@ -3965,6 +3969,16 @@ def test_a_listing_no_word_narrows_asks_for_its_price(catalog, query: str) -> No
     assert rows[0]["operation_id"] == "quotes_symbol_price", rows[0]
     assert rows[0]["score"] == rows[1]["score"], rows
     assert "pattern:period->history" not in rows[0]["why"], rows[0]
+
+
+@pytest.mark.parametrize("query", [
+    "AAPL price", "AAPL price today", "AAPL 52 week high price", "Apple stock price",
+    # A period beside a word that asks for the price now keeps the quote.
+    "AAPL current price since 2020",
+    "What is the latest price for NVDA and how has it moved over the past week?",
+])
+def test_a_listing_price_with_no_period_or_asked_now_is_the_current_quote(catalog, query: str) -> None:
+    assert search_catalog(catalog, query, limit=1)[0]["operation_id"] == "quotes_symbol_price"
 
 
 @pytest.mark.parametrize("query", [

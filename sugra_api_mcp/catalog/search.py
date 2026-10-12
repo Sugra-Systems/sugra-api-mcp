@@ -138,6 +138,12 @@ TICKER_SYMBOL_PARAM_BOOST = 6
 # field, so a word of the question in a strong field still picks its operation
 # ("AAPL dividends since 2020" is the dividends).
 LISTING_PERIOD_BOOST = 1
+# Beside a period a listing's "price" asks for the prices over it, unless the
+# question also asks for the price now ("the latest price and how it moved over
+# the past week").
+_PRICE_WORDS: frozenset[str] = frozenset({"price", "prices"})
+_CURRENT_PRICE_ALIASES: frozenset[str] = frozenset({"stock price", "share price"})
+_NOW_WORDS: frozenset[str] = frozenset({"current", "currently", "latest", "now", "today"})
 CURRENCY_PAIR_FOREX_BOOST = 15
 CENTRAL_BANK_PREFIX_BOOST = 15
 CRYPTO_NAMESPACE_BOOST = 18
@@ -1071,9 +1077,14 @@ def search_catalog(
     listing_period = boost_quotes_symbol and len(tickers) <= 1 and bool(period_words)
     # Its period words then ask for the history and narrow nothing else:
     # "Tesla stock last year" ranked futures contracts first, on "last" and
-    # "year" in their keywords.
+    # "year" in their keywords. "price" beside a period asks for the prices
+    # over it, which the history answers as fully as the current price does:
+    # "AAPL price since 2020" ranked the current quote first, on the word its
+    # operation id holds.
+    price_over_period = listing_period and not _NOW_WORDS & set(_tokens(query))
     if listing_period:
-        terms = [term for term in terms if term not in period_words]
+        terms = [term for term in terms if term not in period_words
+                 and not (price_over_period and term in _PRICE_WORDS)]
     # Everyday names: a currency named in words, and the benchmarks, waterways,
     # ports and measures of detect_named_operations. Crypto context keeps
     # "convert bitcoin to dollars" a crypto price. A pair asks for a
@@ -1132,6 +1143,12 @@ def search_catalog(
     boost_us_macro = detect_us_macro_query(query)
     query_countries = detect_query_countries(query)
     aliases = matching_aliases(query, query_countries)
+    # The aliases that read a listing's price as its current quote ask, beside
+    # a period, for the prices over it too: "Apple stock price since 2020"
+    # ranked the current quote first on the alias alone.
+    if price_over_period:
+        aliases = {phrase: expansions for phrase, expansions in aliases.items()
+                   if phrase not in _CURRENT_PRICE_ALIASES}
     # Geography resolves BEFORE the US-macro heuristic - the
     # word 'American' inside 'American Samoa' read as US context and the +30
     # FRED boost out-muscled the wrong-country penalty. An explicitly named
