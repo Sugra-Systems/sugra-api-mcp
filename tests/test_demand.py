@@ -1191,13 +1191,13 @@ async def test_the_served_digest_is_that_of_a_real_tools_list_answer_and_moves_w
 ) -> None:
     async with _served(monkeypatch, demand.DemandCounter()) as client:
         listed = await _listed(client, 1)
-    served = await gate.served_tool_definitions()
+    served = await gate.served_chatgpt_tool_definitions()
     assert demand.tools_digest(listed) == demand.tools_digest(served)
     server.mcp.add_tool(_probe_tool, name="demand_probe_tool")
     try:
         async with _served(monkeypatch, demand.DemandCounter()) as client:
             listed_more = await _listed(client, 3)
-        served_more = await gate.served_tool_definitions()
+        served_more = await gate.served_chatgpt_tool_definitions()
     finally:
         server.mcp.remove_tool("demand_probe_tool")
     assert demand.tools_digest(listed_more) == demand.tools_digest(served_more)
@@ -1230,6 +1230,25 @@ async def test_only_a_2xx_tools_list_line_carries_the_served_digest(
         await client.post("/mcp", json=_message(1, method, {}), headers={"x-request-id": _rid(1)})
     bucket = "tools/list" if method == "tools/list" else "other"
     assert _counts(counter, written) == {(bucket, str(status), "loopback", "python", "none", column): 1}
+
+
+@pytest.mark.parametrize(
+    ("user_agent", "column"),
+    [("openai-mcp/1.0", "cafe0001"), ("Claude-User", "abcd1234"), (None, "abcd1234")],
+)
+def test_a_tools_list_line_carries_the_digest_of_its_profile(
+    user_agent: str | None, column: str
+) -> None:
+    counter = demand.DemandCounter()
+    counter.served_digest = "abcd1234"
+    counter.chatgpt_digest = "cafe0001"
+    assert counter.digest_for(user_agent) == column
+
+
+async def test_the_chatgpt_digest_is_that_of_the_chatgpt_set_and_differs_from_the_default() -> None:
+    chatgpt = demand.tools_digest(await gate.served_chatgpt_tool_definitions())
+    default = demand.tools_digest(await gate.served_tool_definitions())
+    assert chatgpt != default
 
 
 async def test_the_digest_is_taken_after_the_app_starts_and_before_it_serves(flushes) -> None:

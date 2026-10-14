@@ -135,11 +135,17 @@ class SugraFastMCP(FastMCP):
         self._ui_template_uri = resource_uri
 
     async def list_tools(self) -> list[MCPTool]:
+        return await self.list_tools_for(client_profile())
+
+    async def list_tools_for(self, profile: str) -> list[MCPTool]:
+        """The tools/list answer of a client profile (client_profile)."""
         template_uri = self._ui_template_uri
-        return [
-            _with_ui_template(_with_oauth_security(tool), template_uri)
-            for tool in await super().list_tools()
-        ]
+        tools = await super().list_tools()
+        if profile == CHATGPT_PROFILE:
+            from .tools.typed import typed_tool_listing
+
+            tools = [*tools, *typed_tool_listing()]
+        return [_with_ui_template(_with_oauth_security(tool), template_uri) for tool in tools]
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
         """Count the call on its request's gate record, then admit and dispatch it.
@@ -194,8 +200,8 @@ class SugraFastMCP(FastMCP):
             refusal = _admit_tool_call(caller)
         if refusal is not None:
             # The refused call never reaches its tool, so the tool's span never
-            # starts; record one here, for registered names only.
-            if self._tool_manager.get_tool(name) is not None:
+            # starts; record one here, for registered and typed names only.
+            if self._tool_manager.get_tool(name) is not None or _is_typed_tool(name):
                 observability.record_refused_call(name, refusal["error"], refusal.get("scope"))
             return CallToolResult(
                 isError=True,
@@ -285,7 +291,12 @@ class SugraFastMCP(FastMCP):
         )
         try:
             async with dispatch:
-                result = await super().call_tool(name, arguments)
+                if self._tool_manager.get_tool(name) is None and _is_typed_tool(name):
+                    from .tools.typed import call_typed_tool
+
+                    result = await call_typed_tool(name, arguments)
+                else:
+                    result = await super().call_tool(name, arguments)
         except TimeoutError:
             payload = {
                 "error": "deadline_exceeded",
@@ -394,6 +405,50 @@ def _release_tool_call(caller: str) -> None:
             _in_flight_by_caller[caller] = held
         else:
             _in_flight_by_caller.pop(caller, None)
+
+
+# The client profiles tools/list serves. ChatGPT is also listed the typed tools
+# (tools/typed.py); every other client gets the registered tools only.
+DEFAULT_PROFILE = "default"
+CHATGPT_PROFILE = "chatgpt"
+# What ChatGPT's connector sends as initialize clientInfo.name, and the
+# product token its User-Agent starts with.
+CHATGPT_CLIENT_NAME = "openai-mcp"
+
+
+def client_profile() -> str:
+    """The profile of the client the current MCP request came from.
+
+    The session's initialize clientInfo.name decides; a session without one
+    (a stateless request) falls back to the request's User-Agent. Outside a
+    request, the default profile.
+    """
+    from mcp.server.lowlevel.server import request_ctx
+
+    try:
+        context = request_ctx.get()
+    except LookupError:
+        return DEFAULT_PROFILE
+    session = getattr(context, "session", None)
+    client_info = getattr(getattr(session, "client_params", None), "clientInfo", None)
+    name = getattr(client_info, "name", None)
+    if isinstance(name, str) and name:
+        return CHATGPT_PROFILE if name == CHATGPT_CLIENT_NAME else DEFAULT_PROFILE
+    headers = getattr(getattr(context, "request", None), "headers", None)
+    return user_agent_profile(headers.get("user-agent") if headers is not None else None)
+
+
+def user_agent_profile(user_agent: str | None) -> str:
+    """The client profile a User-Agent alone names."""
+    if isinstance(user_agent, str) and user_agent.lower().startswith(CHATGPT_CLIENT_NAME):
+        return CHATGPT_PROFILE
+    return DEFAULT_PROFILE
+
+
+def _is_typed_tool(name: str) -> bool:
+    from .tools.typed import is_typed_tool
+
+    return is_typed_tool(name)
 
 
 def read_only(title: str) -> ToolAnnotations:
