@@ -420,16 +420,33 @@ def _title_joins(title: str) -> frozenset[tuple[str, str]]:
     )
 
 
-def _series_parts(query: str, keys: Sequence[MacroKey]) -> list[str]:
+def _names_a_spread(text: str, keys: Sequence[MacroKey], ignore: frozenset[str]) -> bool:
+    """Whether ``text`` read as one part ranks first a series that subtracts
+    one series from another."""
+    best = _ranked(_read_query(text, detect_query_countries(text), ignore), keys, 1)
+    return bool(best) and _read_title(best[0].key, best[0].title).subtracts
+
+
+def _series_parts(query: str, keys: Sequence[MacroKey], ignore: frozenset[str]) -> list[str]:
     """The query cut at each word that joins two series. A join a title spells
-    ("goods and services", "food and energy") joins words of one series."""
+    ("goods and services", "food and energy") joins words of one series, and
+    so does a "vs" when the part up to the next join reads as a spread, the
+    "minus" of its title ("10-year vs 2-year treasury" is the one series of
+    the 10-year minus the 2-year). A later "vs" is read the same way, so
+    "10-year vs 2-year treasury vs unemployment" still cuts before
+    "unemployment": the whole of it ranks no spread first."""
     spelled = frozenset().union(*(_title_joins(key.title) for key in keys))
+    joins = list(_SERIES_JOIN_RE.finditer(query))
     parts: list[str] = []
     start = 0
-    for join in _SERIES_JOIN_RE.finditer(query):
+    for n, join in enumerate(joins):
         before = _words(query[start:join.start()])
         after = _words(query[join.end():])
         if before and after and (_fold(before[-1]), _fold(after[0])) in spelled:
+            continue
+        end = joins[n + 1].start() if n + 1 < len(joins) else len(query)
+        subtracts = any(word in _SUBTRACTION_WORDS for word in _words(join.group()))
+        if subtracts and before and after and _names_a_spread(query[start:end], keys, ignore):
             continue
         parts.append(query[start:join.start()])
         start = join.end()
@@ -455,12 +472,14 @@ def match_macro_key_series(
     place of the query to none of them, the query lists its places apart
     from its topics, and every topic asks about every place ("compare US and
     Japan GDP", "GDP and inflation in the US and Japan"). A question a
-    spread answers ("US 10-year vs 2-year") names one series.
+    spread answers ("US 10-year vs 2-year") names one series, and a spread
+    joined with another series is one part of the question ("US 10-year vs
+    2-year treasury and unemployment").
     """
-    parts = _series_parts(query, keys)
+    ignore = ignore | _COMPARE_WORDS
+    parts = _series_parts(query, keys, ignore)
     if len(parts) < 2:
         return []
-    ignore = ignore | _COMPARE_WORDS
     whole = _read_query(query, query_countries, ignore)
     if not whole.places:
         return []

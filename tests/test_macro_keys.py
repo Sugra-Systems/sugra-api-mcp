@@ -562,6 +562,15 @@ SEARCH_STOPWORDS = search_module._QUERY_STOPWORDS | search_module._TWO_LETTER_FI
     ("US CPI less food and energy", []),
     # The spread names both maturities: one series.
     ("US 10-year vs 2-year treasury", []),
+    # Joined with another series, the spread is one part of the question.
+    ("US 10-year vs 2-year treasury and unemployment", ["us/t10y-t2y", "us/unrate"]),
+    # A second "vs" after the spread still cuts: its sides name no spread.
+    ("US 10-year vs 2-year treasury vs unemployment", ["us/t10y-t2y", "us/unrate"]),
+    ("US 10-year VS 2-year treasury VS unemployment", ["us/t10y-t2y", "us/unrate"]),
+    ("US unemployment and 10-year vs 2-year treasury", ["us/unrate", "us/t10y-t2y"]),
+    ("US 10-year versus 2-year treasury, unemployment rate", ["us/t10y-t2y", "us/unrate"]),
+    # A "vs" whose sides name no spread still joins two series.
+    ("US CPI vs core CPI", ["us/cpi", "us/core-cpi"]),
     ("US unemployment and its 10-year trend", []),
     ("US unemployment rate", []),
 ])
@@ -569,6 +578,33 @@ def test_each_joined_part_of_a_question_names_its_own_series(query: str, expecte
     found = match_macro_key_series(query, KEYS, query_countries=detect_query_countries(query),
                                    ignore=SEARCH_STOPWORDS)
     assert [key.key for key in found] == expected
+
+
+def test_two_spreads_joined_by_and_are_two_series() -> None:
+    """Only a "vs" reads as a spread's "minus": the "and" between two spreads
+    still cuts, so the second spread is not read as the 3-month yield."""
+    keys = [*KEYS,
+            MacroKey(key="us/t3m", title="3-Month Treasury Constant Maturity Rate"),
+            MacroKey(key="us/t10y-t3m", title="10-Year Treasury Minus 3-Month Treasury")]
+    query = "US 10-year vs 2-year treasury and 10-year vs 3-month treasury"
+    found = match_macro_key_series(query, keys, query_countries=detect_query_countries(query),
+                                   ignore=SEARCH_STOPWORDS)
+    assert [key.key for key in found] == ["us/t10y-t2y", "us/t10y-t3m"]
+
+
+def test_a_spread_and_another_series_are_called_in_one(keyed_catalog: Catalog) -> None:
+    """The multi-series operation answers first and its one call names the
+    spread and the unemployment rate; the spread alone stays one series."""
+    top = search_catalog(keyed_catalog, "US 10-year vs 2-year treasury and unemployment", limit=3)[0]
+    assert top["operation_id"] == "macro_multi", top
+    assert "first:several-series" in top["why"], top
+    assert [key["key"] for key in top["macro_keys"]] == ["us/t10y-t2y", "us/unrate"], top
+    assert top["params"] == {"series": "us/t10y-t2y,us/unrate"}, top
+
+    alone = search_catalog(keyed_catalog, "US 10-year vs 2-year treasury", limit=5)
+    assert "macro_multi" not in _top_ids(alone), _top_ids(alone)
+    assert alone[0]["operation_id"] == MACRO_OPERATION, _top_ids(alone)
+    assert alone[0]["macro_keys"][0]["key"] == "us/t10y-t2y", alone[0]
 
 
 def test_a_part_that_names_only_a_span_of_time_names_no_series() -> None:
