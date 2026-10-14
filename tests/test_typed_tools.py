@@ -163,6 +163,31 @@ def test_an_operation_that_needs_a_location_has_no_typed_tool() -> None:
         typed._build(entry, endpoint, {})
 
 
+@pytest.mark.parametrize(
+    ("method", "parameter", "refusal"),
+    [
+        ("GET", EndpointParameter(name="x-sugra-tenant", location="header", required=True), "drops required parameters x-sugra-tenant"),
+        ("POST", EndpointParameter(name="units", location="query", required=False), "runs a POST operation"),
+    ],
+)
+def test_an_operation_a_read_only_typed_tool_cannot_run_has_none(
+    method: str, parameter: EndpointParameter, refusal: str
+) -> None:
+    endpoint = Endpoint(
+        operation_id="screen_names",
+        method=method,
+        path="/api/v1/screen",
+        summary="",
+        description="",
+        tags=[],
+        toolset="core",
+        parameters=[parameter],
+    )
+    entry = {"name": "screen_names", "title": "Screen names", "description": "Screen."}
+    with pytest.raises(ValueError, match=refusal):
+        typed._build(entry, endpoint, {})
+
+
 def test_typed_metadata_names_no_commercial_vendor() -> None:
     for name, tool in typed.typed_tools().items():
         text = json.dumps(tool.tool.model_dump(by_alias=True, exclude_none=True))

@@ -205,15 +205,15 @@ def exposed_parameters(endpoint: Endpoint) -> list[EndpointParameter]:
 
 
 def _build(entry: dict[str, Any], endpoint: Endpoint, fallbacks: dict[str, str]) -> TypedTool:
+    if endpoint.method != "GET":
+        # A typed tool is annotated read-only, which only a GET operation is.
+        raise ValueError(f"typed_tools.json: {entry['name']} runs a {endpoint.method} operation")
     parameters = exposed_parameters(endpoint)
     exposed = {p.name for p in parameters}
-    dropped = [
-        p.name
-        for p in endpoint.parameters
-        if p.required and p.location in ("path", "query") and p.name not in exposed
-    ]
+    dropped = [p.name for p in endpoint.parameters if p.required and p.name not in exposed]
     if dropped:
-        # An operation that cannot run without a location input has no typed tool.
+        # An operation that cannot run without an input the tool does not take
+        # (a location, a header, a cookie) has no typed tool.
         raise ValueError(
             f"typed_tools.json: {entry['name']} drops required parameters {', '.join(dropped)}"
         )

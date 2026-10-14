@@ -38,9 +38,13 @@ none when an initialize names no client, and - for every other method: only
 initialize carries clientInfo. On a tools/list line whose status is a 2xx
 the same column holds the served tools digest instead: the first
 TOOLS_DIGEST_HEX hex characters of a sha256 over the tool definitions the
-process serves (tools_digest) to the profile the line's User-Agent names: one
-starting openai-mcp names the ChatGPT profile, which is also listed the typed
-tools (tools/typed.py), any other the default profile. Each is taken once per start, after the app's own
+process serves (tools_digest) to the profile that tools/list was answered
+for: server.list_tools notes it on the request's gate record
+(GateRecord.served_profile), and it follows the initialize clientInfo name
+first (server.client_profile). Only a listing that noted no profile is
+counted by the profile its User-Agent names. The ChatGPT profile is also
+listed the typed tools (tools/typed.py), any other is the default profile;
+digest_for maps a profile to its digest. Each is taken once per start, after the app's own
 startup and before it serves (gate.wrap_lifespan). It is unknown until a
 start has taken it, and after a start whose take failed or timed out. It names the set the process serves, never read from
 an answer, so a tool registered after the start is not in it; a tools/list
