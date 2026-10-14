@@ -10,6 +10,8 @@ central-bank routing without explicit failures here.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from sugra_api_mcp.catalog.aliases import (
@@ -4630,16 +4632,147 @@ def test_each_series_of_a_question_is_asked_for_the_places_it_names(
     assert {key["key"] for key in top["macro_keys"]} == series, top
 
 
-@pytest.mark.parametrize("query,word_only", [
-    ("daily streamflow Potomac", {"sec_edgar_daily_index_by_form", "short_interest_daily_volume"}),
-    ("cost of trucking accidents", {"blockchain_charts_mining"}),
-    ("Phoenix temperature last summer", {"nbp_fx_last"}),
+@pytest.mark.parametrize("query,word_only,first", [
+    ("daily streamflow Potomac", {"sec_edgar_daily_index_by_form", "short_interest_daily_volume"},
+     "environment_usgs_water_dv"),
+    ("cost of trucking accidents", {"blockchain_charts_mining"}, "transport_road_events"),
+    ("Phoenix temperature last summer", {"nbp_fx_last"}, "v2_weather_history"),
 ])
-def test_a_generic_word_alone_carries_no_hit_beside_a_subject(catalog, query: str, word_only: set[str]) -> None:
+def test_a_generic_word_alone_carries_no_hit_beside_a_subject(
+        catalog, query: str, word_only: set[str], first: str) -> None:
     """"daily", "cost" and "last" name no subject: an operation they alone
-    matched ranked above the one that says streamflow or road events."""
+    matched ranked above the one that says streamflow or road events, which
+    now answers first."""
     ids = [hit["operation_id"] for hit in search_catalog(catalog, query, limit=5)]
     assert word_only.isdisjoint(ids), ids
+    assert ids[0] == first, ids
+
+
+def test_a_subject_word_only_a_cut_hit_matches_drops_no_generic_hit(catalog) -> None:
+    """A hit whose score falls to zero or below is cut and never returned, so
+    the subject word it alone matched is no subject the answer holds: the
+    generic word keeps its operations, as it does on its own. The retired
+    operation matches the three subject words in three fields each, so it
+    scores above zero before its successor, which matches nothing, clamps it
+    to -1."""
+    words = ["quokka", "wombat", "numbat"]
+    cut = catalog.model_copy(update={"endpoints": [
+        endpoint.model_copy(update={
+            "summary": f"{endpoint.summary} {' '.join(words)}",
+            "description": f"{endpoint.description} {' '.join(words)}",
+            "keywords": [*endpoint.keywords, *words],
+            "deprecated": True, "replaced_by": "geocoding_status"})
+        if endpoint.operation_id == "transport_road_events" else endpoint
+        for endpoint in catalog.endpoints]})
+    every = search_catalog(cut, "daily quokka wombat numbat", limit=50)
+    assert "transport_road_events" not in [hit["operation_id"] for hit in every], every
+    ids = [hit["operation_id"] for hit in every[:5]]
+    assert ids and ids[0] == "sec_edgar_daily_index_by_form", ids
+
+
+@pytest.mark.parametrize("query,word_only", [
+    ("daily last streamflow", {"snb_fx_daily", "bcb_fx", "cnb_fx", "macro_country_section"}),
+    ("daily global streamflow", {"maritime_chokepoints_activity", "maritime_chokepoints_panama_transits",
+                                 "maritime_ports_activity", "news_wikipedia_pageviews_aggregate"}),
+])
+def test_the_coverage_count_of_two_generic_words_is_no_subject_word(
+        catalog, query: str, word_only: set[str]) -> None:
+    """A hit that matches two generic words carries the coverage count "2";
+    the count is a mark, not a word the question said, so it must not keep
+    the hit beside the operation that says streamflow."""
+    ids = [hit["operation_id"] for hit in search_catalog(catalog, query, limit=5)]
+    assert word_only.isdisjoint(ids), ids
+    assert ids[0] == "environment_usgs_water_dv", ids
+
+
+@pytest.mark.parametrize("mark", [
+    "clamped-below:live", "lifted-above:national-sources", "first:several-series", "coverage:2",
+    "geo-mismatch:JP", "geo-uncovered:CA,MX", "cb-mismatch:boe_", "deprecated->transport_road_events",
+    # A kind no part of the search writes today stands for the next mark.
+    "later-mark:streamflow",
+])
+def test_a_mark_on_a_hit_is_no_word_the_question_said(mark: str) -> None:
+    from sugra_api_mcp.catalog.search import _generic_only, _matched_values
+
+    assert _matched_values([mark]) == []
+    assert _generic_only(["summary:daily", mark])
+    assert not _generic_only([mark])
+
+
+_REASON_HEAD_RE = re.compile(r"[a-z][a-z_-]*(?=:|->)")
+# Strings of the kind shape that are no reason: the error code of the
+# over-long query reply.
+_NOT_REASON_KINDS = frozenset({"query_too_long"})
+
+
+def _reason_kinds_in(source: str) -> set[str]:
+    """The kind of every reason-shaped string in the source, read from the
+    string itself and not from how it reaches a hit, so a reason written by
+    extend, +=, a tuple, an alias or a helper is read all the same. A string
+    whose kind is computed (f"{kind}:...") cannot be read and fails."""
+    import ast
+
+    kinds = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.JoinedStr) and node.values:
+            first = node.values[0]
+            if isinstance(first, ast.Constant):
+                head = first.value
+            else:
+                after = node.values[1] if len(node.values) > 1 else None
+                assert not (isinstance(after, ast.Constant)
+                            and _REASON_HEAD_RE.match("x" + after.value)), (
+                    f"line {node.lineno}: a reason kind this test cannot read")
+                continue
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            head = node.value
+        else:
+            continue
+        found = _REASON_HEAD_RE.match(head)
+        if found:
+            kinds.add(found.group(0) + ("" if head[found.end()] == ":" else "->"))
+    return kinds - _NOT_REASON_KINDS
+
+
+def test_the_reason_scan_reads_every_way_a_reason_is_written() -> None:
+    source = (
+        'why.extend(["later-a:x"])\n'
+        'why += (f"later-b:{v}",)\n'
+        'marks = why\nmarks.append("later-c:" + v)\n'
+        'def add(reasons): reasons.append(f"later-d:{v}")\n'
+    )
+    assert _reason_kinds_in(source) == {"later-a", "later-b", "later-c", "later-d"}
+    with pytest.raises(AssertionError):
+        _reason_kinds_in('why.append(f"{kind}:{v}")\n')
+
+
+def test_every_reason_kind_search_writes_is_a_match_or_a_mark() -> None:
+    """A kind written but named in neither set would read as a mark with no
+    one deciding it; a renamed match kind would silently stop arming the
+    generic-word filter. Both sets must also hold only kinds still written."""
+    import inspect
+
+    from sugra_api_mcp.catalog import search
+    from sugra_api_mcp.catalog.search import _MARK_KINDS, _MATCH_KINDS
+
+    kinds = _reason_kinds_in(inspect.getsource(search))
+    # A reason with no kind, the successor pointer "deprecated->...", is
+    # never read as a match.
+    assert {kind for kind in kinds if kind.endswith("->")} == {"deprecated->"}
+    kinds -= {"deprecated->"}
+    assert _MATCH_KINDS.isdisjoint(_MARK_KINDS)
+    assert kinds == _MATCH_KINDS | _MARK_KINDS, (
+        sorted(kinds - _MATCH_KINDS - _MARK_KINDS), sorted((_MATCH_KINDS | _MARK_KINDS) - kinds))
+
+
+@pytest.mark.parametrize("match", [
+    "summary:streamflow", "alias:consumer price index", "name:currency pair", "macro-key:us/gdp",
+    "pattern:ticker->markets", "toolset-intent:weather",
+])
+def test_a_match_beside_a_generic_word_keeps_the_hit(match: str) -> None:
+    from sugra_api_mcp.catalog.search import _generic_only
+
+    assert not _generic_only(["summary:daily", match])
 
 
 @pytest.mark.parametrize("query,first", [
