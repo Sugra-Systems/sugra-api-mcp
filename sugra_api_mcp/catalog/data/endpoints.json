@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-10-12T15:39:27Z",
+  "built_at": "2026-10-14T19:50:11Z",
   "endpoint_count": 1625,
   "endpoints": [
     {
@@ -85643,9 +85643,16 @@
           "name": "asset_type",
           "required": false,
           "schema": {
-            "$ref": "#/components/schemas/AssetType",
             "default": "power_plant",
-            "description": "power_plant | generator | substation | line."
+            "description": "power_plant | generator | substation | line.",
+            "enum": [
+              "power_plant",
+              "generator",
+              "substation",
+              "line"
+            ],
+            "title": "AssetType",
+            "type": "string"
           }
         },
         {
@@ -85789,9 +85796,21 @@
           "name": "metric",
           "required": false,
           "schema": {
-            "$ref": "#/components/schemas/GridMetric",
             "default": "demand",
-            "description": "demand | demand_forecast | net_generation | total_interchange | co2_intensity (GB/DK) | co2_intensity_forecast (GB) | embedded_wind_forecast (GB) | embedded_solar_forecast (GB) | price (AU NEM or ENTSO-E)."
+            "description": "demand | demand_forecast | net_generation | total_interchange | co2_intensity (GB/DK) | co2_intensity_forecast (GB) | embedded_wind_forecast (GB) | embedded_solar_forecast (GB) | price (AU NEM or ENTSO-E).",
+            "enum": [
+              "demand",
+              "demand_forecast",
+              "net_generation",
+              "total_interchange",
+              "co2_intensity",
+              "co2_intensity_forecast",
+              "embedded_wind_forecast",
+              "embedded_solar_forecast",
+              "price"
+            ],
+            "title": "GridMetric",
+            "type": "string"
           }
         },
         {
@@ -85800,9 +85819,14 @@
           "name": "frequency",
           "required": false,
           "schema": {
-            "$ref": "#/components/schemas/Frequency",
             "default": "hourly",
-            "description": "hourly (UTC) | local_hourly (local time). US regions only."
+            "description": "hourly (UTC) | local_hourly (local time). US regions only.",
+            "enum": [
+              "hourly",
+              "local_hourly"
+            ],
+            "title": "Frequency",
+            "type": "string"
           }
         },
         {
@@ -85895,9 +85919,14 @@
           "name": "frequency",
           "required": false,
           "schema": {
-            "$ref": "#/components/schemas/Frequency",
             "default": "hourly",
-            "description": "hourly (UTC) | local_hourly (local time). US regions only."
+            "description": "hourly (UTC) | local_hourly (local time). US regions only.",
+            "enum": [
+              "hourly",
+              "local_hourly"
+            ],
+            "title": "Frequency",
+            "type": "string"
           }
         },
         {
@@ -85990,9 +86019,14 @@
           "name": "frequency",
           "required": false,
           "schema": {
-            "$ref": "#/components/schemas/Frequency",
             "default": "hourly",
-            "description": "hourly (UTC) | local_hourly (local time). US regions only."
+            "description": "hourly (UTC) | local_hourly (local time). US regions only.",
+            "enum": [
+              "hourly",
+              "local_hourly"
+            ],
+            "title": "Frequency",
+            "type": "string"
           }
         },
         {
@@ -86169,9 +86203,15 @@
           "name": "tech",
           "required": false,
           "schema": {
-            "$ref": "#/components/schemas/PvTech",
             "default": "c_si",
-            "description": "Module technology, sets the temperature coefficient (c_si -0.0040, cdte -0.0025, cigs -0.0036 /K)."
+            "description": "Module technology, sets the temperature coefficient (c_si -0.0040, cdte -0.0025, cigs -0.0036 /K).",
+            "enum": [
+              "c_si",
+              "cdte",
+              "cigs"
+            ],
+            "title": "PvTech",
+            "type": "string"
           }
         },
         {
@@ -86255,9 +86295,14 @@
           "name": "transposition",
           "required": false,
           "schema": {
-            "$ref": "#/components/schemas/PvTransposition",
             "default": "hay_davies",
-            "description": "Plane-of-array model: hay_davies (anisotropic) or isotropic (Liu-Jordan)."
+            "description": "Plane-of-array model: hay_davies (anisotropic) or isotropic (Liu-Jordan).",
+            "enum": [
+              "hay_davies",
+              "isotropic"
+            ],
+            "title": "PvTransposition",
+            "type": "string"
           }
         },
         {
@@ -86315,9 +86360,18 @@
           "name": "sector",
           "required": false,
           "schema": {
-            "$ref": "#/components/schemas/RetailSector",
             "default": "ALL",
-            "description": "Consumer sector: RES | COM | IND | TRA | OTH | ALL."
+            "description": "Consumer sector: RES | COM | IND | TRA | OTH | ALL.",
+            "enum": [
+              "RES",
+              "COM",
+              "IND",
+              "TRA",
+              "OTH",
+              "ALL"
+            ],
+            "title": "RetailSector",
+            "type": "string"
           }
         },
         {
@@ -86326,9 +86380,15 @@
           "name": "frequency",
           "required": false,
           "schema": {
-            "$ref": "#/components/schemas/RetailFrequency",
             "default": "monthly",
-            "description": "monthly | quarterly | annual."
+            "description": "monthly | quarterly | annual.",
+            "enum": [
+              "monthly",
+              "quarterly",
+              "annual"
+            ],
+            "title": "RetailFrequency",
+            "type": "string"
           }
         },
         {
@@ -86563,9 +86623,17 @@
           "name": "sector",
           "required": false,
           "schema": {
-            "$ref": "#/components/schemas/TariffSector",
             "default": "all",
-            "description": "residential | commercial | industrial | lighting | all."
+            "description": "residential | commercial | industrial | lighting | all.",
+            "enum": [
+              "residential",
+              "commercial",
+              "industrial",
+              "lighting",
+              "all"
+            ],
+            "title": "TariffSector",
+            "type": "string"
           }
         },
         {
@@ -88757,9 +88825,16 @@
           "name": "window",
           "required": false,
           "schema": {
-            "$ref": "#/components/schemas/QuakeWindow",
             "default": "hour",
-            "description": "Ingested time window to read: hour/day carry all magnitudes; week/month carry M2.5+."
+            "description": "Ingested time window to read: hour/day carry all magnitudes; week/month carry M2.5+.",
+            "enum": [
+              "hour",
+              "day",
+              "week",
+              "month"
+            ],
+            "title": "QuakeWindow",
+            "type": "string"
           }
         },
         {
@@ -89088,9 +89163,15 @@
           "name": "status",
           "required": false,
           "schema": {
-            "$ref": "#/components/schemas/ActivationStatus",
             "default": "all",
-            "description": "active | closed | all."
+            "description": "active | closed | all.",
+            "enum": [
+              "active",
+              "closed",
+              "all"
+            ],
+            "title": "ActivationStatus",
+            "type": "string"
           }
         },
         {
