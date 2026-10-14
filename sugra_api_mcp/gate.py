@@ -73,7 +73,8 @@ MAX_BUFFERED_LINES = 20_000
 # and how long the telemetry flush after it may take.
 DRAIN_SECONDS = 1.0
 FLUSH_TIMEOUT_SECONDS = 10.0
-# How long the start may spend on the served tools digest (wrap_lifespan).
+# How long the start may spend on the served tools digests (wrap_lifespan):
+# the default and the ChatGPT one are taken side by side within it.
 SERVED_TOOLS_TIMEOUT_SECONDS = 5.0
 
 # The request scope state key under which GateMiddleware stores the request's
@@ -608,9 +609,12 @@ def wrap_lifespan(
     seconds into the demand counter (demand.tools_digest); it is reset to
     unknown first, and an exception or a timeout leaves it unknown and the app
     still starts, while a cancellation stops the start. The ChatGPT profile's
-    digest is taken the same way from chatgpt_tools, which defaults to
-    served_chatgpt_tool_definitions when served_tools is the default
-    provider; with another served_tools and no chatgpt_tools it stays unknown. While the app runs, a summary and the demand count are written every
+    digest is taken the same way from chatgpt_tools, at the same time, so the
+    two together hold the start for at most served_tools_timeout seconds.
+    chatgpt_tools defaults to served_chatgpt_tool_definitions when served_tools
+    is the default provider; with another served_tools and no chatgpt_tools
+    the ChatGPT digest stays unknown, and a warning says so at each start.
+    While the app runs, a summary and the demand count are written every
     interval seconds. On the way out, after inner has exited, it waits up to
     drain_seconds for tracked requests still finishing, writes the last
     summary and the demand count, awaits each on_exit
@@ -641,13 +645,19 @@ def wrap_lifespan(
         writer = asyncio.create_task(_write_every(gate_summary, interval, counter))
         try:
             async with inner(app) as state:
-                await _take_served_digest(counter, served_tools, served_tools_timeout)
+                takes = [_take_served_digest(counter, served_tools, served_tools_timeout)]
                 if chatgpt_tools is not None:
-                    await _take_served_digest(
-                        counter, chatgpt_tools, served_tools_timeout, "chatgpt_digest"
+                    takes.append(
+                        _take_served_digest(
+                            counter, chatgpt_tools, served_tools_timeout, "chatgpt_digest"
+                        )
                     )
                 else:
                     counter.chatgpt_digest = demand.UNKNOWN_TOOLS
+                    logger.warning("ChatGPT tools digest not taken (no provider).")
+                # Side by side: one budget for both, and a cancellation of the
+                # start cancels both (each cancels its own provider task).
+                await asyncio.gather(*takes)
                 yield state
         finally:
             writer.cancel()
