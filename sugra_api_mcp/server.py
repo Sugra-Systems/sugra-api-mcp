@@ -573,8 +573,9 @@ MAX_REQUEST_BODY_BYTES = 4 * 1024 * 1024
 # list_sources) and leaves each tool's use to its own description.
 SERVER_INSTRUCTIONS = (
     "Sugra API - read-only data across markets, macro, entities, news, network and "
-    "earth. Each listed tool says in its description what it returns and which inputs "
-    "it takes. list_toolsets and list_sources show the areas of the catalog behind them."
+    "earth. Each listed tool's description says what it returns, and its input schema "
+    "describes each input it takes. list_toolsets and list_sources show the areas of the "
+    "catalog behind them."
 )
 
 mcp = SugraFastMCP(

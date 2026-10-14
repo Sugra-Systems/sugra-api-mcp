@@ -135,9 +135,12 @@ async def test_the_texts_every_client_reads_name_only_tools_every_profile_is_lis
         assert named <= listed_to_all, named - listed_to_all
     assert {"list_toolsets", "list_sources"} <= set(re.findall(r"[a-z_]+", SERVER_INSTRUCTIONS))
     assert not _VENDOR_NAMES.search(SERVER_INSTRUCTIONS)
-    # The instructions tell every client each listed tool describes itself.
+    # The instructions tell every client each listed tool describes itself
+    # and each of its inputs.
     for tool in [*await _list(CHATGPT), *await _list(CLAUDE)]:
         assert (tool.get("description") or "").strip(), tool["name"]
+        for name, schema in tool["inputSchema"].get("properties", {}).items():
+            assert str(schema.get("description") or "").strip(), (tool["name"], name)
     # No profile is told of raw endpoint access it may not be listed.
     assert "endpoint" not in plane_error["retry_hint"]
 
