@@ -14,6 +14,7 @@ from mcp.types import Implementation
 
 from sugra_api_mcp import tools  # noqa: F401
 from sugra_api_mcp.catalog.loader import load_catalog
+from sugra_api_mcp.catalog.models import Endpoint, EndpointParameter
 from sugra_api_mcp.server import (
     CHATGPT_PROFILE,
     DEFAULT_PROFILE,
@@ -121,6 +122,47 @@ def test_no_typed_tool_asks_for_a_location() -> None:
         assert set(tool.required) <= set(properties), name
 
 
+# Location-shaped input names, kept apart from typed.LOCATION_PARAMETERS on purpose.
+_LOCATION_SHAPED = re.compile(
+    r"lat|lon|lng|coord|addr|zip|postal|post_?code|city|station|place|near|bbox|radius|point|geo"
+)
+# Inputs that match it but take a country or region CODE, which the rules allow.
+_CODE_INPUTS = {
+    "geo": "a country code such as DE",
+}
+# Names the pattern matches that say nothing about a place.
+_NOT_LOCATIONS = {"latest"}
+
+
+def test_no_typed_input_is_shaped_like_a_location() -> None:
+    for name, tool in typed.typed_tools().items():
+        for parameter, schema in tool.tool.inputSchema["properties"].items():
+            if parameter in _NOT_LOCATIONS:
+                continue
+            if _LOCATION_SHAPED.search(parameter):
+                assert parameter in _CODE_INPUTS, (name, parameter)
+                assert "code" in schema["description"].lower(), (name, parameter)
+
+
+def test_an_operation_that_needs_a_location_has_no_typed_tool() -> None:
+    endpoint = Endpoint(
+        operation_id="weather_point",
+        method="GET",
+        path="/api/v1/weather",
+        summary="",
+        description="",
+        tags=[],
+        toolset="core",
+        parameters=[
+            EndpointParameter(name="lat", location="query", required=True, schema_={"type": "number"}),
+            EndpointParameter(name="units", location="query", required=False, schema_={"type": "string"}),
+        ],
+    )
+    entry = {"name": "get_weather", "title": "Get weather", "description": "Weather."}
+    with pytest.raises(ValueError, match="drops required parameters lat"):
+        typed._build(entry, endpoint, {})
+
+
 def test_typed_metadata_names_no_commercial_vendor() -> None:
     for name, tool in typed.typed_tools().items():
         text = json.dumps(tool.tool.model_dump(by_alias=True, exclude_none=True))
@@ -193,6 +235,30 @@ async def test_a_typed_call_refuses_a_location_or_unknown_argument(monkeypatch) 
     payload = _payload(result)
     assert payload["error"] == "unknown_parameters"
     assert payload["unknown"] == ["max_lat", "min_lat"]
+    assert fake.calls == []
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"symbol": "AAPL", "limit": 0},
+        {"symbol": "AAPL", "limit": "many"},
+        {"symbol": 42},
+    ],
+)
+async def test_a_typed_call_refuses_arguments_outside_its_schema(monkeypatch, arguments) -> None:
+    fake = FakeClient({"data": []})
+    monkeypatch.setattr(gateway, "get_client", lambda: fake)
+
+    result = await _call("get_price_history", arguments)
+
+    assert result.isError is True
+    payload = _payload(result)
+    assert payload["error"] == "invalid_arguments"
+    assert [item["parameter"] for item in payload["invalid"]] == [
+        name for name in ("limit", "symbol") if name in arguments and arguments[name] != "AAPL"
+    ]
+    assert all(len(item["problem"]) <= typed.MAX_VIOLATION_CHARS + 3 for item in payload["invalid"])
     assert fake.calls == []
 
 

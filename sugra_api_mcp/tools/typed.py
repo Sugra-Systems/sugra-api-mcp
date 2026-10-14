@@ -14,6 +14,8 @@ SugraFastMCP.list_tools adds them for the ChatGPT profile only, so every other
 client keeps today's list byte for byte, and _call_tool_in_budget routes a
 typed name here. A call runs the same code path as call_endpoint, under a span
 named after the typed tool, and its response is reduced by minimize_response.
+Before any request, a call's arguments are held to the input schema the tool
+is listed with: names, required values, types, enums and bounds alike.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from functools import cache, lru_cache
 from importlib import resources
 from typing import Any
 
+from jsonschema import Draft202012Validator
 from mcp.types import Tool as MCPTool
 
 from ..catalog.loader import load_catalog
@@ -97,7 +100,12 @@ _ERROR_KEYS = (
     "unknown",
     "accepted",
     "did_you_mean",
+    "invalid",
 )
+
+# A refusal names at most this many schema violations, each message clipped.
+MAX_REPORTED_VIOLATIONS = 5
+MAX_VIOLATION_CHARS = 200
 
 # Top-level keys of a successful payload that are request or logging metadata.
 _DROPPED_KEYS = frozenset({
@@ -146,6 +154,7 @@ class TypedTool:
     tool: MCPTool
     accepted: frozenset[str]
     required: tuple[str, ...]
+    validator: Draft202012Validator
 
 
 def _clip(text: str, limit: int = MAX_PARAMETER_DESCRIPTION) -> str:
@@ -197,6 +206,17 @@ def exposed_parameters(endpoint: Endpoint) -> list[EndpointParameter]:
 
 def _build(entry: dict[str, Any], endpoint: Endpoint, fallbacks: dict[str, str]) -> TypedTool:
     parameters = exposed_parameters(endpoint)
+    exposed = {p.name for p in parameters}
+    dropped = [
+        p.name
+        for p in endpoint.parameters
+        if p.required and p.location in ("path", "query") and p.name not in exposed
+    ]
+    if dropped:
+        # An operation that cannot run without a location input has no typed tool.
+        raise ValueError(
+            f"typed_tools.json: {entry['name']} drops required parameters {', '.join(dropped)}"
+        )
     required = tuple(p.name for p in parameters if p.required)
     input_schema: dict[str, Any] = {
         "type": "object",
@@ -205,6 +225,7 @@ def _build(entry: dict[str, Any], endpoint: Endpoint, fallbacks: dict[str, str])
     }
     if required:
         input_schema["required"] = list(required)
+    Draft202012Validator.check_schema(input_schema)
     tool = MCPTool(
         name=entry["name"],
         title=entry["title"],
@@ -218,6 +239,7 @@ def _build(entry: dict[str, Any], endpoint: Endpoint, fallbacks: dict[str, str])
         tool=tool,
         accepted=frozenset(p.name for p in parameters),
         required=required,
+        validator=Draft202012Validator(input_schema),
     )
 
 
@@ -293,6 +315,22 @@ async def _run(typed: TypedTool, *, operation_id: str, arguments: dict[str, Any]
             "error": "missing_required_parameters",
             "reason": f"{typed.name} needs: {', '.join(missing)}",
             "missing": missing,
+        }
+    violations = sorted(
+        typed.validator.iter_errors(arguments), key=lambda error: list(error.absolute_path)
+    )
+    if violations:
+        invalid = [
+            {
+                "parameter": ".".join(str(part) for part in error.absolute_path) or None,
+                "problem": _clip(error.message, MAX_VIOLATION_CHARS),
+            }
+            for error in violations[:MAX_REPORTED_VIOLATIONS]
+        ]
+        return {
+            "error": "invalid_arguments",
+            "reason": f"{typed.name} got arguments outside its input schema",
+            "invalid": invalid,
         }
     # The undecorated call_endpoint: the span is the typed tool's own, so
     # the call is not counted twice.

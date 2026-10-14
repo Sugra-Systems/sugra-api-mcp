@@ -117,6 +117,7 @@ class GateRecord:
         "failed",
         "longest_ms",
         "most_api_requests",
+        "served_profile",
     )
 
     def __init__(self) -> None:
@@ -126,6 +127,9 @@ class GateRecord:
         self.auth_refused = False
         self.longest_ms = 0
         self.most_api_requests = 0
+        # The client profile a tools/list on this request was answered for
+        # (server.list_tools), None when the request listed no tools.
+        self.served_profile: str | None = None
         self._open: set[_OpenCall] = set()
 
     def call_started(self, dispatch: observability.ToolDispatch) -> _OpenCall:
@@ -250,6 +254,13 @@ def _first_header(scope: Scope, name: bytes) -> str | None:
         if key.lower() == name:
             return value.decode("latin-1")
     return None
+
+
+def _user_agent_profile(user_agent: str | None) -> str:
+    # Imported here: server imports this module.
+    from .server import user_agent_profile
+
+    return user_agent_profile(user_agent)
 
 
 def _parsed(body: bytes) -> tuple[bool, object]:
@@ -445,11 +456,13 @@ class GateMiddleware:
                 except Exception as e:
                     logger.warning("Gate line failed (%s).", type(e).__name__)
             if capture is not None:
-                self._count(scope, capture, body_read and not body_too_large)
+                self._count(scope, capture, body_read and not body_too_large, record.served_profile)
             if probe_on:
                 probe.write(scope, probe_facts, status)
 
-    def _count(self, scope: Scope, capture: _DemandCapture, parsed: bool) -> None:
+    def _count(
+        self, scope: Scope, capture: _DemandCapture, parsed: bool, served_profile: str | None
+    ) -> None:
         """Add the request to the demand count once, or to its failures; never raises.
 
         A request whose demand step raised is counted in failed and nowhere
@@ -473,8 +486,13 @@ class GateMiddleware:
             client = capture.client if parsed else demand.NOT_APPLICABLE
             status = demand.status_of(capture.status)
             if method == demand.TOOLS_LIST and status.startswith("2"):
-                # The set the process serves, never read from this answer (demand.py).
-                client = self.demand.digest_for(_first_header(scope, b"user-agent"))
+                # The set the process serves, never read from this answer (demand.py),
+                # for the profile the listing was answered for; the User-Agent's
+                # profile only when the listing recorded none.
+                profile = served_profile
+                if profile is None:
+                    profile = _user_agent_profile(_first_header(scope, b"user-agent"))
+                client = self.demand.digest_for(profile)
             self.demand.add((method, status, host, ua, origin, client))
             # The request is counted above; its extra counts never undo that.
             with contextlib.suppress(Exception):

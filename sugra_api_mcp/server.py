@@ -135,7 +135,16 @@ class SugraFastMCP(FastMCP):
         self._ui_template_uri = resource_uri
 
     async def list_tools(self) -> list[MCPTool]:
-        return await self.list_tools_for(client_profile())
+        """The tools/list answer of the requesting client's profile.
+
+        The profile is noted on the request's gate record, so the demand line
+        of this tools/list carries the digest of the set this answer is.
+        """
+        profile = client_profile()
+        record = gate.current_record()
+        if record is not None:
+            record.served_profile = profile
+        return await self.list_tools_for(profile)
 
     async def list_tools_for(self, profile: str) -> list[MCPTool]:
         """The tools/list answer of a client profile (client_profile)."""

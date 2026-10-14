@@ -247,12 +247,12 @@ class DemandCounter:
         self._lock = threading.Lock()
         self._write_lock = threading.Lock()
 
-    def digest_for(self, user_agent: str | None) -> str:
-        """The served tools digest of the profile a tools/list User-Agent names."""
+    def digest_for(self, profile: str) -> str:
+        """The served tools digest of a client profile (server.client_profile)."""
         # Imported here: server imports gate, which imports this module.
-        from .server import CHATGPT_PROFILE, user_agent_profile
+        from .server import CHATGPT_PROFILE
 
-        if user_agent_profile(user_agent) == CHATGPT_PROFILE:
+        if profile == CHATGPT_PROFILE:
             return self.chatgpt_digest
         return self.served_digest
 

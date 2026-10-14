@@ -42,6 +42,7 @@ dependencies = [
     "mcp>=1.30.0,<2",
     "httpx>=0.27",
     "pydantic>=2.9",
+    "jsonschema>=4.20",
 ]
 
 [project.optional-dependencies]
