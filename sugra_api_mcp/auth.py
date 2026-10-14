@@ -114,6 +114,14 @@ PUBLIC_MCP_METHODS = frozenset(
     }
 )
 
+# Clients that decide whether a server needs sign-in from the answer to an
+# unauthenticated initialize: a 200 reads as "no sign-in", so they never fetch
+# the protected resource metadata and every tools/call then fails with 401.
+# Their discovery methods get the bare challenge instead. Matched on the
+# lower-cased User-Agent prefix. The Grok web connector (grok.com) sends
+# grok-connectors-manager/<version>; Grok Build (grok-cli) is not in it.
+SIGN_IN_FIRST_USER_AGENTS = ("grok-connectors-manager/",)
+
 # Unauthenticated GET/HEAD surface of the hosted app: the human landing page on
 # the host root, the liveness probe, and the skills index with the exact file
 # paths it lists. STRICT exact-path allowlist (no slash normalization: /health/
@@ -634,6 +642,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     async def _is_public_mcp_request(self, request: Request) -> bool:
         if request.method != "POST" or request.url.path.rstrip("/") != "/mcp":
+            return False
+
+        user_agent = request.headers.get("user-agent", "").strip().lower()
+        if user_agent.startswith(SIGN_IN_FIRST_USER_AGENTS):
             return False
 
         content_length = request.headers.get("content-length")

@@ -640,6 +640,74 @@ def test_auth_middleware_allows_public_mcp_discovery_methods_without_bearer(
     assert response.json() == {"method": method}
 
 
+@pytest.mark.parametrize(
+    "method",
+    [
+        "initialize",
+        "notifications/initialized",
+        "tools/list",
+        "resources/list",
+        "prompts/list",
+        "ping",
+    ],
+)
+@pytest.mark.parametrize(
+    "user_agent",
+    ["grok-connectors-manager/0.1.0", "Grok-Connectors-Manager/2.0", " grok-connectors-manager/0.1.0"],
+)
+def test_auth_middleware_challenges_the_grok_web_connector_on_discovery(
+    auth_config,
+    method,
+    user_agent,
+):
+    """The Grok web connector reads a 200 on initialize as "no sign-in" and never signs in."""
+
+    async def ok(_request):
+        return JSONResponse({"ok": True})
+
+    app = Starlette(routes=[Route("/mcp", ok, methods=["POST"])])
+    app.add_middleware(AuthMiddleware, authenticator=Authenticator(auth_config))
+
+    response = TestClient(app).post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 1, "method": method, "params": {}},
+        headers={"user-agent": user_agent},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"error": "missing_bearer_token"}
+    assert response.headers["WWW-Authenticate"] == (
+        'Bearer resource_metadata="https://app.sugra.ai/.well-known/oauth-protected-resource"'
+    )
+
+
+@pytest.mark.parametrize(
+    "user_agent",
+    [
+        "grok-cli/1.0.51",
+        "openai-mcp/1.0.0",
+        "Claude-User",
+        "python-httpx/0.28.1",
+        "mcpbeat/0.1 (+https://mcpbeat.com/bot/; liveness check)",
+        "my-grok-connectors-manager/1.0",
+    ],
+)
+def test_auth_middleware_keeps_anonymous_initialize_for_other_clients(auth_config, user_agent):
+    async def ok(_request):
+        return JSONResponse({"ok": True})
+
+    app = Starlette(routes=[Route("/mcp", ok, methods=["POST"])])
+    app.add_middleware(AuthMiddleware, authenticator=Authenticator(auth_config))
+
+    response = TestClient(app).post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+        headers={"user-agent": user_agent},
+    )
+
+    assert response.status_code == 200
+
+
 def test_auth_middleware_rejects_unauthenticated_tool_calls(auth_config, monkeypatch):
     """No tool is callable without a token: every registered name, and an unknown one."""
     monkeypatch.setenv("SUGRA_API_KEY", "dummy")
