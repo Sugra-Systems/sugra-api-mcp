@@ -153,7 +153,10 @@ class SugraFastMCP(FastMCP):
         if profile == CHATGPT_PROFILE:
             from .tools.typed import typed_tool_listing
 
-            tools = [*tools, *typed_tool_listing()]
+            tools = [
+                *(tool for tool in tools if tool.name not in CHATGPT_UNLISTED_TOOLS),
+                *typed_tool_listing(),
+            ]
         return [_with_ui_template(_with_oauth_security(tool), template_uri) for tool in tools]
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
@@ -416,10 +419,16 @@ def _release_tool_call(caller: str) -> None:
             _in_flight_by_caller.pop(caller, None)
 
 
-# The client profiles tools/list serves. ChatGPT is also listed the typed tools
-# (tools/typed.py); every other client gets the registered tools only.
+# The client profiles tools/list serves. ChatGPT is listed the typed tools
+# (tools/typed.py) in place of the generic catalog tools below; every other
+# client gets the registered tools only.
 DEFAULT_PROFILE = "default"
 CHATGPT_PROFILE = "chatgpt"
+# Registered tools a ChatGPT session is not listed: each typed tool runs one
+# operation instead. They stay callable by name, as every registered tool is.
+CHATGPT_UNLISTED_TOOLS = frozenset(
+    {"search_endpoints", "describe_endpoint", "call_endpoint", "fetch_data"}
+)
 # What ChatGPT's connector sends as initialize clientInfo.name, and the
 # product token its User-Agent starts with.
 CHATGPT_CLIENT_NAME = "openai-mcp"

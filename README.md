@@ -333,7 +333,7 @@ These three tools wrap an internal composed plane that requires an infrastructur
 
 ### ChatGPT tool set
 
-A session whose MCP `initialize` names the client `openai-mcp` (ChatGPT), or that sends no client name and a User-Agent starting with it, lists 145 typed tools beside the tools above: one tool per operation, with a verb name such as `get_stock_quotes` or `get_price_history`, its own input schema and a compact result. Typed tools take no raw location inputs (coordinates, addresses, postal codes). Every other client lists the tools above unchanged; any client may still call a typed tool by name. The set is defined in `sugra_api_mcp/catalog/data/typed_tools.json`.
+A session whose MCP `initialize` names the client `openai-mcp` (ChatGPT), or that sends no client name and a User-Agent starting with it, lists 145 typed tools in place of `search_endpoints`, `describe_endpoint`, `call_endpoint` and `fetch_data`, beside the other tools above: one tool per operation, with a verb name such as `get_stock_quotes` or `get_price_history`, its own input schema and a compact result. Typed tools take no raw location inputs (coordinates, addresses, postal codes). Every other client lists the tools above unchanged; any client may still call any of these tools by name. The set is defined in `sugra_api_mcp/catalog/data/typed_tools.json`.
 
 ## CLI
 

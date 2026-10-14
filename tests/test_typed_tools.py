@@ -1,4 +1,4 @@
-"""Typed tools: one tool per catalog operation, listed to the ChatGPT profile only."""
+"""Typed tools: one tool per catalog operation, listed to the ChatGPT profile only, in place of the generic catalog tools."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from sugra_api_mcp.catalog.loader import load_catalog
 from sugra_api_mcp.catalog.models import Endpoint, EndpointParameter
 from sugra_api_mcp.server import (
     CHATGPT_PROFILE,
+    CHATGPT_UNLISTED_TOOLS,
     DEFAULT_PROFILE,
     OAUTH_SECURITY_SCHEMES,
     client_profile,
@@ -72,14 +73,19 @@ async def test_other_clients_keep_todays_list() -> None:
     assert claude == await _list(None)
 
 
-async def test_chatgpt_is_listed_the_typed_tools_beside_todays_list() -> None:
+async def test_chatgpt_is_listed_the_typed_tools_in_place_of_the_generic_ones() -> None:
     chatgpt = await _list(CHATGPT)
     names = [tool["name"] for tool in chatgpt]
-    expected = _registered_names() | set(typed.typed_tools())
+    expected = (_registered_names() - CHATGPT_UNLISTED_TOOLS) | set(typed.typed_tools())
     assert len(names) == len(set(names)) == len(expected)
     assert set(names) == expected
-    claude = await _list(CLAUDE)
-    assert chatgpt[: len(claude)] == claude
+    kept = [tool for tool in await _list(CLAUDE) if tool["name"] not in CHATGPT_UNLISTED_TOOLS]
+    assert chatgpt[: len(kept)] == kept
+
+
+def test_every_unlisted_name_is_a_registered_tool() -> None:
+    # A renamed tool would otherwise slip back into ChatGPT's list unnoticed.
+    assert _registered_names() >= CHATGPT_UNLISTED_TOOLS
 
 
 def test_the_profile_follows_client_info_then_user_agent() -> None:
