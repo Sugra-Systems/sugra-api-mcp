@@ -67,7 +67,7 @@ def _payload(result: Any) -> dict[str, Any]:
 
 def _without(description: str, name: str) -> str:
     sentence = CHATGPT_DROPPED_SENTENCES.get(name)
-    return description if sentence is None else " ".join(description.replace(sentence, " ").split())
+    return description if sentence is None else description.replace(sentence + " ", "", 1)
 
 
 def _registered_names() -> set[str]:
@@ -108,6 +108,7 @@ async def test_nothing_chatgpt_is_listed_names_a_tool_it_is_not_listed() -> None
         # keeps it, and ChatGPT's text is the registered one without it.
         assert sentence in claude[name]["description"]
         assert listed[name]["description"] == _without(claude[name]["description"], name)
+        assert sentence not in listed[name]["description"]
     # The default profile is still told the search, describe, call loop by the
     # description of the tool that starts it, now that initialize does not.
     loop = claude["search_endpoints"]["description"]
@@ -134,6 +135,11 @@ async def test_the_texts_every_client_reads_name_only_tools_every_profile_is_lis
         assert named <= listed_to_all, named - listed_to_all
     assert {"list_toolsets", "list_sources"} <= set(re.findall(r"[a-z_]+", SERVER_INSTRUCTIONS))
     assert not _VENDOR_NAMES.search(SERVER_INSTRUCTIONS)
+    # The instructions tell every client each listed tool describes itself.
+    for tool in [*await _list(CHATGPT), *await _list(CLAUDE)]:
+        assert (tool.get("description") or "").strip(), tool["name"]
+    # No profile is told of raw endpoint access it may not be listed.
+    assert "endpoint" not in plane_error["retry_hint"]
 
 
 def test_the_profile_follows_client_info_then_user_agent() -> None:

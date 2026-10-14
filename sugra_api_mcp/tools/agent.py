@@ -173,8 +173,8 @@ def _map_plane_error(result: Any) -> Any:
             "elapsed_ms": result.get("elapsed_ms"),
             "retry_hint": (
                 "Hosted gateway infrastructure issue (internal plane token), NOT your "
-                "API key. Retrying will not help. Use the other listed data tools "
-                "for raw endpoints, and report this to support@sugra.systems."
+                "API key. Retrying will not help. Use the other tools listed for "
+                "this session, and report this to support@sugra.systems."
             ),
         }
     return result

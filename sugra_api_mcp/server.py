@@ -448,7 +448,9 @@ def _with_chatgpt_description(tool: MCPTool) -> MCPTool:
     sentence = CHATGPT_DROPPED_SENTENCES.get(tool.name)
     if sentence is None or tool.description is None:
         return tool
-    description = " ".join(tool.description.replace(sentence, " ").split())
+    # The sentence opens its docstring line, so dropping it with the space that
+    # follows leaves the rest of the registered layout as it is.
+    description = tool.description.replace(sentence + " ", "", 1)
     return tool.model_copy(update={"description": description})
 
 
