@@ -16,14 +16,16 @@ from sugra_api_mcp import tools  # noqa: F401
 from sugra_api_mcp.catalog.loader import load_catalog
 from sugra_api_mcp.catalog.models import Endpoint, EndpointParameter
 from sugra_api_mcp.server import (
+    CHATGPT_DESCRIPTIONS,
     CHATGPT_PROFILE,
     CHATGPT_UNLISTED_TOOLS,
     DEFAULT_PROFILE,
     OAUTH_SECURITY_SCHEMES,
+    SERVER_INSTRUCTIONS,
     client_profile,
     mcp,
 )
-from sugra_api_mcp.tools import gateway, typed
+from sugra_api_mcp.tools import agent, gateway, typed
 
 CHATGPT = Implementation(name="openai-mcp", version="1.0.0")
 CLAUDE = Implementation(name="claude-ai", version="0.1.0")
@@ -79,13 +81,47 @@ async def test_chatgpt_is_listed_the_typed_tools_in_place_of_the_generic_ones() 
     expected = (_registered_names() - CHATGPT_UNLISTED_TOOLS) | set(typed.typed_tools())
     assert len(names) == len(set(names)) == len(expected)
     assert set(names) == expected
-    kept = [tool for tool in await _list(CLAUDE) if tool["name"] not in CHATGPT_UNLISTED_TOOLS]
+    kept = [
+        {**tool, "description": CHATGPT_DESCRIPTIONS.get(tool["name"], tool["description"])}
+        for tool in await _list(CLAUDE)
+        if tool["name"] not in CHATGPT_UNLISTED_TOOLS
+    ]
     assert chatgpt[: len(kept)] == kept
+
+
+async def test_nothing_chatgpt_is_listed_names_a_tool_it_is_not_listed() -> None:
+    chatgpt = await _list(CHATGPT)
+    for tool in chatgpt:
+        text = json.dumps(tool)
+        named = {name for name in CHATGPT_UNLISTED_TOOLS if re.search(rf"{name}", text)}
+        assert not named, (tool["name"], named)
+    claude = {tool["name"]: tool for tool in await _list(CLAUDE)}
+    for name, description in CHATGPT_DESCRIPTIONS.items():
+        # Only ChatGPT's text is replaced; every other client keeps the registered one.
+        assert claude[name]["description"] != description
+        assert {tool["name"]: tool for tool in chatgpt}[name]["description"] == description
 
 
 def test_every_unlisted_name_is_a_registered_tool() -> None:
     # A renamed tool would otherwise slip back into ChatGPT's list unnoticed.
     assert _registered_names() >= CHATGPT_UNLISTED_TOOLS
+    assert _registered_names() >= CHATGPT_DESCRIPTIONS.keys()
+
+
+async def test_the_texts_every_client_reads_name_only_tools_every_profile_is_listed() -> None:
+    # initialize is answered before the client names itself, and the plane
+    # error reaches every profile, so neither may point at an unlisted tool.
+    every_tool = _registered_names() | set(typed.typed_tools())
+    listed_to_all = {tool["name"] for tool in await _list(CHATGPT)} & {
+        tool["name"] for tool in await _list(CLAUDE)
+    }
+    plane_error = agent._map_plane_error({"status_code": 403})
+    assert mcp._mcp_server.create_initialization_options().instructions == SERVER_INSTRUCTIONS
+    for text in (SERVER_INSTRUCTIONS, plane_error["retry_hint"]):
+        named = {word for word in re.findall(r"[a-z]+(?:_[a-z]+)+", text) if word in every_tool}
+        assert named <= listed_to_all, named - listed_to_all
+    assert {"list_toolsets", "list_sources"} <= set(re.findall(r"[a-z_]+", SERVER_INSTRUCTIONS))
+    assert not _VENDOR_NAMES.search(SERVER_INSTRUCTIONS)
 
 
 def test_the_profile_follows_client_info_then_user_agent() -> None:

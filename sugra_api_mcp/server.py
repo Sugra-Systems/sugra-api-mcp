@@ -154,7 +154,11 @@ class SugraFastMCP(FastMCP):
             from .tools.typed import typed_tool_listing
 
             tools = [
-                *(tool for tool in tools if tool.name not in CHATGPT_UNLISTED_TOOLS),
+                *(
+                    _with_chatgpt_description(tool)
+                    for tool in tools
+                    if tool.name not in CHATGPT_UNLISTED_TOOLS
+                ),
                 *typed_tool_listing(),
             ]
         return [_with_ui_template(_with_oauth_security(tool), template_uri) for tool in tools]
@@ -429,9 +433,28 @@ CHATGPT_PROFILE = "chatgpt"
 CHATGPT_UNLISTED_TOOLS = frozenset(
     {"search_endpoints", "describe_endpoint", "call_endpoint", "fetch_data"}
 )
+# Descriptions a ChatGPT session is listed in place of the registered ones,
+# whose text points at a tool that session is not listed.
+CHATGPT_DESCRIPTIONS = {
+    "list_toolsets": (
+        "List catalog groups with endpoint counts and short descriptions. This "
+        "does not call the Sugra API; it reads the bundled catalog."
+    ),
+    "list_sources": (
+        "List source families in the bundled catalog with endpoint counts. This "
+        "does not call the Sugra API."
+    ),
+}
 # What ChatGPT's connector sends as initialize clientInfo.name, and the
 # product token its User-Agent starts with.
 CHATGPT_CLIENT_NAME = "openai-mcp"
+
+
+def _with_chatgpt_description(tool: MCPTool) -> MCPTool:
+    description = CHATGPT_DESCRIPTIONS.get(tool.name)
+    if description is None:
+        return tool
+    return tool.model_copy(update={"description": description})
 
 
 def client_profile() -> str:
@@ -547,13 +570,19 @@ SESSION_IDLE_TIMEOUT_SECONDS = 7200
 MAX_SESSIONS = 1000
 MAX_REQUEST_BODY_BYTES = 4 * 1024 * 1024
 
+# The initialize instructions, one text for every client profile: the SDK
+# answers initialize before the client has named itself to any code of ours,
+# so the text names only tools every profile is listed (list_toolsets,
+# list_sources) and leaves each tool's use to its own description.
+SERVER_INSTRUCTIONS = (
+    "Sugra API - read-only data across markets, macro, entities, news, network and "
+    "earth. Each listed tool says in its description what it returns and which inputs "
+    "it takes. list_toolsets and list_sources show the areas of the catalog behind them."
+)
+
 mcp = SugraFastMCP(
     "sugra-api",
-    instructions=(
-        "Sugra API gateway - unified operation_id access across the bundled endpoint "
-        "catalog. Use search_endpoints to find operations, describe_endpoint to inspect "
-        "parameters, and call_endpoint to call by operation_id."
-    ),
+    instructions=SERVER_INSTRUCTIONS,
     website_url=WEBSITE_URL,
     icons=SERVER_ICONS,
     transport_security=_build_transport_security(),
