@@ -16,7 +16,7 @@ from sugra_api_mcp import tools  # noqa: F401
 from sugra_api_mcp.catalog.loader import load_catalog
 from sugra_api_mcp.catalog.models import Endpoint, EndpointParameter
 from sugra_api_mcp.server import (
-    CHATGPT_DESCRIPTIONS,
+    CHATGPT_DROPPED_SENTENCES,
     CHATGPT_PROFILE,
     CHATGPT_UNLISTED_TOOLS,
     DEFAULT_PROFILE,
@@ -65,6 +65,11 @@ def _payload(result: Any) -> dict[str, Any]:
     return json.loads(result.content[0].text)
 
 
+def _without(description: str, name: str) -> str:
+    sentence = CHATGPT_DROPPED_SENTENCES.get(name)
+    return description if sentence is None else " ".join(description.replace(sentence, " ").split())
+
+
 def _registered_names() -> set[str]:
     return {tool.name for tool in mcp._tool_manager.list_tools()}
 
@@ -82,7 +87,7 @@ async def test_chatgpt_is_listed_the_typed_tools_in_place_of_the_generic_ones() 
     assert len(names) == len(set(names)) == len(expected)
     assert set(names) == expected
     kept = [
-        {**tool, "description": CHATGPT_DESCRIPTIONS.get(tool["name"], tool["description"])}
+        {**tool, "description": _without(tool["description"], tool["name"])}
         for tool in await _list(CLAUDE)
         if tool["name"] not in CHATGPT_UNLISTED_TOOLS
     ]
@@ -93,19 +98,26 @@ async def test_nothing_chatgpt_is_listed_names_a_tool_it_is_not_listed() -> None
     chatgpt = await _list(CHATGPT)
     for tool in chatgpt:
         text = json.dumps(tool)
-        named = {name for name in CHATGPT_UNLISTED_TOOLS if re.search(rf"{name}", text)}
+        named = {name for name in CHATGPT_UNLISTED_TOOLS if re.search(rf"\b{re.escape(name)}\b", text)}
         assert not named, (tool["name"], named)
     claude = {tool["name"]: tool for tool in await _list(CLAUDE)}
-    for name, description in CHATGPT_DESCRIPTIONS.items():
-        # Only ChatGPT's text is replaced; every other client keeps the registered one.
-        assert claude[name]["description"] != description
-        assert {tool["name"]: tool for tool in chatgpt}[name]["description"] == description
+    listed = {tool["name"]: tool for tool in chatgpt}
+    for name, sentence in CHATGPT_DROPPED_SENTENCES.items():
+        # The registered text still carries the sentence (a reword fails here
+        # rather than silently keeping it for ChatGPT), every other client
+        # keeps it, and ChatGPT's text is the registered one without it.
+        assert sentence in claude[name]["description"]
+        assert listed[name]["description"] == _without(claude[name]["description"], name)
+    # The default profile is still told the search, describe, call loop by the
+    # description of the tool that starts it, now that initialize does not.
+    loop = claude["search_endpoints"]["description"]
+    assert "describe_endpoint(operation_id)" in loop and "call_endpoint(operation_id" in loop
 
 
 def test_every_unlisted_name_is_a_registered_tool() -> None:
     # A renamed tool would otherwise slip back into ChatGPT's list unnoticed.
     assert _registered_names() >= CHATGPT_UNLISTED_TOOLS
-    assert _registered_names() >= CHATGPT_DESCRIPTIONS.keys()
+    assert _registered_names() >= CHATGPT_DROPPED_SENTENCES.keys()
 
 
 async def test_the_texts_every_client_reads_name_only_tools_every_profile_is_listed() -> None:

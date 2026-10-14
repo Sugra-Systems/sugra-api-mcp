@@ -433,17 +433,11 @@ CHATGPT_PROFILE = "chatgpt"
 CHATGPT_UNLISTED_TOOLS = frozenset(
     {"search_endpoints", "describe_endpoint", "call_endpoint", "fetch_data"}
 )
-# Descriptions a ChatGPT session is listed in place of the registered ones,
-# whose text points at a tool that session is not listed.
-CHATGPT_DESCRIPTIONS = {
-    "list_toolsets": (
-        "List catalog groups with endpoint counts and short descriptions. This "
-        "does not call the Sugra API; it reads the bundled catalog."
-    ),
-    "list_sources": (
-        "List source families in the bundled catalog with endpoint counts. This "
-        "does not call the Sugra API."
-    ),
+# The sentence a ChatGPT session's listing drops from a registered tool's
+# description, because it points at a tool that session is not listed.
+CHATGPT_DROPPED_SENTENCES = {
+    "list_toolsets": "Use the group names as the toolset filter on search_endpoints.",
+    "list_sources": "Use the family names as the source filter on search_endpoints.",
 }
 # What ChatGPT's connector sends as initialize clientInfo.name, and the
 # product token its User-Agent starts with.
@@ -451,9 +445,10 @@ CHATGPT_CLIENT_NAME = "openai-mcp"
 
 
 def _with_chatgpt_description(tool: MCPTool) -> MCPTool:
-    description = CHATGPT_DESCRIPTIONS.get(tool.name)
-    if description is None:
+    sentence = CHATGPT_DROPPED_SENTENCES.get(tool.name)
+    if sentence is None or tool.description is None:
         return tool
+    description = " ".join(tool.description.replace(sentence, " ").split())
     return tool.model_copy(update={"description": description})
 
 
