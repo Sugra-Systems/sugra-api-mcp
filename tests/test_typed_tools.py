@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import re
 from types import SimpleNamespace
@@ -416,6 +417,19 @@ async def test_call_endpoint_and_a_typed_call_run_one_named_body(monkeypatch) ->
                                  "fields": None, "include_raw": False}),
         ("market_batch_quotes", {"params": {"symbols": "AAPL"}}),
     ]
+
+
+def test_call_endpoint_and_its_body_take_one_parameter_list() -> None:
+    # A default changed on one side only would reach only call_endpoint or
+    # only the typed tools. call_endpoint's annotations also carry the tool's
+    # input descriptions, so names, kinds and defaults are compared.
+    def shape(function: Any) -> list[tuple[str, Any, Any]]:
+        return [
+            (parameter.name, parameter.kind, parameter.default)
+            for parameter in inspect.signature(function).parameters.values()
+        ]
+
+    assert shape(gateway.call_operation) == shape(gateway.call_endpoint)
 
 
 async def test_other_clients_can_still_call_a_typed_name(monkeypatch) -> None:
