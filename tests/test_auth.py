@@ -708,6 +708,50 @@ def test_auth_middleware_keeps_anonymous_initialize_for_other_clients(auth_confi
     assert response.status_code == 200
 
 
+def _initialize(client_name, request_id=1):
+    return {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "method": "initialize",
+        "params": {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": client_name, "version": "0.1"}},
+    }
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [_initialize("grok-validator"), [_initialize("grok-validator")], [{"jsonrpc": "2.0", "method": "ping"}, _initialize("grok-validator", 2)]],
+)
+def test_auth_middleware_challenges_the_grok_validator_initialize(auth_config, payload):
+    """The Grok web connector's validator sends no User-Agent; its anonymous 200 leaves the sign-in window blank."""
+
+    async def ok(_request):
+        return JSONResponse({"ok": True})
+
+    app = Starlette(routes=[Route("/mcp", ok, methods=["POST"])])
+    app.add_middleware(AuthMiddleware, authenticator=Authenticator(auth_config))
+
+    response = TestClient(app).post("/mcp", json=payload, headers={"user-agent": ""})
+
+    assert response.status_code == 401
+    assert response.json() == {"error": "missing_bearer_token"}
+    assert response.headers["WWW-Authenticate"] == (
+        'Bearer resource_metadata="https://app.sugra.ai/.well-known/oauth-protected-resource"'
+    )
+
+
+@pytest.mark.parametrize("client_name", ["smithery-probe", "mcpindex-trust", "rmcp", "Grok-Validator", "grok-validator-2", 7])
+def test_auth_middleware_keeps_anonymous_initialize_for_other_client_names(auth_config, client_name):
+    async def ok(_request):
+        return JSONResponse({"ok": True})
+
+    app = Starlette(routes=[Route("/mcp", ok, methods=["POST"])])
+    app.add_middleware(AuthMiddleware, authenticator=Authenticator(auth_config))
+
+    response = TestClient(app).post("/mcp", json=_initialize(client_name), headers={"user-agent": ""})
+
+    assert response.status_code == 200
+
+
 def test_auth_middleware_rejects_unauthenticated_tool_calls(auth_config, monkeypatch):
     """No tool is callable without a token: every registered name, and an unknown one."""
     monkeypatch.setenv("SUGRA_API_KEY", "dummy")

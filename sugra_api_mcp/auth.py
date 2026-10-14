@@ -121,6 +121,11 @@ PUBLIC_MCP_METHODS = frozenset(
 # lower-cased User-Agent prefix. The Grok web connector (grok.com) sends
 # grok-connectors-manager/<version>; Grok Build (grok-cli) is not in it.
 SIGN_IN_FIRST_USER_AGENTS = ("grok-connectors-manager/",)
+# The same clients, matched on the initialize clientInfo.name where they send no
+# User-Agent: the Grok web connector checks a server with a separate
+# grok-validator initialize, and its anonymous 200 alone leaves the sign-in
+# window blank. Exact names only, so directory crawlers keep their listing.
+SIGN_IN_FIRST_CLIENT_NAMES = frozenset({"grok-validator"})
 
 # Unauthenticated GET/HEAD surface of the hosted app: the human landing page on
 # the host root, the liveness probe, and the skills index with the exact file
@@ -170,6 +175,16 @@ def _jwt_reason(prefix: str, error: Exception) -> str:
     """The AuthError message for a PyJWT failure: the reason only when it is fixed text."""
     reason = str(error)
     return f"{prefix}: {reason}" if reason in _FIXED_JWT_REASONS else prefix
+
+
+def _signs_in_first(payload: dict) -> bool:
+    """True for an initialize whose clientInfo.name is in SIGN_IN_FIRST_CLIENT_NAMES."""
+    if payload.get("method") != "initialize":
+        return False
+    params = payload.get("params")
+    client_info = params.get("clientInfo") if isinstance(params, dict) else None
+    name = client_info.get("name") if isinstance(client_info, dict) else None
+    return isinstance(name, str) and name in SIGN_IN_FIRST_CLIENT_NAMES
 
 
 def _token_kind(token: str) -> str:
@@ -664,11 +679,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         if isinstance(payload, dict):
             method = payload.get("method")
+            if _signs_in_first(payload):
+                return False
             return isinstance(method, str) and method in PUBLIC_MCP_METHODS
 
         if isinstance(payload, list) and 0 < len(payload) <= MAX_PUBLIC_MCP_BATCH_ITEMS:
             for item in payload:
-                if not isinstance(item, dict):
+                if not isinstance(item, dict) or _signs_in_first(item):
                     return False
                 method = item.get("method")
                 if not isinstance(method, str) or method not in PUBLIC_MCP_METHODS:
