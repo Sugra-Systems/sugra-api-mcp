@@ -1643,16 +1643,19 @@ def test_alias_phrases_still_match_their_own_words(query: str, present: str) -> 
     assert present in matching_aliases(query)
 
 
-@pytest.mark.parametrize("query,limit", [
-    ("inflation in Italy", 5),
-    ("rent prices", 3),
-    ("rent prices in Austin", 3),
+@pytest.mark.parametrize("query,limit,absent", [
+    ("inflation in Italy", 5, ("cboe_index_symbol", "fama_french_international_index")),
+    ("rent prices", 3, ("cboe_index_symbol",)),
+    ("rent prices in Austin", 3, ("cboe_index_symbol",)),
 ])
-def test_the_index_of_an_alias_expansion_alone_lifts_no_index_quote(catalog, query: str, limit: int) -> None:
+def test_the_index_of_an_alias_expansion_alone_lifts_no_index_quote(
+    catalog, query: str, limit: int, absent: tuple[str, ...],
+) -> None:
     """"inflation" expands to "consumer price index" and "rent" to a rent
-    index; their "index" alone lifted the index quote into these answers."""
+    index; their "index" alone lifted the index quote, and for "inflation in
+    Italy" the international factor index too, into these answers."""
     ids = [h["operation_id"] for h in search_catalog(catalog, query, limit=limit)]
-    assert "cboe_index_symbol" not in ids, ids
+    assert not set(absent) & set(ids), ids
 
 
 @pytest.mark.parametrize("query", ["Japan CPI index", "S&P 500 index"])
