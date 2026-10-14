@@ -547,13 +547,19 @@ SESSION_IDLE_TIMEOUT_SECONDS = 7200
 MAX_SESSIONS = 1000
 MAX_REQUEST_BODY_BYTES = 4 * 1024 * 1024
 
+# The initialize instructions, one text for every client profile: the SDK
+# answers initialize before the client has named itself to any code of ours,
+# so the text names only tools every profile is listed (list_toolsets,
+# list_sources) and leaves each tool's use to its own description.
+SERVER_INSTRUCTIONS = (
+    "Sugra API - read-only data across markets, macro, entities, news, network and "
+    "earth. Each listed tool says in its description what it returns and which inputs "
+    "it takes. list_toolsets and list_sources show the areas of the catalog behind them."
+)
+
 mcp = SugraFastMCP(
     "sugra-api",
-    instructions=(
-        "Sugra API gateway - unified operation_id access across the bundled endpoint "
-        "catalog. Use search_endpoints to find operations, describe_endpoint to inspect "
-        "parameters, and call_endpoint to call by operation_id."
-    ),
+    instructions=SERVER_INSTRUCTIONS,
     website_url=WEBSITE_URL,
     icons=SERVER_ICONS,
     transport_security=_build_transport_security(),
