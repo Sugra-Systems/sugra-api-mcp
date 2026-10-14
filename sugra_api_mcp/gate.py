@@ -117,6 +117,7 @@ class GateRecord:
         "failed",
         "longest_ms",
         "most_api_requests",
+        "served_profile",
     )
 
     def __init__(self) -> None:
@@ -126,6 +127,9 @@ class GateRecord:
         self.auth_refused = False
         self.longest_ms = 0
         self.most_api_requests = 0
+        # The client profile a tools/list on this request was answered for
+        # (server.list_tools), None when the request listed no tools.
+        self.served_profile: str | None = None
         self._open: set[_OpenCall] = set()
 
     def call_started(self, dispatch: observability.ToolDispatch) -> _OpenCall:
@@ -250,6 +254,13 @@ def _first_header(scope: Scope, name: bytes) -> str | None:
         if key.lower() == name:
             return value.decode("latin-1")
     return None
+
+
+def _user_agent_profile(user_agent: str | None) -> str:
+    # Imported here: server imports this module.
+    from .server import user_agent_profile
+
+    return user_agent_profile(user_agent)
 
 
 def _parsed(body: bytes) -> tuple[bool, object]:
@@ -445,11 +456,13 @@ class GateMiddleware:
                 except Exception as e:
                     logger.warning("Gate line failed (%s).", type(e).__name__)
             if capture is not None:
-                self._count(scope, capture, body_read and not body_too_large)
+                self._count(scope, capture, body_read and not body_too_large, record.served_profile)
             if probe_on:
                 probe.write(scope, probe_facts, status)
 
-    def _count(self, scope: Scope, capture: _DemandCapture, parsed: bool) -> None:
+    def _count(
+        self, scope: Scope, capture: _DemandCapture, parsed: bool, served_profile: str | None
+    ) -> None:
         """Add the request to the demand count once, or to its failures; never raises.
 
         A request whose demand step raised is counted in failed and nowhere
@@ -473,8 +486,13 @@ class GateMiddleware:
             client = capture.client if parsed else demand.NOT_APPLICABLE
             status = demand.status_of(capture.status)
             if method == demand.TOOLS_LIST and status.startswith("2"):
-                # The set the process serves, never read from this answer (demand.py).
-                client = self.demand.served_digest
+                # The set the process serves, never read from this answer (demand.py),
+                # for the profile the listing was answered for; the User-Agent's
+                # profile only when the listing recorded none.
+                profile = served_profile
+                if profile is None:
+                    profile = _user_agent_profile(_first_header(scope, b"user-agent"))
+                client = self.demand.digest_for(profile)
             self.demand.add((method, status, host, ua, origin, client))
             # The request is counted above; its extra counts never undo that.
             with contextlib.suppress(Exception):
@@ -497,20 +515,35 @@ async def _write_every(
         demand.write_logged(demand_counter)
 
 
-async def served_tool_definitions() -> list[dict[str, Any]]:
-    """The tool definitions this process serves, as tools/list builds them (server.mcp.list_tools)."""
+async def served_tool_definitions(profile: str | None = None) -> list[dict[str, Any]]:
+    """The tool definitions this process serves, as tools/list builds them (server.mcp.list_tools).
+
+    Given a client profile, the definitions that profile is listed.
+    """
     # Imported here: server imports this module.
     from .server import mcp
 
-    return [tool.model_dump(mode="json", by_alias=True, exclude_none=True) for tool in await mcp.list_tools()]
+    tools = await (mcp.list_tools() if profile is None else mcp.list_tools_for(profile))
+    return [tool.model_dump(mode="json", by_alias=True, exclude_none=True) for tool in tools]
+
+
+async def served_chatgpt_tool_definitions() -> list[dict[str, Any]]:
+    """The tool definitions the ChatGPT profile is listed (tools/typed.py)."""
+    from .server import CHATGPT_PROFILE
+
+    return await served_tool_definitions(CHATGPT_PROFILE)
 
 
 async def _take_served_digest(
     counter: demand.DemandCounter,
     served_tools: Callable[[], Awaitable[Iterable[Mapping[str, Any]]]],
     timeout: float,
+    field: str = "served_digest",
 ) -> None:
     """Set the counter's served tools digest; unknown when the provider fails or overruns timeout.
+
+    field names the counter attribute that holds it: served_digest for the
+    default profile, chatgpt_digest for the ChatGPT one.
 
     Reset to unknown first, so a start whose provider fails never keeps the
     digest of an earlier start. The provider runs as a task of its own and is
@@ -519,7 +552,7 @@ async def _take_served_digest(
     the start nor publish a digest late. Nothing it raises but a cancellation
     stops the start.
     """
-    counter.served_digest = demand.UNKNOWN_TOOLS
+    setattr(counter, field, demand.UNKNOWN_TOOLS)
 
     async def provide() -> Iterable[Mapping[str, Any]]:
         return await served_tools()
@@ -537,7 +570,7 @@ async def _take_served_digest(
         logger.warning("Served tools digest failed (%s).", TimeoutError.__name__)
         return
     try:
-        counter.served_digest = demand.tools_digest(task.result())
+        setattr(counter, field, demand.tools_digest(task.result()))
     except Exception as e:
         # A cancellation is not an Exception, and passes.
         logger.warning("Served tools digest failed (%s).", type(e).__name__)
@@ -566,6 +599,7 @@ def wrap_lifespan(
     demand_counter: demand.DemandCounter | None = None,
     served_tools: Callable[[], Awaitable[Iterable[Mapping[str, Any]]]] = served_tool_definitions,
     served_tools_timeout: float = SERVED_TOOLS_TIMEOUT_SECONDS,
+    chatgpt_tools: Callable[[], Awaitable[Iterable[Mapping[str, Any]]]] | None = None,
 ) -> Callable[[Any], contextlib.AbstractAsyncContextManager[Any]]:
     """The app lifespan inner, plus the summaries and the exit work around it.
 
@@ -573,7 +607,10 @@ def wrap_lifespan(
     digest is taken from served_tools for at most served_tools_timeout
     seconds into the demand counter (demand.tools_digest); it is reset to
     unknown first, and an exception or a timeout leaves it unknown and the app
-    still starts, while a cancellation stops the start. While the app runs, a summary and the demand count are written every
+    still starts, while a cancellation stops the start. The ChatGPT profile's
+    digest is taken the same way from chatgpt_tools, which defaults to
+    served_chatgpt_tool_definitions when served_tools is the default
+    provider; with another served_tools and no chatgpt_tools it stays unknown. While the app runs, a summary and the demand count are written every
     interval seconds. On the way out, after inner has exited, it waits up to
     drain_seconds for tracked requests still finishing, writes the last
     summary and the demand count, awaits each on_exit
@@ -595,6 +632,8 @@ def wrap_lifespan(
     gate_summary = summary if summary is not None else default_summary
     counter = demand_counter if demand_counter is not None else demand.default_counter
     closers = tuple(on_exit)
+    if chatgpt_tools is None and served_tools is served_tool_definitions:
+        chatgpt_tools = served_chatgpt_tool_definitions
 
     @contextlib.asynccontextmanager
     async def lifespan(app: Any) -> AsyncIterator[Any]:
@@ -603,6 +642,12 @@ def wrap_lifespan(
         try:
             async with inner(app) as state:
                 await _take_served_digest(counter, served_tools, served_tools_timeout)
+                if chatgpt_tools is not None:
+                    await _take_served_digest(
+                        counter, chatgpt_tools, served_tools_timeout, "chatgpt_digest"
+                    )
+                else:
+                    counter.chatgpt_digest = demand.UNKNOWN_TOOLS
                 yield state
         finally:
             writer.cancel()

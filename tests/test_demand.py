@@ -1191,13 +1191,13 @@ async def test_the_served_digest_is_that_of_a_real_tools_list_answer_and_moves_w
 ) -> None:
     async with _served(monkeypatch, demand.DemandCounter()) as client:
         listed = await _listed(client, 1)
-    served = await gate.served_tool_definitions()
+    served = await gate.served_chatgpt_tool_definitions()
     assert demand.tools_digest(listed) == demand.tools_digest(served)
     server.mcp.add_tool(_probe_tool, name="demand_probe_tool")
     try:
         async with _served(monkeypatch, demand.DemandCounter()) as client:
             listed_more = await _listed(client, 3)
-        served_more = await gate.served_tool_definitions()
+        served_more = await gate.served_chatgpt_tool_definitions()
     finally:
         server.mcp.remove_tool("demand_probe_tool")
     assert demand.tools_digest(listed_more) == demand.tools_digest(served_more)
@@ -1230,6 +1230,77 @@ async def test_only_a_2xx_tools_list_line_carries_the_served_digest(
         await client.post("/mcp", json=_message(1, method, {}), headers={"x-request-id": _rid(1)})
     bucket = "tools/list" if method == "tools/list" else "other"
     assert _counts(counter, written) == {(bucket, str(status), "loopback", "python", "none", column): 1}
+
+
+@pytest.mark.parametrize(
+    ("profile", "column"),
+    [(server.CHATGPT_PROFILE, "cafe0001"), (server.DEFAULT_PROFILE, "abcd1234"), ("other", "abcd1234")],
+)
+def test_a_profile_names_its_digest(profile: str, column: str) -> None:
+    counter = demand.DemandCounter()
+    counter.served_digest = "abcd1234"
+    counter.chatgpt_digest = "cafe0001"
+    assert counter.digest_for(profile) == column
+
+
+@pytest.mark.parametrize(
+    ("client_name", "user_agent", "column"),
+    [
+        # The listing's own profile decides: clientInfo first, as tools/list itself.
+        ("openai-mcp", "Mozilla/5.0", "cafe0001"),
+        ("claude-ai", "openai-mcp/1.0", "abcd1234"),
+        ("openai-mcp", "openai-mcp/1.0", "cafe0001"),
+        ("claude-ai", "Mozilla/5.0", "abcd1234"),
+    ],
+)
+async def test_a_tools_list_line_carries_the_digest_of_the_set_it_was_answered(
+    monkeypatch, written, client_name: str, user_agent: str, column: str
+) -> None:
+    counter = demand.DemandCounter()
+    counter.served_digest = "abcd1234"
+    counter.chatgpt_digest = "cafe0001"
+    headers = {**HEADERS, **_SCANNER, "user-agent": user_agent}
+    initialize = {
+        **INITIALIZE,
+        "params": {**INITIALIZE["params"], "clientInfo": {"name": client_name, "version": "1"}},
+    }
+    async with _served(monkeypatch, counter) as client:
+        opened = await client.post("/mcp", json=initialize, headers={**headers, "x-request-id": _rid(1)})
+        session = {"mcp-session-id": opened.headers["mcp-session-id"]}
+        listed = await client.post(
+            "/mcp", json=_message(2, "tools/list", {}), headers={**headers, **session, "x-request-id": _rid(2)}
+        )
+    assert listed.status_code == 200
+    names = {tool["name"] for tool in _answer_tools(listed)}
+    assert ("get_stock_quotes" in names) is (column == "cafe0001")
+    lines = [key for key in _counts(counter, written) if key[0] == "tools/list"]
+    assert [key[-1] for key in lines] == [column]
+
+
+async def test_a_tools_list_that_recorded_no_profile_falls_back_to_the_user_agent(written) -> None:
+    counter = demand.DemandCounter()
+    counter.served_digest = "abcd1234"
+    counter.chatgpt_digest = "cafe0001"
+
+    async def answer(request: Request) -> Response:
+        await request.body()
+        return Response(status_code=200)
+
+    app = Starlette(routes=[Route("/mcp", answer, methods=["POST"])])
+    app.add_middleware(gate.GateMiddleware, max_body_bytes=4096, summary=gate.GateSummary(), demand_counter=counter)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8002") as client:
+        await client.post(
+            "/mcp",
+            json=_message(1, "tools/list", {}),
+            headers={"x-request-id": _rid(1), "user-agent": "openai-mcp/1.0"},
+        )
+    assert [key[-1] for key in _counts(counter, written)] == ["cafe0001"]
+
+
+async def test_the_chatgpt_digest_is_that_of_the_chatgpt_set_and_differs_from_the_default() -> None:
+    chatgpt = demand.tools_digest(await gate.served_chatgpt_tool_definitions())
+    default = demand.tools_digest(await gate.served_tool_definitions())
+    assert chatgpt != default
 
 
 async def test_the_digest_is_taken_after_the_app_starts_and_before_it_serves(flushes) -> None:
