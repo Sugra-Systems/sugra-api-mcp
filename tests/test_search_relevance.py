@@ -1970,6 +1970,9 @@ def test_a_near_miss_names_no_priced_subject(catalog, query: str, operation: str
     ("vinegar prices and oil prices", _OIL, "oil price"),
     ("oil price and vinegar price", _OIL, "oil price"),
     ("oil prices and vinegar prices", _OIL, "oil price"),
+    ("price of oil and vinegar price", _OIL, "oil price"),
+    ("prices of oil and vinegar prices", _OIL, "oil price"),
+    ("price of oil, salt and vinegar price", _OIL, "oil price"),
     # The price of the whole list, before it or after it.
     ("oil and gas prices", _OIL, "oil price"),
     ("oil and natural gas prices", _OIL, "oil price"),

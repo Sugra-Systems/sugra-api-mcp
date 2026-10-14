@@ -1708,19 +1708,30 @@ def _joined_claims(
     item after it ("price of oil and gas companies"). An item before the run
     that holds a price of its own ends the list ("vinegar price and oil
     price"), and the items after a run whose price follows it are another
-    list ("oil price and vinegar price")."""
+    list ("oil price and vinegar price"). After a run whose price precedes
+    it, an item that holds a price of its own ends the list as well ("price
+    of oil and vinegar price")."""
+    def has_price(item: tuple[int, int]) -> bool:
+        return any(_phrase_end(tokens, index, subject.prices) is not None
+                   for index in range(*item))
+
     cut = _qualifier_start(tokens, start, subject)
     while (item := _item_before(tokens, cut, marks)) is not None:
-        if any(_phrase_end(tokens, index, subject.prices) is not None
-               for index in range(*item)):
+        if has_price(item):
             break
         if any(token in subject.pairs for token in tokens[item[0]:item[1]]):
             return True
         cut = item[0]
     if priced:
         return False
+    preceded: bool | None = None
     last = end
     while (item := _item_after(tokens, last, marks)) is not None:
+        if has_price(item):
+            if preceded is None:
+                preceded = bool(_price_before(tokens, start, end, subject, marks))
+            if preceded:
+                break
         words = tokens[item[0]:item[1]]
         if (any(token in subject.pairs for token in words)
                 or any(token in _INSTRUMENTS or token in _COMPANIES for token in words[1:])):
