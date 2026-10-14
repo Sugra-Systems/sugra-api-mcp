@@ -150,15 +150,34 @@ def test_a_bad_spec_entry_is_left_out_and_the_rest_are_built(monkeypatch, caplog
         typed.typed_tools.cache_clear()
 
 
-@pytest.mark.parametrize("entries", [[], {}, {"name": "x"}, "tools", None])
-def test_a_spec_without_a_list_of_entries_raises(monkeypatch, entries) -> None:
-    monkeypatch.setattr(typed, "_load_raw", lambda: {"tools": entries})
-    typed.typed_tools.cache_clear()
-    try:
-        with pytest.raises(ValueError, match="not a list of entries"):
-            typed.typed_tools()
-    finally:
-        typed.typed_tools.cache_clear()
+@pytest.mark.parametrize(
+    "spec",
+    [
+        {},
+        {"parameter_descriptions": {}},
+        {"tools": []},
+        {"tools": {}},
+        {"tools": {"name": "x"}},
+        {"tools": "tools"},
+        {"tools": None},
+        [],
+    ],
+)
+def test_a_spec_without_a_list_of_entries_raises(spec) -> None:
+    with pytest.raises(ValueError, match="not a list of entries"):
+        typed._checked_spec(spec)
+
+
+def test_the_shipped_spec_is_loaded_through_the_check(monkeypatch) -> None:
+    checked: list[Any] = []
+
+    def check(spec: Any) -> Any:
+        checked.append(spec)
+        return spec
+
+    monkeypatch.setattr(typed, "_checked_spec", check)
+    spec = typed._load_raw()
+    assert checked == [spec]
 
 
 def test_no_typed_tool_asks_for_a_location() -> None:
