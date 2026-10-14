@@ -402,7 +402,10 @@ _JOIN_TOKENS = frozenset({"and", ",", "&", "+"})
 # Words that ask to set series side by side and name none of them.
 _COMPARE_WORDS = _folded({"both", "compare", "comparison"})
 # A part that says only a span of time ("and its 10-year trend") names no
-# series of its own.
+# series of its own. The guard counts the part's topic words, what is left
+# once its places, the stopwords, the words the caller ignores (search's own
+# stopwords, "its" among them) and the words that ask for data ("trend") are
+# dropped: a part whose topic words are all numbers or span words names none.
 _SPAN_WORDS = _folded({"day", "decade", "month", "quarter", "week", "year"})
 
 

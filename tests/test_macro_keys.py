@@ -550,6 +550,10 @@ def test_a_series_two_places_hold_ranks_no_key_without_a_place() -> None:
     assert all("macro_keys" not in hit for hit in results), _top_ids(results)
 
 
+# The words search drops from a query before it reads the several series.
+SEARCH_STOPWORDS = search_module._QUERY_STOPWORDS | search_module._TWO_LETTER_FILLER
+
+
 @pytest.mark.parametrize("query,expected", [
     ("US unemployment and inflation", ["us/unrate", "us/cpi"]),
     ("US CPI and core CPI", ["us/cpi", "us/core-cpi"]),
@@ -562,5 +566,46 @@ def test_a_series_two_places_hold_ranks_no_key_without_a_place() -> None:
     ("US unemployment rate", []),
 ])
 def test_each_joined_part_of_a_question_names_its_own_series(query: str, expected: list[str]) -> None:
-    found = match_macro_key_series(query, KEYS, query_countries=detect_query_countries(query))
+    found = match_macro_key_series(query, KEYS, query_countries=detect_query_countries(query),
+                                   ignore=SEARCH_STOPWORDS)
     assert [key.key for key in found] == expected
+
+
+def test_a_part_that_names_only_a_span_of_time_names_no_series() -> None:
+    """Search drops "its" and "trend" asks for data, so the part says "10
+    year" alone: a span, which the 10-year breakeven must not answer."""
+    keys = [*KEYS, MacroKey(key="us/breakeven10y", title="10-Year Breakeven Inflation Rate")]
+    query = "US unemployment and its 10-year trend"
+    assert match_macro_key_series(query, keys, query_countries=detect_query_countries(query),
+                                  ignore=SEARCH_STOPWORDS) == []
+
+
+def test_the_several_series_keys_are_the_country_section_keys() -> None:
+    """The multi-series operation takes the country/section keys, never the
+    keys of another operation listed before it."""
+    catalog = load_catalog()
+    first = catalog.endpoints[0]
+    assert first.operation_id != MACRO_OPERATION
+    decoy = [MacroKey(key="us/decoy-gdp", title="Gross Domestic Product"),
+             MacroKey(key="jp/decoy-gdp", title="Gross Domestic Product for Japan")]
+    keyed = catalog.model_copy(update={"endpoints": [
+        endpoint.model_copy(update={"macro_keys": decoy}) if endpoint is first else endpoint
+        for endpoint in catalog.endpoints
+    ]})
+    top = search_catalog(keyed, "US GDP vs Japan GDP", limit=3)[0]
+    assert top["operation_id"] == "macro_multi", top
+    assert [key["key"] for key in top["macro_keys"]] == ["us/gdp", "jp/gdp"], top
+
+
+def test_a_several_series_hit_carries_its_one_call_value_once() -> None:
+    """One call answers every key of the multi-series hit, so the hit carries
+    that call's value and no key repeats it; a country/section key keeps its own."""
+    catalog = load_catalog()
+    top = search_catalog(catalog, "US GDP vs Japan GDP", limit=3)[0]
+    assert top["operation_id"] == "macro_multi", top
+    assert top["params"] == {"series": "us/gdp,jp/gdp"}, top
+    assert all("params" not in key for key in top["macro_keys"]), top
+    one = next(hit for hit in search_catalog(catalog, "US GDP", limit=5)
+               if hit["operation_id"] == MACRO_OPERATION)
+    assert "params" not in one, one
+    assert one["macro_keys"][0]["params"] == {"country": "us", "section": "gdp"}, one

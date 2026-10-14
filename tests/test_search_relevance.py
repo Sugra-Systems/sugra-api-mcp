@@ -4592,12 +4592,12 @@ def test_a_statement_word_with_no_listing_is_no_income_statement(catalog, query:
 ])
 def test_a_question_about_several_series_calls_them_in_one(catalog, query: str, series: str) -> None:
     """Two series, or one series of two places: the multi-series operation
-    answers first, and every key it names calls it with the same series value."""
+    answers first, and its one call names every key."""
     top = search_catalog(catalog, query, limit=3)[0]
     assert top["operation_id"] == "macro_multi", top
     assert "first:several-series" in top["why"], top
     assert [key["key"] for key in top["macro_keys"]] == series.split(","), top
-    assert {key["params"]["series"] for key in top["macro_keys"]} == {series}, top
+    assert top["params"] == {"series": series}, top
 
 
 @pytest.mark.parametrize("query", [
