@@ -21,6 +21,7 @@ is listed with: names, required values, types, enums and bounds alike.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from functools import cache, lru_cache
 from importlib import resources
@@ -35,6 +36,8 @@ from ..errors import is_error_payload
 from ..observability import trace_mcp_tool
 from ..server import read_only
 from . import gateway
+
+logger = logging.getLogger("sugra_mcp.typed")
 
 SPEC_PACKAGE = "sugra_api_mcp.catalog.data"
 SPEC_FILE = "typed_tools.json"
@@ -258,16 +261,32 @@ def load_spec() -> list[dict[str, Any]]:
 
 @lru_cache(maxsize=1)
 def typed_tools() -> dict[str, TypedTool]:
-    """Every typed tool by name. Fails at first use on a name or operation the catalog lacks."""
+    """Every typed tool by name.
+
+    An entry that cannot be built (a duplicate name, an operation the catalog
+    lacks or a typed tool cannot run, a missing field) is left out with an
+    error log naming it, and the rest are built: one bad entry costs a ChatGPT
+    session that one tool, not its whole list. A test builds the shipped spec
+    whole, so a bad entry fails CI before it can ship.
+    """
     catalog = load_catalog()
     spec = _load_raw()
     fallbacks = dict(spec.get("parameter_descriptions") or {})
     tools: dict[str, TypedTool] = {}
-    for entry in spec["tools"]:
-        name = entry["name"]
-        if name in tools:
-            raise ValueError(f"typed_tools.json: duplicate tool name {name}")
-        tools[name] = _build(entry, catalog.get(entry["operation_id"]), fallbacks)
+    for index, entry in enumerate(spec["tools"]):
+        name = entry.get("name") if isinstance(entry, dict) else None
+        try:
+            if name in tools:
+                raise ValueError(f"typed_tools.json: duplicate tool name {name}")
+            tools[name] = _build(entry, catalog.get(entry["operation_id"]), fallbacks)
+        except Exception as e:
+            logger.error(
+                "typed_tools.json: entry %d (%s) left out (%s: %s).",
+                index,
+                name,
+                type(e).__name__,
+                e,
+            )
     return tools
 
 

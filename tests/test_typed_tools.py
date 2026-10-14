@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from types import SimpleNamespace
 from typing import Any
@@ -119,6 +120,34 @@ def test_every_typed_tool_names_a_catalog_operation_once() -> None:
         assert re.fullmatch(r"(get|list|search|compare|convert)_[a-z_]+", entry["name"]), entry["name"]
         assert entry["title"] and entry["description"]
     assert not set(built) & _registered_names()
+
+
+def test_a_bad_spec_entry_is_left_out_and_the_rest_are_built(monkeypatch, caplog) -> None:
+    good = typed.load_spec()[0]
+    spec = {
+        "tools": [
+            good,
+            {**good, "title": "Again"},
+            {**good, "name": "get_nothing", "operation_id": "no_such_operation"},
+            {"name": "get_half"},
+            "not an entry",
+        ]
+    }
+    monkeypatch.setattr(typed, "_load_raw", lambda: spec)
+    typed.typed_tools.cache_clear()
+    try:
+        with caplog.at_level(logging.ERROR, logger="sugra_mcp.typed"):
+            built = typed.typed_tools()
+        assert list(built) == [good["name"]]
+        assert built[good["name"]].tool.title == good["title"]
+        left_out = [record.getMessage() for record in caplog.records if record.name == "sugra_mcp.typed"]
+        assert len(left_out) == 4
+        assert left_out[0].startswith(f"typed_tools.json: entry 1 ({good['name']}) left out (ValueError")
+        assert "entry 2 (get_nothing) left out (KeyError" in left_out[1]
+        assert "entry 3 (get_half) left out (KeyError" in left_out[2]
+        assert "entry 4 (None) left out" in left_out[3]
+    finally:
+        typed.typed_tools.cache_clear()
 
 
 def test_no_typed_tool_asks_for_a_location() -> None:

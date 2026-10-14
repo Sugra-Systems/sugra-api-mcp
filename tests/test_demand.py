@@ -13,7 +13,7 @@ import logging
 import re
 import threading
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
 import httpx
@@ -1395,6 +1395,85 @@ async def test_a_provider_that_holds_on_to_its_cancellation_neither_holds_the_st
         await asyncio.sleep(0)
         assert counter.served_digest == demand.UNKNOWN_TOOLS
     assert "Served tools digest failed (TimeoutError)." in caplog.messages
+
+
+async def test_the_two_digests_are_taken_side_by_side_within_one_budget(flushes) -> None:
+    counter = demand.DemandCounter()
+
+    async def served() -> list[dict[str, Any]]:
+        await asyncio.sleep(0.3)
+        return [{"name": "a"}]
+
+    async def chatgpt() -> list[dict[str, Any]]:
+        await asyncio.sleep(0.3)
+        return [{"name": "b"}]
+
+    lifespan = gate.wrap_lifespan(
+        _inner, gate.GateSummary(), interval=3600, drain_seconds=0, flush_timeout=1,
+        demand_counter=counter, served_tools=served, chatgpt_tools=chatgpt, served_tools_timeout=0.5,
+    )
+    async with contextlib.AsyncExitStack() as stack:
+        started = time.monotonic()
+        await asyncio.wait_for(stack.enter_async_context(lifespan(object())), 2)
+        # One after the other they would need 0.6 s, past the 0.5 s budget.
+        assert time.monotonic() - started < 0.5
+        assert counter.served_digest == demand.tools_digest([{"name": "a"}])
+        assert counter.chatgpt_digest == demand.tools_digest([{"name": "b"}])
+
+
+async def test_a_cancelled_start_cancels_both_providers(flushes) -> None:
+    counter = demand.DemandCounter()
+    running: list[str] = []
+    cancelled: list[str] = []
+
+    def stalled(name: str) -> Callable[[], Awaitable[list[dict[str, Any]]]]:
+        async def provide() -> list[dict[str, Any]]:
+            running.append(name)
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.append(name)
+                raise
+            return []
+
+        return provide
+
+    lifespan = gate.wrap_lifespan(
+        _inner, gate.GateSummary(), interval=3600, drain_seconds=0, flush_timeout=1,
+        demand_counter=counter, served_tools=stalled("default"), chatgpt_tools=stalled("chatgpt"),
+        served_tools_timeout=30,
+    )
+
+    async def start() -> None:
+        async with lifespan(object()):
+            pass
+
+    task = asyncio.create_task(start())
+    for _ in range(200):
+        if len(running) == 2:
+            break
+        await asyncio.sleep(0.01)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, 2)
+    await asyncio.sleep(0)
+    assert sorted(cancelled) == ["chatgpt", "default"]
+
+
+async def test_a_start_with_no_chatgpt_provider_says_so(caplog, flushes) -> None:
+    counter = demand.DemandCounter()
+    counter.chatgpt_digest = "cafe0001"
+
+    async def served() -> list[dict[str, Any]]:
+        return [{"name": "a"}]
+
+    lifespan = gate.wrap_lifespan(
+        _inner, gate.GateSummary(), interval=3600, drain_seconds=0, flush_timeout=1,
+        demand_counter=counter, served_tools=served,
+    )
+    async with lifespan(object()):
+        assert counter.chatgpt_digest == demand.UNKNOWN_TOOLS
+    assert "ChatGPT tools digest not taken (no provider)." in caplog.messages
 
 
 async def test_a_failing_provider_after_a_success_resets_the_digest_to_unknown(caplog, flushes) -> None:
