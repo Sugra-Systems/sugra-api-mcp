@@ -125,6 +125,9 @@ SIGN_IN_FIRST_USER_AGENTS = ("grok-connectors-manager/",)
 # User-Agent: the Grok web connector checks a server with a separate
 # grok-validator initialize, and its anonymous 200 alone leaves the sign-in
 # window blank. Exact names only, so directory crawlers keep their listing.
+# Observed 2026-10-14: clientInfo {"name": "grok-validator", "version": "0.1"},
+# protocolVersion 2025-03-26, no User-Agent and no Origin. Each challenge shows
+# in the demand count as an initialize line with status 401 and client grok.
 SIGN_IN_FIRST_CLIENT_NAMES = frozenset({"grok-validator"})
 
 # Unauthenticated GET/HEAD surface of the hosted app: the human landing page on
