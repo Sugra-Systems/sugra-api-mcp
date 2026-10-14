@@ -42,6 +42,7 @@ dependencies = [
     "mcp>=1.30.0,<2",
     "httpx>=0.27",
     "pydantic>=2.9",
+    "jsonschema>=4.20",
 ]
 
 [project.optional-dependencies]
@@ -78,6 +79,7 @@ packages = ["sugra_api_mcp"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "sugra_api_mcp/catalog/data/endpoints.json" = "sugra_api_mcp/catalog/data/endpoints.json"
+"sugra_api_mcp/catalog/data/typed_tools.json" = "sugra_api_mcp/catalog/data/typed_tools.json"
 "sugra_api_mcp/skills_index.json" = "sugra_api_mcp/skills_index.json"
 
 [tool.ruff]

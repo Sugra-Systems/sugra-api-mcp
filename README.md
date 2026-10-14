@@ -331,6 +331,10 @@ The hosted MCP endpoint at `https://mcp.sugra.ai/mcp` serves the same eight tool
 
 These three tools wrap an internal composed plane that requires an infrastructure credential available only on the hosted deployment. The tool code ships inside the package, but it is registered only by the hosted HTTP entry point and only when that credential is present - `pip install sugra-api-mcp` (stdio and self-hosted HTTP) always exposes the classic eight-tool gateway. Hosted-only examples in any documentation are labeled as such. For compliance entity lookups (LEI / VAT, sanctions screening) use `sugra_entity_lookup` and `sugra_entity_screen`, which work on every transport.
 
+### ChatGPT tool set
+
+A session whose MCP `initialize` names the client `openai-mcp` (ChatGPT), or that sends no client name and a User-Agent starting with it, lists 145 typed tools beside the tools above: one tool per operation, with a verb name such as `get_stock_quotes` or `get_price_history`, its own input schema and a compact result. Typed tools take no raw location inputs (coordinates, addresses, postal codes). Every other client lists the tools above unchanged; any client may still call a typed tool by name. The set is defined in `sugra_api_mcp/catalog/data/typed_tools.json`.
+
 ## CLI
 
 Server startup is unchanged:
