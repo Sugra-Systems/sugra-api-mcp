@@ -117,6 +117,38 @@ _UPPERCASE_TWO_LETTER_RE = re.compile(r"\b[A-Z]{2}\b")
 # reach, its latest value or its price, and name no subject of their own.
 _GENERIC_WORDS: frozenset[str] = frozenset({"daily", "status", "global", "last", "cost"})
 
+# The kinds of reason that say what of the question a hit matched: a word in
+# one of its fields, an alias, a name, a macro key, a pattern or the toolset's
+# name. Every other reason is a mark the ranking left on the hit (a clamp, a
+# lift, a penalty, the coverage count): a mark is no word the question said.
+# The two sets split every kind this module writes, and a test reads every
+# reason-shaped string in this module so a new or renamed kind fails until it
+# is named in one of them.
+_MATCH_KINDS: frozenset[str] = frozenset({
+    "operation_id", "tag_toolset", "summary", "path", "params", "keyword", "description",
+    "alias", "name", "macro-key", "pattern", "toolset-intent",
+})
+_MARK_KINDS: frozenset[str] = frozenset({
+    "coverage", "geo-mismatch", "geo-uncovered", "cb-mismatch",
+    "clamped-below", "lifted-above", "first",
+})
+
+
+def _matched_values(why: list[str]) -> list[str]:
+    """What of the question a hit matched, read from its reasons."""
+    found = []
+    for reason in why:
+        kind, colon, value = reason.partition(":")
+        if colon and value and kind in _MATCH_KINDS:
+            found.append(value)
+    return found
+
+
+def _generic_only(why: list[str]) -> bool:
+    """Whether every match of a hit is a generic word."""
+    values = _matched_values(why)
+    return bool(values) and all(value in _GENERIC_WORDS for value in values)
+
 # A capitalized name right before the singular "stock" names a company's
 # listing ("Tesla stock"). The plural names a sector as often as a company
 # ("Airline stocks"), so it is not read. The words below name a kind of stock
@@ -1774,21 +1806,16 @@ def search_catalog(
                 scored[i] = (max(floor - 1, 1), endpoint, [*why, "clamped-below:live"])
                 held[endpoint.operation_id] = (True, f"\U0010ffff{endpoint.operation_id}")
 
-    # A generic word carries no hit on its own once another hit matches a word
-    # of three letters or more that is not generic: "daily streamflow Potomac"
-    # listed every daily table above the one operation that says streamflow.
-    # A clamp above is a mark on the hit, not a word the question said.
-    def matched(why: list[str]) -> list[str]:
-        return [reason.partition(":")[2] for reason in why if not reason.startswith("clamped-below:")]
-
-    def generic_only(why: list[str]) -> bool:
-        words = matched(why)
-        return bool(words) and all(word in _GENERIC_WORDS for word in words)
-
-    if any(len(value) >= 3 and value not in _GENERIC_WORDS
-           for _, _, why in scored for value in matched(why)):
-        scored = [item for item in scored if not generic_only(item[2])]
     scored = [item for item in scored if item[0] > 0]
+    # A generic word carries no hit on its own once another hit above the
+    # score cut matches a word of three letters or more that is not generic:
+    # "daily streamflow Potomac" listed every daily table above the one
+    # operation that says streamflow. A hit cut for its score is never
+    # returned, so the word it matched is no subject the answer holds. A mark
+    # on a hit (a clamp, a lift, a penalty) is not a word the question said.
+    if any(len(value) >= 3 and value not in _GENERIC_WORDS
+           for _, _, why in scored for value in _matched_values(why)):
+        scored = [item for item in scored if not _generic_only(item[2])]
     # A slot the trade above handed over keeps its tie-break.
     scored.sort(key=lambda item: (
         -item[0], *held.get(item[1].operation_id, tie_break(item[1])),
