@@ -1399,24 +1399,29 @@ async def test_a_provider_that_holds_on_to_its_cancellation_neither_holds_the_st
 
 async def test_the_two_digests_are_taken_side_by_side_within_one_budget(flushes) -> None:
     counter = demand.DemandCounter()
+    entered: list[str] = []
+    both = asyncio.Event()
 
-    async def served() -> list[dict[str, Any]]:
-        await asyncio.sleep(0.3)
-        return [{"name": "a"}]
+    # Each provider returns only once both are inside their call: taken one
+    # after the other, the first would wait out its budget and stay unknown.
+    def provider(name: str) -> Callable[[], Awaitable[list[dict[str, Any]]]]:
+        async def provide() -> list[dict[str, Any]]:
+            entered.append(name)
+            if len(entered) == 2:
+                both.set()
+            await both.wait()
+            return [{"name": name}]
 
-    async def chatgpt() -> list[dict[str, Any]]:
-        await asyncio.sleep(0.3)
-        return [{"name": "b"}]
+        return provide
 
     lifespan = gate.wrap_lifespan(
         _inner, gate.GateSummary(), interval=3600, drain_seconds=0, flush_timeout=1,
-        demand_counter=counter, served_tools=served, chatgpt_tools=chatgpt, served_tools_timeout=0.5,
+        demand_counter=counter, served_tools=provider("a"), chatgpt_tools=provider("b"),
+        served_tools_timeout=2,
     )
     async with contextlib.AsyncExitStack() as stack:
-        started = time.monotonic()
-        await asyncio.wait_for(stack.enter_async_context(lifespan(object())), 2)
-        # One after the other they would need 0.6 s, past the 0.5 s budget.
-        assert time.monotonic() - started < 0.5
+        await asyncio.wait_for(stack.enter_async_context(lifespan(object())), 10)
+        assert sorted(entered) == ["a", "b"]
         assert counter.served_digest == demand.tools_digest([{"name": "a"}])
         assert counter.chatgpt_digest == demand.tools_digest([{"name": "b"}])
 

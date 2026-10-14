@@ -150,6 +150,17 @@ def test_a_bad_spec_entry_is_left_out_and_the_rest_are_built(monkeypatch, caplog
         typed.typed_tools.cache_clear()
 
 
+@pytest.mark.parametrize("entries", [[], {}, {"name": "x"}, "tools", None])
+def test_a_spec_without_a_list_of_entries_raises(monkeypatch, entries) -> None:
+    monkeypatch.setattr(typed, "_load_raw", lambda: {"tools": entries})
+    typed.typed_tools.cache_clear()
+    try:
+        with pytest.raises(ValueError, match="not a list of entries"):
+            typed.typed_tools()
+    finally:
+        typed.typed_tools.cache_clear()
+
+
 def test_no_typed_tool_asks_for_a_location() -> None:
     for name, tool in typed.typed_tools().items():
         properties = tool.tool.inputSchema["properties"]

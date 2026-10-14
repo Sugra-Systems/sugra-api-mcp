@@ -267,13 +267,18 @@ def typed_tools() -> dict[str, TypedTool]:
     lacks or a typed tool cannot run, a missing field) is left out with an
     error log naming it, and the rest are built: one bad entry costs a ChatGPT
     session that one tool, not its whole list. A test builds the shipped spec
-    whole, so a bad entry fails CI before it can ship.
+    whole, so a bad entry fails CI before it can ship. A spec whose tools are
+    not a list of at least one entry raises: nothing in it can be built.
     """
     catalog = load_catalog()
     spec = _load_raw()
+    entries = spec["tools"]
+    if not isinstance(entries, list) or not entries:
+        got = "an empty list" if entries == [] else type(entries).__name__
+        raise ValueError(f"typed_tools.json: tools is not a list of entries (got {got})")
     fallbacks = dict(spec.get("parameter_descriptions") or {})
     tools: dict[str, TypedTool] = {}
-    for index, entry in enumerate(spec["tools"]):
+    for index, entry in enumerate(entries):
         name = entry.get("name") if isinstance(entry, dict) else None
         try:
             if name in tools:
