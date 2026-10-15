@@ -35,7 +35,7 @@ Sugra Forex, Sugra Weather, and more - all behind one gateway.
 
 ## Prerequisites
 
-- Python 3.11 or newer
+- Python 3.12 or newer
 - An Anthropic API key and a free Sugra API key (next section)
 
 ## Get your keys (2 minutes)
