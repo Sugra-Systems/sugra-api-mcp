@@ -708,6 +708,8 @@ def _score(
     place_answers: set[str] | None = None,
     term_hits: dict[str, tuple[frozenset[str], frozenset[str], frozenset[str]]] | None = None,
     query_ratio_bases: frozenset[str] = frozenset(),
+    place_words: frozenset[str] = frozenset(),
+    place_only: set[str] | None = None,
 ) -> tuple[int, list[str]]:
     """Score one endpoint for the query.
 
@@ -738,6 +740,11 @@ def _score(
     names as the base of a ratio: a word the operation names only so matches
     its topic for a question that names it so too, and for no other, so the
     credit-to-GDP gap earns no country-parameter boost for "Japan GDP".
+    ``place_words`` are the words of the question that name a country it
+    names, in a question that asks something besides the place: they say
+    where, never what. ``place_only``, when given, collects the endpoint's
+    operation_id if every word it matched is one of them, whatever its
+    source: search drops it from the answers.
     """
     profile = _profile(endpoint)
     alias_tokens = [token for terms in aliases.values() for term in terms
@@ -1033,6 +1040,13 @@ def _score(
     if endpoint.deprecated and endpoint.replaced_by:
         score -= DEPRECATED_REPLACED_PENALTY
         why.append(_successor_pointer(endpoint.replaced_by))
+
+    # Every word it matched names the place: read in full, before the six
+    # reasons a hit shows are cut.
+    if place_only is not None and place_words:
+        values = _matched_values(why)
+        if values and set(values) <= place_words:
+            place_only.add(endpoint.operation_id)
 
     return score, list(dict.fromkeys(why))[:6]
 
@@ -1417,9 +1431,13 @@ def search_catalog(
     # The country-param boost reads them separately, to tell a query that is
     # only a country from one with a topic as well.
     coverage_excluded = frozenset(consumed)
-    country_terms = _country_terms(query, terms, query_countries) | frozenset(
+    place_terms = _country_terms(query, terms, query_countries)
+    country_terms = place_terms | frozenset(
         term for term in terms if term in currency_words
     )
+    # A question that is only a place asks for anything about it, so its
+    # words score as they always did ("Portugal").
+    where_words = frozenset() if set(terms) <= place_terms else place_terms
     # The curated series of a country/section operation, read off their
     # titles. A ticker, a currency, crypto, a named central bank, benchmark or
     # measure, or a weather question already says what the query asks for.
@@ -1513,6 +1531,7 @@ def search_catalog(
     country_answers: set[str] = set()
     place_answers: set[str] = set()
     term_hits: dict[str, tuple[frozenset[str], frozenset[str], frozenset[str]]] = {}
+    place_only: set[str] = set()
 
     def score_endpoint(
         endpoint: Endpoint,
@@ -1520,6 +1539,7 @@ def search_catalog(
         answers: set[str],
         places_found: set[str],
         hits: dict[str, tuple[frozenset[str], frozenset[str], frozenset[str]]] | None,
+        place_only: set[str] | None = None,
     ) -> tuple[int, list[str]]:
         return _score(
             endpoint,
@@ -1553,13 +1573,16 @@ def search_catalog(
             place_answers=places_found,
             term_hits=hits,
             query_ratio_bases=query_ratio_bases,
+            place_words=where_words,
+            place_only=place_only,
         )
 
     for endpoint in catalog.endpoints:
         if not _in_scope(endpoint, toolset, source):
             continue
         score, why = score_endpoint(endpoint, macro_key_operations, country_answers,
-                                    place_answers, term_hits if any_country_cues else None)
+                                    place_answers, term_hits if any_country_cues else None,
+                                    place_only)
         if score > 0:
             scored.append((score, endpoint, why))
 
@@ -1845,6 +1868,16 @@ def search_catalog(
     if any(len(value) >= 3 and value not in _GENERIC_WORDS
            for _, _, why in scored for value in _matched_values(why)):
         scored = [item for item in scored if not _generic_only(item[2])]
+    # A word that names the place the question names says where, not what: a
+    # hit that matched nothing else answers nothing asked, a national source
+    # of that place too. "Russian oil price" listed the Russian watchlists
+    # and the languages on the word "Russian" alone, and "Sweden interest
+    # rate decision" the Swedish construction statistics. Each hit is judged
+    # on its own words, so every other hit stays. It is dropped only here, so
+    # the floors the clamps above read stay as they were: a floor read
+    # without it rose, and "India trade balance" listed the US trade balance
+    # in its first three.
+    scored = [item for item in scored if item[1].operation_id not in place_only]
     # A slot the trade above handed over keeps its tie-break.
     scored.sort(key=lambda item: (
         -item[0], *held.get(item[1].operation_id, tie_break(item[1])),
