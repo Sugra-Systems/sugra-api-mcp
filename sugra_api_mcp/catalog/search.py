@@ -643,7 +643,9 @@ def _expansion_terms(profile: _EndpointProfile, expansion: str,
     ending a longer one, in a question that does not say "index" itself,
     scores only beside another of its words: the "index" of "consumer price
     index" alone lifted an index quote into the first answers of "inflation
-    in Italy"."""
+    in Italy". The endpoint text is a set of whole words, so a word it holds
+    only as a plural ("prices") is looked up apart and still counts beside
+    the "index"."""
     tokens = _tokens(expansion)
     if len(tokens) <= 1:
         return tokens
@@ -716,10 +718,10 @@ def _score(
     credit-to-GDP gap earns no country-parameter boost for "Japan GDP".
     """
     profile = _profile(endpoint)
-    alias_terms = [token for terms in aliases.values() for term in terms
-                   for token in _expansion_terms(profile, term, query_terms)]
+    alias_tokens = [token for terms in aliases.values() for term in terms
+                    for token in _expansion_terms(profile, term, query_terms)]
     # A word scores once, however often the question repeats it.
-    all_terms = [*dict.fromkeys(query_terms), *alias_terms]
+    all_terms = [*dict.fromkeys(query_terms), *alias_tokens]
     why: list[str] = []
     score = 0
     # Whether the endpoint matched the query's topic - anything the query
