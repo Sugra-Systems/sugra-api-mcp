@@ -45,6 +45,15 @@ SIGNING_ALGORITHMS = ["RS256"]
 
 REQUIRED_SCOPE = "sugra:read"
 
+# The hosted MCP's second name. On it, the APP's metadata document names
+# https://mcp.sugra.ai/mcp, so the challenge sends a client there: RFC 9728
+# section 3.3 has a client check the document's resource against the URL it
+# used. Tied to the hosted APP, whose tokens carry its own audience on both
+# hosts; any other host or APP keeps the APP's root document.
+MCP_HOST_APP_URL = "https://app.sugra.ai"
+MCP_HOST = "mcp.sugra.ai"
+MCP_HOST_METADATA_URL = "https://mcp.sugra.ai/.well-known/oauth-protected-resource/mcp"
+
 API_KEY_CACHE_TTL_SECONDS = 300
 
 INTERNAL_HTTP_TIMEOUT_SECONDS = 10.0
@@ -331,6 +340,16 @@ class Authenticator:
     @property
     def protected_resource_metadata_url(self) -> str:
         return f"{self._config.app_url}/.well-known/oauth-protected-resource"
+
+    def protected_resource_metadata_url_for(self, host: object) -> str:
+        """The metadata document for a request to `host` (from config.caller_host).
+
+        Exactly mcp.sugra.ai in front of the hosted APP gets that host's own
+        document; everything else gets protected_resource_metadata_url.
+        """
+        if host == MCP_HOST and self._config.app_url == MCP_HOST_APP_URL:
+            return MCP_HOST_METADATA_URL
+        return self.protected_resource_metadata_url
 
     @property
     def audience(self) -> str:
@@ -645,14 +664,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self._auth = authenticator
 
-    def _auth_headers(self, *, invalid_token: bool = False) -> dict[str, str]:
+    def _auth_headers(self, request: Request, *, invalid_token: bool = False) -> dict[str, str]:
         # A presented token that failed gets error="invalid_token", which is
         # what makes a client run its sign-in again; a request with no token,
         # a token without the scope and the auth timeout get the bare
         # challenge (RFC 6750 3.1).
+        host = caller_host(request.headers.get("host"), request.headers.get("x-forwarded-host"))
         challenge = (
             'Bearer resource_metadata="'
-            f'{self._auth.protected_resource_metadata_url}"'
+            f'{self._auth.protected_resource_metadata_url_for(host)}"'
         )
         if invalid_token:
             challenge += ', error="invalid_token"'
@@ -724,14 +744,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return JSONResponse(
                 {"error": "missing_bearer_token"},
                 status_code=401,
-                headers=self._auth_headers(),
+                headers=self._auth_headers(request),
             )
 
         if not header.lower().startswith("bearer "):
             return JSONResponse(
                 {"error": "missing_bearer_token"},
                 status_code=401,
-                headers=self._auth_headers(),
+                headers=self._auth_headers(request),
             )
 
         token = header[7:].strip()
@@ -766,7 +786,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                      "budget and was cancelled."
                  )},
                 status_code=503,
-                headers=self._auth_headers(),
+                headers=self._auth_headers(request),
             )
         except AuthError as e:
             # Shape class and fingerprint of the token, and the caller's fixed
@@ -785,12 +805,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 return JSONResponse(
                     {"error": "auth_failed", "message": str(e)},
                     status_code=401,
-                    headers=self._auth_headers(invalid_token=True),
+                    headers=self._auth_headers(request, invalid_token=True),
                 )
             return JSONResponse(
                 {"error": "auth_failed", "message": str(e)},
                 status_code=e.status,
-                headers=self._auth_headers() if e.status == 401 else None,
+                headers=self._auth_headers(request) if e.status == 401 else None,
             )
 
         ctx_token = api_key_ctx.set(resolved.api_key)
