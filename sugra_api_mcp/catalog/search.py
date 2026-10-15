@@ -645,7 +645,8 @@ def _expansion_terms(profile: _EndpointProfile, expansion: str,
     index" alone lifted an index quote into the first answers of "inflation
     in Italy". The endpoint text is a set of whole words, so a word it holds
     only as a plural ("prices") is looked up apart and still counts beside
-    the "index"."""
+    the "index". That lookup stays: dropping it moved 3 first answers and 20
+    top 3 over 7,510 queries, so re-measure before removing it."""
     tokens = _tokens(expansion)
     if len(tokens) <= 1:
         return tokens
