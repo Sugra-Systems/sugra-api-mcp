@@ -345,7 +345,9 @@ def caller_host(host: object, forwarded_host: object) -> object:
 
     Off: the Host header as received, X-Forwarded-Host untouched. On: a
     well-formed X-Forwarded-Host, else the Host header. This feeds the host
-    classes only. The host allow-list (SUGRA_MCP_ALLOWED_HOSTS) is enforced by
+    classes and the choice of metadata document in the 401 challenge
+    (auth.Authenticator.protected_resource_metadata_url_for), which picks
+    between two fixed URLs and never echoes it. The host allow-list (SUGRA_MCP_ALLOWED_HOSTS) is enforced by
     the SDK on the Host header itself and never sees X-Forwarded-Host, on or
     off, so no client-supplied X-Forwarded-Host can pass or fail it.
     """
