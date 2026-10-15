@@ -10,8 +10,6 @@ central-bank routing without explicit failures here.
 
 from __future__ import annotations
 
-import re
-
 import pytest
 
 from sugra_api_mcp.catalog.aliases import (
@@ -4702,54 +4700,121 @@ def test_a_mark_on_a_hit_is_no_word_the_question_said(mark: str) -> None:
     assert not _generic_only([mark])
 
 
-_REASON_HEAD_RE = re.compile(r"[a-z][a-z_-]*(?=:|->)")
-# Strings of the kind shape that are no reason: the error code of the
-# over-long query reply.
-_NOT_REASON_KINDS = frozenset({"query_too_long"})
+# The module-level functions of search.py whose strings write no reason: the
+# reason helpers themselves and the over-long query reply.
+_NO_REASON_FUNCTIONS = frozenset({"_reason", "_successor_pointer", "_reason_parts", "query_limit_error"})
 
 
-def _reason_kinds_in(source: str) -> set[str]:
-    """The kind of every reason-shaped string in the source, read from the
-    string itself and not from how it reaches a hit, so a reason written by
-    extend, +=, a tuple, an alias or a helper is read all the same. A string
-    whose kind is computed (f"{kind}:...") cannot be read and fails."""
+def _literal_parts(expr: object) -> list:
+    """The string literals an expression is spelled from: the expression
+    itself, the parts of a concatenation or an f-string and both branches of
+    a conditional, but nothing inside a call or a name, so a reason a call
+    builds there is still read."""
     import ast
 
-    kinds = set()
-    for node in ast.walk(ast.parse(source)):
-        if isinstance(node, ast.JoinedStr) and node.values:
-            first = node.values[0]
-            if isinstance(first, ast.Constant):
-                head = first.value
-            else:
-                after = node.values[1] if len(node.values) > 1 else None
-                assert not (isinstance(after, ast.Constant)
-                            and _REASON_HEAD_RE.match("x" + after.value)), (
-                    f"line {node.lineno}: a reason kind this test cannot read")
-                continue
-        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
-            head = node.value
-        else:
+    if isinstance(expr, ast.Constant):
+        return [expr]
+    if isinstance(expr, ast.BinOp):
+        return _literal_parts(expr.left) + _literal_parts(expr.right)
+    if isinstance(expr, ast.JoinedStr):
+        return [part for part in expr.values if isinstance(part, ast.Constant)]
+    if isinstance(expr, ast.IfExp):
+        return _literal_parts(expr.body) + _literal_parts(expr.orelse)
+    return []
+
+
+def _reason_kinds_written(source: str) -> set[str]:
+    """The kind of every reason the source writes through _reason, read from
+    the literal kind of each call. Any other string holding ":" or "->" is a
+    reason written past the helper - whole, split, formatted or joined - and
+    fails, as does a _reason call whose kind is no literal and a _reason that
+    is passed around instead of called. Docstrings hold no reason, and
+    neither do the literals a regular expression's pattern, an exception's
+    message or a _reason call's value is spelled from (_literal_parts): a
+    value may hold a ":" or a "->", the kind before it is the literal. Every
+    call or name inside those is still read."""
+    import ast
+
+    tree = ast.parse(source)
+    passed: set[int] = set()
+    called: set[int] = set()
+    kinds: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name in _NO_REASON_FUNCTIONS:
+            passed.update(id(inner) for inner in ast.walk(node))
+    for node in ast.walk(tree):
+        if id(node) in passed:
             continue
-        found = _REASON_HEAD_RE.match(head)
-        if found:
-            kinds.add(found.group(0) + ("" if head[found.end()] == ":" else "->"))
-    return kinds - _NOT_REASON_KINDS
+        if isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call):
+            passed.update(id(part) for arg in node.exc.args for part in _literal_parts(arg))
+        elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.args
+                and isinstance(node.func.value, ast.Name) and node.func.value.id == "re"):
+            passed.update(id(part) for part in _literal_parts(node.args[0]))
+        elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
+            passed.add(id(node.value))
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "_reason":
+            called.add(id(node.func))
+            kind = node.args[0] if node.args else None
+            assert (len(node.args) == 2 and not node.keywords and isinstance(kind, ast.Constant)
+                    and isinstance(kind.value, str)), f"line {node.lineno}: a reason kind that is no literal"
+            kinds.add(kind.value)
+            passed.update(id(part) for part in [kind, *_literal_parts(node.args[1])])
+    for node in ast.walk(tree):
+        if id(node) in passed:
+            continue
+        if isinstance(node, ast.Name) and node.id == "_reason":
+            assert id(node) in called, f"line {node.lineno}: _reason passed around instead of called"
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            assert ":" not in node.value and "->" not in node.value, (
+                f"line {node.lineno}: {node.value!r} writes a reason past _reason")
+    return kinds
 
 
-def test_the_reason_scan_reads_every_way_a_reason_is_written() -> None:
+def test_the_reason_guard_reads_every_reason_written_through_the_helper() -> None:
     source = (
-        'why.extend(["later-a:x"])\n'
-        'why += (f"later-b:{v}",)\n'
-        'marks = why\nmarks.append("later-c:" + v)\n'
-        'def add(reasons): reasons.append(f"later-d:{v}")\n'
+        'why.append(_reason("summary", term))\n'
+        'why.insert(0, _reason("pattern", f"cb->{prefix}"))\n'
+        'note = _reason("clamped-below", "any" if passed else "subject")\n'
+        'why.append(_reason("pattern", "cb->" + prefix if prefix else "cb->any"))\n'
+        'marks = [*why, _reason("first", "several-series")]\n'
+        '_RE = re.compile(r"\\b(?:" + "|".join(names) + r")\\b")\n'
+        'raise ValueError("query_too_long: past the bounds")\n'
+        'def f():\n    """A docstring: with a colon and an -> arrow."""\n'
+        'def query_limit_error():\n    return {"hint": "characters: name the series"}\n'
     )
-    assert _reason_kinds_in(source) == {"later-a", "later-b", "later-c", "later-d"}
+    assert _reason_kinds_written(source) == {"summary", "pattern", "clamped-below", "first"}
+
+
+@pytest.mark.parametrize("writer", [
+    'why.append("summary:x")',
+    'why.append(f"summary:{v}")',
+    'why.extend(["later-match:x"])',
+    'why.append("later" + "-match:x")',
+    'why.append("later-match" + ":" + v)',
+    'why.append("{}:{}".format(kind, v))',
+    'why.append("%s:%s" % (kind, v))',
+    'why.append(":".join((kind, v)))',
+    'why.append(f"mark {kind}:{v}")',
+    'why.append(f"{kind}:{v}")',
+    'why.append("top10:x")',
+    'why.append("Later:x")',
+    'why.append(kind + "->" + v)',
+    'why.append(_reason(kind, v))',
+    'why.append(_reason("summary", value=v))',
+    'add = _reason',
+    'why.append(_reason("summary", _reason))',
+    'raise ValueError(why.append("summary:x"))',
+    'raise ValueError("bad " + str(why.append("summary:x")))',
+    'why.append(re.sub(pattern, "summary:x", v))',
+    'why.append(re.sub(r"\\s" + str(why.append("summary:x")), "", v))',
+    'def g():\n    def query_limit_error():\n        why.append("later:x")',
+])
+def test_the_reason_guard_refuses_a_reason_written_past_the_helper(writer: str) -> None:
     with pytest.raises(AssertionError):
-        _reason_kinds_in('why.append(f"{kind}:{v}")\n')
+        _reason_kinds_written(writer + "\n")
 
 
-def test_every_reason_kind_search_writes_is_a_match_or_a_mark() -> None:
+def test_every_reason_search_writes_goes_through_the_checked_helper() -> None:
     """A kind written but named in neither set would read as a mark with no
     one deciding it; a renamed match kind would silently stop arming the
     generic-word filter. Both sets must also hold only kinds still written."""
@@ -4758,14 +4823,30 @@ def test_every_reason_kind_search_writes_is_a_match_or_a_mark() -> None:
     from sugra_api_mcp.catalog import search
     from sugra_api_mcp.catalog.search import _MARK_KINDS, _MATCH_KINDS
 
-    kinds = _reason_kinds_in(inspect.getsource(search))
-    # A reason with no kind, the successor pointer "deprecated->...", is
-    # never read as a match.
-    assert {kind for kind in kinds if kind.endswith("->")} == {"deprecated->"}
-    kinds -= {"deprecated->"}
+    kinds = _reason_kinds_written(inspect.getsource(search))
     assert _MATCH_KINDS.isdisjoint(_MARK_KINDS)
     assert kinds == _MATCH_KINDS | _MARK_KINDS, (
         sorted(kinds - _MATCH_KINDS - _MARK_KINDS), sorted((_MATCH_KINDS | _MARK_KINDS) - kinds))
+    assert all(callable(getattr(search, name, None)) for name in _NO_REASON_FUNCTIONS)
+
+
+@pytest.mark.parametrize("kind", ["later-match", "top10", "Summary", "summary ", "", "deprecated", "summary:x"])
+def test_the_reason_helper_refuses_a_kind_named_in_neither_set(kind: str) -> None:
+    from sugra_api_mcp.catalog.search import _reason
+
+    with pytest.raises(ValueError):
+        _reason(kind, "x")
+
+
+def test_the_reason_helpers_write_what_the_search_wrote_before() -> None:
+    from sugra_api_mcp.catalog.search import _reason, _reason_parts, _successor_pointer
+
+    assert _reason("summary", "daily") == "summary:daily"
+    assert _reason("coverage", 2) == "coverage:2"
+    assert _reason("pattern", "ticker->markets") == "pattern:ticker->markets"
+    assert _successor_pointer("geocoding_status") == "deprecated->geocoding_status"
+    assert _reason_parts("alias:consumer price index") == ("alias", "consumer price index")
+    assert _reason_parts("deprecated->geocoding_status") == ("", "")
 
 
 @pytest.mark.parametrize("match", [

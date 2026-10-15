@@ -121,9 +121,9 @@ _GENERIC_WORDS: frozenset[str] = frozenset({"daily", "status", "global", "last",
 # one of its fields, an alias, a name, a macro key, a pattern or the toolset's
 # name. Every other reason is a mark the ranking left on the hit (a clamp, a
 # lift, a penalty, the coverage count): a mark is no word the question said.
-# The two sets split every kind this module writes, and a test reads every
-# reason-shaped string in this module so a new or renamed kind fails until it
-# is named in one of them.
+# The two sets split every kind this module writes. Every reason is written
+# by _reason with a literal kind, which refuses a kind named in neither set,
+# and a test fails on a reason written any other way.
 _MATCH_KINDS: frozenset[str] = frozenset({
     "operation_id", "tag_toolset", "summary", "path", "params", "keyword", "description",
     "alias", "name", "macro-key", "pattern", "toolset-intent",
@@ -132,14 +132,35 @@ _MARK_KINDS: frozenset[str] = frozenset({
     "coverage", "geo-mismatch", "geo-uncovered", "cb-mismatch",
     "clamped-below", "lifted-above", "first",
 })
+_REASON_KINDS: frozenset[str] = _MATCH_KINDS | _MARK_KINDS
+
+
+def _reason(kind: str, value: object) -> str:
+    """The reason "<kind>:<value>" a hit carries; the kind must be a match
+    kind or a mark kind."""
+    if kind not in _REASON_KINDS:
+        raise ValueError(f"reason kind {kind!r} is named in neither _MATCH_KINDS nor _MARK_KINDS")
+    return f"{kind}:{value}"
+
+
+def _successor_pointer(replaced_by: str) -> str:
+    """The pointer a retired operation carries to the one that replaced it.
+    It has no kind, so it is never read as a match."""
+    return f"deprecated->{replaced_by}"
+
+
+def _reason_parts(reason: str) -> tuple[str, str]:
+    """The kind and the value of a reason; both empty for one with no kind."""
+    kind, colon, value = reason.partition(":")
+    return (kind, value) if colon else ("", "")
 
 
 def _matched_values(why: list[str]) -> list[str]:
     """What of the question a hit matched, read from its reasons."""
     found = []
     for reason in why:
-        kind, colon, value = reason.partition(":")
-        if colon and value and kind in _MATCH_KINDS:
+        kind, value = _reason_parts(reason)
+        if value and kind in _MATCH_KINDS:
             found.append(value)
     return found
 
@@ -617,7 +638,7 @@ def _matches_only_place_words(why: list[str], place_words: frozenset[str]) -> bo
     """Whether every reason an operation scored is a field matching one of
     the place's words, or the coverage those words give it."""
     return bool(why) and all(
-        reason.partition(":")[2] in place_words or reason.startswith("coverage:")
+        _reason_parts(reason)[1] in place_words or _reason_parts(reason)[0] == "coverage"
         for reason in why
     )
 
@@ -758,7 +779,7 @@ def _score(
         ):
             score += ALIAS_PHRASE_BOOST
             topic_hit = True
-            why.append(f"alias:{phrase}")
+            why.append(_reason("alias", phrase))
             # The alias boost IS the phrase's contribution - its tokens must
             # not be re-paid through the coverage bonus (double-paying
             # 'exchange rate' lifted CB converters over the forex namespace).
@@ -769,38 +790,38 @@ def _score(
     if named is not None:
         score += NAMED_OPERATION_BOOST
         topic_hit = True
-        why.append(f"name:{named}")
+        why.append(_reason("name", named))
 
     macro_key = (macro_key_operations or {}).get(endpoint.operation_id)
     if macro_key is not None:
         score += MACRO_KEY_BOOST
         topic_hit = True
-        why.append(f"macro-key:{macro_key}")
+        why.append(_reason("macro-key", macro_key))
 
     # Pattern-detection boosts: tilt the ranking toward the right domain when the
     # query has a distinctive shape (ticker symbol, currency pair, central bank
     # name). Token-level scoring below still runs, so weak matches don't pass.
     if boost_quotes_symbol and endpoint.operation_id.startswith("quotes_symbol_"):
         score += TICKER_QUOTES_SYMBOL_BOOST
-        why.append("pattern:ticker->quotes_symbol")
+        why.append(_reason("pattern", "ticker->quotes_symbol"))
         if boost_listing_history and endpoint.operation_id == LISTING_HISTORY_OPERATION:
             score += LISTING_PERIOD_BOOST
-            why.append("pattern:period->history")
+            why.append(_reason("pattern", "period->history"))
         if boost_listing_statement and endpoint.operation_id == LISTING_STATEMENT_OPERATION:
             score += LISTING_STATEMENT_BOOST
-            why.append("pattern:statement-word->income-statement")
+            why.append(_reason("pattern", "statement-word->income-statement"))
     elif boost_markets_toolset and endpoint.toolset == "markets":
         score += TICKER_MARKETS_TOOLSET_BOOST
-        why.append("pattern:ticker->markets")
+        why.append(_reason("pattern", "ticker->markets"))
 
     if boost_symbol_input:
         symbol_kind = _symbol_input_kind(endpoint)
         if symbol_kind == "path":
             score += TICKER_SYMBOL_PATH_BOOST
-            why.append("pattern:ticker->symbol-path")
+            why.append(_reason("pattern", "ticker->symbol-path"))
         elif symbol_kind == "param":
             score += TICKER_SYMBOL_PARAM_BOOST
-            why.append("pattern:ticker->symbol-param")
+            why.append(_reason("pattern", "ticker->symbol-param"))
 
     if boost_forex and (
         endpoint.operation_id.startswith("forex_")
@@ -808,7 +829,7 @@ def _score(
         or endpoint.operation_id.startswith("exchangerate_")
     ):
         score += CURRENCY_PAIR_FOREX_BOOST
-        why.append("pattern:fx->forex")
+        why.append(_reason("pattern", "fx->forex"))
 
     if boost_crypto and (
         endpoint.operation_id.startswith("crypto_")
@@ -817,12 +838,12 @@ def _score(
         or endpoint.toolset == "crypto"
     ):
         score += CRYPTO_NAMESPACE_BOOST
-        why.append("pattern:crypto->namespace")
+        why.append(_reason("pattern", "crypto->namespace"))
 
     for prefix in central_bank_prefixes:
         if endpoint.operation_id.startswith(prefix):
             score += CENTRAL_BANK_PREFIX_BOOST
-            why.append(f"pattern:cb->{prefix}")
+            why.append(_reason("pattern", f"cb->{prefix}"))
             break
     else:
         if central_bank_prefixes:
@@ -832,7 +853,7 @@ def _score(
             for other in _ALL_CB_PREFIXES:
                 if endpoint.operation_id.startswith(other):
                     score -= CENTRAL_BANK_MISMATCH_PENALTY
-                    why.append(f"cb-mismatch:{other}")
+                    why.append(_reason("cb-mismatch", other))
                     break
 
     if boost_us_macro:
@@ -842,13 +863,13 @@ def _score(
         # queries. Strongest single boost in the file by design.
         if endpoint.operation_id.startswith("fred_"):
             score += US_MACRO_FRED_BOOST
-            why.append("pattern:us-macro->fred")
+            why.append(_reason("pattern", "us-macro->fred"))
         elif endpoint.operation_id.startswith("fed_"):
             # Federal Reserve datasets (rates, SOMA, Z.1) cover the rate-policy
             # side of US macro. Smaller boost since fred_series is the
             # preferred catch-all entry point.
             score += US_MACRO_FED_BOOST
-            why.append("pattern:us-macro->fed")
+            why.append(_reason("pattern", "us-macro->fed"))
 
     matched_query_terms: set[str] = set()
     strong_words: set[str] = set()
@@ -861,34 +882,34 @@ def _score(
         if term in profile.operation_id:
             score += 5
             hit = True
-            why.append(f"operation_id:{term}")
+            why.append(_reason("operation_id", term))
         if term in profile.tags:
             score += 4
             hit = True
-            why.append(f"tag_toolset:{term}")
+            why.append(_reason("tag_toolset", term))
         if term in profile.summary:
             score += 3
             hit = True
-            why.append(f"summary:{term}")
+            why.append(_reason("summary", term))
         if term in profile.path:
             score += 2
             hit = True
-            why.append(f"path:{term}")
+            why.append(_reason("path", term))
         if term in profile.params:
             score += 2
             hit = True
-            why.append(f"params:{term}")
+            why.append(_reason("params", term))
         if term in profile.keywords:
             score += KEYWORD_FIELD_WEIGHT
             hit = True
-            why.append(f"keyword:{term}")
+            why.append(_reason("keyword", term))
         # A word the operation names only as the base of a ratio is no topic
         # of it unless the question names it so as well: the credit-to-GDP
         # gap answers "credit to GDP gap for Japan", never "Japan GDP".
         ratio_base_only = term in profile.ratio_bases and term not in query_ratio_bases
         if term in profile.description:
             score += 1
-            why.append(f"description:{term}")
+            why.append(_reason("description", term))
             if term not in country_terms and not ratio_base_only:
                 topic_hit = True
         if hit and term not in country_terms and not ratio_base_only:
@@ -925,7 +946,7 @@ def _score(
     # one term repeated across prose fields.
     if len(matched_query_terms) >= 2:
         score += COVERAGE_BONUS_PER_TERM * len(matched_query_terms)
-        why.append(f"coverage:{len(matched_query_terms)}")
+        why.append(_reason("coverage", len(matched_query_terms)))
 
     # A whitelisted ETF's ticker reaches the per-ETF operations as it reaches
     # the quotes, but only those whose name, summary, path, parameters or
@@ -935,7 +956,7 @@ def _score(
     if boost_etf_symbol and endpoint.operation_id.startswith("etf_symbol_") and matched_query_terms:
         score += TICKER_QUOTES_SYMBOL_BOOST
         # First, where the quotes carry theirs: the reasons are cut to six.
-        why.insert(0, "pattern:ticker->etf_symbol")
+        why.insert(0, _reason("pattern", "ticker->etf_symbol"))
 
     # Toolset intent: a query term that IS the toolset name (or its
     # stem: 'geocode' -> 'geocoding') pins the domain. Except when the term
@@ -958,7 +979,7 @@ def _score(
     said = [term for term in map(says, toolset_words) if term]
     if said and len(said) >= min(len(toolset_words), 2):
         score += TOOLSET_INTENT_BOOST
-        why.append(f"toolset-intent:{' '.join(said)}")
+        why.append(_reason("toolset-intent", " ".join(said)))
 
     # Geography: the query names a country; a NATIONAL source of a
     # different country is a silent substitution, never a top answer. The
@@ -968,11 +989,11 @@ def _score(
     mismatched = _is_foreign_source(endpoint, penalized)
     if mismatched:
         score -= WRONG_COUNTRY_PENALTY
-        why.append(f"geo-mismatch:{_source_country(endpoint)}")
+        why.append(_reason("geo-mismatch", _source_country(endpoint)))
     elif _is_foreign_euro_area(endpoint, query_countries, penalized, central_bank_prefixes):
         mismatched = True
         score -= WRONG_COUNTRY_PENALTY
-        why.append("geo-mismatch:EU")
+        why.append(_reason("geo-mismatch", "EU"))
     elif uncovered := _uncovered_countries(endpoint, penalized):
         # A cross-country operation of a fixed set, none of whose countries the
         # query names: it ranks below an operation that covers them, and says
@@ -981,7 +1002,7 @@ def _score(
         # countries, which would answer with another country's figures. The
         # reason goes first, where the six reasons a hit shows keep it.
         score -= WRONG_COUNTRY_PENALTY
-        why.insert(0, f"geo-uncovered:{','.join(uncovered)}")
+        why.insert(0, _reason("geo-uncovered", ",".join(uncovered)))
 
     if query_countries:
         # A generic country-parameterized endpoint can answer for WHATEVER
@@ -993,13 +1014,13 @@ def _score(
         country_only = not aliases and all(term in country_terms for term in query_terms)
         if profile.takes_country_param and (country_only or topic_hit):
             score += COUNTRY_PARAM_BOOST
-            why.append("pattern:country->param")
+            why.append(_reason("pattern", "country->param"))
             if country_answers is not None and not mismatched:
                 country_answers.add(endpoint.operation_id)
     elif (any_country_cues & matched_words and profile.takes_country_param
           and _source_country(endpoint) is None):
         score += COUNTRY_PARAM_BOOST
-        why.append("pattern:any-country->param")
+        why.append(_reason("pattern", "any-country->param"))
         if place_answers is not None:
             place_answers.add(endpoint.operation_id)
 
@@ -1010,7 +1031,7 @@ def _score(
     # Deprecation: never above the live replacement.
     if endpoint.deprecated and endpoint.replaced_by:
         score -= DEPRECATED_REPLACED_PENALTY
-        why.append(f"deprecated->{endpoint.replaced_by}")
+        why.append(_successor_pointer(endpoint.replaced_by))
 
     return score, list(dict.fromkeys(why))[:6]
 
@@ -1550,7 +1571,7 @@ def search_catalog(
         key_score, key_operation = max(key_hits)
         for i, (score, endpoint, why) in enumerate(scored):
             if endpoint.operation_id == US_MACRO_PROXY_OPERATION and score >= key_score:
-                scored[i] = (key_score - 1, endpoint, [*why, f"clamped-below:{key_operation}"])
+                scored[i] = (key_score - 1, endpoint, [*why, _reason("clamped-below", key_operation)])
 
     # Structural guarantee: a question about several curated series ranks the
     # one call that answers them all first.
@@ -1558,7 +1579,7 @@ def search_catalog(
         top = max(score for score, _, _ in scored)
         for i, (_, endpoint, why) in enumerate(scored):
             if endpoint.operation_id == MACRO_MULTI_OPERATION:
-                scored[i] = (top + 1, endpoint, [*why, "first:several-series"])
+                scored[i] = (top + 1, endpoint, [*why, _reason("first", "several-series")])
 
     # Structural guarantee: a national source of a country the query does not
     # name ranks below every operation that answers for the country it names,
@@ -1579,7 +1600,7 @@ def search_catalog(
                     if not outside or endpoint.operation_id in country_answers)
         for i, (score, endpoint, why) in enumerate(scored):
             if foreign[i] and score >= floor:
-                scored[i] = (floor - 1, endpoint, [*why, "clamped-below:country-answers"])
+                scored[i] = (floor - 1, endpoint, [*why, _reason("clamped-below", "country-answers")])
 
     # Structural guarantee: beside a place and a statistic spelled in two
     # words, an operation that matches nothing but the place's words ranks
@@ -1594,7 +1615,7 @@ def search_catalog(
         for i, (score, endpoint, why) in enumerate(scored):
             if (score >= best and endpoint.operation_id not in spelling_operations
                     and _matches_only_place_words(why, country_terms)):
-                scored[i] = (best - 1, endpoint, [*why, "clamped-below:statistic"])
+                scored[i] = (best - 1, endpoint, [*why, _reason("clamped-below", "statistic")])
 
     # Equal scores: the default operation of a topic word the query names
     # comes first ("weather" -> the worldwide forecast), and in a listing
@@ -1704,12 +1725,12 @@ def search_catalog(
             # or the rows that overtook it.
             if slot < before[i]:
                 passed = {group[j] for j in group if before[j] < before[i] and after[j] > slot}
-                note = ("lifted-above:any-country-answers" if "place" in passed
-                        else "lifted-above:national-sources")
+                note = _reason("lifted-above", "any-country-answers" if "place" in passed
+                               else "national-sources")
             else:
                 passed = {group[j] for j in group if before[j] > before[i] and after[j] < slot}
-                note = ("clamped-below:any-country-answers" if "place" in passed
-                        else "clamped-below:subject-answers")
+                note = _reason("clamped-below", "any-country-answers" if "place" in passed
+                               else "subject-answers")
             _, endpoint, why = scored[i]
             scored[i] = (-slot[0], endpoint, [*why, note])
             held[endpoint.operation_id] = slot[1:]
@@ -1755,7 +1776,7 @@ def search_catalog(
                 own, why = score_endpoint(endpoint, {endpoint.operation_id: key}, set(), set(), None)
                 scored = [item for item in scored if item[1] is not endpoint]
                 if own >= -score:
-                    own, why = -score, [*why, f"clamped-below:{after_id}"]
+                    own, why = -score, [*why, _reason("clamped-below", after_id)]
                     held[endpoint.operation_id] = (after_default, f"{after_tie}\x00")
                 scored.append((own, endpoint, why))
     # With no answer for any country, the series the US alone holds is the
@@ -1798,7 +1819,7 @@ def search_catalog(
             rep_score = by_id.get(endpoint.replaced_by, 0)
             if score >= rep_score:
                 scored[i] = (rep_score - 1, endpoint,
-                             [*why, f"clamped-below:{endpoint.replaced_by}"])
+                             [*why, _reason("clamped-below", endpoint.replaced_by)])
     # A deprecated route that names no replacement ranks below every live
     # answer: "geocode Berlin" ranked weather_geocode first, on the word its
     # id spells, above geocoding_search. It stays in the results, for it may
@@ -1810,7 +1831,7 @@ def search_catalog(
         floor = min(live)
         for i, (score, endpoint, why) in enumerate(scored):
             if endpoint.deprecated and not endpoint.replaced_by and score >= floor:
-                scored[i] = (max(floor - 1, 1), endpoint, [*why, "clamped-below:live"])
+                scored[i] = (max(floor - 1, 1), endpoint, [*why, _reason("clamped-below", "live")])
                 held[endpoint.operation_id] = (True, f"\U0010ffff{endpoint.operation_id}")
 
     scored = [item for item in scored if item[0] > 0]
