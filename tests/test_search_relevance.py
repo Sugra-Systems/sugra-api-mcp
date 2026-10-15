@@ -1655,7 +1655,8 @@ def test_the_index_of_an_alias_expansion_alone_lifts_no_index_quote(
     index; their "index" alone lifted the index quote, and for "inflation in
     Italy" the international factor index too, into these answers."""
     ids = [h["operation_id"] for h in search_catalog(catalog, query, limit=limit)]
-    assert not set(absent) & set(ids), ids
+    hits = set(absent) & set(ids)
+    assert not hits, hits
 
 
 @pytest.mark.parametrize("query", ["Japan CPI index", "S&P 500 index"])
