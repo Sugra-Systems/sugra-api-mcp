@@ -2424,6 +2424,131 @@ def test_the_fama_french_data_still_answers_its_own_name(catalog, query) -> None
     assert top.startswith("fama_french_"), top
 
 
+@pytest.mark.parametrize("query,dropped,kept", [
+    ("Russian oil price", {"post_entity_rf_watchlists_screen", "countries_language_language"},
+     {"commodities_energy_petroleum"}),
+    ("price of Russian crude", {"post_entity_rf_watchlists_screen", "countries_language_language"},
+     {"commodities_energy_petroleum"}),
+    ("Germany bond yield", {"destatis_table", "fama_french_country_portfolio"},
+     {"macro_country_profile"}),
+    ("Italy bond yield", {"istat_series", "faostat_data_domain", "fama_french_country_portfolio"},
+     {"macro_country_profile"}),
+    ("Sweden interest rate decision", {"scb_construction", "fama_french_country_portfolio"},
+     {"riksbank_policy_rate"}),
+    ("Portugal trade balance", {"ilostat_child_labor"}, {"imf_direction_of_trade"}),
+])
+def test_a_place_word_alone_lifts_no_operation(
+        catalog, monkeypatch, query: str, dropped: set[str], kept: set[str]) -> None:
+    """A word that names the place the question names says where, not what:
+    "Russian oil price" listed the Russian watchlists and the languages
+    second and third on the word "Russian" alone, "Germany bond yield" a
+    Fama-French portfolio on "Germany", and "Sweden interest rate decision"
+    the Swedish construction statistics on "Sweden": a national source of the
+    place answers nothing asked on its name alone either. The hits dropped
+    are the ones search itself judged on every reason it read."""
+    from sugra_api_mcp.catalog import search
+
+    judged: set[str] = set()
+    score = search._score
+
+    def recording(*args: object, **kwargs: object) -> tuple[int, list[str]]:
+        result = score(*args, **kwargs)
+        if isinstance(kwargs.get("place_only"), set):
+            judged.update(kwargs["place_only"])
+        return result
+
+    monkeypatch.setattr(search, "_score", recording)
+    ids = {row["operation_id"] for row in search_catalog(catalog, query, limit=400)}
+    assert dropped <= judged, judged
+    assert not judged & ids, judged & ids
+    assert kept <= ids, ids
+
+
+def test_a_place_word_scores_beside_a_word_of_what_is_asked() -> None:
+    from sugra_api_mcp.catalog.models import Endpoint
+    from sugra_api_mcp.catalog.search import _score
+
+    def endpoint(operation_id: str, summary: str) -> Endpoint:
+        return Endpoint(operation_id=operation_id, method="GET", path="/x",
+                        summary=summary, toolset="research")
+
+    french = frozenset({"french"})
+    flags = {**_SCORE_FLAGS, "country_terms": french, "place_words": french}
+    terms = ["french", "gdp"]
+
+    def place_only(widget: Endpoint, **extra: object) -> set[str]:
+        found: set[str] = set()
+        _score(widget, terms, {}, **{**flags, **extra}, place_only=found)
+        return found
+
+    assert place_only(endpoint("research_widget", "French portfolios")) == {"research_widget"}
+    assert place_only(endpoint("research_widget", "French GDP portfolios")) == set()
+    # A national source of the place is judged on its words too.
+    assert place_only(endpoint("insee_widget", "French portfolios"),
+                      query_countries={"FR"}) == {"insee_widget"}
+    assert place_only(endpoint("insee_widget", "French GDP portfolios"),
+                      query_countries={"FR"}) == set()
+    # Read before the reasons are cut to six: the place word fills them here.
+    many = Endpoint(operation_id="french_widget", method="GET", path="/french",
+                    summary="French", description="French GDP", toolset="french",
+                    keywords=["french"])
+    assert place_only(many) == set()
+
+
+@pytest.mark.parametrize("query,survivor", [
+    # A national source of another country, below the dropped hit.
+    ("Portugal port tariffs", "census_port_tariffs_widget"),
+    ("Puerto Rico port tariffs", "census_port_tariffs_widget"),
+    # The euro-area source, for a country of the euro area.
+    ("Portugal port tariffs", "ecb_port_tariffs_widget"),
+    # A national source that also answers for the place named.
+    ("Puerto Rico port tariffs", "weather_us_alerts_port_tariffs"),
+])
+def test_a_hit_that_matched_what_is_asked_stays_beside_a_dropped_one(
+        query: str, survivor: str) -> None:
+    """Each hit is judged on its own words: a hit that matched a word of what
+    is asked stays, whatever it scored beside a hit dropped for matching only
+    the place: the census and euro-area widgets score below the atlas."""
+    from sugra_api_mcp.catalog.models import Catalog, Endpoint
+
+    def endpoint(operation_id: str, summary: str, path: str, keywords: list[str]) -> Endpoint:
+        return Endpoint(operation_id=operation_id, method="GET", path=path, summary=summary,
+                        description=", ".join(keywords), keywords=keywords, toolset="geo")
+
+    tariffs = ["port tariffs"]
+    widgets = Catalog(source="test", endpoints=[
+        endpoint("atlas_portugal_widget", "Portugal and Puerto Rico maps",
+                 "/portugal/puerto-rico", ["portugal", "puerto rico"]),
+        endpoint("census_port_tariffs_widget", "Port tariffs by partner", "/port_tariffs", tariffs),
+        endpoint("ecb_port_tariffs_widget", "Port tariffs of the euro area", "/port_tariffs",
+                 tariffs),
+        endpoint("weather_us_alerts_port_tariffs", "Port tariffs at ports", "/port_tariffs",
+                 tariffs),
+    ])
+    rows = search_catalog(widgets, query, limit=10)
+    ids = [row["operation_id"] for row in rows]
+    assert "atlas_portugal_widget" not in ids, ids
+    assert survivor in ids, ids
+
+
+def test_a_question_that_is_only_a_place_still_scores_its_word(catalog) -> None:
+    """"Portugal" asks for anything about Portugal: its word still scores,
+    and an operation that names it and nothing else still answers. Beside a
+    word of what is asked it answers nothing, so a catalog that holds nothing
+    else finds nothing: fetch_data answers no_endpoint_found, and
+    search_endpoints an empty list."""
+    from sugra_api_mcp.catalog.models import Catalog, Endpoint
+
+    rows = search_catalog(catalog, "Portugal", limit=5)
+    assert any("params:portugal" in row["why"] for row in rows), rows
+    atlas = Catalog(source="test", endpoints=[
+        Endpoint(operation_id="atlas_widget", method="GET", path="/x",
+                 summary="Maps of Portugal", toolset="geo"),
+    ])
+    assert [r["operation_id"] for r in search_catalog(atlas, "Portugal", limit=5)] == ["atlas_widget"]
+    assert search_catalog(atlas, "Portugal rainfall", limit=5) == []
+
+
 # ---- Weather questions in everyday words ---------------------------------------
 # The terms below are what search_catalog passes: the query's words with its
 # filler ("will", "it", "in", "for") already dropped.
