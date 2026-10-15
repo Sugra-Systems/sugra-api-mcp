@@ -81,14 +81,32 @@ def _refs(node: Any) -> list[str]:
     return []
 
 
-def test_no_bundled_parameter_schema_keeps_a_ref() -> None:
-    kept = {
-        f"{endpoint.operation_id}.{parameter.name}": _refs(parameter.schema_)
-        for endpoint in load_catalog().endpoints
-        for parameter in endpoint.parameters
-        if _refs(parameter.schema_)
+def _kept_refs(endpoints: Any) -> dict[str, list[str]]:
+    """Every ref left in a parameter or request body schema, by operation and place."""
+    kept = {}
+    for endpoint in endpoints:
+        for parameter in endpoint.parameters:
+            if _refs(parameter.schema_):
+                kept[f"{endpoint.operation_id}.{parameter.name}"] = _refs(parameter.schema_)
+        if _refs(endpoint.request_body_schema):
+            kept[f"{endpoint.operation_id}.body"] = _refs(endpoint.request_body_schema)
+    return kept
+
+
+def test_no_bundled_schema_keeps_a_ref() -> None:
+    assert _kept_refs(load_catalog().endpoints) == {}
+
+
+def test_the_ref_scan_finds_a_marker_left_in_a_request_body() -> None:
+    openapi = _openapi({"type": "string"})
+    openapi["paths"]["/api/v2/things"]["post"] = {
+        "operationId": "make_thing",
+        "requestBody": {
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Loop"}}}
+        },
     }
-    assert kept == {}
+    catalog = build_catalog_from_openapi(openapi)
+    assert _kept_refs(catalog.endpoints) == {"make_thing.body": ["#/components/schemas/Loop"]}
 
 
 def _typed_inputs() -> list[tuple[str, str, dict[str, Any], dict[str, Any]]]:
@@ -142,3 +160,22 @@ def test_every_catalog_keyword_of_a_typed_input_is_kept_or_left_out_on_purpose()
         if "pattern" in _concrete(catalog_schema):
             assert typed_schema.get("pattern") == _concrete(catalog_schema)["pattern"], (tool, name)
     assert unknown == {}
+
+
+def test_every_left_out_keyword_is_handled_as_its_reason_says() -> None:
+    for tool, name, catalog_schema, typed_schema in _typed_inputs():
+        assert "title" not in typed_schema, (tool, name)
+        description = typed_schema.get("description")
+        if description is not None:
+            assert description == " ".join(description.split()), (tool, name)
+            assert len(description) <= typed.MAX_PARAMETER_DESCRIPTION + len("..."), (tool, name)
+        examples = typed_schema.get("examples")
+        if examples is not None:
+            assert isinstance(examples, list) and len(examples) == 1, (tool, name)
+        concrete = [
+            o for o in catalog_schema.get("anyOf") or [] if isinstance(o, dict) and o.get("type") != "null"
+        ]
+        if len(concrete) > 1:
+            assert typed_schema.get("anyOf") == concrete, (tool, name)
+        else:
+            assert "anyOf" not in typed_schema, (tool, name)
