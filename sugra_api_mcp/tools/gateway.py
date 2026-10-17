@@ -1058,6 +1058,25 @@ async def call_endpoint(
     single retry often succeeds because the aborted attempt warms upstream
     caches.
     """
+    return await call_operation(
+        operation_id,
+        params=params,
+        body=body,
+        limit=limit,
+        fields=fields,
+        include_raw=include_raw,
+    )
+
+
+async def call_operation(
+    operation_id: str,
+    params: dict[str, Any] | None = None,
+    body: dict[str, Any] | list[dict[str, Any]] | None = None,
+    limit: int | None = None,
+    fields: list[str] | None = None,
+    include_raw: bool = False,
+) -> dict[str, Any]:
+    """call_endpoint without its span, for a caller whose own span counts the call."""
     # The whole body sits in one safety net: a raised exception surfaces to
     # MCP clients as "Error executing tool call_endpoint: <message>" where
     # the message can be EMPTY (field-test defect D2). Returning a structured

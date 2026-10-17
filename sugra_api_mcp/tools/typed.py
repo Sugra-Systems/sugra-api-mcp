@@ -80,6 +80,7 @@ _SCHEMA_KEYS = (
     "minItems",
     "maxItems",
     "format",
+    "pattern",
 )
 
 # A parameter description longer than this is cut at its last sentence end.
@@ -101,6 +102,10 @@ _ERROR_KEYS = (
     "accepted",
     "did_you_mean",
     "invalid",
+    "detail",
+    "detail_truncated",
+    "daily_limit",
+    "plan",
 )
 
 # A refusal names at most this many schema violations, each message clipped.
@@ -189,8 +194,13 @@ def _parameter_schema(parameter: EndpointParameter, fallback: str = "") -> dict[
     description = parameter.description or str(schema.get("description") or "") or fallback
     if description:
         out["description"] = _clip(description)
-    if parameter.example is not None and "enum" not in out and parameter.example != out.get("default"):
-        out["examples"] = [parameter.example]
+    # The catalog keeps an example on the parameter or, for some, only in its schema.
+    examples = schema.get("examples")
+    example = parameter.example
+    if example is None and isinstance(examples, list) and examples:
+        example = examples[0]
+    if example is not None and "enum" not in out and example != out.get("default"):
+        out["examples"] = [example]
     return out
 
 
@@ -332,11 +342,9 @@ async def _run(typed: TypedTool, *, operation_id: str, arguments: dict[str, Any]
             "reason": f"{typed.name} got arguments outside its input schema",
             "invalid": invalid,
         }
-    # The undecorated call_endpoint: the span is the typed tool's own, so
-    # the call is not counted twice.
-    result = await gateway.call_endpoint.__wrapped__(
-        operation_id=operation_id, params=dict(arguments)
-    )
+    # call_endpoint's body without its span: the span is the typed tool's
+    # own, so the call is not counted twice.
+    result = await gateway.call_operation(operation_id=operation_id, params=dict(arguments))
     return minimize_response(result)
 
 

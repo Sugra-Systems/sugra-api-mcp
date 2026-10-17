@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import re
 from types import SimpleNamespace
@@ -29,6 +30,11 @@ from sugra_api_mcp.tools import agent, gateway, typed
 
 CHATGPT = Implementation(name="openai-mcp", version="1.0.0")
 CLAUDE = Implementation(name="claude-ai", version="0.1.0")
+
+# Typed inputs whose catalog schema carries a pattern, and inputs with an
+# example to show, in the catalog this package bundles.
+PATTERNED_INPUTS = 31
+EXAMPLED_INPUTS = 285
 
 # Commercial data vendors whose names never appear on a public surface.
 _VENDOR_NAMES = re.compile(
@@ -387,10 +393,100 @@ async def test_a_typed_failure_keeps_only_what_went_wrong(monkeypatch) -> None:
         ({"data": [], "meta": {"truncated": True, "retry_hint": "narrow"}},
          {"data": [], "meta": {"truncated": True, "retry_hint": "narrow"}}),
         ({"error": "x", "exception_type": "ValueError", "reason": "r"}, {"error": "x", "reason": "r"}),
+        # A refusal keeps the API's own account of its cause.
+        ({"error": "x", "status_code": 422, "detail": [{"loc": "query.s", "msg": "bad"}],
+          "detail_truncated": True, "url": "u", "elapsed_ms": 3},
+         {"error": "x", "status_code": 422, "detail": [{"loc": "query.s", "msg": "bad"}],
+          "detail_truncated": True}),
+        ({"error": "invalid_window", "status_code": 400, "detail": {"error": "invalid_window",
+          "allowed": ["1d"], "received": "2w"}, "url": "u"},
+         {"error": "invalid_window", "status_code": 400, "detail": {"error": "invalid_window",
+          "allowed": ["1d"], "received": "2w"}}),
+        ({"error": "The daily request limit has been reached.", "reason": "daily_limit_reached",
+          "daily_limit": 50, "plan": "Free", "status_code": 429, "url": "u"},
+         {"error": "The daily request limit has been reached.", "reason": "daily_limit_reached",
+          "daily_limit": 50, "plan": "Free", "status_code": 429}),
     ],
 )
 def test_minimize_response(raw: Any, kept: Any) -> None:
     assert typed.minimize_response(raw) == kept
+
+
+def _catalog_option(parameter: EndpointParameter) -> dict[str, Any]:
+    schema = dict(parameter.schema_)
+    concrete = [
+        option
+        for option in schema.get("anyOf") or []
+        if isinstance(option, dict) and option.get("type") != "null"
+    ]
+    return {**concrete[0], **schema} if len(concrete) == 1 else schema
+
+
+def test_a_typed_input_keeps_the_catalog_pattern_and_example() -> None:
+    patterns = examples = 0
+    for tool in typed.typed_tools().values():
+        properties = tool.tool.inputSchema["properties"]
+        for parameter in typed.exposed_parameters(load_catalog().get(tool.operation_id)):
+            option = _catalog_option(parameter)
+            listed = properties[parameter.name]
+            if "pattern" in option:
+                patterns += 1
+                assert listed["pattern"] == option["pattern"], (tool.name, parameter.name)
+            # Some catalog inputs carry their example only in the schema.
+            example = parameter.example
+            if example is None and option.get("examples"):
+                example = option["examples"][0]
+            if example is not None and "enum" not in listed and example != listed.get("default"):
+                examples += 1
+                assert listed["examples"] == [example], (tool.name, parameter.name)
+    assert patterns >= PATTERNED_INPUTS
+    assert examples >= EXAMPLED_INPUTS
+
+
+async def test_a_typed_call_refuses_a_value_outside_its_pattern(monkeypatch) -> None:
+    fake = FakeClient({"data": []})
+    monkeypatch.setattr(gateway, "get_client", lambda: fake)
+
+    result = await _call("get_economic_series", {"series_id": "not a series"})
+
+    assert result.isError is True
+    payload = _payload(result)
+    assert payload["error"] == "invalid_arguments"
+    assert [item["parameter"] for item in payload["invalid"]] == ["series_id"]
+    assert fake.calls == []
+
+
+async def test_call_endpoint_and_a_typed_call_run_one_named_body(monkeypatch) -> None:
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    async def body(operation_id: str, **kwargs: Any) -> dict[str, Any]:
+        calls.append((operation_id, kwargs))
+        return {"data": []}
+
+    monkeypatch.setattr(gateway, "call_operation", body)
+
+    assert await gateway.call_endpoint("market_batch_quotes", params={"symbols": "AAPL"}, limit=2) == {
+        "data": []
+    }
+    assert (await _call("get_stock_quotes", {"symbols": "AAPL"})).isError is False
+    assert calls == [
+        ("market_batch_quotes", {"params": {"symbols": "AAPL"}, "body": None, "limit": 2,
+                                 "fields": None, "include_raw": False}),
+        ("market_batch_quotes", {"params": {"symbols": "AAPL"}}),
+    ]
+
+
+def test_call_endpoint_and_its_body_take_one_parameter_list() -> None:
+    # A default changed on one side only would reach only call_endpoint or
+    # only the typed tools. call_endpoint's annotations also carry the tool's
+    # input descriptions, so names, kinds and defaults are compared.
+    def shape(function: Any) -> list[tuple[str, Any, Any]]:
+        return [
+            (parameter.name, parameter.kind, parameter.default)
+            for parameter in inspect.signature(function).parameters.values()
+        ]
+
+    assert shape(gateway.call_operation) == shape(gateway.call_endpoint)
 
 
 async def test_other_clients_can_still_call_a_typed_name(monkeypatch) -> None:
