@@ -1009,11 +1009,12 @@ def test_error_key_without_data_is_a_failure_whatever_its_type(monkeypatch, erro
     assert span.attributes["mcp.error.code"] == "unknown_error"
 
 
-@pytest.mark.parametrize("code", ["invalid_anchor", "request_failed", "missing_api_key"])
+@pytest.mark.parametrize("code", ["invalid_anchor", "request_failed", "missing_api_key", "unusable_api_key"])
 def test_entity_and_keyless_codes_pass_the_allowlist(monkeypatch, code: str) -> None:
     """Codes the entity tools (invalid_anchor, the _clean_error fallback
     request_failed) and the keyless stdio client (missing_api_key) already
-    return, but which the allowlist did not know."""
+    return, but which the allowlist did not know, and the code of the client
+    that stands in for a key no header can carry (unusable_api_key)."""
     tracer = _install_fake_tracer(monkeypatch)
 
     @observability.trace_mcp_tool("sugra_entity_lookup")
