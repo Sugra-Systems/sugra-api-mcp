@@ -29,7 +29,10 @@ def test_the_only_job_is_the_test_matrix() -> None:
     jobs = _workflow()["jobs"]
 
     assert list(jobs) == ["test"]
-    assert jobs["test"]["strategy"]["matrix"]["python-version"] == ["3.12", "3.13", "3.14"]
+    # Any other matrix key, an include or exclude entry, or a job name would
+    # rename the required checks.
+    assert jobs["test"]["strategy"]["matrix"] == {"python-version": ["3.12", "3.13", "3.14"]}
+    assert "name" not in jobs["test"]
 
 
 def test_the_workflow_reads_the_repository_and_nothing_more() -> None:
