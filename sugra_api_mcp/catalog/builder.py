@@ -93,13 +93,16 @@ def _request_body_schema(operation: dict[str, Any], schemas: dict[str, Any]) -> 
     return resolved if isinstance(resolved, dict) else {}
 
 
-def _parameter_from_openapi(data: dict[str, Any]) -> EndpointParameter:
+def _parameter_from_openapi(data: dict[str, Any], schemas: dict[str, Any]) -> EndpointParameter:
+    # FastAPI emits an Enum-typed parameter as a $ref to its component; inline
+    # it like a request body, so the bundle keeps the allowed values.
+    schema = _resolve_schema_refs(dict(data.get("schema") or {}), schemas)
     return EndpointParameter(
         name=str(data["name"]),
         location=str(data.get("in", "query")),
         required=bool(data.get("required", False)),
         description=str(data.get("description", "")),
-        schema=dict(data.get("schema") or {}),
+        schema=schema if isinstance(schema, dict) else {},
         example=data.get("example"),
     )
 
@@ -158,7 +161,7 @@ def build_catalog_from_openapi(
             ]:
                 merged_parameters[(str(param["name"]), str(param.get("in", "")))] = param
             parameters = [
-                _parameter_from_openapi(param) for param in merged_parameters.values()
+                _parameter_from_openapi(param, schemas) for param in merged_parameters.values()
             ]
             request_body = operation.get("requestBody")
             request_body_required = (
