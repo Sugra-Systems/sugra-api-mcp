@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import threading
 import time
 from contextvars import ContextVar
@@ -24,6 +25,7 @@ from . import __version__, gate, limits, observability
 from .client import SugraClient, close_shared_pools
 from .config import (
     MISSING_API_KEY_HINT,
+    UNUSABLE_API_KEY_HINT,
     Config,
     caller_address,
     caller_host,
@@ -605,6 +607,19 @@ def missing_api_key_error() -> dict[str, Any]:
     return {"error": "missing_api_key", "hint": MISSING_API_KEY_HINT}
 
 
+def unusable_api_key_error() -> dict[str, Any]:
+    """Structured tool error returned when the call's API key cannot be sent.
+
+    httpx encodes a header value as ASCII, so a key holding any other
+    character raised UnicodeEncodeError while the client was built, before any
+    request, and the tool answered with the opaque ``tool_execution_failed``.
+    A key holding a line break or a NUL, or a space at either end, got a
+    client, h11 refused the header when the request was sent, and the tool
+    answered ``upstream_transport_error`` with a hint to retry.
+    """
+    return {"error": "unusable_api_key", "hint": UNUSABLE_API_KEY_HINT}
+
+
 class _KeylessClient:
     """Stand-in for SugraClient when no API key is available.
 
@@ -615,6 +630,9 @@ class _KeylessClient:
     ``get_client()`` call hands out a real client.
     """
 
+    def _error(self) -> dict[str, Any]:
+        return missing_api_key_error()
+
     async def get(
         self,
         path: str,
@@ -622,7 +640,7 @@ class _KeylessClient:
         *,
         enforce_size: bool = True,
     ) -> dict[str, Any]:
-        return missing_api_key_error()
+        return self._error()
 
     async def post(
         self,
@@ -632,7 +650,7 @@ class _KeylessClient:
         *,
         enforce_size: bool = True,
     ) -> dict[str, Any]:
-        return missing_api_key_error()
+        return self._error()
 
     async def request(
         self,
@@ -644,17 +662,46 @@ class _KeylessClient:
         *,
         enforce_size: bool = True,
     ) -> dict[str, Any]:
-        return missing_api_key_error()
+        return self._error()
 
     async def aclose(self) -> None:
         return None
 
 
+class _UnusableKeyClient(_KeylessClient):
+    """Stand-in for SugraClient when the call's API key cannot be sent.
+
+    Same shape as the keyless stand-in, with the ``unusable_api_key`` error:
+    nothing is sent, so the call makes no Sugra API request. Chosen afresh
+    for every call, like the keyless one, so a rotated key is used as soon as
+    the call carries it.
+    """
+
+    def _error(self) -> dict[str, Any]:
+        return unusable_api_key_error()
+
+
 _keyless_client = _KeylessClient()
+_unusable_key_client = _UnusableKeyClient()
+
+# The key travels as a header value. RFC 9110 section 5.5 allows visible ASCII
+# there, with spaces or tabs only between visible characters, and keeps bytes
+# above 0x7F only as obsolete text, which httpx never sends: it encodes a str
+# value as ASCII. h11 refuses a NUL, a line break or whitespace at either end
+# when the request is sent; the other control characters, which h11 lets
+# through, are no field value either.
+_HEADER_VALUE = re.compile(r"[\x21-\x7e]+(?:[ \t]+[\x21-\x7e]+)*")
 
 
-def _build_client(api_key: str) -> SugraClient:
-    return SugraClient(
+def _client_for(config: Config) -> SugraClient | _UnusableKeyClient:
+    """A real client for this key, or the unusable-key stand-in when no header can carry it."""
+    if _HEADER_VALUE.fullmatch(config.api_key) is None:
+        return _unusable_key_client
+    return SugraClient(config)
+
+
+def _build_client(api_key: str) -> SugraClient | _UnusableKeyClient:
+    return _client_for(
         Config(
             api_base=os.environ.get("SUGRA_API_BASE", "https://sugra.ai").rstrip("/"),
             api_key=api_key,
@@ -806,6 +853,12 @@ def get_client() -> SugraClient | _KeylessClient:
     whose network methods answer with the structured ``missing_api_key`` error -
     the key requirement is enforced here at call time, never at process startup.
 
+    Any transport: a key that is no valid header value (it holds a character
+    outside ASCII, a line break or another control character, or starts or
+    ends with a space or a tab) gets the unusable-key stand-in, whose network
+    methods answer with the structured ``unusable_api_key`` error, because no
+    HTTP header can carry that key.
+
     A real client is built for each call and costs next to nothing: it holds
     the call's key and sends through the connection pool every caller of the
     API base shares on the serving event loop, with the key on each of its own
@@ -813,10 +866,10 @@ def get_client() -> SugraClient | _KeylessClient:
 
     Every real client handed out here is followed by exactly one request, so
     each one counts as a Sugra API request of the call being dispatched
-    (observability.note_api_request); the keyless stand-in sends none.
+    (observability.note_api_request); the stand-ins send none.
     """
     client = _resolve_client()
-    if client is not _keyless_client:
+    if isinstance(client, SugraClient):
         observability.note_api_request()
     return client
 
@@ -836,7 +889,7 @@ def _resolve_client() -> SugraClient | _KeylessClient:
     config = load_config()
     if not config.api_key:
         return _keyless_client
-    return SugraClient(config)
+    return _client_for(config)
 
 
 async def close_clients() -> None:

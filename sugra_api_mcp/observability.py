@@ -368,6 +368,10 @@ _KNOWN_ERROR_CODES: frozenset[str] = frozenset({
     # stdio without SUGRA_API_KEY (server.py _KeylessClient): every network
     # tool returns this instead of dialling out.
     "missing_api_key",
+    # A key holding a character no HTTP header can carry, one outside ASCII or
+    # a control character (server.py _UnusableKeyClient): every network tool
+    # returns this instead of sending a request.
+    "unusable_api_key",
     # A search query over the search bounds, refused before any
     # scoring (catalog/search.py query_limit_error).
     "query_too_long",
