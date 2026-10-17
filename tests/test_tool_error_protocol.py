@@ -161,6 +161,57 @@ async def test_the_daily_limit_reaches_the_caller_as_plain_information(monkeypat
     for seen in (json.dumps(payload), text):
         assert "upgrade" not in seen.lower()
         assert "app.sugra.ai" not in seen
+    assert payload["retry_hint"].startswith("Do not retry")
+    assert payload["retry_hint"] in text
+
+
+async def test_a_typed_tool_tells_a_chatgpt_session_not_to_retry_a_spent_quota(monkeypatch) -> None:
+    """A typed tool keeps only what went wrong and what to do next, and the
+    no-retry hint is part of it: a refusal that only said when the limit
+    resets left the client calling again, each call refused the same way."""
+    import httpx
+    from mcp.types import Implementation
+
+    from sugra_api_mcp.client import SugraClient
+    from sugra_api_mcp.config import Config
+
+    sent: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request.url.path)
+        return httpx.Response(
+            429,
+            json={
+                "detail": "Daily limit of 50 requests reached. Current plan: free. "
+                "Upgrade for a higher daily limit: https://app.sugra.ai/plans?from=api.ratelimit.upgrade"
+            },
+            headers={"Retry-After": "7200", "X-RateLimit-Limit": "50", "X-RateLimit-Remaining": "0"},
+            request=request,
+        )
+
+    client = SugraClient(
+        Config(api_base="https://api.test", api_key="test-key", timeout=0.25),
+        transport=httpx.MockTransport(handler),
+    )
+    monkeypatch.setattr(gateway, "get_client", lambda: client)
+    chatgpt = Implementation(name="openai-mcp", version="1.0.0")
+    try:
+        async with create_connected_server_and_client_session(mcp, client_info=chatgpt) as session:
+            result = await session.call_tool("get_price_history", {"symbol": "AAPL"})
+    finally:
+        await client.aclose()
+
+    assert result.isError is True
+    assert len(sent) == 1
+    payload = _structured(result)
+    assert payload["reason"] == "daily_limit_reached"
+    assert payload["retry_after"] == 7200
+    assert payload["retry_hint"].startswith("Do not retry")
+    assert "00:00 UTC" in payload["retry_hint"]
+    text = " ".join(block.text for block in result.content if hasattr(block, "text"))
+    assert payload["retry_hint"] in text
+    assert "upgrade" not in text.lower()
+    assert "app.sugra.ai" not in text
 
 
 async def test_the_error_text_is_never_empty() -> None:

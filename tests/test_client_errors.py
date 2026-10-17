@@ -430,6 +430,15 @@ async def _answer(status: int, body: Any, headers: dict[str, str] | None = None)
         await client.aclose()
 
 
+# What the refusal tells a model to do next: no call that needs the API before
+# the reset, and a word to the user instead.
+_NO_RETRY_BEFORE_THE_RESET = (
+    "Do not retry this or another Sugra data tool before 00:00 UTC: until the limit "
+    "resets, every such call is refused the same way. Tell the user the daily request "
+    "limit is used up and when it resets."
+)
+
+
 async def test_the_daily_limit_refusal_is_plain_information_for_the_model() -> None:
     result = await _answer(429, {"detail": _QUOTA_DETAIL}, _QUOTA_HEADERS)
 
@@ -439,6 +448,7 @@ async def test_the_daily_limit_refusal_is_plain_information_for_the_model() -> N
             "reached. It resets at 00:00 UTC."
         ),
         "reason": "daily_limit_reached",
+        "retry_hint": _NO_RETRY_BEFORE_THE_RESET,
         "daily_limit": 50,
         "plan": "free",
         "status_code": 429,
@@ -457,6 +467,7 @@ async def test_the_daily_limit_refusal_leaves_out_what_the_api_did_not_say() -> 
     assert result == {
         "error": "The daily request limit for this Sugra account has been reached. It resets at 00:00 UTC.",
         "reason": "daily_limit_reached",
+        "retry_hint": _NO_RETRY_BEFORE_THE_RESET,
         "status_code": 429,
         "retry_after": 3600,
     }
