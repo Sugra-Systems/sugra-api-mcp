@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import jwt
@@ -21,6 +21,7 @@ from sugra_api_mcp.auth import (
     Authenticator,
     AuthError,
     AuthMiddleware,
+    ResolvedAuth,
     _CachedKey,
     _JwtClaims,
 )
@@ -737,6 +738,44 @@ def test_auth_middleware_challenges_the_grok_validator_initialize(auth_config, p
     assert response.headers["WWW-Authenticate"] == (
         'Bearer resource_metadata="https://app.sugra.ai/.well-known/oauth-protected-resource"'
     )
+
+
+@pytest.mark.parametrize(
+    "payload, user_agent",
+    [
+        (_initialize("grok-validator"), ""),
+        ({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}, "grok-connectors-manager/0.1.0"),
+        ({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "fetch_data", "arguments": {}}},
+         "grok-connectors-manager/0.1.0"),
+    ],
+)
+def test_auth_middleware_serves_the_grok_web_connector_once_signed_in(auth_config, payload, user_agent):
+    """The sign-in-first rule only withholds the anonymous answer: with a valid bearer the request goes through."""
+    seen = {}
+
+    async def ok(request):
+        seen["body"] = await request.json()
+        return JSONResponse({"ok": True})
+
+    auth = Authenticator(auth_config)
+    auth.resolve = AsyncMock(return_value=ResolvedAuth(api_key="sugra_k", user_id=1, method="oauth", platform="xai"))
+    app = Starlette(routes=[Route("/mcp", ok, methods=["POST"])])
+    app.add_middleware(AuthMiddleware, authenticator=auth)
+
+    response = TestClient(app).post(
+        "/mcp",
+        json=payload,
+        headers={
+            "user-agent": user_agent,
+            "accept": "application/json, text/event-stream",
+            "authorization": "Bearer signed-in-token",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    assert seen["body"] == payload
+    auth.resolve.assert_awaited_once_with("signed-in-token")
 
 
 @pytest.mark.parametrize("client_name", ["smithery-probe", "mcpindex-trust", "rmcp", "Grok-Validator", "grok-validator-2", 7])
