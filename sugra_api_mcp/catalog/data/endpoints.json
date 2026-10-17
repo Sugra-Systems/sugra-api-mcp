@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-10-17T17:16:11Z",
+  "built_at": "2026-10-17T21:17:39Z",
   "endpoint_count": 1625,
   "endpoints": [
     {
@@ -92323,6 +92323,21 @@
           "schema": {
             "anyOf": [
               {
+                "enum": [
+                  "1d",
+                  "5d",
+                  "7d",
+                  "60d",
+                  "1mo",
+                  "3mo",
+                  "6mo",
+                  "1y",
+                  "2y",
+                  "5y",
+                  "10y",
+                  "ytd",
+                  "max"
+                ],
                 "type": "string"
               },
               {
@@ -92330,21 +92345,6 @@
               }
             ],
             "description": "Lookback window: 1d, 5d, 7d, 60d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd or max. Alias of `range`. Give a window or start/end, not both.",
-            "enum": [
-              "1d",
-              "5d",
-              "7d",
-              "60d",
-              "1mo",
-              "3mo",
-              "6mo",
-              "1y",
-              "2y",
-              "5y",
-              "10y",
-              "ytd",
-              "max"
-            ],
             "title": "Period"
           }
         },
@@ -92357,6 +92357,21 @@
           "schema": {
             "anyOf": [
               {
+                "enum": [
+                  "1d",
+                  "5d",
+                  "7d",
+                  "60d",
+                  "1mo",
+                  "3mo",
+                  "6mo",
+                  "1y",
+                  "2y",
+                  "5y",
+                  "10y",
+                  "ytd",
+                  "max"
+                ],
                 "type": "string"
               },
               {
@@ -92364,21 +92379,6 @@
               }
             ],
             "description": "Alias of `period`, the spelling used by /api/v2/market/chart and the indicators family.",
-            "enum": [
-              "1d",
-              "5d",
-              "7d",
-              "60d",
-              "1mo",
-              "3mo",
-              "6mo",
-              "1y",
-              "2y",
-              "5y",
-              "10y",
-              "ytd",
-              "max"
-            ],
             "title": "Range"
           }
         },
@@ -96568,5 +96568,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "8a238d2f18b55f9578f8298f29dbac9ed9115856dccf042a84e8eacd1231a04e"
+  "spec_sha256": "0df068f7073c77d6074117def31db325feb986f5a8843c989e5f082ba132dd42"
 }
