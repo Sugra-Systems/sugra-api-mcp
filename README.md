@@ -411,6 +411,7 @@ Tool failures return structured JSON instead of raising, so agents can pick a re
 | `upstream_connect_error` | Could not reach the Sugra API (DNS failure, connection refused) | Retry after a short delay. |
 | `upstream_transport_error` | Connection dropped mid-request | Retry once. |
 | `invalid_request_url` | The request could not be built, most often because its parameters make the URL longer than 65,536 characters; nothing was sent | Send fewer or shorter parameter values, or split the request. |
+| `unusable_api_key` | The API key holds a character outside ASCII, which no HTTP header can carry; nothing was sent | Do not retry: the key has to be replaced (see Troubleshooting). |
 | `response_too_deep` | The API's response is nested too deeply to measure, so it is not returned | Retry once; report if persistent. |
 | free-text string + `status_code` | The API answered with HTTP 4xx/5xx; `retry_after` included when the API sent a Retry-After header | Honor `retry_after` for 429/503; fix the request for 4xx. |
 | `tool_execution_failed` | Unexpected failure inside the gateway (`exception_type` included) | Report if persistent. |
@@ -442,6 +443,12 @@ The server starts and lists its tools without a key, but API-calling tools (`cal
 - HTTP mode: set via `.env` or systemd `EnvironmentFile`, not the shell.
 
 `sugra-api-mcp doctor` reports whether the key is visible to the process.
+
+**`unusable_api_key` in tool responses**
+
+The key the server has for the call holds a character outside ASCII, which no HTTP header can carry, so API-calling tools send no request and return `{"error": "unusable_api_key"}`, and a retry fails the same way. Depending on where the key comes from:
+- A key pasted into a config file or an environment variable can pick up an invisible character on the way. Copy it again from [app.sugra.ai/developer/keys](https://app.sugra.ai/developer/keys).
+- The key itself holds such a character, as some older keys do: rotate it at [app.sugra.ai/developer/keys](https://app.sugra.ai/developer/keys) and use the new one. Over a sign-in connection (claude.ai, ChatGPT) the server uses your account's key and reads it again within five minutes. If the page does not offer to rotate the key, email support@sugra.systems.
 
 **`401 Unauthorized` or `403 Forbidden` in tool responses**
 

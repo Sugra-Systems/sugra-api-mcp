@@ -16,6 +16,16 @@ MISSING_API_KEY_HINT = (
     "Set SUGRA_API_KEY. Get one free at https://app.sugra.ai/register"
 )
 
+# Remediation copy for the call-time unusable_api_key error (server.py): the
+# key holds a character outside ASCII, which an HTTP header cannot carry, so
+# no request is ever sent with it and a retry fails the same way.
+UNUSABLE_API_KEY_HINT = (
+    "This API key holds a character that cannot be sent in a request header, "
+    "so no call that needs the API can run with it. Do not retry. A pasted key "
+    "may carry a stray character; otherwise rotate the key in the account's "
+    "API key settings, or ask support if the settings do not offer that."
+)
+
 DEFAULT_ALLOWED_ORIGINS: tuple[str, ...] = (
     "https://chatgpt.com",
     "https://chat.openai.com",
