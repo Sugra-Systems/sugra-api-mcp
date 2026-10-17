@@ -13,7 +13,7 @@
     {"name": "get_stock_quotes", "title": "Get stock quotes", "operation_id": "market_batch_quotes",
      "description": "Current price, change, day range and volume for up to 20 symbols at once: stocks, ETFs, indices, currency pairs or futures. Use when the user asks what something trades at now."},
     {"name": "get_price_history", "title": "Get price history", "operation_id": "quotes_symbol_historical",
-     "description": "Open, high, low, close and volume history for one stock, ETF, index or currency pair symbol, daily or intraday. Use for charts, returns over a period, or the price on a past date."},
+     "description": "Open, high, low, close and volume history for one stock, ETF or index symbol, daily or intraday. Use for charts, returns over a period, or the price on a past date."},
     {"name": "get_stock_news", "title": "Get stock news", "operation_id": "quotes_symbol_news",
      "description": "Recent news headlines about one company or ticker symbol. Use when the user asks what is happening with a specific company."},
     {"name": "get_analyst_estimates", "title": "Get analyst estimates", "operation_id": "quotes_symbol_forward_estimates",

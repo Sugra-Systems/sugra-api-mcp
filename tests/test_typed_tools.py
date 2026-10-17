@@ -34,8 +34,8 @@ CLAUDE = Implementation(name="claude-ai", version="0.1.0")
 
 # Typed inputs whose catalog schema carries a pattern, and inputs with an
 # example to show, in the catalog this package bundles.
-PATTERNED_INPUTS = 31
-EXAMPLED_INPUTS = 285
+PATTERNED_INPUTS = 32
+EXAMPLED_INPUTS = 282
 
 # Commercial data vendors whose names never appear on a public surface.
 _VENDOR_NAMES = re.compile(
