@@ -459,7 +459,7 @@ Key accepted but rejected. Common causes:
 
 **`429 Too Many Requests`**
 
-Hit your plan's daily limit. Response headers include `X-RateLimit-Reset` with the UTC timestamp when the counter resets (midnight UTC). Over MCP the tool result carries `reason: daily_limit_reached`, `status_code: 429`, `retry_after`, and `daily_limit` and `plan` when the API named them. Plans: [sugra.systems/api/pricing](https://sugra.systems/api/pricing).
+Hit your plan's daily limit. Response headers include `X-RateLimit-Reset` with the UTC timestamp when the counter resets (midnight UTC). Over MCP the tool result carries `reason: daily_limit_reached`, `status_code: 429`, `retry_after`, a `retry_hint` that tells the model not to call a data tool again before 00:00 UTC and to tell the user, and `daily_limit` and `plan` when the API named them. Plans: [sugra.systems/api/pricing](https://sugra.systems/api/pricing).
 
 Before the limit is reached, a `call_endpoint` or `fetch_data` result shows what is left: `meta.quota` holds `limit`, `remaining` (requests left today) and `resets_at`, copied from the API's `X-RateLimit-*` response headers. A result carries no `meta.quota` when the API did not report a quota.
 

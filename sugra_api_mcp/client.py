@@ -268,6 +268,16 @@ def _retry_after(response: httpx.Response) -> int | str | None:
 _DAILY_LIMIT_PREFIX = "Daily limit of "
 _PLAN_IN_DETAIL = re.compile(r"Current plan: ([A-Za-z0-9_-]+)\.")
 
+# What to do next with a spent quota. A refusal that only said when the limit
+# resets left a chat client calling again within minutes, mostly the same
+# tool, each call refused the same way: nothing told it that a retry before
+# the reset cannot succeed.
+_DAILY_LIMIT_RETRY_HINT = (
+    "Do not retry this or another Sugra data tool before 00:00 UTC: until the "
+    "limit resets, every such call is refused the same way. Tell the user the "
+    "daily request limit is used up and when it resets."
+)
+
 # A `detail` forwarded to the model never sells: one that still asks for an
 # upgrade or links into the app is replaced by the bare status, which is
 # all this client forwarded before it read `detail` at all.
@@ -483,6 +493,7 @@ def _daily_limit_error(detail: str, response: httpx.Response) -> dict[str, Any]:
     fields: dict[str, Any] = {
         "error": f"{reached} has been reached. It resets at 00:00 UTC.",
         "reason": "daily_limit_reached",
+        "retry_hint": _DAILY_LIMIT_RETRY_HINT,
     }
     if limit is not None:
         fields["daily_limit"] = limit
