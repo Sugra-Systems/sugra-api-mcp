@@ -55,7 +55,7 @@ from typing import Any
 from mcp.types import CallToolResult
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from . import config, demand, observability, probe
+from . import config, demand, observability
 
 logger = logging.getLogger("sugra_mcp.gate")
 # Set here, not inherited: on the hosted server the Azure Monitor handler is
@@ -399,12 +399,9 @@ class GateMiddleware:
             if scope.get("path", "").rstrip("/") == _MCP_PATH
             else None
         )
-        # The time-boxed identity record (probe.py), kept only for /mcp while it runs.
-        probe_on = capture is not None and probe.active()
-        probe_facts: dict[str, Any] | None = None
 
         async def gate_receive() -> Message:
-            nonlocal body_read, body_too_large, probe_facts
+            nonlocal body_read, body_too_large
             message = await receive()
             if message["type"] == "http.request" and not body_read:
                 chunk = message.get("body", b"")
@@ -420,9 +417,6 @@ class GateMiddleware:
                         record.carries_tool_call = _is_tool_call(parsed[1])
                         if capture is not None:
                             capture.attempt(capture.read, parsed)
-                        if probe_on:
-                            with contextlib.suppress(Exception):
-                                probe_facts = probe.body_facts(parsed)
                     body.clear()
             return message
 
@@ -458,8 +452,6 @@ class GateMiddleware:
                     logger.warning("Gate line failed (%s).", type(e).__name__)
             if capture is not None:
                 self._count(scope, capture, body_read and not body_too_large, record.served_profile)
-            if probe_on:
-                probe.write(scope, probe_facts, status)
 
     def _count(
         self, scope: Scope, capture: _DemandCapture, parsed: bool, served_profile: str | None
