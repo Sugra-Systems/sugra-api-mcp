@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-10-17T21:17:39Z",
+  "built_at": "2026-10-18T18:16:53Z",
   "endpoint_count": 1625,
   "endpoints": [
     {
@@ -91166,6 +91166,36 @@
           "required": true,
           "schema": {
             "description": "Screener ID.",
+            "enum": [
+              "MOST_ACTIVES",
+              "day_gainers",
+              "day_losers",
+              "most_shorted_stocks",
+              "most_active_penny_stocks",
+              "undervalued_growth_stocks",
+              "undervalued_large_caps",
+              "aggressive_small_caps",
+              "growth_technology_stocks",
+              "recent_52_week_lows",
+              "MOST_ACTIVES_OPTIONS",
+              "DAY_GAINERS_OPTIONS",
+              "DAY_LOSERS_OPTIONS",
+              "TOP_OPTIONS_OPEN_INTEREST",
+              "TOP_OPTIONS_IMPLIED_VOLATALITY",
+              "MOST_ACTIVES_ETFS",
+              "DAY_GAINERS_ETFS",
+              "DAY_LOSERS_ETFS",
+              "TOP_PERFORMING_ETFS",
+              "BEST_HIST_PERFORMANCE_ETFS",
+              "TOP_ETFS_US",
+              "DAY_GAINERS_MUTUAL_FUNDS",
+              "DAY_LOSERS_MUTUAL_FUNDS",
+              "TOP_PERFORMING_MUTUAL_FUNDS",
+              "BEST_HIST_PERFORMANCE_MUTUAL_FUNDS",
+              "TOP_MUTUAL_FUNDS",
+              "ALL_CRYPTOCURRENCIES_US",
+              "HIGHEST_VALUATION_PRIVATE_COMPANY"
+            ],
             "title": "Scr Id",
             "type": "string"
           }
@@ -96568,5 +96598,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "0df068f7073c77d6074117def31db325feb986f5a8843c989e5f082ba132dd42"
+  "spec_sha256": "62345201d043c89154292dd8f355e36aa4fc1b39be9df4aae68ad68ec9a80166"
 }
