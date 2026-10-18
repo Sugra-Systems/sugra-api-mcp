@@ -7,7 +7,10 @@ search and describe companions) are one generic executor, which those
 guidelines do not accept, so ChatGPT is also listed the typed tools defined in
 catalog/data/typed_tools.json: a name, a title and a description per catalog
 operation. Their input schemas come from the bundled catalog, less location
-parameters.
+parameters, and an entry may narrow its own: leave optional parameters out,
+or make one that stays required, give it a smaller enum, its own description
+or example (_narrowed). The catalog itself is never changed, so every other
+client calls the operation as it was.
 
 The typed tools are not registered with FastMCP's tool manager:
 SugraFastMCP.list_tools adds them for the ChatGPT profile only, so every other
@@ -88,6 +91,9 @@ _SCHEMA_KEYS = (
 
 # A parameter description longer than this is cut at its last sentence end.
 MAX_PARAMETER_DESCRIPTION = 300
+
+# What an entry's "parameters" may change on one parameter the tool takes.
+_OVERRIDE_KEYS = frozenset({"required", "enum", "description", "example"})
 
 # Keys a failure keeps: what went wrong and what to do next. The rest of an
 # error dict (url, elapsed_ms, request_id, exception_type, timeout_s) is
@@ -217,6 +223,91 @@ def exposed_parameters(endpoint: Endpoint) -> list[EndpointParameter]:
     ]
 
 
+def _narrowed(entry: dict[str, Any], parameters: list[EndpointParameter]) -> list[EndpointParameter]:
+    """The exposed parameters after the entry's own narrowing, in catalog order.
+
+    omit_parameters leaves optional parameters out of the tool, and parameters
+    changes one that stays (_overridden). A narrowing only ever takes inputs
+    away, so a call that passes the narrowed schema also passes the catalog's.
+    A narrowing the catalog does not allow raises a ValueError.
+    """
+    name = entry["name"]
+    omitted = entry.get("omit_parameters", [])
+    if not isinstance(omitted, list) or not all(isinstance(item, str) for item in omitted):
+        raise ValueError(f"typed_tools.json: {name} omit_parameters is not a list of names")
+    by_name = {p.name: p for p in parameters}
+    for item in omitted:
+        if item not in by_name:
+            raise ValueError(f"typed_tools.json: {name} omits {item}, which it does not expose")
+        if by_name[item].required:
+            raise ValueError(f"typed_tools.json: {name} omits required parameter {item}")
+    overrides = entry.get("parameters", {})
+    if not isinstance(overrides, dict):
+        raise ValueError(f"typed_tools.json: {name} parameters is not an object")
+    kept = [p for p in parameters if p.name not in omitted]
+    unknown = sorted(set(overrides) - {p.name for p in kept})
+    if unknown:
+        raise ValueError(
+            f"typed_tools.json: {name} changes {', '.join(unknown)}, which it does not take"
+        )
+    return [_overridden(name, p, overrides[p.name]) if p.name in overrides else p for p in kept]
+
+
+def _overridden(tool: str, parameter: EndpointParameter, override: Any) -> EndpointParameter:
+    """A copy of parameter with an entry's changes: required, a smaller enum, a description, an example."""
+    where = f"typed_tools.json: {tool} parameter {parameter.name}"
+    if not isinstance(override, dict) or not override:
+        raise ValueError(f"{where} has no changes")
+    unknown = sorted(set(override) - _OVERRIDE_KEYS)
+    if unknown:
+        raise ValueError(f"{where} cannot change {', '.join(unknown)}")
+    update: dict[str, Any] = {}
+    if "required" in override:
+        # A tool may need an input its operation leaves optional, never the
+        # other way round: the operation would refuse the call.
+        if override["required"] is not True:
+            raise ValueError(f"{where} required can only be true")
+        update["required"] = True
+    if "enum" in override:
+        enum = override["enum"]
+        if (
+            not isinstance(enum, list)
+            or not enum
+            or not all(isinstance(value, str) for value in enum)
+            or len(set(enum)) != len(enum)
+        ):
+            raise ValueError(f"{where} enum is not a list of distinct strings")
+        catalog = _parameter_schema(parameter)
+        if catalog.get("type") != "string":
+            raise ValueError(f"{where} enum needs a string parameter")
+        if "enum" in catalog and not set(enum) <= set(catalog["enum"]):
+            raise ValueError(f"{where} enum takes values the catalog does not")
+        if "default" in catalog and catalog["default"] not in enum:
+            raise ValueError(f"{where} enum leaves out the catalog default {catalog['default']}")
+        # A top-level key wins over the catalog's nullable wrapper (_parameter_schema).
+        update["schema_"] = {**parameter.schema_, "enum": list(enum)}
+    if "description" in override:
+        description = override["description"]
+        if not isinstance(description, str) or not description.strip():
+            raise ValueError(f"{where} description is not a text")
+        if len(" ".join(description.split())) > MAX_PARAMETER_DESCRIPTION:
+            raise ValueError(
+                f"{where} description is longer than {MAX_PARAMETER_DESCRIPTION} characters"
+            )
+        update["description"] = description
+    if "example" in override:
+        update["example"] = override["example"]
+    narrowed = parameter.model_copy(update=update)
+    if "example" in override:
+        schema = _parameter_schema(narrowed)
+        if "enum" in schema:
+            # An enum lists its values, so no example is shown beside it.
+            raise ValueError(f"{where} example would not be shown beside an enum")
+        if not Draft202012Validator(schema).is_valid(override["example"]):
+            raise ValueError(f"{where} example is outside its own schema")
+    return narrowed
+
+
 def _build(entry: dict[str, Any], endpoint: Endpoint, fallbacks: dict[str, str]) -> TypedTool:
     if endpoint.method != "GET":
         # A typed tool is annotated read-only, which only a GET operation is.
@@ -230,6 +321,7 @@ def _build(entry: dict[str, Any], endpoint: Endpoint, fallbacks: dict[str, str])
         raise ValueError(
             f"typed_tools.json: {entry['name']} drops required parameters {', '.join(dropped)}"
         )
+    parameters = _narrowed(entry, parameters)
     required = tuple(p.name for p in parameters if p.required)
     input_schema: dict[str, Any] = {
         "type": "object",
@@ -280,12 +372,13 @@ def typed_tools() -> dict[str, TypedTool]:
     """Every typed tool by name.
 
     An entry that cannot be built (a duplicate name, an operation the catalog
-    lacks or a typed tool cannot run, a missing field) is left out with an
-    error log naming it, and the rest are built: one bad entry costs a ChatGPT
-    session that one tool, not its whole list. A test builds the shipped spec
-    whole, so a bad entry fails CI before it can ship. A spec whose tools are
-    missing or not a list of at least one entry raises a ValueError on load
-    (_checked_spec): nothing in it can be built.
+    lacks or a typed tool cannot run, a missing field, a narrowing the catalog
+    does not allow) is left out with an error log naming it, and the rest are
+    built: one bad entry costs a ChatGPT session that one tool, not its whole
+    list. A test builds the shipped spec whole, so a bad entry fails CI before
+    it can ship. A spec whose tools are missing or not a list of at least one
+    entry raises a ValueError on load (_checked_spec): nothing in it can be
+    built.
     """
     catalog = load_catalog()
     spec = _load_raw()

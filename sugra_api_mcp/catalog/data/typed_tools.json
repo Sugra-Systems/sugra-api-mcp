@@ -1,5 +1,5 @@
 {
-  "comment": "One tool per catalog operation, listed to the ChatGPT client profile (tools/typed.py). Parameters come from the bundled catalog, less location parameters; parameter_descriptions fills a parameter the catalog leaves undescribed.",
+  "comment": "One tool per catalog operation, listed to the ChatGPT client profile (tools/typed.py). Parameters come from the bundled catalog, less location parameters; an entry's omit_parameters leaves optional ones out, and its parameters narrows one that stays (required, a smaller enum, its own description or example); parameter_descriptions fills a parameter the catalog leaves undescribed.",
   "parameter_descriptions": {
     "asn": "Autonomous system number, for example 15169.",
     "host": "Domain name, for example example.com.",
@@ -206,11 +206,20 @@
      "description": "Overview of one internet autonomous system by its number: operator, registry record and announced address space."},
 
     {"name": "get_latest_news", "title": "Get latest news", "operation_id": "news_latest",
-     "description": "Recent headlines from Sugra News, an index Sugra keeps of public news feeds, refreshed every few minutes. Each item gives the headline, a short summary, the outlet and a link, never the full article. Use when the user asks what is in the news now, optionally by region or topic."},
+     "description": "Latest news headlines on one topic: business, tech, science or energy. Use when the user asks what is new in one of these fields. Each item gives the headline, a short summary, the outlet and a link, never the full article.",
+     "omit_parameters": ["region", "source"],
+     "parameters": {"category": {"required": true, "enum": ["business", "tech", "science", "energy"],
+                                 "description": "The topic: business, tech, science or energy."}}},
     {"name": "search_news", "title": "Search news", "operation_id": "news_search",
-     "description": "Search recent headlines in Sugra News, an index Sugra keeps of public news feeds. The search runs on that index only, which holds what the feeds publish now, not an archive. Each match gives the headline, a short summary, the outlet and a link, never the full article. Use when the user asks for news about a topic, person or place."},
+     "description": "Recent news headlines about one named company, person, place or event. Use when the user asks what the news says about a specific name. Current headlines only, not an archive; each match gives the headline, a short summary, the outlet and a link, never the full article.",
+     "omit_parameters": ["offset"],
+     "parameters": {"q": {"description": "The name to look for: one company, person, place or event. All its words must appear in the headline or summary; double quotes match it as one phrase.",
+                          "example": "Airbus"}}},
     {"name": "search_global_news_articles", "title": "Search global news articles", "operation_id": "gdelt_articles",
-     "description": "Search world news coverage of the last 24 hours, indexed from the open GDELT dataset, by words, time span, country and language. Each article gives the link, title, outlet, tone, the people, places and organisations it names and a few short quotes, never the full text. Use to see how the press covers a topic."},
+     "description": "Last 24 hours of English-language news coverage about one named company, person, place or event, from the open GDELT dataset. Use when the user asks how the press covers a specific name. Each article gives the link, title, outlet, tone and a few short quotes, never the full text.",
+     "omit_parameters": ["timespan", "sort", "country", "lang"],
+     "parameters": {"q": {"description": "The name to look for: one company, person, place or event. Every word must appear in the article's title or quotes, or in the names and themes GDELT records for it.",
+                          "example": "Airbus"}}},
     {"name": "get_trending_news_entities", "title": "Get trending news entities", "operation_id": "gdelt_entities_trending",
      "description": "People and organisations most mentioned in world news over a recent period."},
 
