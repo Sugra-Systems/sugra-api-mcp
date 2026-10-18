@@ -36,7 +36,7 @@ CLAUDE = Implementation(name="claude-ai", version="0.1.0")
 # Typed inputs whose catalog schema carries a pattern, and inputs with an
 # example to show, in the catalog this package bundles.
 PATTERNED_INPUTS = 32
-EXAMPLED_INPUTS = 278
+EXAMPLED_INPUTS = 277
 
 # Commercial data vendors whose names never appear on a public surface.
 _VENDOR_NAMES = re.compile(
@@ -684,6 +684,29 @@ async def test_a_typed_call_refuses_a_value_outside_its_pattern(monkeypatch) -> 
     assert payload["error"] == "invalid_arguments"
     assert [item["parameter"] for item in payload["invalid"]] == ["series_id"]
     assert fake.calls == []
+
+
+async def test_get_market_movers_takes_one_listed_screener_id(monkeypatch) -> None:
+    # The screener route serves a fixed set of ids, each in one letter case,
+    # and answers any other with a 400, so the tool lists the catalog's ids
+    # and refuses another before any request.
+    fake = FakeClient({"data": []})
+    monkeypatch.setattr(gateway, "get_client", lambda: fake)
+    endpoint = load_catalog().get("market_screener_scr_id")
+    [scr_id] = [parameter for parameter in endpoint.parameters if parameter.name == "scr_id"]
+    listed = typed.typed_tools()["get_market_movers"].tool.inputSchema["properties"]["scr_id"]
+    assert listed["enum"] == _catalog_option(scr_id)["enum"]
+    assert {"MOST_ACTIVES", "day_gainers", "day_losers"} <= set(listed["enum"])
+    assert "examples" not in listed
+
+    for guess in ("top_gainers", "most_actives", "DAY_GAINERS"):
+        refused = _payload(await _call("get_market_movers", {"scr_id": guess}))
+        assert refused["error"] == "invalid_arguments", guess
+        assert [item["parameter"] for item in refused["invalid"]] == ["scr_id"]
+    assert fake.calls == []
+
+    assert (await _call("get_market_movers", {"scr_id": "day_gainers"})).isError is False
+    assert fake.calls == [(endpoint.path.replace("{scr_id}", "day_gainers"), {})]
 
 
 async def test_call_endpoint_and_a_typed_call_run_one_named_body(monkeypatch) -> None:
