@@ -110,14 +110,27 @@ def test_the_ref_scan_finds_a_marker_left_in_a_request_body() -> None:
 
 
 def _typed_inputs() -> list[tuple[str, str, dict[str, Any], dict[str, Any]]]:
-    """(tool, input, catalog schema, typed schema) for every typed tool input."""
+    """(tool, input, catalog schema, typed schema) for every typed tool input.
+
+    An input its spec entry leaves out (omit_parameters) is not one.
+    """
     catalog = load_catalog()
+    entries = {entry["name"]: entry for entry in typed.load_spec()}
     inputs = []
     for typed_tool in typed.typed_tools().values():
         properties = typed_tool.tool.inputSchema["properties"]
+        omitted = entries[typed_tool.name].get("omit_parameters", [])
         for parameter in typed.exposed_parameters(catalog.get(typed_tool.operation_id)):
+            if parameter.name in omitted:
+                continue
             inputs.append((typed_tool.name, parameter.name, parameter.schema_, properties[parameter.name]))
     return inputs
+
+
+def _override(tool: str, name: str) -> dict[str, Any]:
+    """What the spec entry of tool changes on its input name, if anything."""
+    entry = next(entry for entry in typed.load_spec() if entry["name"] == tool)
+    return entry.get("parameters", {}).get(name, {})
 
 
 def _concrete(schema: dict[str, Any]) -> dict[str, Any]:
@@ -133,7 +146,8 @@ def test_every_typed_input_lists_the_enum_of_its_catalog_schema() -> None:
     for tool, name, catalog_schema, typed_schema in _typed_inputs():
         enum = _concrete(catalog_schema).get("enum")
         if enum is not None:
-            with_enum[f"{tool}.{name}"] = typed_schema.get("enum") == enum
+            # An entry may list fewer of the values (typed._overridden refuses more).
+            with_enum[f"{tool}.{name}"] = typed_schema.get("enum") == _override(tool, name).get("enum", enum)
     assert with_enum and all(with_enum.values()), with_enum
     # The five inputs that were listed as free strings while their schema was a bare ref.
     for key in (

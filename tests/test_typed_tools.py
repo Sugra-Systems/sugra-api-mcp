@@ -35,7 +35,7 @@ CLAUDE = Implementation(name="claude-ai", version="0.1.0")
 # Typed inputs whose catalog schema carries a pattern, and inputs with an
 # example to show, in the catalog this package bundles.
 PATTERNED_INPUTS = 32
-EXAMPLED_INPUTS = 282
+EXAMPLED_INPUTS = 278
 
 # Commercial data vendors whose names never appear on a public surface.
 _VENDOR_NAMES = re.compile(
@@ -316,6 +316,134 @@ def test_an_operation_a_read_only_typed_tool_cannot_run_has_none(
         typed._build(entry, endpoint, {})
 
 
+def _feed_endpoint() -> Endpoint:
+    return Endpoint(
+        operation_id="feed_items",
+        method="GET",
+        path="/api/v1/feed",
+        summary="",
+        description="",
+        tags=[],
+        toolset="core",
+        parameters=[
+            EndpointParameter(name="q", location="query", required=True, description="Words.",
+                              schema_={"type": "string", "minLength": 2}),
+            EndpointParameter(name="topic", location="query", description="Topic.",
+                              schema_={"anyOf": [{"type": "string"}, {"type": "null"}]}),
+            EndpointParameter(name="sort", location="query", description="Order.",
+                              schema_={"type": "string", "enum": ["new", "old"], "default": "new"}),
+            EndpointParameter(name="limit", location="query", description="Count.",
+                              schema_={"type": "integer", "default": 50}),
+        ],
+    )
+
+
+def test_an_entry_narrows_its_inputs_and_leaves_the_catalog_as_it_was() -> None:
+    endpoint = _feed_endpoint()
+    entry = {
+        "name": "get_feed",
+        "title": "Get feed",
+        "description": "Feed.",
+        "omit_parameters": ["sort"],
+        "parameters": {
+            "topic": {"required": True, "enum": ["a", "b"], "description": "The topic: a or b."},
+            "q": {"description": "One name.", "example": "Airbus"},
+        },
+    }
+
+    built = typed._build(entry, endpoint, {})
+
+    assert built.tool.inputSchema == {
+        "type": "object",
+        "properties": {
+            "q": {"type": "string", "minLength": 2, "description": "One name.", "examples": ["Airbus"]},
+            "topic": {"type": "string", "enum": ["a", "b"], "description": "The topic: a or b."},
+            "limit": {"type": "integer", "default": 50, "description": "Count."},
+        },
+        "additionalProperties": False,
+        "required": ["q", "topic"],
+    }
+    assert built.accepted == {"q", "topic", "limit"}
+    assert built.required == ("q", "topic")
+    # call_endpoint reads the same catalog objects for every other client.
+    assert endpoint == _feed_endpoint()
+
+
+@pytest.mark.parametrize(
+    ("narrowing", "refusal"),
+    [
+        ({"omit_parameters": "sort"}, "omit_parameters is not a list of names"),
+        ({"omit_parameters": ["q"]}, "omits required parameter q"),
+        ({"omit_parameters": ["region"]}, "omits region, which it does not expose"),
+        ({"parameters": ["topic"]}, "parameters is not an object"),
+        ({"parameters": {"region": {"required": True}}}, "changes region, which it does not take"),
+        ({"omit_parameters": ["sort"], "parameters": {"sort": {"enum": ["new"]}}},
+         "changes sort, which it does not take"),
+        ({"parameters": {"topic": {}}}, "parameter topic has no changes"),
+        ({"parameters": {"topic": {"type": "integer"}}}, "parameter topic cannot change type"),
+        ({"parameters": {"q": {"required": False}}}, "parameter q required can only be true"),
+        ({"parameters": {"topic": {"enum": []}}}, "parameter topic enum is not a list of distinct strings"),
+        ({"parameters": {"topic": {"enum": ["a", "a"]}}}, "parameter topic enum is not a list of distinct strings"),
+        ({"parameters": {"topic": {"enum": [1]}}}, "parameter topic enum is not a list of distinct strings"),
+        ({"parameters": {"limit": {"enum": ["10"]}}}, "parameter limit enum needs a string parameter"),
+        ({"parameters": {"sort": {"enum": ["new", "top"]}}}, "parameter sort enum takes values the catalog does not"),
+        ({"parameters": {"sort": {"enum": ["old"]}}}, "parameter sort enum leaves out the catalog default new"),
+        ({"parameters": {"topic": {"description": " "}}}, "parameter topic description is not a text"),
+        ({"parameters": {"topic": {"description": "x" * (typed.MAX_PARAMETER_DESCRIPTION + 1)}}},
+         "parameter topic description is longer than 300 characters"),
+        ({"parameters": {"topic": {"enum": ["a"], "example": "a"}}},
+         "parameter topic example would not be shown beside an enum"),
+        ({"parameters": {"sort": {"example": "new"}}}, "parameter sort example would not be shown beside an enum"),
+        ({"parameters": {"q": {"example": "x"}}}, "parameter q example is outside its own schema"),
+    ],
+)
+def test_a_narrowing_the_catalog_does_not_allow_is_refused(narrowing: dict[str, Any], refusal: str) -> None:
+    entry = {"name": "get_feed", "title": "Get feed", "description": "Feed.", **narrowing}
+    with pytest.raises(ValueError, match=f"^typed_tools.json: get_feed {re.escape(refusal)}$"):
+        typed._build(entry, _feed_endpoint(), {})
+
+
+def test_the_news_tools_take_one_required_scope_and_a_count() -> None:
+    # OpenAI's review held the open-ended news feed and searches while
+    # get_stock_news, one required symbol and a count, passed.
+    built = typed.typed_tools()
+    shapes = {
+        name: (sorted(built[name].tool.inputSchema["properties"]), built[name].tool.inputSchema["required"])
+        for name in ("get_stock_news", "get_latest_news", "search_news", "search_global_news_articles")
+    }
+    assert shapes == {
+        "get_stock_news": (["count", "symbol", "tab"], ["symbol"]),
+        "get_latest_news": (["category", "limit"], ["category"]),
+        "search_news": (["limit", "q"], ["q"]),
+        "search_global_news_articles": (["max_records", "q"], ["q"]),
+    }
+    topic = built["get_latest_news"].tool.inputSchema["properties"]["category"]
+    assert topic["enum"] == ["business", "tech", "science", "energy"]
+    assert "examples" not in topic
+    for name in ("search_news", "search_global_news_articles"):
+        assert built[name].tool.inputSchema["properties"]["q"]["examples"] == ["Airbus"], name
+
+
+async def test_get_latest_news_takes_one_listed_topic(monkeypatch) -> None:
+    fake = FakeClient({"data": []})
+    monkeypatch.setattr(gateway, "get_client", lambda: fake)
+
+    missing = _payload(await _call("get_latest_news", {}))
+    unlisted = _payload(await _call("get_latest_news", {"category": "defense"}))
+    region = _payload(await _call("get_latest_news", {"category": "tech", "region": "us"}))
+    assert fake.calls == []
+    assert missing["error"] == "missing_required_parameters" and missing["missing"] == ["category"]
+    assert unlisted["error"] == "invalid_arguments"
+    assert [item["parameter"] for item in unlisted["invalid"]] == ["category"]
+    assert region["error"] == "unknown_parameters" and region["unknown"] == ["region"]
+
+    assert (await _call("get_latest_news", {"category": "tech"})).isError is False
+    # call_endpoint still takes every input of the operation.
+    await gateway.call_endpoint("news_latest", params={"region": "us"})
+    path = load_catalog().get("news_latest").path
+    assert fake.calls == [(path, {"category": "tech"}), (path, {"region": "us"})]
+
+
 def test_typed_metadata_names_no_commercial_vendor() -> None:
     for name, tool in typed.typed_tools().items():
         text = json.dumps(tool.tool.model_dump(by_alias=True, exclude_none=True))
@@ -483,18 +611,25 @@ def _catalog_option(parameter: EndpointParameter) -> dict[str, Any]:
 
 def test_a_typed_input_keeps_the_catalog_pattern_and_example() -> None:
     patterns = examples = 0
+    entries = {entry["name"]: entry for entry in typed.load_spec()}
     for tool in typed.typed_tools().values():
         properties = tool.tool.inputSchema["properties"]
+        entry = entries[tool.name]
         for parameter in typed.exposed_parameters(load_catalog().get(tool.operation_id)):
+            if parameter.name in entry.get("omit_parameters", []):
+                assert parameter.name not in properties, (tool.name, parameter.name)
+                continue
             option = _catalog_option(parameter)
             listed = properties[parameter.name]
             if "pattern" in option:
                 patterns += 1
                 assert listed["pattern"] == option["pattern"], (tool.name, parameter.name)
-            # Some catalog inputs carry their example only in the schema.
+            # Some catalog inputs carry their example only in the schema, and
+            # an entry may give its own.
             example = parameter.example
             if example is None and option.get("examples"):
                 example = option["examples"][0]
+            example = entry.get("parameters", {}).get(parameter.name, {}).get("example", example)
             if example is not None and "enum" not in listed and example != listed.get("default"):
                 examples += 1
                 assert listed["examples"] == [example], (tool.name, parameter.name)
