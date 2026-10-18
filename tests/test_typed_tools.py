@@ -21,6 +21,7 @@ from sugra_api_mcp.server import (
     CHATGPT_DROPPED_SENTENCES,
     CHATGPT_PROFILE,
     CHATGPT_UNLISTED_TOOLS,
+    CHATGPT_UNLISTED_TYPED_TOOLS,
     DEFAULT_PROFILE,
     OAUTH_SECURITY_SCHEMES,
     SERVER_INSTRUCTIONS,
@@ -90,7 +91,9 @@ async def test_other_clients_keep_todays_list() -> None:
 async def test_chatgpt_is_listed_the_typed_tools_in_place_of_the_generic_ones() -> None:
     chatgpt = await _list(CHATGPT)
     names = [tool["name"] for tool in chatgpt]
-    expected = (_registered_names() - CHATGPT_UNLISTED_TOOLS) | set(typed.typed_tools())
+    expected = (_registered_names() - CHATGPT_UNLISTED_TOOLS) | (
+        set(typed.typed_tools()) - CHATGPT_UNLISTED_TYPED_TOOLS
+    )
     assert len(names) == len(set(names)) == len(expected)
     assert set(names) == expected
     kept = [
@@ -101,11 +104,43 @@ async def test_chatgpt_is_listed_the_typed_tools_in_place_of_the_generic_ones() 
     assert chatgpt[: len(kept)] == kept
 
 
+async def test_chatgpt_is_not_listed_the_news_feed_and_searches() -> None:
+    news = {"get_latest_news", "search_news", "search_global_news_articles"}
+    assert news == CHATGPT_UNLISTED_TYPED_TOOLS
+    assert not {tool["name"] for tool in await _list(CHATGPT)} & news
+    # A renamed typed tool would otherwise slip back into ChatGPT's list unnoticed.
+    built = set(typed.typed_tools())
+    assert built >= news
+    # Every other client is listed call_endpoint and no typed tool, as before.
+    for client_info in (CLAUDE, None):
+        listed = {tool["name"] for tool in await _list(client_info)}
+        assert "call_endpoint" in listed and not listed & built
+
+
+async def test_every_other_client_still_reaches_the_news_operations(monkeypatch) -> None:
+    fake = FakeClient({"data": []})
+    monkeypatch.setattr(gateway, "get_client", lambda: fake)
+    built = typed.typed_tools()
+    # Each call passes an input its ChatGPT tool leaves out.
+    calls = {
+        built["get_latest_news"].operation_id: {"category": "tech", "region": "us"},
+        built["search_news"].operation_id: {"q": "Airbus", "offset": 10},
+        built["search_global_news_articles"].operation_id: {"q": "Airbus", "timespan": "7d"},
+    }
+    async with create_connected_server_and_client_session(mcp, client_info=CLAUDE) as session:
+        for operation_id, params in calls.items():
+            result = await session.call_tool("call_endpoint", {"operation_id": operation_id, "params": params})
+            assert result.isError is False, operation_id
+    catalog = load_catalog()
+    assert fake.calls == [(catalog.get(operation_id).path, params) for operation_id, params in calls.items()]
+
+
 async def test_nothing_chatgpt_is_listed_names_a_tool_it_is_not_listed() -> None:
     chatgpt = await _list(CHATGPT)
+    unlisted = CHATGPT_UNLISTED_TOOLS | CHATGPT_UNLISTED_TYPED_TOOLS
     for tool in chatgpt:
         text = json.dumps(tool)
-        named = {name for name in CHATGPT_UNLISTED_TOOLS if re.search(rf"\b{re.escape(name)}\b", text)}
+        named = {name for name in unlisted if re.search(rf"\b{re.escape(name)}\b", text)}
         assert not named, (tool["name"], named)
     claude = {tool["name"]: tool for tool in await _list(CLAUDE)}
     listed = {tool["name"]: tool for tool in chatgpt}
