@@ -206,11 +206,11 @@
      "description": "Overview of one internet autonomous system by its number: operator, registry record and announced address space."},
 
     {"name": "get_latest_news", "title": "Get latest news", "operation_id": "news_latest",
-     "description": "Latest news headlines across sources, optionally by region or category."},
+     "description": "Recent headlines from Sugra News, an index Sugra keeps of public news feeds, refreshed every few minutes. Each item gives the headline, a short summary, the outlet and a link, never the full article. Use when the user asks what is in the news now, optionally by region or topic."},
     {"name": "search_news", "title": "Search news", "operation_id": "news_search",
-     "description": "Search recent news headlines by words."},
+     "description": "Search recent headlines in Sugra News, an index Sugra keeps of public news feeds. The search runs on that index only, which holds what the feeds publish now, not an archive. Each match gives the headline, a short summary, the outlet and a link, never the full article. Use when the user asks for news about a topic, person or place."},
     {"name": "search_global_news_articles", "title": "Search global news articles", "operation_id": "gdelt_articles",
-     "description": "Search news articles from around the world by words, time span, country and language."},
+     "description": "Search world news coverage of the last 24 hours, indexed from the open GDELT dataset, by words, time span, country and language. Each article gives the link, title, outlet, tone, the people, places and organisations it names and a few short quotes, never the full text. Use to see how the press covers a topic."},
     {"name": "get_trending_news_entities", "title": "Get trending news entities", "operation_id": "gdelt_entities_trending",
      "description": "People and organisations most mentioned in world news over a recent period."},
 
