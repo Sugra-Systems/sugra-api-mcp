@@ -244,12 +244,15 @@ def _narrowed(entry: dict[str, Any], parameters: list[EndpointParameter]) -> lis
     overrides = entry.get("parameters", {})
     if not isinstance(overrides, dict):
         raise ValueError(f"typed_tools.json: {name} parameters is not an object")
-    kept = [p for p in parameters if p.name not in omitted]
-    unknown = sorted(set(overrides) - {p.name for p in kept})
+    unknown = sorted(set(overrides) - set(by_name))
     if unknown:
         raise ValueError(
             f"typed_tools.json: {name} changes {', '.join(unknown)}, which it does not take"
         )
+    dropped = sorted(set(overrides) & set(omitted))
+    if dropped:
+        raise ValueError(f"typed_tools.json: {name} changes {', '.join(dropped)}, which it omits")
+    kept = [p for p in parameters if p.name not in omitted]
     return [_overridden(name, p, overrides[p.name]) if p.name in overrides else p for p in kept]
 
 
@@ -284,6 +287,12 @@ def _overridden(tool: str, parameter: EndpointParameter, override: Any) -> Endpo
             raise ValueError(f"{where} enum takes values the catalog does not")
         if "default" in catalog and catalog["default"] not in enum:
             raise ValueError(f"{where} enum leaves out the catalog default {catalog['default']}")
+        # A listed value the input's own schema refuses (its pattern or length)
+        # would fail every call that sends it.
+        validator = Draft202012Validator(catalog)
+        for value in enum:
+            if not validator.is_valid(value):
+                raise ValueError(f"{where} enum value {value} is outside its own schema")
         # A top-level key wins over the catalog's nullable wrapper (_parameter_schema).
         update["schema_"] = {**parameter.schema_, "enum": list(enum)}
     if "description" in override:
