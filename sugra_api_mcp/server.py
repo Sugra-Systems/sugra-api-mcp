@@ -161,7 +161,11 @@ class SugraFastMCP(FastMCP):
                     for tool in tools
                     if tool.name not in CHATGPT_UNLISTED_TOOLS
                 ),
-                *typed_tool_listing(),
+                *(
+                    tool
+                    for tool in typed_tool_listing()
+                    if tool.name not in CHATGPT_UNLISTED_TYPED_TOOLS
+                ),
             ]
         return [_with_ui_template(_with_oauth_security(tool), template_uri) for tool in tools]
 
@@ -434,6 +438,12 @@ CHATGPT_PROFILE = "chatgpt"
 # operation instead. They stay callable by name, as every registered tool is.
 CHATGPT_UNLISTED_TOOLS = frozenset(
     {"search_endpoints", "describe_endpoint", "call_endpoint", "fetch_data"}
+)
+# Typed tools a ChatGPT session is not listed either: the news feed and the two
+# news searches. They stay callable by name, and every other client still
+# reaches their operations through call_endpoint.
+CHATGPT_UNLISTED_TYPED_TOOLS = frozenset(
+    {"get_latest_news", "search_news", "search_global_news_articles"}
 )
 # The sentence a ChatGPT session's listing drops from a registered tool's
 # description, because it points at a tool that session is not listed.
