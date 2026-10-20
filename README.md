@@ -84,7 +84,7 @@ The Sugra API skills live in [Sugra-Systems/sugra-api-skills](https://github.com
 
 ## Agent skills
 
-These skills teach the catalog loop. They do not add MCP tools. Connect the Sugra MCP server separately (hosted or local). The plugin package for each agent lives in [Sugra-Systems/sugra-api-plugins](https://github.com/Sugra-Systems/sugra-api-plugins).
+These skills teach the catalog loop. The Claude Code plugin also connects the hosted Sugra MCP server; the Codex and Grok plugins and the skill folders add no MCP tools, so connect the server separately there (hosted or local). The plugin package for each agent lives in [Sugra-Systems/sugra-api-plugins](https://github.com/Sugra-Systems/sugra-api-plugins).
 
 ### Claude Code
 
@@ -93,7 +93,7 @@ These skills teach the catalog loop. They do not add MCP tools. Connect the Sugr
 /plugin install sugra-api-skills@sugra-api-plugins
 ```
 
-Skills appear as `/sugra-api-skills:<skill>`, for example `/sugra-api-skills:discover-and-call`.
+Skills appear as `/sugra-api-skills:<skill>`, for example `/sugra-api-skills:discover-and-call`. The plugin also adds the hosted server `https://mcp.sugra.ai/mcp`; sign in to it once from `/mcp`.
 
 ### Codex
 
@@ -221,12 +221,14 @@ export SUGRA_API_KEY=sugra_xxx_...
 
 Or edit `~/.claude/config.json` manually with the same shape as Claude Desktop above.
 
-To install the skills as a plugin (separate from the MCP server):
+To install the skills as a plugin, which also connects the hosted server:
 
 ```
 /plugin marketplace add Sugra-Systems/sugra-api-plugins
 /plugin install sugra-api-skills@sugra-api-plugins
 ```
+
+Sign in to the plugin's server once from `/mcp`. If the Sugra API connector from claude.ai is connected too, Claude Code shows only the plugin's server. Running the local package as well gives you two Sugra servers: remove it with `claude mcp remove sugra`, or skip the plugin and copy the skill folders of sugra-api-skills into `~/.claude/skills/`.
 
 ### Usage with Gemini CLI
 
