@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import httpx
 import jwt
@@ -99,7 +100,7 @@ async def test_jwt_with_valid_signature_and_cached_key(auth_config, rsa_keypair)
         expires_at=time.time() + 60,
     )
 
-    async def fake_post(self, url, headers=None, json=None):
+    async def fake_post(self, url, headers=None, json=None, extensions=None):
         return httpx.Response(204)
 
     with patch("httpx.AsyncClient.post", new=fake_post):
@@ -141,7 +142,7 @@ async def test_passport_jwt_without_issuer_with_mcp_audience_is_accepted(auth_co
 
     posts = []
 
-    async def fake_post(self, url, headers=None, json=None):
+    async def fake_post(self, url, headers=None, json=None, extensions=None):
         posts.append((url, headers, json))
         return httpx.Response(204)
 
@@ -187,7 +188,7 @@ async def test_jwt_activity_pass_carries_allowlisted_platform(auth_config, rsa_k
         expires_at=time.time() + 60,
     )
 
-    async def fake_post(self, url, headers=None, json=None):
+    async def fake_post(self, url, headers=None, json=None, extensions=None):
         return httpx.Response(200, json={"ok": True, "platform": "anthropic", "connection_id": 9})
 
     with patch("httpx.AsyncClient.post", new=fake_post):
@@ -222,7 +223,7 @@ async def test_jwt_activity_unknown_platform_is_omitted(auth_config, rsa_keypair
         expires_at=time.time() + 60,
     )
 
-    async def fake_post(self, url, headers=None, json=None):
+    async def fake_post(self, url, headers=None, json=None, extensions=None):
         return httpx.Response(200, json={"ok": True, "platform": "not-a-vendor"})
 
     with patch("httpx.AsyncClient.post", new=fake_post):
@@ -260,7 +261,7 @@ async def test_jwt_activity_validation_failure_denies_auth(auth_config, rsa_keyp
 
     call_count = 0
 
-    async def fake_post(self, url, headers=None, json=None):
+    async def fake_post(self, url, headers=None, json=None, extensions=None):
         nonlocal call_count
         call_count += 1
         return httpx.Response(403, json={"error": "connection_disconnected"})
@@ -303,17 +304,19 @@ async def test_jwt_activity_exception_denies_auth(auth_config, rsa_keypair):
 
     call_count = 0
 
-    async def fake_post(self, url, headers=None, json=None):
+    async def fake_post(self, url, headers=None, json=None, extensions=None):
         nonlocal call_count
         call_count += 1
         raise httpx.ConnectError("activity unavailable")
 
+    # A 3.5 s budget holds one retry (pause 1 s), not a second (pause 2 s).
+    deadline = asyncio.get_running_loop().time() + 3.5
     with patch("httpx.AsyncClient.post", new=fake_post), pytest.raises(AuthError) as exc:
-        await auth.resolve(token)
+        await auth.resolve(token, deadline=deadline)
 
     assert exc.value.status == 502
     assert "validation" in str(exc.value)
-    assert call_count == 1
+    assert call_count == 2
 
 
 async def test_jwt_missing_jti_raises(auth_config, rsa_keypair):
@@ -346,7 +349,7 @@ async def test_jwt_missing_jti_raises(auth_config, rsa_keypair):
 async def test_raw_api_key_does_not_report_oauth_activity(auth_config):
     auth = Authenticator(auth_config)
 
-    async def fake_post(self, url, headers=None, json=None):
+    async def fake_post(self, url, headers=None, json=None, extensions=None):
         raise AssertionError("raw API key should not report OAuth activity")
 
     with patch("httpx.AsyncClient.post", new=fake_post):
@@ -504,7 +507,7 @@ async def test_lookup_404_raises_with_user_message(auth_config, rsa_keypair):
     mock_response.headers = {"content-type": "application/json"}
     mock_response.json = MagicMock(return_value={"error": "no_api_key", "message": "User has no API key"})
 
-    async def fake_post(self, url, headers=None, json=None):
+    async def fake_post(self, url, headers=None, json=None, extensions=None):
         return httpx.Response(204)
 
     async def fake_get(self, url, headers=None):
@@ -552,7 +555,7 @@ async def test_lookup_success_caches_result(auth_config, rsa_keypair):
         call_count += 1
         return mock_response
 
-    async def fake_post(self, url, headers=None, json=None):
+    async def fake_post(self, url, headers=None, json=None, extensions=None):
         return httpx.Response(204)
 
     with patch("httpx.AsyncClient.post", new=fake_post), patch("httpx.AsyncClient.get", new=fake_get):
@@ -775,7 +778,7 @@ def test_auth_middleware_serves_the_grok_web_connector_once_signed_in(auth_confi
     assert response.status_code == 200
     assert response.json() == {"ok": True}
     assert seen["body"] == payload
-    auth.resolve.assert_awaited_once_with("signed-in-token")
+    auth.resolve.assert_awaited_once_with("signed-in-token", deadline=ANY)
 
 
 @pytest.mark.parametrize("client_name", ["smithery-probe", "mcpindex-trust", "rmcp", "Grok-Validator", "grok-validator-2", 7])

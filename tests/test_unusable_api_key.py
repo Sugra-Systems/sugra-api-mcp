@@ -234,7 +234,7 @@ async def test_http_calls_with_such_a_key_send_nothing_and_say_why(sent, monkeyp
     real_resolve = authenticator.resolve
     resolved = {"jwt-legacy": UNUSABLE_KEYS[0], "jwt-broken": CONTROL_KEYS[0], "jwt-current": "sugra_test_current"}
 
-    async def resolve(token: str) -> ResolvedAuth:
+    async def resolve(token: str, deadline: float | None = None) -> ResolvedAuth:
         token = token.strip()
         if token in resolved:
             return ResolvedAuth(

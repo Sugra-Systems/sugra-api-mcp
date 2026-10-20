@@ -153,7 +153,7 @@ async def _served(monkeypatch, recorded: _Recorded) -> AsyncIterator[Call]:
     authenticator = _authenticator()
     real_resolve = authenticator.resolve
 
-    async def resolve(token: str) -> ResolvedAuth:
+    async def resolve(token: str, deadline: float | None = None) -> ResolvedAuth:
         token = token.strip()
         if token == _BEARER["oauth"]:
             return ResolvedAuth(
