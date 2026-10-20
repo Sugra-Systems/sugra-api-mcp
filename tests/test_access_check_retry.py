@@ -5,13 +5,15 @@ error or a 5xx for some seconds. The check is tried again after a pause that
 grows to a cap, for as long as the auth budget holds the pause, a minimum
 attempt and the reserve, the room rechecked after every pause. Retrying never
 changes who gets in: any other APP answer (1xx, 3xx, 4xx, 600 and up) is a
-refusal and final, a failure after the last attempt is the 502, and no pass is
+refusal and final, also when its body then breaks (the status is read from the
+headers), a failure after the last attempt is the 502, and no pass is
 ever served without a fresh APP check.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import re
 import time
 from types import SimpleNamespace
@@ -52,7 +54,7 @@ class _ScriptedHttp:
         self.post_calls = 0
         self.times: list[float] = []
 
-    async def post(self, url, headers=None, json=None):
+    async def post(self, url, headers=None, json=None, extensions=None):
         self.post_calls += 1
         loop = asyncio.get_running_loop()
         self.times.append(loop.time())
@@ -387,7 +389,8 @@ async def test_a_short_budget_still_runs_its_one_check():
     assert http.post_calls == 1
 
 
-# A refusal whose body breaks, over a real socket: retried, then refused.
+# An answer whose body breaks, over a real socket: the status read from the
+# headers decides. A refusal stays a refusal; a 5xx stays a 5xx.
 
 def _raw(status: int, reason: str, body: bytes, length: int | None = None) -> bytes:
     size = len(body) if length is None else length
@@ -397,19 +400,33 @@ def _raw(status: int, reason: str, body: bytes, length: int | None = None) -> by
     ).encode() + body
 
 
+BROKEN_403 = _raw(403, "Forbidden", b'{"error": "tok', length=200)
+BROKEN_503 = _raw(503, "Service Unavailable", b'{"err', length=200)
+PASS_200 = _raw(200, "OK", b'{"ok": true, "platform": "anthropic"}')
+
+
 class _LocalApp:
-    def __init__(self, *answers: bytes) -> None:
+    """A local APP; an answer is raw bytes, or ("stall", bytes): send them and
+    hold the connection open. The last answer repeats."""
+
+    def __init__(self, *answers) -> None:
         self.answers = list(answers)
         self.requests = 0
         self.server: asyncio.Server | None = None
+        self.release = asyncio.Event()
 
     async def _handle(self, reader, writer) -> None:
         head = await reader.readuntil(b"\r\n\r\n")
         length = re.search(rb"content-length: (\d+)", head, re.IGNORECASE)
         await reader.readexactly(int(length.group(1)) if length else 0)
         self.requests += 1
-        writer.write(self.answers.pop(0))
+        answer = self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]
+        stall = isinstance(answer, tuple)
+        writer.write(answer[1] if stall else answer)
         await writer.drain()
+        if stall:
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self.release.wait(), 30)
         writer.close()
 
     async def __aenter__(self) -> Authenticator:
@@ -419,22 +436,75 @@ class _LocalApp:
         return self.auth
 
     async def __aexit__(self, *exc) -> None:
+        self.release.set()
         await self.auth.aclose()
         self.server.close()
         await self.server.wait_closed()
 
 
-async def test_a_refusal_whose_body_breaks_is_retried_and_never_admits(fast):
-    app = _LocalApp(
-        _raw(403, "Forbidden", b'{"error": "tok', length=200),
-        _raw(403, "Forbidden", b'{"error": "token_revoked"}'),
-    )
+async def test_a_refusal_whose_body_breaks_is_final(fast):
+    app = _LocalApp(BROKEN_403, _raw(403, "Forbidden", b'{"error": "token_revoked"}'))
     async with app as auth:
         with pytest.raises(AuthError) as exc:
             await auth._validate_mcp_access(CLAIMS)
-        assert exc.value.status == 401
-        assert app.requests == 2
+        assert exc.value.status == 502
+        assert "HTTP 403" in str(exc.value)
+        assert app.requests == 1, "a refusal whose body broke was retried"
         assert JTI not in auth._access_cache
+        assert JTI in auth._access_refused, "the refusal was not recorded"
+
+
+async def test_a_refusal_whose_body_breaks_is_never_followed_by_a_pass(fast):
+    app = _LocalApp(BROKEN_403, PASS_200)
+    async with app as auth:
+        with pytest.raises(AuthError) as exc:
+            await auth._validate_mcp_access(CLAIMS)
+        assert exc.value.status == 502
+        assert app.requests == 1, "the 2xx after the broken refusal was asked for"
+        assert JTI not in auth._access_cache
+
+
+async def test_a_refusal_whose_body_stalls_past_the_cut_is_final(fast):
+    app = _LocalApp(("stall", BROKEN_403), PASS_200)
+    async with app as auth:
+        with pytest.raises(AuthError) as exc:
+            await auth._validate_mcp_access(CLAIMS)
+        assert exc.value.status == 502
+        assert "HTTP 403" in str(exc.value)
+        assert app.requests == 1
+        assert JTI in auth._access_refused
+
+
+async def test_a_refusal_cancelled_mid_body_still_drops_the_pass():
+    app = _LocalApp(("stall", BROKEN_403))
+    async with app as auth:
+        loop = asyncio.get_running_loop()
+        check = asyncio.create_task(auth._validate_mcp_access(CLAIMS, loop.time() + 10))
+        while app.requests < 1:
+            await asyncio.sleep(0.01)
+        await asyncio.sleep(0.1)  # the headers are in, the body is not
+        check.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await check
+        assert JTI in auth._access_refused, "the seen refusal was forgotten on cancel"
+
+
+async def test_a_5xx_whose_body_breaks_is_still_retried(fast):
+    app = _LocalApp(BROKEN_503, PASS_200)
+    async with app as auth:
+        assert await auth._validate_mcp_access(CLAIMS) == "anthropic"
+        assert app.requests == 2
+
+
+async def test_a_5xx_whose_body_breaks_is_reported_as_a_5xx(fast):
+    app = _LocalApp(BROKEN_503)
+    async with app as auth:
+        with pytest.raises(AuthError) as exc:
+            await auth._validate_mcp_access(CLAIMS)
+        assert exc.value.status == 502
+        assert "HTTP 503" in str(exc.value)
+        assert app.requests > 1
+        assert JTI not in auth._access_refused
 
 
 # The deadline goes down by argument.
