@@ -127,6 +127,16 @@ def test_every_chatgpt_passage_is_found_once_in_its_pinned_skill() -> None:
         assert read_chatgpt_skill(skill) == expected != pinned, skill
 
 
+def test_the_chatgpt_discover_and_call_text_sends_the_session_to_no_http_request() -> None:
+    # A ChatGPT session has no HTTP tool: the steps it reads go through its listed tools only.
+    text = read_chatgpt_skill("discover-and-call")
+    for step in ("## HTTP loop", "HTTP-call", "openapi.json", "x-api-key", "GET https://"):
+        assert step not in text, step
+    assert "## MCP loop" in text
+    # Every other client keeps the HTTP loop.
+    assert "## HTTP loop" in read_skill("discover-and-call")
+
+
 def test_the_chatgpt_texts_follow_the_copy_rules() -> None:
     texts = [read_chatgpt_skill(skill) for *_rest, skill in SKILL_SPECS]
     texts += [replacement for passages in CHATGPT_PASSAGES.values() for *_ends, replacement in passages]

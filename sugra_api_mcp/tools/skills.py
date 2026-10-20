@@ -97,8 +97,10 @@ CHATGPT_PASSAGES: dict[str, tuple[tuple[str, str, str], ...]] = {
     ),
     "discover-and-call": (
         (
-            "## MCP loop\n",
+            "Two complete loops, same API.",
             "## Check the answer before quoting it",
+            "In ChatGPT the API is reached only through the tools listed in this session,"
+            " never by a request of its own.\n\n"
             "## MCP loop\n\n"
             "In ChatGPT the hosted server lists one typed tool per supported operation, named"
             " for what it returns (for example `get_stock_quotes`, `get_economic_series`,"
@@ -115,8 +117,7 @@ CHATGPT_PASSAGES: dict[str, tuple[tuple[str, str, str], ...]] = {
             " `invalid_arguments` naming the input.\n\n"
             "`list_toolsets` and `list_sources` (resources `sugra://catalog/domains`,"
             " `sugra://catalog/sources`) are the map, not the query. The typed tools cover part"
-            " of the catalog: when none covers the question, say so, or use the HTTP loop"
-            " above.\n\n"
+            " of the catalog: when none covers the question, say so.\n\n"
             "Hosted only: `resolve_entity`, `get_snapshot`, `get_timeseries`. LEI/VAT and"
             " sanctions on every transport: `sugra_entity_lookup`, `sugra_entity_screen`.\n\n"
             "The MCP prompts (`market_snapshot`, `macro_briefing`, `sanctions_screening`,"
@@ -127,8 +128,8 @@ CHATGPT_PASSAGES: dict[str, tuple[tuple[str, str, str], ...]] = {
         (
             "Drop a bad MCP `toolset`/`source` filter.",
             "\n\nAn error message usually names the fix",
-            "When no tool listed in this session covers it, fetch live `/openapi.json`, then"
-            " HTTP-call if the spec has it.",
+            "When no tool listed in this session covers it, say so: this session reaches the"
+            " API only through its tools.",
         ),
         (
             "Do not add per-endpoint MCP tools to skip this loop.",
