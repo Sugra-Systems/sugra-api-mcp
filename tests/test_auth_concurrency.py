@@ -62,18 +62,11 @@ class _FakeHttp:
         return None
 
 
-class _ActivityHttp(_FakeHttp):
-    """The stand-in as the access check calls it, with its request extensions."""
-
-    async def post(self, url, headers=None, json=None, extensions=None):
-        return await super().post(url, headers=headers, json=json)
-
-
 def _authenticator(delay: float = 0.0) -> tuple[Authenticator, _FakeHttp]:
     auth = Authenticator(AuthConfig(
         app_url="https://app.example", jwks_url="https://app.example/jwks",
         internal_token="tkn"))
-    fake = _ActivityHttp(delay)
+    fake = _FakeHttp(delay)
     auth._http = fake
     return auth, fake
 
@@ -143,7 +136,7 @@ async def test_activity_validation_failure_is_never_cached() -> None:
     auth, _ = _authenticator()
 
     class _Deny(_FakeHttp):
-        async def post(self, url, headers=None, json=None, extensions=None):
+        async def post(self, url, headers=None, json=None):
             self.post_calls += 1
             resp = _FakeResponse({"error": "no access"})
             resp.status_code = 403

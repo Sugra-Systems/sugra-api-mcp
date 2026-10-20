@@ -86,7 +86,7 @@ def _authenticator(public_pem: str, *, cached_key: bool) -> Authenticator:
 
 
 def _activity(response: httpx.Response):
-    async def fake_post(self, url, headers=None, json=None, extensions=None):
+    async def fake_post(self, url, headers=None, json=None):
         return response
     return patch("httpx.AsyncClient.post", new=fake_post)
 
