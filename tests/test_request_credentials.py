@@ -104,7 +104,7 @@ async def test_http_tool_calls_use_the_credential_of_the_request_that_carries_th
     revoked: set[str] = set()
     real_resolve = authenticator.resolve
 
-    async def resolve(token: str) -> ResolvedAuth:
+    async def resolve(token: str, deadline: float | None = None) -> ResolvedAuth:
         token = token.strip()
         if token.startswith("jwt-"):
             if token in revoked:
@@ -190,7 +190,7 @@ async def test_middleware_marks_every_request_it_serves_as_http(monkeypatch) -> 
     authenticator = _authenticator()
     real_resolve = authenticator.resolve
 
-    async def resolve(token: str) -> ResolvedAuth:
+    async def resolve(token: str, deadline: float | None = None) -> ResolvedAuth:
         token = token.strip()
         if token == "jwt-7":
             return ResolvedAuth(api_key=f"sugra_TENANT_{token[4:]}", user_id=7, access_token_id="jti-7", method="oauth", platform="openai")
@@ -267,7 +267,7 @@ async def test_every_tool_span_names_how_its_own_request_arrived(upstream, monke
     authenticator = _authenticator()
     real_resolve = authenticator.resolve
 
-    async def resolve(token: str) -> ResolvedAuth:
+    async def resolve(token: str, deadline: float | None = None) -> ResolvedAuth:
         token = token.strip()
         if token.startswith("jwt-"):
             return ResolvedAuth(api_key=f"sugra_TENANT_{token[4:]}", user_id=42, access_token_id=token, method="oauth", platform="anthropic")
@@ -386,7 +386,7 @@ async def test_concurrent_calls_each_carry_their_own_request(monkeypatch, one_se
     authenticator = _authenticator()
     real_resolve = authenticator.resolve
 
-    async def resolve(token: str) -> ResolvedAuth:
+    async def resolve(token: str, deadline: float | None = None) -> ResolvedAuth:
         token = token.strip()
         if token.startswith("jwt-"):
             return ResolvedAuth(api_key=f"sugra_TENANT_{token[4:]}", user_id=42, access_token_id=token, method="oauth", platform="anthropic")

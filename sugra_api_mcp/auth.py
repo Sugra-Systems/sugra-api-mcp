@@ -66,6 +66,21 @@ ACCESS_CACHE_MAX_ENTRIES = 4096
 # Prune BELOW the cap: shrinking to exactly the cap re-runs the
 # O(N log N) sweep on every subsequent miss.
 ACCESS_CACHE_PRUNE_WATERMARK = ACCESS_CACHE_MAX_ENTRIES - 512
+# When the APP access check fails on the APP's side (a transport error or a
+# 5xx, as for the seconds an APP restart takes), it is tried again after a
+# pause that doubles from the first value up to the cap (1, 2, 3, 3 ... s), for
+# as long as the auth budget still holds the pause, the minimum attempt and the
+# reserve; with the 15 s budget that rides out a restart of about 12 s. Every
+# attempt is cut where the reserve begins. Retrying never changes who gets in:
+# any other APP answer (1xx, 3xx, 4xx, 600 and up) is a refusal and final, also
+# when its body then fails to arrive.
+ACCESS_RETRY_PAUSE_SECONDS = 1.0
+ACCESS_RETRY_MAX_PAUSE_SECONDS = 3.0
+ACCESS_RETRY_MIN_ATTEMPT_SECONDS = 1.0
+ACCESS_RETRY_RESERVE_SECONDS = 1.0
+# Request extension under which the access check's response hook records the
+# status as soon as the headers arrive.
+ACTIVITY_STATUS_EXTENSION = "sugra_activity_status"
 # Same set as APP McpConnectionService::ALLOWED_PLATFORMS. Anything else is
 # dropped, never copied onto a span.
 ACCESS_PLATFORMS: frozenset[str] = frozenset({
@@ -232,6 +247,38 @@ class AuthError(Exception):
         self.reauth = reauth
 
 
+class _AppSideFailure(Exception):
+    """The APP access check failed on the APP's side: a transport error or a 5xx.
+
+    `reason` is "transport" (`detail` the exception class) or "http_5xx" (`detail`
+    the status); `cause` is the transport exception, if any.
+    """
+
+    def __init__(
+        self, reason: str, detail: str, cause: BaseException | None = None,
+    ) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.detail = detail
+        self.cause = cause
+
+
+def _is_app_refusal(status: int) -> bool:
+    """An APP answer that is neither a pass (2xx) nor a failure on its side (5xx)."""
+    return not (200 <= status < 300 or 500 <= status < 600)
+
+
+async def _note_activity_status(response: httpx.Response) -> None:
+    """Response hook: record an access check's status before its body is read.
+
+    httpx runs response hooks once the headers are in and before it reads the
+    body, so a refusal whose body then fails to arrive is still a refusal.
+    """
+    seen = response.request.extensions.get(ACTIVITY_STATUS_EXTENSION)
+    if isinstance(seen, dict):
+        seen["status"] = response.status_code
+
+
 @dataclass(frozen=True)
 class _CachedKey:
     api_key: str
@@ -325,12 +372,20 @@ class Authenticator:
         # Failures are never cached; the TTL only coarsens the activity
         # heartbeat, not the access decision it grants.
         self._access_cache: dict[str, _AccessPass] = {}
+        # Refusals per jti, each as the eviction count when it was recorded: a
+        # check that started before a recorded refusal never stores its pass.
+        # Bounded like the pass cache; a dropped entry raises the floor, which
+        # then counts for every jti.
+        self._access_epoch = 0
+        self._access_refused: dict[str, int] = {}
+        self._access_refused_floor = 0
         # One pooled client for all internal calls (a fresh client per call
         # paid TCP+TLS setup on every tool invocation), on the process-wide
         # TLS context so it does not build a second one.
         self._http = httpx.AsyncClient(
             timeout=INTERNAL_HTTP_TIMEOUT_SECONDS,
             verify=shared_ssl_context(),
+            event_hooks={"response": [_note_activity_status]},
         )
 
     async def aclose(self) -> None:
@@ -355,7 +410,9 @@ class Authenticator:
     def audience(self) -> str:
         return f"{self._config.app_url}/mcp"
 
-    async def resolve(self, token: str) -> ResolvedAuth:
+    async def resolve(self, token: str, deadline: float | None = None) -> ResolvedAuth:
+        # `deadline`: the event-loop time the caller's auth budget ends, handed
+        # down to the access check by argument (AuthMiddleware passes its own).
         token = token.strip()
         if not token:
             raise AuthError("Empty token")
@@ -407,7 +464,7 @@ class Authenticator:
             user_for_log = claims.user_id
             t1 = time.monotonic()
             try:
-                platform = await self._validate_mcp_access(claims)
+                platform = await self._validate_mcp_access(claims, deadline)
             except AuthError:
                 outcome = "activity_denied"
                 raise
@@ -588,16 +645,77 @@ class Authenticator:
             )
             return api_key
 
-    async def _validate_mcp_access(self, claims: _JwtClaims) -> str | None:
+    async def _validate_mcp_access(
+        self, claims: _JwtClaims, deadline: float | None = None,
+    ) -> str | None:
         if not self._config.internal_token:
             raise AuthError("INTERNAL_API_TOKEN not configured on MCP server", status=500)
 
         # jti-TTL cache: a PASS within the window skips the round-trip.
-        now = time.time()
+        now = time.monotonic()
         cached = self._access_cache.get(claims.access_token_id)
         if cached is not None and cached.expires_at > now:
             return cached.platform
 
+        # A failure on the APP's side is retried with a growing pause while the
+        # auth budget holds the pause, a minimum attempt and the reserve, the
+        # room rechecked after each pause, which can run long. `deadline` is the
+        # event-loop time the caller's auth budget ends; without one the check
+        # counts AUTH_BUDGET_SECONDS from here. Every attempt is cut where the
+        # reserve begins; when a minimum attempt no longer fits before it, the
+        # one attempt is cut at the deadline itself, never left uncut.
+        loop = asyncio.get_running_loop()
+        if deadline is None:
+            deadline = loop.time() + AUTH_BUDGET_SECONDS
+        reserve_at = deadline - ACCESS_RETRY_RESERVE_SECONDS
+        cut = reserve_at
+        if reserve_at - loop.time() < ACCESS_RETRY_MIN_ATTEMPT_SECONDS:
+            cut = deadline
+        pause = ACCESS_RETRY_PAUSE_SECONDS
+        while True:
+            try:
+                return await self._attempt_activity(claims, cut)
+            except _AppSideFailure as failure:
+                last = failure
+            if reserve_at - loop.time() < pause + ACCESS_RETRY_MIN_ATTEMPT_SECONDS:
+                break
+            await asyncio.sleep(pause)
+            if reserve_at - loop.time() < ACCESS_RETRY_MIN_ATTEMPT_SECONDS:
+                break
+            pause = min(pause * 2, ACCESS_RETRY_MAX_PAUSE_SECONDS)
+        if last.reason == "transport":
+            raise AuthError(
+                "Internal MCP access validation failed", status=502) from last.cause
+        raise AuthError(
+            f"Internal MCP access validation failed: HTTP {last.detail}", status=502)
+
+    async def _attempt_activity(self, claims: _JwtClaims, cut: float) -> str | None:
+        """One access check cut at `cut`; the cut is a failure on the APP's side
+        unless a refusal's headers already came in."""
+        seen: dict[str, int] = {}
+        try:
+            async with asyncio.timeout_at(cut):
+                return await self._check_activity(claims, time.monotonic(), seen)
+        except TimeoutError as e:
+            logger.info(
+                "mcp_access_validation_exception user_id=%d error=%s",
+                claims.user_id, "check cut before the auth budget ends")
+            raise self._broken_check(claims, seen, e) from e
+        except asyncio.CancelledError:
+            # Cancelled after a refusal's headers came in: the refusal still
+            # drops the stored pass.
+            if _is_app_refusal(seen.get("status", 200)):
+                self._evict_access_pass(claims.access_token_id)
+            raise
+
+    async def _check_activity(
+        self, claims: _JwtClaims, now: float, seen: dict[str, int],
+    ) -> str | None:
+        """One APP access check; a failure on the APP's side raises _AppSideFailure.
+
+        `seen` gets the status as soon as the headers arrive (the response hook).
+        """
+        epoch = self._access_epoch
         url = f"{self._config.app_url}/api/internal/mcp/activity"
         try:
             resp = await self._http.post(
@@ -607,13 +725,19 @@ class Authenticator:
                     "user_id": claims.user_id,
                     "access_token_id": claims.access_token_id,
                 },
+                extensions={ACTIVITY_STATUS_EXTENSION: seen},
             )
         except Exception as e:
             logger.info("mcp_access_validation_exception user_id=%d error=%s", claims.user_id, e)
-            raise AuthError("Internal MCP access validation failed", status=502) from e
+            raise self._broken_check(claims, seen, e) from e
 
         if 200 <= resp.status_code < 300:
             platform = _platform_from_activity(resp)
+            if self._refused_since(claims.access_token_id, epoch):
+                # A refusal of this token was recorded while this check was in
+                # flight: this earlier pass admits this request only and is
+                # never stored, so it cannot outlive the refusal.
+                return platform
             self._access_cache[claims.access_token_id] = _AccessPass(
                 expires_at=now + ACCESS_VALIDATION_TTL_SECONDS,
                 platform=platform,
@@ -638,14 +762,53 @@ class Authenticator:
             resp.status_code,
         )
 
-        if resp.status_code >= 500:
-            raise AuthError(f"Internal MCP access validation failed: HTTP {resp.status_code}", status=502)
+        if 500 <= resp.status_code < 600:
+            raise _AppSideFailure("http_5xx", str(resp.status_code))
 
+        # The APP answered, neither with a pass nor with a failure on its side
+        # (a 1xx, 3xx, 4xx or 600 and up): a refusal, never retried. A pass of
+        # this token from a check still in flight must not be stored after it.
+        self._evict_access_pass(claims.access_token_id)
         code = _json_object(resp).get("error")
         if isinstance(code, str) and code in REAUTH_ACTIVITY_CODES:
             raise AuthError(f"Access token refused ({code}), sign in again")
         raise AuthError(
             f"Internal MCP access validation failed: HTTP {resp.status_code}", status=502)
+
+    def _broken_check(
+        self, claims: _JwtClaims, seen: dict[str, int], cause: BaseException,
+    ) -> Exception:
+        """What a check that broke before its response was complete raises.
+
+        A refusal whose headers already came in is still a refusal: it drops the
+        stored pass and is never retried. A 5xx whose body broke stays a 5xx;
+        anything else is a transport failure on the APP's side.
+        """
+        status = seen.get("status")
+        if status is not None and _is_app_refusal(status):
+            self._evict_access_pass(claims.access_token_id)
+            return AuthError(
+                f"Internal MCP access validation failed: HTTP {status}", status=502)
+        if status is not None and 500 <= status < 600:
+            return _AppSideFailure("http_5xx", str(status), cause)
+        return _AppSideFailure("transport", cause.__class__.__name__, cause)
+
+    def _evict_access_pass(self, jti: str) -> None:
+        """Drop this token's stored pass and record the refusal for checks in flight."""
+        self._access_cache.pop(jti, None)
+        self._access_epoch += 1
+        self._access_refused.pop(jti, None)
+        self._access_refused[jti] = self._access_epoch
+        if len(self._access_refused) > ACCESS_CACHE_MAX_ENTRIES:
+            # Insertion order is epoch order: drop the oldest, and keep what
+            # they said in the floor, which counts for every jti.
+            excess = len(self._access_refused) - ACCESS_CACHE_PRUNE_WATERMARK
+            for old in list(self._access_refused)[:excess]:
+                self._access_refused_floor = self._access_refused.pop(old)
+
+    def _refused_since(self, jti: str, epoch: int) -> bool:
+        """Whether a refusal of this token was recorded after eviction count `epoch`."""
+        return max(self._access_refused_floor, self._access_refused.get(jti, 0)) > epoch
 
 
 def _json_object(resp: httpx.Response) -> dict:
@@ -762,8 +925,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
             total_budget = _load_config(require_api_key=False).tool_deadline
             auth_budget = min(AUTH_BUDGET_SECONDS, total_budget)
-            async with asyncio.timeout(auth_budget):
-                resolved = await self._auth.resolve(token)
+            async with asyncio.timeout(auth_budget) as budget:
+                # The budget's end goes down by argument, never by ambient
+                # state that a task started here could inherit.
+                resolved = await self._auth.resolve(token, deadline=budget.when())
             # The per-session MCP task never sees this request's ContextVars, but the
             # SDK hands this request's scope to the handler, where server.get_client
             # reads the key. The ContextVar below stays for in-process callers.

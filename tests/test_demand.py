@@ -115,7 +115,7 @@ async def _served(
     app = server.mcp.streamable_http_app()
     authenticator = _authenticator()
 
-    async def resolve(token: str) -> ResolvedAuth:
+    async def resolve(token: str, deadline: float | None = None) -> ResolvedAuth:
         if token == "revoked":
             raise AuthError("token revoked")
         return ResolvedAuth(

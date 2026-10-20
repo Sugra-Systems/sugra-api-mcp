@@ -152,7 +152,7 @@ def test_every_401_challenge_follows_the_host(trust_off, monkeypatch, authorizat
                                               host, document):
     authenticator = _authenticator()
 
-    async def refuse(_token):
+    async def refuse(_token, deadline=None):
         raise error
 
     monkeypatch.setattr(authenticator, "resolve", refuse)
@@ -169,7 +169,7 @@ def test_every_401_challenge_follows_the_host(trust_off, monkeypatch, authorizat
 def test_the_auth_timeout_challenge_follows_the_host(trust_off, monkeypatch, host, document):
     authenticator = _authenticator()
 
-    async def slow(_token):
+    async def slow(_token, deadline=None):
         raise TimeoutError
 
     monkeypatch.setattr(authenticator, "resolve", slow)
