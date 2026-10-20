@@ -163,7 +163,7 @@ async def stack(
     authenticator = _authenticator()
     real_resolve = authenticator.resolve
 
-    async def resolve(token: str) -> ResolvedAuth:
+    async def resolve(token: str, deadline: float | None = None) -> ResolvedAuth:
         token = token.strip()
         if token.startswith("jwt-"):
             if token in (revoked or set()):

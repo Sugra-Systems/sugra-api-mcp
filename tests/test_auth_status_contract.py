@@ -86,7 +86,7 @@ def _authenticator(public_pem: str, *, cached_key: bool) -> Authenticator:
 
 
 def _activity(response: httpx.Response):
-    async def fake_post(self, url, headers=None, json=None):
+    async def fake_post(self, url, headers=None, json=None, extensions=None):
         return response
     return patch("httpx.AsyncClient.post", new=fake_post)
 
@@ -243,7 +243,7 @@ def test_non_401_auth_errors_carry_no_challenge(keypair, status):
     _, public_pem = keypair
     auth = _authenticator(public_pem, cached_key=True)
 
-    async def refuse(_token):
+    async def refuse(_token, deadline=None):
         raise AuthError("refused", status=status)
 
     auth.resolve = refuse
@@ -258,7 +258,7 @@ def test_auth_timeout_keeps_the_bare_challenge(keypair, monkeypatch):
     auth = _authenticator(public_pem, cached_key=True)
     monkeypatch.setattr(auth_module, "AUTH_BUDGET_SECONDS", 0.01)
 
-    async def hang(_token):
+    async def hang(_token, deadline=None):
         import asyncio
         await asyncio.sleep(1)
 

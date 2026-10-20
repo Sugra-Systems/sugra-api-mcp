@@ -345,7 +345,7 @@ async def _served(
     app = server.mcp.streamable_http_app()
     authenticator = _authenticator()
 
-    async def resolve(token: str) -> ResolvedAuth:
+    async def resolve(token: str, deadline: float | None = None) -> ResolvedAuth:
         return ResolvedAuth(
             api_key="sugra_dummy",
             user_id=42,
