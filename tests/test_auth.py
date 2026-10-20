@@ -273,7 +273,8 @@ async def test_jwt_activity_validation_failure_denies_auth(auth_config, rsa_keyp
     assert call_count == 1
 
 
-async def test_jwt_activity_exception_denies_auth(auth_config, rsa_keypair):
+async def test_jwt_activity_exception_denies_auth(auth_config, rsa_keypair, monkeypatch):
+    monkeypatch.setattr("sugra_api_mcp.auth.ACCESS_RETRY_PAUSE_SECONDS", 0.0)
     private_key, public_pem = rsa_keypair
     now = int(time.time())
     token = _make_jwt(
@@ -313,7 +314,8 @@ async def test_jwt_activity_exception_denies_auth(auth_config, rsa_keypair):
 
     assert exc.value.status == 502
     assert "validation" in str(exc.value)
-    assert call_count == 1
+    # One retry of a failure on the APP's side, then the 502 (never validated).
+    assert call_count == 2
 
 
 async def test_jwt_missing_jti_raises(auth_config, rsa_keypair):

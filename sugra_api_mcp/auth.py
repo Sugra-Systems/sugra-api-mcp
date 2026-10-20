@@ -66,6 +66,18 @@ ACCESS_CACHE_MAX_ENTRIES = 4096
 # Prune BELOW the cap: shrinking to exactly the cap re-runs the
 # O(N log N) sweep on every subsequent miss.
 ACCESS_CACHE_PRUNE_WATERMARK = ACCESS_CACHE_MAX_ENTRIES - 512
+# When the APP access check fails on the APP's side (a transport error or a
+# 5xx, as for the seconds an APP restart takes), it is tried once more after
+# this pause, and only when the auth budget still holds the pause, the minimum
+# attempt and the reserve; the retry is cut where the reserve begins.
+ACCESS_RETRY_PAUSE_SECONDS = 1.0
+ACCESS_RETRY_MIN_ATTEMPT_SECONDS = 1.0
+ACCESS_RETRY_RESERVE_SECONDS = 1.0
+# If the retry fails too, a pass of this token that expired less than this long
+# ago is served, logged at warning. A token revoked while the APP is down stays
+# usable for at most this long after its last pass; a refusal the APP answers
+# (any 4xx) is never covered and drops the stored pass at once.
+ACCESS_STALE_GRACE_SECONDS = 300.0
 # Same set as APP McpConnectionService::ALLOWED_PLATFORMS. Anything else is
 # dropped, never copied onto a span.
 ACCESS_PLATFORMS: frozenset[str] = frozenset({
@@ -107,6 +119,12 @@ AUTH_BUDGET_SECONDS = 15.0
 # on its own side instead, by the asyncio.timeout below.
 request_started_at: ContextVar[float | None] = ContextVar(
     "sugra_request_started_at", default=None)
+
+# The event-loop time at which AuthMiddleware cancels the auth slice, set around
+# resolve. The access check reads it so its one retry never runs past the
+# budget; unset (a direct resolve), the check counts AUTH_BUDGET_SECONDS itself.
+auth_deadline: ContextVar[float | None] = ContextVar(
+    "sugra_auth_deadline", default=None)
 
 MAX_PUBLIC_MCP_CONTENT_LENGTH = 64 * 1024
 
@@ -230,6 +248,22 @@ class AuthError(Exception):
         super().__init__(message)
         self.status = status
         self.reauth = reauth
+
+
+class _AppSideFailure(Exception):
+    """The APP access check failed on the APP's side: a transport error or a 5xx.
+
+    `reason` is "transport" (`detail` the exception class) or "http_5xx" (`detail`
+    the status); `cause` is the transport exception, if any.
+    """
+
+    def __init__(
+        self, reason: str, detail: str, cause: BaseException | None = None,
+    ) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.detail = detail
+        self.cause = cause
 
 
 @dataclass(frozen=True)
@@ -598,6 +632,34 @@ class Authenticator:
         if cached is not None and cached.expires_at > now:
             return cached.platform
 
+        # A failure on the APP's side gets one retry inside the auth budget,
+        # then the stale-pass grace.
+        loop = asyncio.get_running_loop()
+        deadline = auth_deadline.get()
+        if deadline is None:
+            deadline = loop.time() + AUTH_BUDGET_SECONDS
+        try:
+            return await self._check_activity(claims, now)
+        except _AppSideFailure as first:
+            failure = first
+        cut = deadline - ACCESS_RETRY_RESERVE_SECONDS
+        needed = ACCESS_RETRY_PAUSE_SECONDS + ACCESS_RETRY_MIN_ATTEMPT_SECONDS
+        if cut - loop.time() >= needed:
+            await asyncio.sleep(ACCESS_RETRY_PAUSE_SECONDS)
+            try:
+                async with asyncio.timeout_at(cut):
+                    return await self._check_activity(claims, now)
+            except _AppSideFailure as second:
+                failure = second
+            except TimeoutError as e:
+                logger.info(
+                    "mcp_access_validation_exception user_id=%d error=%s",
+                    claims.user_id, "retry cut before the auth budget ends")
+                failure = _AppSideFailure("transport", "TimeoutError", e)
+        return self._stale_pass_or_refuse(claims, failure)
+
+    async def _check_activity(self, claims: _JwtClaims, now: float) -> str | None:
+        """One APP access check; a failure on the APP's side raises _AppSideFailure."""
         url = f"{self._config.app_url}/api/internal/mcp/activity"
         try:
             resp = await self._http.post(
@@ -610,7 +672,7 @@ class Authenticator:
             )
         except Exception as e:
             logger.info("mcp_access_validation_exception user_id=%d error=%s", claims.user_id, e)
-            raise AuthError("Internal MCP access validation failed", status=502) from e
+            raise _AppSideFailure("transport", e.__class__.__name__, e) from e
 
         if 200 <= resp.status_code < 300:
             platform = _platform_from_activity(resp)
@@ -622,9 +684,11 @@ class Authenticator:
             # expired entries alone cannot shrink a cache full of LIVE jtis,
             # and re-running an O(N) comprehension per auth is itself the
             # DoS. Keep the newest entries by expiry when over the cap.
+            # A pass inside its stale grace is still kept: it is what an APP
+            # failure may serve.
             if len(self._access_cache) > ACCESS_CACHE_MAX_ENTRIES:
                 live = {jti: item for jti, item in self._access_cache.items()
-                        if item.expires_at > now}
+                        if item.expires_at + ACCESS_STALE_GRACE_SECONDS > now}
                 if len(live) > ACCESS_CACHE_PRUNE_WATERMARK:
                     live = dict(sorted(
                         live.items(), key=lambda kv: kv[1].expires_at,
@@ -639,13 +703,38 @@ class Authenticator:
         )
 
         if resp.status_code >= 500:
-            raise AuthError(f"Internal MCP access validation failed: HTTP {resp.status_code}", status=502)
+            raise _AppSideFailure("http_5xx", str(resp.status_code))
 
+        # The APP answered, and not with a pass (a 4xx): no stored pass of
+        # this token may be served stale after it.
+        self._access_cache.pop(claims.access_token_id, None)
         code = _json_object(resp).get("error")
         if isinstance(code, str) and code in REAUTH_ACTIVITY_CODES:
             raise AuthError(f"Access token refused ({code}), sign in again")
         raise AuthError(
             f"Internal MCP access validation failed: HTTP {resp.status_code}", status=502)
+
+    def _stale_pass_or_refuse(
+        self, claims: _JwtClaims, failure: _AppSideFailure,
+    ) -> str | None:
+        """After an APP-side failure: a pass inside its grace, else the 502.
+
+        Nothing is stored here, so a served stale pass is never extended.
+        """
+        now = time.time()
+        stale = self._access_cache.get(claims.access_token_id)
+        if stale is not None and stale.expires_at + ACCESS_STALE_GRACE_SECONDS > now:
+            logger.warning(
+                "mcp_access_stale_pass user_id=%d reason=%s detail=%s expired_s=%d",
+                claims.user_id, failure.reason, failure.detail,
+                max(0, int(now - stale.expires_at)),
+            )
+            return stale.platform
+        if failure.reason == "transport":
+            raise AuthError(
+                "Internal MCP access validation failed", status=502) from failure.cause
+        raise AuthError(
+            f"Internal MCP access validation failed: HTTP {failure.detail}", status=502)
 
 
 def _json_object(resp: httpx.Response) -> dict:
@@ -762,8 +851,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
             total_budget = _load_config(require_api_key=False).tool_deadline
             auth_budget = min(AUTH_BUDGET_SECONDS, total_budget)
-            async with asyncio.timeout(auth_budget):
-                resolved = await self._auth.resolve(token)
+            async with asyncio.timeout(auth_budget) as budget:
+                deadline_reset = auth_deadline.set(budget.when())
+                try:
+                    resolved = await self._auth.resolve(token)
+                finally:
+                    auth_deadline.reset(deadline_reset)
             # The per-session MCP task never sees this request's ContextVars, but the
             # SDK hands this request's scope to the handler, where server.get_client
             # reads the key. The ContextVar below stays for in-process callers.
