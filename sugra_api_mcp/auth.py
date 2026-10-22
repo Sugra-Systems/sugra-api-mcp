@@ -143,7 +143,7 @@ PUBLIC_MCP_METHODS = frozenset(
 # the protected resource metadata and every tools/call then fails with 401.
 # Their discovery methods get the bare challenge instead. Matched on the
 # lower-cased User-Agent prefix. The Grok web connector (grok.com) sends
-# grok-connectors-manager/<version>; Grok Build (grok-cli) is not in it.
+# grok-connectors-manager/<version>; Grok Build is matched by clientInfo.name.
 SIGN_IN_FIRST_USER_AGENTS = ("grok-connectors-manager/",)
 # The same clients, matched on the initialize clientInfo.name where they send no
 # User-Agent: the Grok web connector checks a server with a separate
@@ -157,6 +157,14 @@ SIGN_IN_FIRST_USER_AGENTS = ("grok-connectors-manager/",)
 # signs in. Its initialize names clientInfo gemini-cli-mcp-client (Gemini CLI
 # 0.65.0, packages/core/src/tools/mcp-client.ts).
 SIGN_IN_FIRST_CLIENT_NAMES = frozenset({"grok-validator", "gemini-cli-mcp-client"})
+# Grok Build names itself grok-shell-<the server name the user configured>, so
+# it is matched on that prefix, case as sent. Observed 2026-10-22 (Grok Build
+# 1.0.62): clientInfo {"name": "grok-shell-sugra-api", "version": "1.0.62"},
+# protocolVersion 2025-11-25, no User-Agent. After an anonymous 200 it lists
+# the tools and every tools/call fails "Auth required" with no sign-in offered;
+# a 401 with resource_metadata on initialize starts its browser sign-in. The
+# name is client-chosen text, so a match can only add a challenge.
+SIGN_IN_FIRST_CLIENT_NAME_PREFIXES = ("grok-shell-",)
 
 # Unauthenticated GET/HEAD surface of the hosted app: the human landing page on
 # the host root, the liveness probe, and the skills index with the exact file
@@ -209,13 +217,16 @@ def _jwt_reason(prefix: str, error: Exception) -> str:
 
 
 def _signs_in_first(payload: dict) -> bool:
-    """True for an initialize whose clientInfo.name is in SIGN_IN_FIRST_CLIENT_NAMES."""
+    """True for an initialize whose clientInfo.name is in SIGN_IN_FIRST_CLIENT_NAMES
+    or starts with one of SIGN_IN_FIRST_CLIENT_NAME_PREFIXES."""
     if payload.get("method") != "initialize":
         return False
     params = payload.get("params")
     client_info = params.get("clientInfo") if isinstance(params, dict) else None
     name = client_info.get("name") if isinstance(client_info, dict) else None
-    return isinstance(name, str) and name in SIGN_IN_FIRST_CLIENT_NAMES
+    return isinstance(name, str) and (
+        name in SIGN_IN_FIRST_CLIENT_NAMES or name.startswith(SIGN_IN_FIRST_CLIENT_NAME_PREFIXES)
+    )
 
 
 def _token_kind(token: str) -> str:

@@ -723,10 +723,19 @@ def _initialize(client_name, request_id=1):
 
 @pytest.mark.parametrize(
     "payload",
-    [_initialize("grok-validator"), [_initialize("grok-validator")], [{"jsonrpc": "2.0", "method": "ping"}, _initialize("grok-validator", 2)]],
+    [
+        _initialize("grok-validator"),
+        [_initialize("grok-validator")],
+        [{"jsonrpc": "2.0", "method": "ping"}, _initialize("grok-validator", 2)],
+        _initialize("grok-shell-sugra-api"),
+        _initialize("grok-shell-my-data"),
+        [_initialize("grok-shell-sugra-api")],
+        [{"jsonrpc": "2.0", "method": "ping"}, _initialize("grok-shell-sugra-api", 2)],
+    ],
 )
 def test_auth_middleware_challenges_the_grok_validator_initialize(auth_config, payload):
-    """The Grok web connector's validator sends no User-Agent; its anonymous 200 leaves the sign-in window blank."""
+    """The Grok web connector's validator and Grok Build (grok-shell-<server name>) send no User-Agent;
+    an anonymous 200 leaves the first without a sign-in window and the second without a sign-in at all."""
 
     async def ok(_request):
         return JSONResponse({"ok": True})
@@ -747,6 +756,7 @@ def test_auth_middleware_challenges_the_grok_validator_initialize(auth_config, p
     "payload, user_agent",
     [
         (_initialize("grok-validator"), ""),
+        (_initialize("grok-shell-sugra-api"), ""),
         ({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}, "grok-connectors-manager/0.1.0"),
         ({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "fetch_data", "arguments": {}}},
          "grok-connectors-manager/0.1.0"),
@@ -843,10 +853,13 @@ def test_auth_middleware_serves_the_gemini_cli_once_signed_in(auth_config):
         "Grok-Validator",
         "grok-validator-2",
         7,
-        # the other assistants keep their anonymous initialize
+        "grok-shell",
+        "Grok-Shell-sugra-api",
+        "my-grok-shell-sugra-api",
+        "grok-cli",
+        "grok",
         "claude-ai",
         "openai-mcp",
-        "grok",
         # near misses of the Gemini CLI name: exact match only
         "Gemini-CLI-MCP-Client",
         "gemini-cli-mcp-client-2",
