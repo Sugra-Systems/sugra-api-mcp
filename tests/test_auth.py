@@ -723,10 +723,19 @@ def _initialize(client_name, request_id=1):
 
 @pytest.mark.parametrize(
     "payload",
-    [_initialize("grok-validator"), [_initialize("grok-validator")], [{"jsonrpc": "2.0", "method": "ping"}, _initialize("grok-validator", 2)]],
+    [
+        _initialize("grok-validator"),
+        [_initialize("grok-validator")],
+        [{"jsonrpc": "2.0", "method": "ping"}, _initialize("grok-validator", 2)],
+        _initialize("grok-shell-sugra-api"),
+        _initialize("grok-shell-my-data"),
+        [_initialize("grok-shell-sugra-api")],
+        [{"jsonrpc": "2.0", "method": "ping"}, _initialize("grok-shell-sugra-api", 2)],
+    ],
 )
 def test_auth_middleware_challenges_the_grok_validator_initialize(auth_config, payload):
-    """The Grok web connector's validator sends no User-Agent; its anonymous 200 leaves the sign-in window blank."""
+    """The Grok web connector's validator and Grok Build (grok-shell-<server name>) send no User-Agent;
+    an anonymous 200 leaves the first without a sign-in window and the second without a sign-in at all."""
 
     async def ok(_request):
         return JSONResponse({"ok": True})
@@ -747,6 +756,7 @@ def test_auth_middleware_challenges_the_grok_validator_initialize(auth_config, p
     "payload, user_agent",
     [
         (_initialize("grok-validator"), ""),
+        (_initialize("grok-shell-sugra-api"), ""),
         ({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}, "grok-connectors-manager/0.1.0"),
         ({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "fetch_data", "arguments": {}}},
          "grok-connectors-manager/0.1.0"),
@@ -781,7 +791,24 @@ def test_auth_middleware_serves_the_grok_web_connector_once_signed_in(auth_confi
     auth.resolve.assert_awaited_once_with("signed-in-token", deadline=ANY)
 
 
-@pytest.mark.parametrize("client_name", ["smithery-probe", "mcpindex-trust", "rmcp", "Grok-Validator", "grok-validator-2", 7])
+@pytest.mark.parametrize(
+    "client_name",
+    [
+        "smithery-probe",
+        "mcpindex-trust",
+        "rmcp",
+        "Grok-Validator",
+        "grok-validator-2",
+        7,
+        "grok-shell",
+        "Grok-Shell-sugra-api",
+        "my-grok-shell-sugra-api",
+        "grok-cli",
+        "grok",
+        "claude-ai",
+        "openai-mcp",
+    ],
+)
 def test_auth_middleware_keeps_anonymous_initialize_for_other_client_names(auth_config, client_name):
     async def ok(_request):
         return JSONResponse({"ok": True})
