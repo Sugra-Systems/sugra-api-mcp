@@ -152,7 +152,11 @@ SIGN_IN_FIRST_USER_AGENTS = ("grok-connectors-manager/",)
 # Observed 2026-10-14: clientInfo {"name": "grok-validator", "version": "0.1"},
 # protocolVersion 2025-03-26, no User-Agent and no Origin. Each challenge shows
 # in the demand count as an initialize line with status 401 and client grok.
-SIGN_IN_FIRST_CLIENT_NAMES = frozenset({"grok-validator"})
+# Gemini CLI starts its own sign-in only when the connect fails with 401: on a
+# 200 it connects anonymously, every tools/call fails and nothing in the client
+# signs in. Its initialize names clientInfo gemini-cli-mcp-client (Gemini CLI
+# 0.65.0, packages/core/src/tools/mcp-client.ts).
+SIGN_IN_FIRST_CLIENT_NAMES = frozenset({"grok-validator", "gemini-cli-mcp-client"})
 
 # Unauthenticated GET/HEAD surface of the hosted app: the human landing page on
 # the host root, the liveness probe, and the skills index with the exact file
