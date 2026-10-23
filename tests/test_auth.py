@@ -792,6 +792,59 @@ def test_auth_middleware_serves_the_grok_web_connector_once_signed_in(auth_confi
 
 
 @pytest.mark.parametrize(
+    "payload",
+    [
+        _initialize("gemini-cli-mcp-client"),
+        [_initialize("gemini-cli-mcp-client")],
+        [{"jsonrpc": "2.0", "method": "ping"}, _initialize("gemini-cli-mcp-client", 2)],
+    ],
+)
+@pytest.mark.parametrize("user_agent", ["", "node"])
+def test_auth_middleware_challenges_the_gemini_cli_initialize(auth_config, payload, user_agent):
+    """Gemini CLI opens its sign-in only when the connect answers 401; an anonymous 200 leaves every call failing."""
+
+    async def ok(_request):
+        return JSONResponse({"ok": True})
+
+    app = Starlette(routes=[Route("/mcp", ok, methods=["POST"])])
+    app.add_middleware(AuthMiddleware, authenticator=Authenticator(auth_config))
+
+    response = TestClient(app).post("/mcp", json=payload, headers={"user-agent": user_agent})
+
+    assert response.status_code == 401
+    assert response.json() == {"error": "missing_bearer_token"}
+    assert response.headers["WWW-Authenticate"] == (
+        'Bearer resource_metadata="https://app.sugra.ai/.well-known/oauth-protected-resource"'
+    )
+
+
+def test_auth_middleware_serves_the_gemini_cli_once_signed_in(auth_config):
+    """With a valid bearer the Gemini CLI initialize goes through unchanged."""
+    payload = _initialize("gemini-cli-mcp-client")
+    seen = {}
+
+    async def ok(request):
+        seen["body"] = await request.json()
+        return JSONResponse({"ok": True})
+
+    auth = Authenticator(auth_config)
+    auth.resolve = AsyncMock(return_value=ResolvedAuth(api_key="sugra_k", user_id=1, method="oauth", platform="google"))
+    app = Starlette(routes=[Route("/mcp", ok, methods=["POST"])])
+    app.add_middleware(AuthMiddleware, authenticator=auth)
+
+    response = TestClient(app).post(
+        "/mcp",
+        json=payload,
+        headers={"user-agent": "node", "accept": "application/json, text/event-stream", "authorization": "Bearer signed-in-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    assert seen["body"] == payload
+    auth.resolve.assert_awaited_once_with("signed-in-token", deadline=ANY)
+
+
+@pytest.mark.parametrize(
     "client_name",
     [
         "smithery-probe",
@@ -807,6 +860,12 @@ def test_auth_middleware_serves_the_grok_web_connector_once_signed_in(auth_confi
         "grok",
         "claude-ai",
         "openai-mcp",
+        # near misses of the Gemini CLI name: exact match only
+        "Gemini-CLI-MCP-Client",
+        "gemini-cli-mcp-client-2",
+        "gemini-cli-mcp-client ",
+        "gemini-cli",
+        "my-gemini-cli-mcp-client",
     ],
 )
 def test_auth_middleware_keeps_anonymous_initialize_for_other_client_names(auth_config, client_name):
