@@ -535,13 +535,18 @@ _UA_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 
 # The same classes for the initialize clientInfo name, which names a product
-# rather than an HTTP library (for example claude-ai or openai-mcp).
+# rather than an HTTP library (for example claude-ai or openai-mcp), plus
+# gemini, which no User-Agent names: Gemini CLI sends Node's default "node".
+# The grok.com connector names itself connectors-manager, matched whole
+# because the name is generic; Gemini CLI 0.65.0 names gemini-cli-mcp-client,
+# and the Antigravity CLI binary carries antigravity-client.
 _CLIENT_NAME_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("playground", re.compile(r"sugra-playground", re.I)),
     ("mcp", re.compile(r"sugra-api-mcp", re.I)),
     ("claude", re.compile(r"claude|anthropic", re.I)),
     ("chatgpt", re.compile(r"chatgpt|openai", re.I)),
-    ("grok", re.compile(r"grok|\bxai\b", re.I)),
+    ("grok", re.compile(r"grok|\bxai\b|^connectors-manager$", re.I)),
+    ("gemini", re.compile(r"gemini|antigravity", re.I)),
     ("cursor", re.compile(r"cursor", re.I)),
     ("openbb", re.compile(r"openbb", re.I)),
 )
