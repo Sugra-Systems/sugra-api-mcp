@@ -154,8 +154,11 @@ SIGN_IN_FIRST_USER_AGENTS = ("grok-connectors-manager/",)
 # in the demand count as an initialize line with status 401 and client grok.
 # Gemini CLI starts its own sign-in only when the connect fails with 401: on a
 # 200 it connects anonymously, every tools/call fails and nothing in the client
-# signs in. Its initialize names clientInfo gemini-cli-mcp-client (Gemini CLI
-# 0.65.0, packages/core/src/tools/mcp-client.ts).
+# signs in. Its initialize names clientInfo gemini-cli-mcp-client, a fixed
+# string in Gemini CLI 0.65.0 (packages/core/src/tools/mcp-client.ts); it sets
+# no User-Agent of its own, so Node's fetch sends "node". Observed 2026-10-22
+# (Gemini CLI 0.65.0): after the anonymous 200, "gemini mcp list" printed the
+# server connected with "requires authentication" and no sign-in followed.
 SIGN_IN_FIRST_CLIENT_NAMES = frozenset({"grok-validator", "gemini-cli-mcp-client"})
 # Grok Build names itself grok-shell-<the server name the user configured>, so
 # it is matched on that prefix, case as sent. Observed 2026-10-22 (Grok Build
