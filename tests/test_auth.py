@@ -845,6 +845,57 @@ def test_auth_middleware_serves_the_gemini_cli_once_signed_in(auth_config):
 
 
 @pytest.mark.parametrize(
+    "payload",
+    [
+        _initialize("gemini-cli-mcp-client"),
+        [_initialize("gemini-cli-mcp-client")],
+    ],
+)
+def test_auth_middleware_serves_the_gemini_cli_with_an_api_key(auth_config, payload):
+    """A key sent as a bearer passes before the sign-in-first rule is ever read."""
+    from sugra_api_mcp.server import REQUEST_API_KEY_STATE
+
+    seen = {}
+
+    async def ok(request):
+        seen["body"] = await request.json()
+        seen["key"] = request.scope["state"][REQUEST_API_KEY_STATE]
+        return JSONResponse({"ok": True})
+
+    app = Starlette(routes=[Route("/mcp", ok, methods=["POST"])])
+    app.add_middleware(AuthMiddleware, authenticator=Authenticator(auth_config))
+
+    response = TestClient(app).post(
+        "/mcp",
+        json=payload,
+        headers={"user-agent": "node", "accept": "application/json, text/event-stream", "authorization": "Bearer sugra_test_key"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    assert seen == {"body": payload, "key": "sugra_test_key"}
+
+
+def test_auth_middleware_challenges_the_gemini_cli_with_only_an_x_api_key_header(auth_config):
+    """The hosted server takes a key only as a bearer: an x-api-key header alone is no credential here."""
+
+    async def ok(_request):
+        return JSONResponse({"ok": True})
+
+    app = Starlette(routes=[Route("/mcp", ok, methods=["POST"])])
+    app.add_middleware(AuthMiddleware, authenticator=Authenticator(auth_config))
+
+    response = TestClient(app).post(
+        "/mcp",
+        json=_initialize("gemini-cli-mcp-client"),
+        headers={"user-agent": "node", "x-api-key": "sugra_test_key"},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"error": "missing_bearer_token"}
+
+
+@pytest.mark.parametrize(
     "client_name",
     [
         "smithery-probe",
