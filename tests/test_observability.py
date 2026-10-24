@@ -1855,6 +1855,8 @@ _CALLER_SPAN_ATTRS = _CALLER_ATTRS | _IDENTITY_ATTRS
 _CLASS_VOCABULARY = frozenset({
     "chatgpt", "claude", "grok", "cursor", "openbb", "python", "curl", "node", "browser", "mcp", "playground", "other",
 })
+# The clientInfo name adds gemini, which no User-Agent class names.
+_CLIENT_VOCABULARY = _CLASS_VOCABULARY | {"gemini"}
 
 _CALLER_VALUES: dict[str, frozenset[str]] = {
     "mcp.caller.transport": frozenset({"streamable_http", "local"}),
@@ -1863,7 +1865,7 @@ _CALLER_VALUES: dict[str, frozenset[str]] = {
     "mcp.caller.ua_class": _CLASS_VOCABULARY,
     "mcp.caller.origin": frozenset({"openai", "anthropic", "cursor", "none", "other"}),
     "mcp.caller.platform": frozenset({"openai", "anthropic", "cursor", "google", "xai", "custom"}),
-    "mcp.caller.client": _CLASS_VOCABULARY,
+    "mcp.caller.client": _CLIENT_VOCABULARY,
     "mcp.caller.net": frozenset({"loopback", "private"}),
 }
 
@@ -1970,6 +1972,13 @@ def test_user_agent_classes_match_the_api_usage_mix(ua: object, expected: str) -
         ("ChatGPT", "chatgpt"),
         ("cursor-vscode", "cursor"),
         ("grok", "grok"),
+        ("connectors-manager", "grok"),
+        ("Connectors-Manager", "grok"),
+        ("my-connectors-manager", "other"),
+        ("connectors-manager-v2", "other"),
+        ("gemini-cli-mcp-client", "gemini"),
+        ("antigravity-client", "gemini"),
+        ("Google Antigravity", "gemini"),
         ("openbb-platform", "openbb"),
         ("sugra-playground", "playground"),
         ("sugra-api-mcp", "mcp"),
@@ -2155,7 +2164,9 @@ def test_the_caller_vocabularies_are_exact() -> None:
     from sugra_api_mcp.config import DEFAULT_ALLOWED_ORIGINS
 
     assert frozenset(label for label, _ in observability._UA_PATTERNS) | {"other"} == _CLASS_VOCABULARY
-    assert frozenset(label for label, _ in observability._CLIENT_NAME_PATTERNS) <= _CLASS_VOCABULARY
+    assert frozenset(label for label, _ in observability._CLIENT_NAME_PATTERNS) | {"other"} == _CLIENT_VOCABULARY - {
+        "python", "curl", "node", "browser",
+    }
     assert frozenset(observability._ORIGIN_CLASSES) == frozenset(DEFAULT_ALLOWED_ORIGINS)
     assert observability._ORIGIN_CLASSES == {
         "https://chatgpt.com": "openai",
@@ -2197,7 +2208,8 @@ def test_the_client_tables_are_pinned_alternative_by_alternative() -> None:
         ("mcp", r"sugra-api-mcp", True),
         ("claude", r"claude|anthropic", True),
         ("chatgpt", r"chatgpt|openai", True),
-        ("grok", r"grok|\bxai\b", True),
+        ("grok", r"grok|\bxai\b|^connectors-manager$", True),
+        ("gemini", r"gemini|antigravity", True),
         ("cursor", r"cursor", True),
         ("openbb", r"openbb", True),
     ]

@@ -1125,8 +1125,9 @@ def test_the_classes_demand_takes_from_observability_are_pinned(monkeypatch) -> 
     def client_of(name: object) -> str:
         return demand.request_facts({"method": "initialize", "params": {"clientInfo": {"name": name}}})[1]
 
-    assert [client_of(name) for name in ("Claude", "openai-mcp", "Cursor", "grok-cli", "unknown", "")] == [
-        "claude", "chatgpt", "cursor", "grok", "other", "none",
+    names = ("Claude", "openai-mcp", "Cursor", "grok-cli", "connectors-manager", "gemini-cli-mcp-client", "unknown", "")
+    assert [client_of(name) for name in names] == [
+        "claude", "chatgpt", "cursor", "grok", "grok", "gemini", "other", "none",
     ]
     monkeypatch.delenv("CONTAINER_APP_REVISION", raising=False)
     assert observability.process_side() == "vm"
