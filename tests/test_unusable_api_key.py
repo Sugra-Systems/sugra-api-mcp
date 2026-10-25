@@ -1,4 +1,4 @@
-"""A key no HTTP header can carry gets a structured error, never a failed tool.
+"""A key this server cannot send in a header gets a structured error, never a failed tool.
 
 httpx encodes a header value as ASCII, so a Sugra API key holding any other
 character (an accented or Cyrillic letter, or an invisible character a paste
@@ -8,8 +8,8 @@ holding a line break or a NUL, or a space at either end, got a client, and h11
 refused the header when the request was sent, which the tool answered as a
 transport failure to retry.
 A client that reads either as a passing fault calls the tool again and fails
-the same way. server.get_client now hands any key that is no valid header
-value (RFC 9110 section 5.5) the unusable-key stand-in: nothing is sent, and
+the same way. server.get_client now hands any key this client cannot send as
+a header value (server._HEADER_VALUE) the unusable-key stand-in: nothing is sent, and
 the tool answers with unusable_api_key and a hint that says not to retry.
 These tests drive each path a key arrives by and record what reaches the API,
 read off the requests themselves.
@@ -44,6 +44,17 @@ from tests.test_request_credentials import (
 )
 
 UNUSABLE = {"error": "unusable_api_key", "hint": UNUSABLE_API_KEY_HINT}
+
+
+def test_the_hint_names_this_server_as_the_limit() -> None:
+    # HTTP itself allows bytes above 0x7F as obsolete text: the limit is this
+    # server's client, and the hint must not claim more.
+    assert UNUSABLE_API_KEY_HINT == (
+        "This API key holds a character this server cannot send in a request header, "
+        "so no call that needs the API can run with it. Do not retry. A pasted key "
+        "may carry a stray character; otherwise rotate the key in the account's "
+        "API key settings, or ask support if the settings do not offer that."
+    )
 
 # A Cyrillic letter, an accented Latin one, and a zero-width space, which is
 # not whitespace, so stripping the key leaves it in place.

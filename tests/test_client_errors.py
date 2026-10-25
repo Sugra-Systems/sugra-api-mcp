@@ -16,10 +16,12 @@ from collections.abc import Callable
 from typing import Any
 
 import httpx
+import pytest
 
 from sugra_api_mcp.client import (
     _DETAIL_CHARS,
     SugraClient,
+    _daily_limit_retry_hint,
     _detail_fields,
     _enforce_size_limit,
     _gate_off_loop,
@@ -430,25 +432,16 @@ async def _answer(status: int, body: Any, headers: dict[str, str] | None = None)
         await client.aclose()
 
 
-# What the refusal tells a model to do next: no call that needs the API before
-# the reset, and a word to the user instead.
-_NO_RETRY_BEFORE_THE_RESET = (
-    "Do not retry this or another Sugra data tool before 00:00 UTC: until the limit "
-    "resets, every such call is refused the same way. Tell the user the daily request "
-    "limit is used up and when it resets."
-)
-
-
 async def test_the_daily_limit_refusal_is_plain_information_for_the_model() -> None:
     result = await _answer(429, {"detail": _QUOTA_DETAIL}, _QUOTA_HEADERS)
 
     assert result == {
         "error": (
             "The daily request limit of 50 for this Sugra account on the free plan has been "
-            "reached. It resets at 00:00 UTC."
+            "reached. It resets at 2026-09-29T23:59:59Z."
         ),
         "reason": "daily_limit_reached",
-        "retry_hint": _NO_RETRY_BEFORE_THE_RESET,
+        "retry_hint": _daily_limit_retry_hint("2026-09-29T23:59:59Z"),
         "daily_limit": 50,
         "plan": "free",
         "status_code": 429,
@@ -467,10 +460,40 @@ async def test_the_daily_limit_refusal_leaves_out_what_the_api_did_not_say() -> 
     assert result == {
         "error": "The daily request limit for this Sugra account has been reached. It resets at 00:00 UTC.",
         "reason": "daily_limit_reached",
-        "retry_hint": _NO_RETRY_BEFORE_THE_RESET,
+        "retry_hint": _daily_limit_retry_hint("00:00 UTC"),
         "status_code": 429,
         "retry_after": 3600,
     }
+
+
+@pytest.mark.parametrize(
+    "reset",
+    ["2026-10-25T00:00:00+04:00", "2026-10-25T12:00:00.5Z"],
+)
+async def test_the_daily_limit_refusal_names_the_reset_the_api_sent(reset: str) -> None:
+    """The sentence and the hint both name the response's own reset time, so
+    a moved window cannot leave either telling the model a false deadline."""
+    headers = {**_QUOTA_HEADERS, "X-RateLimit-Reset": reset}
+
+    result = await _answer(429, {"detail": _QUOTA_DETAIL}, headers)
+
+    assert result["error"].endswith(f"It resets at {reset}.")
+    assert result["retry_hint"] == _daily_limit_retry_hint(reset)
+    assert "00:00 UTC" not in json.dumps(result)
+
+
+@pytest.mark.parametrize(
+    "reset",
+    ["", "tomorrow", "2026-10-25 23:59:59Z", "2026-10-25T24:00:00Z", "2026-02-30T23:59:59Z"],
+)
+async def test_the_daily_limit_refusal_falls_back_to_midnight_utc(reset: str) -> None:
+    """A reset time that is missing or malformed is never repeated to the model."""
+    headers = {**_QUOTA_HEADERS, "X-RateLimit-Reset": reset}
+
+    result = await _answer(429, {"detail": _QUOTA_DETAIL}, headers)
+
+    assert result["error"].endswith("It resets at 00:00 UTC.")
+    assert result["retry_hint"] == _daily_limit_retry_hint("00:00 UTC")
 
 
 async def test_other_rate_limits_keep_their_own_text() -> None:

@@ -206,8 +206,11 @@ async def test_a_typed_tool_tells_a_chatgpt_session_not_to_retry_a_spent_quota(m
     payload = _structured(result)
     assert payload["reason"] == "daily_limit_reached"
     assert payload["retry_after"] == 7200
-    assert payload["retry_hint"].startswith("Do not retry")
-    assert "00:00 UTC" in payload["retry_hint"]
+    assert payload["retry_hint"] == (
+        "Do not retry this or another Sugra data tool before 00:00 UTC: until the limit "
+        "resets, every such call is refused the same way. Tell the user the daily request "
+        "limit is used up and when it resets."
+    )
     text = " ".join(block.text for block in result.content if hasattr(block, "text"))
     assert payload["retry_hint"] in text
     assert "upgrade" not in text.lower()
