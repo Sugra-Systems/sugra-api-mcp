@@ -526,6 +526,23 @@ async def test_a_typed_call_runs_its_operation_and_drops_request_metadata(monkey
     }
 
 
+async def test_a_typed_result_carries_the_as_of_and_notice_it_is_told_to_cite(monkeypatch) -> None:
+    fake = FakeClient({
+        "data": [{"date": "2026-09-01", "value": 4.3}],
+        "meta": {"endpoint": "/api/v1/fred/series/UNRATE", "data_time": "2026-09-01T00:00:00Z",
+                 "response_time": "2026-10-25T10:00:00Z", "provider": "Sugra API", "source": "fred",
+                 "attribution": "Required notice.", "period": "2026-09"},
+    })
+    monkeypatch.setattr(gateway, "get_client", lambda: fake)
+
+    result = await _call("get_economic_series", {"series_id": "UNRATE"})
+
+    assert result.isError is False
+    meta = {"data_time": "2026-09-01T00:00:00Z", "attribution": "Required notice.", "period": "2026-09"}
+    assert _payload(result)["meta"] == meta
+    assert json.loads(result.content[0].text)["meta"] == meta
+
+
 async def test_a_typed_call_leaves_a_span_under_its_own_name(monkeypatch) -> None:
     from sugra_api_mcp import observability
     from tests.test_request_credentials import _CaptureTracer
@@ -631,10 +648,67 @@ async def test_a_typed_failure_keeps_only_what_went_wrong(monkeypatch) -> None:
           "daily_limit": 50, "plan": "Free", "status_code": 429, "url": "u"},
          {"error": "The daily request limit has been reached.", "reason": "daily_limit_reached",
           "daily_limit": 50, "plan": "Free", "status_code": 429}),
+        # The data's provenance stays; the request's and the upstream's names go.
+        ({"data": [], "meta": {"endpoint": "/api/v1/x", "data_time": "2026-10-24T00:00:00Z",
+          "response_time": "t", "provider": "Sugra API", "source": "upstream", "cached": False,
+          "attribution": "Notice.", "period": "2026-Q3", "data_age_days": 1, "stale": True,
+          "stale_since": "2026-10-20T00:00:00Z"}},
+         {"data": [], "meta": {"data_time": "2026-10-24T00:00:00Z", "attribution": "Notice.",
+          "period": "2026-Q3", "data_age_days": 1, "stale": True,
+          "stale_since": "2026-10-20T00:00:00Z"}}),
+        # An envelope-less payload's _meta lends its provenance to meta and is dropped.
+        ({"price": 1, "_meta": {"data_time": "d", "source": "upstream", "attribution": "A"}},
+         {"price": 1, "meta": {"data_time": "d", "attribution": "A"}}),
+        # _meta is read only without a meta object, so two envelopes never mix.
+        ({"data": [], "meta": {"data_time": "m"}, "_meta": {"data_time": "f", "period": "p"}},
+         {"data": [], "meta": {"data_time": "m"}}),
+        ({"data": [], "meta": "x", "_meta": {"data_time": "d"}}, {"data": [], "meta": {"data_time": "d"}}),
+        # A notice naming a commercial upstream is dropped, whatever its shape.
+        ({"data": [], "meta": {"data_time": "d", "attribution": "Quotes courtesy of Yahoo Finance."}},
+         {"data": [], "meta": {"data_time": "d"}}),
+        ({"price": 1, "_meta": {"attribution": {"sources": [{"source_name": "CoinGecko"}]}}},
+         {"price": 1}),
     ],
 )
 def test_minimize_response(raw: Any, kept: Any) -> None:
     assert typed.minimize_response(raw) == kept
+
+
+@pytest.mark.parametrize(
+    "notice",
+    [
+        "Data from AlphaVantage.",
+        "Data from alpha-vantage.",
+        "Source: www.alphavantage.co",
+        "Weather by tomorrowio",
+        "Quotes: Y a h o o",
+        "Quotes: \uff39\uff41\uff48\uff4f\uff4f",
+        "Quotes: ya\u200bhoo",
+        {"sources": [{"url": "https://api.coin-gecko.com"}]},
+        "Quotes: Ya\nhoo",
+        "Quotes: Ya\thoo",
+        "Quotes: Ya\r\nhoo",
+        "Quotes: Ya\x00hoo",
+        ["Quotes:", {"by": "Ya\nhoo"}],
+        ["Ya", "hoo"],
+        {"ya": "hoo"},
+    ],
+)
+def test_a_notice_naming_a_commercial_upstream_in_any_spelling_is_dropped(notice: Any) -> None:
+    raw = {"data": [], "meta": {"data_time": "d", "attribution": notice}}
+    assert typed.minimize_response(raw) == {"data": [], "meta": {"data_time": "d"}}
+
+
+@pytest.mark.parametrize(
+    "notice",
+    [
+        "Source: FRED, Federal Reserve Bank of St. Louis.",
+        {"text": "Source: World Bank", "url": "https://data.worldbank.org"},
+    ],
+)
+def test_a_notice_naming_no_commercial_upstream_is_kept(notice: Any) -> None:
+    raw = {"data": [], "meta": {"data_time": "d", "attribution": notice}}
+    assert typed.minimize_response(raw)["meta"]["attribution"] == notice
 
 
 def _catalog_option(parameter: EndpointParameter) -> dict[str, Any]:
