@@ -48,7 +48,16 @@ digest_for maps a profile to its digest. Each is taken once per start, after the
 startup and before it serves (gate.wrap_lifespan). It is unknown until a
 start has taken it, and after a start whose take failed or timed out. It names the set the process serves, never read from
 an answer, so a tool registered after the start is not in it; a tools/list
-line with any other status keeps -.
+line with any other status keeps -, except a refusal below.
+
+On a line whose status is one the SDK transport refuses a request with
+(REJECT_STATUSES: 400, 404, 406, 415) and whose method is not initialize, the
+same column holds the reason the answer names instead (reject_reason): the
+start of the JSON-RPC error message the transport wrote (or of the plain text
+answer its security check sends a POST that is not JSON), matched against a
+closed table (_REJECT_REASONS), never the message itself. A refusal whose
+answer names none of them, or that the gate did not scan, is unnamed. An
+initialize keeps its client class whatever its status.
 
 failed counts the requests whose demand step raised: such a request is in
 requests and in no line, and the answer it was sent is never touched by it.
@@ -216,6 +225,37 @@ def tools_digest(definitions: Iterable[Mapping[str, object]]) -> str:
         for definition in definitions
     )
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()[:TOOLS_DIGEST_HEX]
+
+
+# The statuses the SDK's streamable HTTP transport refuses a request with,
+# and the start of each error message it writes then, mapped to a fixed code
+# (mcp/server/streamable_http.py; streamable_http_manager.py for a session it
+# does not hold or that another credential opened; transport_security.py, as
+# plain text, for a POST that is not JSON; tests pin each against the installed
+# SDK). The first match wins; a message is never written.
+REJECT_STATUSES = frozenset({"400", "404", "406", "415"})
+UNNAMED_REJECT = "unnamed"
+_REJECT_REASONS = (
+    ("Bad Request: Missing session ID", "no_session"),
+    ("Bad Request: Unsupported protocol version", "protocol_version"),
+    ("Session not found", "unknown_session"),
+    ("Not Found: Invalid or expired session ID", "unknown_session"),
+    ("Not Found: Session has been terminated", "ended_session"),
+    ("Not Acceptable", "not_acceptable"),
+    ("Invalid Content-Type header", "media_type"),
+    ("Unsupported Media Type", "media_type"),
+    ("Parse error", "parse_error"),
+    ("Validation error", "invalid_message"),
+)
+
+
+def reject_reason(messages: Iterable[str]) -> str:
+    """The code of the first error message a refusal's answer names, else unnamed."""
+    for message in messages:
+        for prefix, code in _REJECT_REASONS:
+            if message.startswith(prefix):
+                return code
+    return UNNAMED_REJECT
 
 
 def status_of(status: object) -> str:

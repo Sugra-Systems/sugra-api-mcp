@@ -232,13 +232,108 @@ async def test_a_refused_request_is_counted_with_its_status(monkeypatch, written
     assert statuses == [401, 404, 400, 406]
     counts = _counts(counter, written)
     caller = ("app.sugra.ai", "other", "openai")
+    # A 401 keeps -; a refusal of the transport carries the reason it names.
     assert counts == {
         ("initialize", "200", *caller, "chatgpt"): 1,
         ("unread", "401", *caller, "-"): 1,
-        ("tools/list", "404", *caller, "-"): 1,
-        ("tools/list", "400", *caller, "-"): 1,
-        ("tools/list", "406", *caller, "-"): 1,
+        ("tools/list", "404", *caller, "unknown_session"): 1,
+        ("tools/list", "400", *caller, "no_session"): 1,
+        ("tools/list", "406", *caller, "not_acceptable"): 1,
     }
+
+
+async def test_each_refusal_of_the_installed_transport_carries_its_reason(monkeypatch, written) -> None:
+    counter = demand.DemandCounter()
+    tools_list = _message(2, "tools/list", {})
+    tool_call = _message(3, "tools/call", {"name": "list_toolsets", "arguments": {}})
+    caller_headers = {**HEADERS, **_SCANNER, **_OAUTH}
+    async with _served(monkeypatch, counter) as client:
+        session = await _open(client, 1)
+        sent = {
+            "media_type": await client.post(
+                "/mcp",
+                content=json.dumps(tools_list),
+                headers={**caller_headers, **session, "content-type": "text/plain", "x-request-id": _rid(2)},
+            ),
+            "parse_error": await client.post(
+                "/mcp", content=b"{not json", headers={**caller_headers, **session, "x-request-id": _rid(3)}
+            ),
+            "invalid_message": await client.post(
+                "/mcp", json={"jsonrpc": "2.0"}, headers={**caller_headers, **session, "x-request-id": _rid(4)}
+            ),
+            "protocol_version": await client.post(
+                "/mcp",
+                json=tools_list,
+                headers={**caller_headers, **session, "mcp-protocol-version": "2099-01-01", "x-request-id": _rid(5)},
+            ),
+            # A tool call is refused before it runs; its answer is scanned too.
+            "no_session": await client.post("/mcp", json=tool_call, headers={**caller_headers, "x-request-id": _rid(6)}),
+        }
+        # An initialize keeps its client class whatever its status.
+        refused_initialize = await client.post(
+            "/mcp",
+            json=_SCANNER_INITIALIZE,
+            headers={**caller_headers, "accept": "text/html", "x-request-id": _rid(7)},
+        )
+    # The security check answers a POST that is not JSON before the transport's
+    # own 415 can, and in plain text.
+    assert sent["media_type"].text == "Invalid Content-Type header"
+    assert {reason: r.status_code for reason, r in sent.items()} == {
+        "media_type": 400,
+        "parse_error": 400,
+        "invalid_message": 400,
+        "protocol_version": 400,
+        "no_session": 400,
+    }
+    assert refused_initialize.status_code == 406
+    caller = ("app.sugra.ai", "other", "openai")
+    assert _counts(counter, written) == {
+        ("initialize", "200", *caller, "chatgpt"): 1,
+        ("tools/list", "400", *caller, "media_type"): 1,
+        ("unread", "400", *caller, "parse_error"): 1,
+        ("other", "400", *caller, "invalid_message"): 1,
+        ("tools/list", "400", *caller, "protocol_version"): 1,
+        ("other", "400", *caller, "no_session"): 1,
+        ("initialize", "406", *caller, "chatgpt"): 1,
+    }
+
+
+@pytest.mark.parametrize(
+    ("messages", "reason"),
+    [
+        (["Not Found: Session has been terminated"], "ended_session"),
+        (["Not Acceptable: Client must accept application/json"], "not_acceptable"),
+        (["Bad Request: Missing session ID"], "no_session"),
+        (["Something else", "Parse error: Expecting value"], "parse_error"),
+        (["bad request: missing session id"], "unnamed"),
+        (["Error processing request"], "unnamed"),
+        ([], "unnamed"),
+    ],
+)
+def test_a_reason_is_the_code_of_the_first_message_the_table_names(messages: list[str], reason: str) -> None:
+    assert demand.reject_reason(messages) == reason
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"",
+        b"<html>Bad Request</html>",
+        b'{"error": "missing_bearer_token"}',
+        b'{"jsonrpc": "2.0", "id": 1, "error": {"code": -32600, "message": 7}}',
+    ],
+)
+def test_a_refusal_whose_answer_names_no_reason_is_unnamed(body: bytes) -> None:
+    assert gate._reject_reason(body) == "unnamed"
+
+
+def test_every_reason_fits_a_field_and_is_a_fixed_class() -> None:
+    prefixes = [prefix for prefix, _ in demand._REJECT_REASONS]
+    codes = [code for _, code in demand._REJECT_REASONS] + [demand.UNNAMED_REJECT]
+    assert len(set(prefixes)) == len(prefixes)
+    assert demand.UNNAMED_REJECT not in codes[:-1]
+    assert all(re.fullmatch(r"[a-z_]{1,16}", code) for code in codes)
+    assert len(demand.FIELD_MAX * "x") >= max(len(code) for code in codes)
 
 
 async def test_only_a_tracked_post_to_mcp_is_counted(written) -> None:
@@ -1210,7 +1305,7 @@ async def test_the_served_digest_is_that_of_a_real_tools_list_answer_and_moves_w
     [
         ("tools/list", 200, "abcd1234"),
         ("tools/list", 204, "abcd1234"),
-        ("tools/list", 404, "-"),
+        ("tools/list", 404, "unnamed"),
         ("tools/list", 500, "-"),
         ("ping", 200, "-"),
     ],
