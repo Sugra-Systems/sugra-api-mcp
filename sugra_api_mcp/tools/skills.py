@@ -90,9 +90,24 @@ CHATGPT_PASSAGES: dict[str, tuple[tuple[str, str, str], ...]] = {
         (
             "MCP: `call_endpoint` / `fetch_data` return the same payload",
             "\n\n## Time",
-            "MCP: a typed tool returns the payload with request and logging metadata left out,"
-            " and `meta` keeps only facts about the data, such as `count`, `total`, `unit` and"
-            " `notes`.",
+            "MCP: a typed tool returns the payload with request and logging metadata left out."
+            " `meta` keeps facts about the data, such as `count`, `total`, `unit` and `notes`,"
+            " and its provenance when the API sent it: `data_time`, `period`, `data_age_days`,"
+            " `stale`, `stale_since` and `attribution`, taken from `_meta` on an envelope-less"
+            " payload. `endpoint`, `response_time`, `provider`, `source` and `cached` are left"
+            " out.",
+        ),
+        (
+            "`data_time` in `meta` (or `_meta` on a flat payload)",
+            " is the observation or publication clock",
+            "`data_time` in `meta`",
+        ),
+        (
+            "Read them from `meta` / `_meta`: name the source,",
+            " Live list:",
+            "Read the as-of from `meta`: give `data_time` or `period`, and when `attribution` is"
+            " present repeat it verbatim. Name the source the tool's description names; when it"
+            " names none, name the Sugra wrapper of its direction.",
         ),
     ),
     "discover-and-call": (
@@ -126,6 +141,11 @@ CHATGPT_PASSAGES: dict[str, tuple[tuple[str, str, str], ...]] = {
             " direction.\n\n",
         ),
         (
+            "1. `meta.endpoint` is the operation you meant.",
+            "\n2. The place",
+            "1. The tool you called is the one whose description matches the question.",
+        ),
+        (
             "Drop a bad MCP `toolset`/`source` filter.",
             "\n\nAn error message usually names the fix",
             "When no tool listed in this session covers it, say so: this session reaches the"
@@ -135,6 +155,21 @@ CHATGPT_PASSAGES: dict[str, tuple[tuple[str, str, str], ...]] = {
             "Do not add per-endpoint MCP tools to skip this loop.",
             "\n\n## Timeouts",
             "Do not guess an input the tool's input schema does not list.",
+        ),
+    ),
+    "cross-domain-briefing": (
+        (
+            "4. Quote each figure with its source and `data_time` from `meta`",
+            "\n5. Close",
+            "4. Quote each figure with `data_time` from `meta` (and `period` when present), its"
+            " row-level `as_of` when present, any `attribution` notice word for word, and the"
+            " source the tool's description names (see `envelope-and-attribution`).",
+        ),
+        (
+            "Do not add per-endpoint MCP tools. Do not treat screening",
+            " Do not frame the output",
+            "Do not treat screening as a briefing source unless the question is about a named"
+            " party. In ChatGPT, use the tools listed in this session.",
         ),
     ),
 }
