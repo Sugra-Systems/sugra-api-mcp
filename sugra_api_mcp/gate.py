@@ -293,18 +293,38 @@ def _sse_data(text: str) -> list[str]:
     return events
 
 
-def _answers_with_error(body: bytes) -> bool:
-    """True when an answer, plain JSON or SSE, holds a JSON-RPC error response."""
+def _errors_in(body: bytes) -> list[dict[str, Any]]:
+    """The JSON-RPC error objects an answer, plain JSON or SSE, holds."""
     text = body.decode("utf-8", errors="replace")
     candidates = [text] if text.lstrip().startswith("{") else _sse_data(text)
+    errors = []
     for candidate in candidates:
         try:
             message = json.loads(candidate)
         except (ValueError, RecursionError):
             continue
         if isinstance(message, dict) and isinstance(message.get("error"), dict) and "method" not in message:
-            return True
-    return False
+            errors.append(message["error"])
+    return errors
+
+
+def _answers_with_error(body: bytes) -> bool:
+    """True when an answer, plain JSON or SSE, holds a JSON-RPC error response."""
+    return bool(_errors_in(body))
+
+
+def _reject_reason(body: bytes) -> str:
+    """The demand reason code of a refusal's answer (demand.reject_reason).
+
+    The transport's security check refuses a POST that is not JSON with a plain
+    text answer, not a JSON-RPC error, so a body that holds none is read as one
+    message.
+    """
+    errors = _errors_in(body)
+    if not errors:
+        return demand.reject_reason([body.decode("utf-8", errors="replace")])
+    messages = (error.get("message") for error in errors)
+    return demand.reject_reason(message for message in messages if isinstance(message, str))
 
 
 class _DemandCapture:
@@ -426,7 +446,7 @@ class GateMiddleware:
                 status = message.get("status")
             elif (
                 message["type"] == "http.response.body"
-                and not record.is_tool_call()
+                and (not record.is_tool_call() or demand.status_of(status) in demand.REJECT_STATUSES)
                 and len(answer) < _ANSWER_SCAN_BYTES
             ):
                 answer.extend(message.get("body", b"")[: _ANSWER_SCAN_BYTES - len(answer)])
@@ -451,10 +471,15 @@ class GateMiddleware:
                 except Exception as e:
                     logger.warning("Gate line failed (%s).", type(e).__name__)
             if capture is not None:
-                self._count(scope, capture, body_read and not body_too_large, record.served_profile)
+                self._count(scope, capture, body_read and not body_too_large, record.served_profile, bytes(answer))
 
     def _count(
-        self, scope: Scope, capture: _DemandCapture, parsed: bool, served_profile: str | None
+        self,
+        scope: Scope,
+        capture: _DemandCapture,
+        parsed: bool,
+        served_profile: str | None,
+        answer: bytes = b"",
     ) -> None:
         """Add the request to the demand count once, or to its failures; never raises.
 
@@ -486,6 +511,10 @@ class GateMiddleware:
                 if profile is None:
                     profile = _user_agent_profile(_first_header(scope, b"user-agent"))
                 client = self.demand.digest_for(profile)
+            elif status in demand.REJECT_STATUSES and method != demand.INITIALIZE:
+                # The transport's reason, from the start of the answer the
+                # gate scanned (at most _ANSWER_SCAN_BYTES), as a fixed code.
+                client = _reject_reason(answer)
             self.demand.add((method, status, host, ua, origin, client))
             # The request is counted above; its extra counts never undo that.
             with contextlib.suppress(Exception):
