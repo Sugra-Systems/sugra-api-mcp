@@ -733,7 +733,7 @@ def _initialize(client_name, request_id=1):
         [{"jsonrpc": "2.0", "method": "ping"}, _initialize("grok-shell-sugra-api", 2)],
     ],
 )
-def test_auth_middleware_challenges_the_grok_validator_initialize(auth_config, payload):
+def test_auth_middleware_challenges_the_grok_validator_and_grok_build_initialize(auth_config, payload):
     """The Grok web connector's validator and Grok Build (grok-shell-<server name>) send no User-Agent;
     an anonymous 200 leaves the first without a sign-in window and the second without a sign-in at all."""
 
