@@ -103,10 +103,10 @@ def test_streamable_http_public_discovery_exposes_oauth_security_schemes(monkeyp
         )
 
         assert init_response.status_code == 200
-        session_id = init_response.headers.get("mcp-session-id")
-        assert session_id
+        # Stateless: no session id comes back, and the requests after carry none.
+        assert "mcp-session-id" not in init_response.headers
 
-        session_headers = {**headers, "mcp-session-id": session_id}
+        session_headers = dict(headers)
         initialized_response = client.post(
             "/mcp",
             json={"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},

@@ -41,6 +41,7 @@ from tests.test_request_credentials import (
     _authenticator,
     _CaptureTracer,
     _operation_without_params,
+    held_session_id,
 )
 
 UNUSABLE = {"error": "unusable_api_key", "hint": UNUSABLE_API_KEY_HINT}
@@ -283,7 +284,7 @@ async def test_http_calls_with_such_a_key_send_nothing_and_say_why(sent, monkeyp
                     "/mcp", json=INITIALIZE, headers={**HEADERS, "authorization": "Bearer jwt-current"}
                 )
                 assert opened.status_code == 200
-                session_id = opened.headers["mcp-session-id"]
+                session_id = held_session_id(opened)
                 await client.post(
                     "/mcp",
                     json={"jsonrpc": "2.0", "method": "notifications/initialized"},

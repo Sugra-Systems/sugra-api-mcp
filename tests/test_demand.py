@@ -151,7 +151,9 @@ async def _open(client: httpx.AsyncClient, number: int) -> dict[str, str]:
         headers={**HEADERS, **_SCANNER, "x-request-id": _rid(number)},
     )
     assert opened.status_code == 200
-    return {"mcp-session-id": opened.headers["mcp-session-id"]}
+    # Stateless: no session id comes back, and none is sent after.
+    assert "mcp-session-id" not in opened.headers
+    return {}
 
 
 # ---- What is counted, and as what ----
@@ -213,13 +215,13 @@ async def test_a_refused_request_is_counted_with_its_status(monkeypatch, written
         revoked = await client.post(
             "/mcp", json=tools_list, headers={**HEADERS, **_SCANNER, **_REVOKED, **session, "x-request-id": _rid(2)}
         )
-        # A session the server does not know.
+        # A session id the server never issued: stateless, it is ignored and served.
         unknown_session = await client.post(
             "/mcp",
             json=tools_list,
             headers={**HEADERS, **_SCANNER, **_OAUTH, "mcp-session-id": "f" * 32, "x-request-id": _rid(3)},
         )
-        # No session at all: the SDK reads the body and then refuses it.
+        # No session id at all: served too.
         no_session = await client.post(
             "/mcp", json=tools_list, headers={**HEADERS, **_SCANNER, **_OAUTH, "x-request-id": _rid(4)}
         )
@@ -229,15 +231,15 @@ async def test_a_refused_request_is_counted_with_its_status(monkeypatch, written
             headers={**HEADERS, **_SCANNER, **session, "accept": "text/html", "x-request-id": _rid(5)},
         )
     statuses = [r.status_code for r in (revoked, unknown_session, no_session, wrong_accept)]
-    assert statuses == [401, 404, 400, 406]
+    assert statuses == [401, 200, 200, 406]
     counts = _counts(counter, written)
     caller = ("app.sugra.ai", "other", "openai")
     # A 401 keeps -; a refusal of the transport carries the reason it names.
     assert counts == {
         ("initialize", "200", *caller, "chatgpt"): 1,
         ("unread", "401", *caller, "-"): 1,
-        ("tools/list", "404", *caller, "unknown_session"): 1,
-        ("tools/list", "400", *caller, "no_session"): 1,
+        # A listing names the digest of the set it answered: none is set here.
+        ("tools/list", "200", *caller, "unknown"): 2,
         ("tools/list", "406", *caller, "not_acceptable"): 1,
     }
 
@@ -266,9 +268,9 @@ async def test_each_refusal_of_the_installed_transport_carries_its_reason(monkey
                 json=tools_list,
                 headers={**caller_headers, **session, "mcp-protocol-version": "2099-01-01", "x-request-id": _rid(5)},
             ),
-            # A tool call is refused before it runs; its answer is scanned too.
-            "no_session": await client.post("/mcp", json=tool_call, headers={**caller_headers, "x-request-id": _rid(6)}),
         }
+        # Stateless: a tool call without a session id is served, not refused.
+        served_call = await client.post("/mcp", json=tool_call, headers={**caller_headers, "x-request-id": _rid(6)})
         # An initialize keeps its client class whatever its status.
         refused_initialize = await client.post(
             "/mcp",
@@ -283,8 +285,8 @@ async def test_each_refusal_of_the_installed_transport_carries_its_reason(monkey
         "parse_error": 400,
         "invalid_message": 400,
         "protocol_version": 400,
-        "no_session": 400,
     }
+    assert served_call.status_code == 200
     assert refused_initialize.status_code == 406
     caller = ("app.sugra.ai", "other", "openai")
     assert _counts(counter, written) == {
@@ -293,7 +295,7 @@ async def test_each_refusal_of_the_installed_transport_carries_its_reason(monkey
         ("unread", "400", *caller, "parse_error"): 1,
         ("other", "400", *caller, "invalid_message"): 1,
         ("tools/list", "400", *caller, "protocol_version"): 1,
-        ("other", "400", *caller, "no_session"): 1,
+        ("other", "200", *caller, "-"): 1,
         ("initialize", "406", *caller, "chatgpt"): 1,
     }
 
@@ -1342,9 +1344,10 @@ def test_a_profile_names_its_digest(profile: str, column: str) -> None:
 @pytest.mark.parametrize(
     ("client_name", "user_agent", "column"),
     [
-        # The listing's own profile decides: clientInfo first, as tools/list itself.
-        ("openai-mcp", "Mozilla/5.0", "cafe0001"),
-        ("claude-ai", "openai-mcp/1.0", "abcd1234"),
+        # The listing's own profile decides, as tools/list itself. Stateless, the
+        # tools/list request belongs to no initialize, so its User-Agent decides.
+        ("openai-mcp", "Mozilla/5.0", "abcd1234"),
+        ("claude-ai", "openai-mcp/1.0", "cafe0001"),
         ("openai-mcp", "openai-mcp/1.0", "cafe0001"),
         ("claude-ai", "Mozilla/5.0", "abcd1234"),
     ],
@@ -1362,7 +1365,9 @@ async def test_a_tools_list_line_carries_the_digest_of_the_set_it_was_answered(
     }
     async with _served(monkeypatch, counter) as client:
         opened = await client.post("/mcp", json=initialize, headers={**headers, "x-request-id": _rid(1)})
-        session = {"mcp-session-id": opened.headers["mcp-session-id"]}
+        # Stateless: no session id comes back, and none is sent after.
+        assert "mcp-session-id" not in opened.headers
+        session: dict[str, str] = {}
         listed = await client.post(
             "/mcp", json=_message(2, "tools/list", {}), headers={**headers, **session, "x-request-id": _rid(2)}
         )

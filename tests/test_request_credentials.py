@@ -15,6 +15,7 @@ import asyncio
 import hashlib
 import inspect
 import json
+import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,16 @@ INITIALIZE = {
     "method": "initialize",
     "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "tests", "version": "0"}},
 }
+
+
+def held_session_id(opened: httpx.Response) -> str:
+    """A session id a client still holds from before the transport went stateless.
+
+    The server issues none now (server.STATELESS_HTTP) and ignores one sent; the
+    calls here still send it, as such a client does, so what a sent id does to a
+    span stays covered."""
+    assert "mcp-session-id" not in opened.headers
+    return uuid.uuid4().hex
 
 
 def _operation_without_params() -> str:
@@ -123,7 +134,7 @@ async def test_http_tool_calls_use_the_credential_of_the_request_that_carries_th
             headers["authorization"] = f"Bearer {bearer}"
         response = await client.post("/mcp", json=INITIALIZE, headers=headers)
         assert response.status_code == 200
-        session_id = response.headers["mcp-session-id"]
+        session_id = held_session_id(response)
         await client.post(
             "/mcp",
             json={"jsonrpc": "2.0", "method": "notifications/initialized"},
@@ -286,7 +297,7 @@ async def test_every_tool_span_names_how_its_own_request_arrived(upstream, monke
             async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:8002") as client:
                 opened = await client.post("/mcp", json=initialize, headers={**HEADERS, "host": "app.sugra.ai"})
                 assert opened.status_code == 200
-                session_id = opened.headers["mcp-session-id"]
+                session_id = held_session_id(opened)
                 await client.post(
                     "/mcp",
                     json={"jsonrpc": "2.0", "method": "notifications/initialized"},
@@ -322,8 +333,7 @@ async def test_every_tool_span_names_how_its_own_request_arrived(upstream, monke
     calls = [span for span in tracer.spans if span.name == "mcp.tool.call_endpoint"]
     common = {
         "mcp.caller.transport": "streamable_http",
-        "mcp.caller.client": "claude",
-        "mcp.caller.client_version": "1.2.3",
+        # Stateless: a call belongs to no initialize, so no clientInfo names its client.
         "mcp.caller.session": _session_attr(session_id),
         "mcp.caller.net": "loopback",
     }
@@ -402,7 +412,7 @@ async def test_concurrent_calls_each_carry_their_own_request(monkeypatch, one_se
         initialize = {**INITIALIZE, "params": {**INITIALIZE["params"], "clientInfo": {"name": name, "version": version}}}
         opened = await client.post("/mcp", json=initialize, headers={**HEADERS, "host": host})
         assert opened.status_code == 200
-        session_id = opened.headers["mcp-session-id"]
+        session_id = held_session_id(opened)
         await client.post(
             "/mcp",
             json={"jsonrpc": "2.0", "method": "notifications/initialized"},
@@ -454,18 +464,14 @@ async def test_concurrent_calls_each_carry_their_own_request(monkeypatch, one_se
         key=lambda facts: str(facts.get("mcp.caller.auth")),
     )
     common = {"mcp.caller.transport": "streamable_http"}
-    # clientInfo belongs to the session, so on one session both calls report its initialize.
-    client_of_b = (
-        {"mcp.caller.client": "claude", "mcp.caller.client_version": "1.0.0"}
-        if one_session
-        else {"mcp.caller.client": "chatgpt", "mcp.caller.client_version": "2.0.0"}
-    )
+    # Stateless: a call belongs to no initialize, so no clientInfo names its client,
+    # on one held session id or two.
     assert spans == [
         {**common, "mcp.caller.auth": "api_key", "mcp.caller.host": "mcp.sugra.ai", "mcp.caller.ua_class": "python",
-         "mcp.caller.origin": "openai", "mcp.caller.client": "claude", "mcp.caller.client_version": "1.0.0",
+         "mcp.caller.origin": "openai",
          "mcp.caller.session": _session_attr(session_a), "mcp.caller.net": "loopback"},
         {**common, "mcp.caller.auth": "oauth", "mcp.caller.host": "app.sugra.ai", "mcp.caller.ua_class": "curl",
-         "mcp.caller.origin": "none", **client_of_b,
+         "mcp.caller.origin": "none",
          "mcp.caller.session": _session_attr(session_b), "mcp.caller.net": "loopback",
          "mcp.caller.platform": "anthropic"},
     ]
@@ -497,7 +503,7 @@ async def test_an_unauthenticated_tool_call_is_refused_before_any_span(monkeypat
             async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:8002") as client:
                 opened = await client.post("/mcp", json=INITIALIZE, headers={**HEADERS, "host": "app.sugra.ai"})
                 assert opened.status_code == 200
-                session_id = opened.headers["mcp-session-id"]
+                session_id = held_session_id(opened)
                 refused = await client.post(
                     "/mcp",
                     json={
@@ -527,7 +533,7 @@ async def test_an_http_call_with_no_principal_is_auth_none(monkeypatch) -> None:
         async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:8002") as client:
             opened = await client.post("/mcp", json=INITIALIZE, headers=HEADERS)
             assert opened.status_code == 200
-            session_id = opened.headers["mcp-session-id"]
+            session_id = held_session_id(opened)
             await client.post(
                 "/mcp",
                 json={"jsonrpc": "2.0", "method": "notifications/initialized"},
@@ -551,8 +557,6 @@ async def test_an_http_call_with_no_principal_is_auth_none(monkeypatch) -> None:
         "mcp.caller.host": "loopback",
         "mcp.caller.ua_class": "curl",
         "mcp.caller.origin": "none",
-        "mcp.caller.client": "other",
-        "mcp.caller.client_version": "0",
         "mcp.caller.session": _session_attr(session_id),
         "mcp.caller.net": "loopback",
     }]
@@ -681,7 +685,7 @@ async def test_span_user_id_matches_the_admission_name(upstream, monkeypatch) ->
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:8002") as client:
                 opened = await client.post("/mcp", json=INITIALIZE, headers=HEADERS)
-                session_id = opened.headers["mcp-session-id"]
+                session_id = held_session_id(opened)
                 await client.post(
                     "/mcp",
                     json={"jsonrpc": "2.0", "method": "notifications/initialized"},
@@ -727,7 +731,7 @@ async def test_net_follows_x_real_ip_not_a_forged_forwarded_for(upstream, monkey
             transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 123))
             async with httpx.AsyncClient(transport=transport, base_url="http://app.sugra.ai") as client:
                 opened = await client.post("/mcp", json=INITIALIZE, headers={**HEADERS, "host": "app.sugra.ai"})
-                session_id = opened.headers["mcp-session-id"]
+                session_id = held_session_id(opened)
                 await client.post(
                     "/mcp",
                     json={"jsonrpc": "2.0", "method": "notifications/initialized"},
