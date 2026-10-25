@@ -17,9 +17,10 @@ MISSING_API_KEY_HINT = (
 )
 
 # Remediation copy for the call-time unusable_api_key error (server.py): the
-# key holds a character an HTTP header cannot carry (one outside ASCII, a line
-# break or another control character), so no request is ever sent with it and
-# a retry fails the same way.
+# key holds a character this server cannot send in a request header (one
+# outside ASCII, which httpx cannot encode, a line break or another control
+# character, or a space or a tab at either end), so no request is ever sent
+# with it and a retry fails the same way.
 UNUSABLE_API_KEY_HINT = (
     "This API key holds a character that cannot be sent in a request header, "
     "so no call that needs the API can run with it. Do not retry. A pasted key "

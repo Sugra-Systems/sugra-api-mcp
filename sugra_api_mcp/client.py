@@ -272,11 +272,17 @@ _PLAN_IN_DETAIL = re.compile(r"Current plan: ([A-Za-z0-9_-]+)\.")
 # resets left a chat client calling again within minutes, mostly the same
 # tool, each call refused the same way: nothing told it that a retry before
 # the reset cannot succeed.
-_DAILY_LIMIT_RETRY_HINT = (
-    "Do not retry this or another Sugra data tool before 00:00 UTC: until the "
-    "limit resets, every such call is refused the same way. Tell the user the "
-    "daily request limit is used up and when it resets."
-)
+def _daily_limit_retry_hint(resets: str) -> str:
+    return (
+        f"Do not retry this or another Sugra data tool before {resets}: until the "
+        "limit resets, every such call is refused the same way. Tell the user the "
+        "daily request limit is used up and when it resets."
+    )
+
+
+# When the quota resets if the refusal names no reset time of its own: the
+# API's daily window ends at midnight UTC.
+_DEFAULT_DAILY_RESET = "00:00 UTC"
 
 # A `detail` forwarded to the model never sells: one that still asks for an
 # upgrade or links into the app is replaced by the bare status, which is
@@ -479,9 +485,18 @@ def _with_quota(payload: Any, response: httpx.Response) -> Any:
     return payload
 
 
+def _daily_reset(response: httpx.Response) -> str:
+    """When the spent quota resets: the response's X-RateLimit-Reset when it
+    is a well-formed reset time, else midnight UTC. The refusal's sentence and
+    its retry_hint both say it, so they cannot name two deadlines."""
+    raw = str(response.headers.get("X-RateLimit-Reset", "")).strip()
+    return raw if _is_timestamp(raw) else _DEFAULT_DAILY_RESET
+
+
 def _daily_limit_error(detail: str, response: httpx.Response) -> dict[str, Any]:
     """The quota refusal, stated as information for a model to relay."""
     limit = _positive_int_header(response, "X-RateLimit-Limit")
+    resets = _daily_reset(response)
     match = _PLAN_IN_DETAIL.search(detail)
     plan = match.group(1) if match and match.group(1) != "unknown" else None
     reached = "The daily request limit"
@@ -491,9 +506,9 @@ def _daily_limit_error(detail: str, response: httpx.Response) -> dict[str, Any]:
     if plan is not None:
         reached += f" on the {plan} plan"
     fields: dict[str, Any] = {
-        "error": f"{reached} has been reached. It resets at 00:00 UTC.",
+        "error": f"{reached} has been reached. It resets at {resets}.",
         "reason": "daily_limit_reached",
-        "retry_hint": _DAILY_LIMIT_RETRY_HINT,
+        "retry_hint": _daily_limit_retry_hint(resets),
     }
     if limit is not None:
         fields["daily_limit"] = limit

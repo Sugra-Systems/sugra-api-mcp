@@ -172,7 +172,7 @@ async def test_a_typed_tool_tells_a_chatgpt_session_not_to_retry_a_spent_quota(m
     import httpx
     from mcp.types import Implementation
 
-    from sugra_api_mcp.client import SugraClient
+    from sugra_api_mcp.client import SugraClient, _daily_limit_retry_hint
     from sugra_api_mcp.config import Config
 
     sent: list[str] = []
@@ -206,8 +206,8 @@ async def test_a_typed_tool_tells_a_chatgpt_session_not_to_retry_a_spent_quota(m
     payload = _structured(result)
     assert payload["reason"] == "daily_limit_reached"
     assert payload["retry_after"] == 7200
-    assert payload["retry_hint"].startswith("Do not retry")
-    assert "00:00 UTC" in payload["retry_hint"]
+    assert payload["retry_hint"] == _daily_limit_retry_hint("00:00 UTC")
+    assert "Tell the user" in payload["retry_hint"]
     text = " ".join(block.text for block in result.content if hasattr(block, "text"))
     assert payload["retry_hint"] in text
     assert "upgrade" not in text.lower()

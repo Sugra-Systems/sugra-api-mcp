@@ -704,7 +704,7 @@ _HEADER_VALUE = re.compile(r"[\x21-\x7e]+(?:[ \t]+[\x21-\x7e]+)*")
 
 
 def _client_for(config: Config) -> SugraClient | _UnusableKeyClient:
-    """A real client for this key, or the unusable-key stand-in when no header can carry it."""
+    """A real client for this key, or the unusable-key stand-in when this server cannot send it."""
     if _HEADER_VALUE.fullmatch(config.api_key) is None:
         return _unusable_key_client
     return SugraClient(config)
@@ -863,11 +863,12 @@ def get_client() -> SugraClient | _KeylessClient:
     whose network methods answer with the structured ``missing_api_key`` error -
     the key requirement is enforced here at call time, never at process startup.
 
-    Any transport: a key that is no valid header value (it holds a character
-    outside ASCII, a line break or another control character, or starts or
-    ends with a space or a tab) gets the unusable-key stand-in, whose network
-    methods answer with the structured ``unusable_api_key`` error, because no
-    HTTP header can carry that key.
+    Any transport: a key this server cannot send as a header value (it holds
+    a character outside ASCII, a line break or another control character, or
+    starts or ends with a space or a tab) gets the unusable-key stand-in, whose
+    network methods answer with the structured ``unusable_api_key`` error:
+    httpx sends a header value as ASCII, and h11 refuses the rest when the
+    request is sent.
 
     A real client is built for each call and costs next to nothing: it holds
     the call's key and sends through the connection pool every caller of the
