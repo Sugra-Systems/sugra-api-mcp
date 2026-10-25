@@ -413,7 +413,7 @@ Tool failures return structured JSON instead of raising, so agents can pick a re
 | `upstream_connect_error` | Could not reach the Sugra API (DNS failure, connection refused) | Retry after a short delay. |
 | `upstream_transport_error` | Connection dropped mid-request | Retry once. |
 | `invalid_request_url` | The request could not be built, most often because its parameters make the URL longer than 65,536 characters; nothing was sent | Send fewer or shorter parameter values, or split the request. |
-| `unusable_api_key` | The API key holds a character no HTTP header can carry (one outside ASCII, a line break or another control character); nothing was sent | Do not retry: the key has to be replaced (see Troubleshooting). |
+| `unusable_api_key` | The API key holds a character this server cannot send in a request header (one outside ASCII, a line break or another control character, or a space or a tab at either end); nothing was sent | Do not retry: the key has to be replaced (see Troubleshooting). |
 | `response_too_deep` | The API's response is nested too deeply to measure, so it is not returned | Retry once; report if persistent. |
 | free-text string + `status_code` | The API answered with HTTP 4xx/5xx; `retry_after` included when the API sent a Retry-After header | Honor `retry_after` for 429/503; fix the request for 4xx. |
 | `tool_execution_failed` | Unexpected failure inside the gateway (`exception_type` included) | Report if persistent. |
@@ -448,7 +448,7 @@ The server starts and lists its tools without a key, but API-calling tools (`cal
 
 **`unusable_api_key` in tool responses**
 
-The key the server has for the call holds a character no HTTP header can carry (a letter outside ASCII, an invisible character, a line break or another control character), so API-calling tools send no request and return `{"error": "unusable_api_key"}`, and a retry fails the same way. Depending on where the key comes from:
+The key the server has for the call holds a character this server cannot send in a request header (a letter outside ASCII, an invisible character, a line break or another control character, or a space or a tab at either end), so API-calling tools send no request and return `{"error": "unusable_api_key"}`, and a retry fails the same way. Depending on where the key comes from:
 - A key pasted into a config file or an environment variable can pick up an invisible character on the way. Copy it again from [app.sugra.ai/developer/keys](https://app.sugra.ai/developer/keys).
 - The key itself holds such a character, as some older keys do: rotate it at [app.sugra.ai/developer/keys](https://app.sugra.ai/developer/keys) and use the new one. Over a sign-in connection (claude.ai, ChatGPT) the server uses your account's key and reads it again within five minutes. If the page does not offer to rotate the key, email support@sugra.systems.
 
@@ -461,7 +461,7 @@ Key accepted but rejected. Common causes:
 
 **`429 Too Many Requests`**
 
-Hit your plan's daily limit. Response headers include `X-RateLimit-Reset` with the UTC timestamp when the counter resets (midnight UTC). Over MCP the tool result carries `reason: daily_limit_reached`, `status_code: 429`, `retry_after`, a `retry_hint` that tells the model not to call a data tool again before 00:00 UTC and to tell the user, and `daily_limit` and `plan` when the API named them. Plans: [sugra.systems/api/pricing](https://sugra.systems/api/pricing).
+Hit your plan's daily limit. Response headers include `X-RateLimit-Reset` with the UTC timestamp when the counter resets (midnight UTC). Over MCP the tool result carries `reason: daily_limit_reached`, `status_code: 429`, `retry_after`, a `retry_hint` that tells the model not to call a data tool again before the reset (the `X-RateLimit-Reset` time, or 00:00 UTC when the API sent no reset time or a value that is not one) and to tell the user, and `daily_limit` and `plan` when the API named them. Plans: [sugra.systems/api/pricing](https://sugra.systems/api/pricing).
 
 Before the limit is reached, a `call_endpoint` or `fetch_data` result shows what is left: `meta.quota` holds `limit`, `remaining` (requests left today) and `resets_at`, copied from the API's `X-RateLimit-*` response headers. A result carries no `meta.quota` when the API did not report a quota.
 
