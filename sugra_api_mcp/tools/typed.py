@@ -158,6 +158,20 @@ _META_KEYS = (
     "warnings",
 )
 
+# What it keeps of the data's provenance, from meta or, on an envelope-less
+# payload, from _meta: when the data was observed and any notice its source
+# requires. `source` is left out: it can name a commercial upstream, which a
+# ChatGPT session is never shown by name; the tool's description names the
+# source it may cite.
+_PROVENANCE_KEYS = (
+    "attribution",
+    "data_age_days",
+    "data_time",
+    "period",
+    "stale",
+    "stale_since",
+)
+
 
 @dataclass(frozen=True)
 class TypedTool:
@@ -423,7 +437,8 @@ def minimize_response(result: Any) -> Any:
     """Drop request and logging metadata from a typed tool's result.
 
     A failure keeps only what went wrong and what to do next. A success loses
-    its top-level request metadata and keeps only data facts in meta. The data
+    its top-level request metadata and keeps in meta only data facts and the
+    data's provenance, the latter from _meta when meta lacks it. The data
     itself is never touched: dates inside records are data, not metadata.
     """
     if not isinstance(result, dict):
@@ -432,10 +447,13 @@ def minimize_response(result: Any) -> Any:
         return {key: result[key] for key in _ERROR_KEYS if key in result}
     out = {key: value for key, value in result.items() if key not in _DROPPED_KEYS}
     meta = out.pop("meta", None)
-    if isinstance(meta, dict):
-        kept = {key: meta[key] for key in _META_KEYS if key in meta}
-        if kept:
-            out["meta"] = kept
+    meta = meta if isinstance(meta, dict) else {}
+    flat = result.get("_meta")
+    flat = flat if isinstance(flat, dict) else {}
+    kept = {key: meta[key] for key in _META_KEYS + _PROVENANCE_KEYS if key in meta}
+    kept.update({key: flat[key] for key in _PROVENANCE_KEYS if key in flat and key not in meta})
+    if kept:
+        out["meta"] = kept
     return out
 
 

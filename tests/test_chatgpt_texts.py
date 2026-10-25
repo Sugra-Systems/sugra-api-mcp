@@ -137,6 +137,19 @@ def test_the_chatgpt_discover_and_call_text_sends_the_session_to_no_http_request
     assert "## HTTP loop" in read_skill("discover-and-call")
 
 
+def test_the_chatgpt_texts_ask_only_for_the_provenance_a_typed_result_keeps() -> None:
+    # The typed result keeps these in meta (typed.minimize_response) and the envelope text names each.
+    envelope = read_chatgpt_skill("envelope-and-attribution")
+    for key in typed._PROVENANCE_KEYS:
+        assert f"`{key}`" in envelope, key
+    # Nothing a ChatGPT session reads sends it to a key the result leaves out, or to the gateway tools.
+    for skill in ("envelope-and-attribution", "discover-and-call", "cross-domain-briefing"):
+        text = read_chatgpt_skill(skill)
+        for gone in ("meta.endpoint", "Read them from `meta` / `_meta`", "or `_meta` on a flat payload",
+                     "per-endpoint MCP tools", "stay on the gateway tools"):
+            assert gone not in text, (skill, gone)
+
+
 def test_the_chatgpt_texts_follow_the_copy_rules() -> None:
     texts = [read_chatgpt_skill(skill) for *_rest, skill in SKILL_SPECS]
     texts += [replacement for passages in CHATGPT_PASSAGES.values() for *_ends, replacement in passages]

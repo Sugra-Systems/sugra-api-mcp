@@ -526,6 +526,23 @@ async def test_a_typed_call_runs_its_operation_and_drops_request_metadata(monkey
     }
 
 
+async def test_a_typed_result_carries_the_as_of_and_notice_it_is_told_to_cite(monkeypatch) -> None:
+    fake = FakeClient({
+        "data": [{"date": "2026-09-01", "value": 4.3}],
+        "meta": {"endpoint": "/api/v1/fred/series/UNRATE", "data_time": "2026-09-01T00:00:00Z",
+                 "response_time": "2026-10-25T10:00:00Z", "provider": "Sugra API", "source": "fred",
+                 "attribution": "Required notice.", "period": "2026-09"},
+    })
+    monkeypatch.setattr(gateway, "get_client", lambda: fake)
+
+    result = await _call("get_economic_series", {"series_id": "UNRATE"})
+
+    assert result.isError is False
+    meta = {"data_time": "2026-09-01T00:00:00Z", "attribution": "Required notice.", "period": "2026-09"}
+    assert _payload(result)["meta"] == meta
+    assert json.loads(result.content[0].text)["meta"] == meta
+
+
 async def test_a_typed_call_leaves_a_span_under_its_own_name(monkeypatch) -> None:
     from sugra_api_mcp import observability
     from tests.test_request_credentials import _CaptureTracer
@@ -631,6 +648,21 @@ async def test_a_typed_failure_keeps_only_what_went_wrong(monkeypatch) -> None:
           "daily_limit": 50, "plan": "Free", "status_code": 429, "url": "u"},
          {"error": "The daily request limit has been reached.", "reason": "daily_limit_reached",
           "daily_limit": 50, "plan": "Free", "status_code": 429}),
+        # The data's provenance stays; the request's and the upstream's names go.
+        ({"data": [], "meta": {"endpoint": "/api/v1/x", "data_time": "2026-10-24T00:00:00Z",
+          "response_time": "t", "provider": "Sugra API", "source": "upstream", "cached": False,
+          "attribution": "Notice.", "period": "2026-Q3", "data_age_days": 1, "stale": True,
+          "stale_since": "2026-10-20T00:00:00Z"}},
+         {"data": [], "meta": {"data_time": "2026-10-24T00:00:00Z", "attribution": "Notice.",
+          "period": "2026-Q3", "data_age_days": 1, "stale": True,
+          "stale_since": "2026-10-20T00:00:00Z"}}),
+        # An envelope-less payload's _meta lends its provenance to meta and is dropped.
+        ({"price": 1, "_meta": {"data_time": "d", "source": "upstream", "attribution": "A"}},
+         {"price": 1, "meta": {"data_time": "d", "attribution": "A"}}),
+        # meta wins over _meta, and a meta that is not an object counts as none.
+        ({"data": [], "meta": {"data_time": "m"}, "_meta": {"data_time": "f", "period": "p"}},
+         {"data": [], "meta": {"data_time": "m", "period": "p"}}),
+        ({"data": [], "meta": "x", "_meta": {"data_time": "d"}}, {"data": [], "meta": {"data_time": "d"}}),
     ],
 )
 def test_minimize_response(raw: Any, kept: Any) -> None:
