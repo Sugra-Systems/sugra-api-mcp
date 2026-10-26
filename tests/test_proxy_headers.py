@@ -388,7 +388,9 @@ async def _span_caller(
             async with httpx.AsyncClient(transport=transport, base_url="http://py.internal.example") as client:
                 opened = await client.post("/mcp", json=INITIALIZE, headers={**HEADERS, **headers})
                 assert opened.status_code == 200
-                session = {"mcp-session-id": opened.headers["mcp-session-id"]}
+                # Stateless: no session id comes back, and none is sent after.
+                assert "mcp-session-id" not in opened.headers
+                session: dict[str, str] = {}
                 await client.post(
                     "/mcp",
                     json={"jsonrpc": "2.0", "method": "notifications/initialized"},

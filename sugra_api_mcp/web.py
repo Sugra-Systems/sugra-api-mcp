@@ -27,6 +27,7 @@ from urllib.parse import quote
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.routing import Route
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from . import __version__, skills_index
 from .config import SERVER_PRODUCT, server_version_disclosed
@@ -714,3 +715,28 @@ def skills_routes() -> list[Route]:
     return [Route(skills_index.INDEX_PATH, skills_index_json, methods=["GET"])] + [
         Route(path, skill_file, methods=["GET"]) for path in skills_index.FILE_TARGETS
     ]
+
+
+class PostOnlyMiddleware:
+    """405 with Allow: POST for a GET or DELETE on the MCP endpoint.
+
+    The transport is stateless (server.STATELESS_HTTP): there is no stream for
+    a GET to open and no session for a DELETE to end, so both are refused here
+    in place of the SDK's answers (an event stream on GET; a bare 405 on
+    DELETE). Added inside AuthMiddleware, so a request without a credential
+    still gets the 401 challenge first."""
+
+    def __init__(self, app: ASGIApp, path: str) -> None:
+        self.app = app
+        self.path = path
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope["path"] == self.path and scope["method"] in ("GET", "DELETE"):
+            response = JSONResponse(
+                {"jsonrpc": "2.0", "id": "server-error", "error": {"code": -32600, "message": "Method Not Allowed"}},
+                status_code=405,
+                headers={"Allow": "POST"},
+            )
+            await response(scope, receive, send)
+            return
+        await self.app(scope, receive, send)

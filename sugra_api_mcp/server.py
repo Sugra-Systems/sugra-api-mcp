@@ -565,18 +565,16 @@ def _build_transport_security() -> TransportSecuritySettings | None:
     )
 
 
-# Streamable HTTP session limits, set here rather than inherited so that a
-# new MCP SDK release cannot change them unnoticed. A stateful session with no
-# request in flight for SESSION_IDLE_TIMEOUT_SECONDS is closed, and a later
-# request naming it gets 404, so the client starts a new one. While
-# MAX_SESSIONS sessions are open, a request that would open another gets 503.
-# A request body over MAX_REQUEST_BODY_BYTES gets 413. The idle timeout is two
-# hours, four times the SDK 1.30 default, so a client that stays idle for up
-# to two hours keeps its session; MAX_SESSIONS still bounds the memory that
-# open sessions hold. The body limit is the SDK 1.30 default; the SDK allows
-# 10,000 sessions.
-SESSION_IDLE_TIMEOUT_SECONDS = 7200
-MAX_SESSIONS = 1000
+# Streamable HTTP is stateless: every POST is answered on its own, the server
+# holds no session between requests and sends no Mcp-Session-Id, and an
+# Mcp-Session-Id a client still sends is ignored. So a request without one
+# (ChatGPT sends some) is served, no session can expire or be lost to a
+# restart, and no cap on open sessions refuses a client. Without a session
+# the client profile comes from the User-Agent (client_profile). GET and
+# DELETE get 405 (web.PostOnlyMiddleware): there is no stream to open and no
+# session to end. A request body over MAX_REQUEST_BODY_BYTES gets 413; the
+# value is the SDK 1.30 default, set here so a new release cannot move it.
+STATELESS_HTTP = True
 MAX_REQUEST_BODY_BYTES = 4 * 1024 * 1024
 
 # The initialize instructions, one text for every client profile: the SDK
@@ -596,8 +594,7 @@ mcp = SugraFastMCP(
     website_url=WEBSITE_URL,
     icons=SERVER_ICONS,
     transport_security=_build_transport_security(),
-    session_idle_timeout=SESSION_IDLE_TIMEOUT_SECONDS,
-    max_sessions=MAX_SESSIONS,
+    stateless_http=STATELESS_HTTP,
     max_request_body_size=MAX_REQUEST_BODY_BYTES,
 )
 

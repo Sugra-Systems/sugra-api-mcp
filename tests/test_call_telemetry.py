@@ -175,7 +175,9 @@ async def _served(monkeypatch, recorded: _Recorded) -> AsyncIterator[Call]:
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:8002") as client:
                 opened = await client.post("/mcp", json=INITIALIZE, headers=HEADERS)
-                session = {"mcp-session-id": opened.headers["mcp-session-id"]}
+                # Stateless: no session id comes back, and none is sent after.
+                assert "mcp-session-id" not in opened.headers
+                session: dict[str, str] = {}
                 await client.post(
                     "/mcp",
                     json={"jsonrpc": "2.0", "method": "notifications/initialized"},

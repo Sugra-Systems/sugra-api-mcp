@@ -23,6 +23,7 @@ import sugra_api_mcp.tools  # noqa: F401  (registers the tools on server.mcp)
 from sugra_api_mcp import demand, gate, limits, observability, server
 from sugra_api_mcp.auth import AuthError, AuthMiddleware, ResolvedAuth
 from sugra_api_mcp.limits import AdmissionMiddleware, Limits, digest
+from sugra_api_mcp.web import PostOnlyMiddleware
 from tests.test_limits import ADDRESS, build
 from tests.test_request_credentials import (
     HEADERS,
@@ -71,7 +72,8 @@ def test_off_the_http_server_is_wired_as_it_was(monkeypatch, value: str | None) 
         monkeypatch.setenv("SUGRA_MCP_LIMITS", value)
     captured = _entry_point(monkeypatch)
     layers = captured["app"].user_middleware
-    assert [layer.cls for layer in layers] == [gate.GateMiddleware, CORSMiddleware, AuthMiddleware]
+    assert [layer.cls for layer in layers] == [gate.GateMiddleware, CORSMiddleware, AuthMiddleware, PostOnlyMiddleware]
+    assert layers[-1].kwargs == {"path": server.mcp.settings.streamable_http_path}
     assert layers[0].kwargs == {"max_body_bytes": server.mcp.settings.max_request_body_size}
     assert [fn.__name__ for fn in captured["wrap"]["on_exit"]] == ["close_clients", "aclose"]
 
@@ -86,6 +88,7 @@ def test_on_the_admission_stands_between_auth_and_cors_and_the_extra_counts_are_
         CORSMiddleware,
         AdmissionMiddleware,
         AuthMiddleware,
+        PostOnlyMiddleware,
     ]
     assert layers[0].kwargs == {
         "max_body_bytes": server.mcp.settings.max_request_body_size,
@@ -196,13 +199,10 @@ async def stack(
 async def open_session(client: httpx.AsyncClient) -> str:
     response = await client.post("/mcp", json=INITIALIZE, headers=HEADERS)
     assert response.status_code == 200
-    session = response.headers["mcp-session-id"]
-    await client.post(
-        "/mcp",
-        json={"jsonrpc": "2.0", "method": "notifications/initialized"},
-        headers={**HEADERS, "mcp-session-id": session},
-    )
-    return session
+    # Stateless: no session id comes back, and the calls after carry none.
+    assert "mcp-session-id" not in response.headers
+    await client.post("/mcp", json={"jsonrpc": "2.0", "method": "notifications/initialized"}, headers=HEADERS)
+    return ""
 
 
 async def tool_call(client: httpx.AsyncClient, session: str, bearer: str) -> tuple[int, dict[str, Any]]:
@@ -215,7 +215,7 @@ async def tool_call(client: httpx.AsyncClient, session: str, bearer: str) -> tup
             "method": "tools/call",
             "params": {"name": "call_endpoint", "arguments": {"operation_id": _operation_without_params()}},
         },
-        headers={**HEADERS, "mcp-session-id": session, "authorization": f"Bearer {bearer}"},
+        headers={**HEADERS, **({"mcp-session-id": session} if session else {}), "authorization": f"Bearer {bearer}"},
     )
     if response.status_code != 200:
         return response.status_code, {"body": response.json(), "retry_after": response.headers.get("retry-after")}
@@ -368,8 +368,7 @@ async def test_discovery_is_byte_identical_with_the_limits_on_and_off(monkeypatc
         seen = []
         async with stack(monkeypatch, shared) as client:
             first = await client.post("/mcp", json=INITIALIZE, headers=HEADERS)
-            session = first.headers["mcp-session-id"]
-            headers = {**HEADERS, "mcp-session-id": session}
+            headers = dict(HEADERS)
             await client.post(
                 "/mcp", json={"jsonrpc": "2.0", "method": "notifications/initialized"}, headers=headers
             )
@@ -381,7 +380,7 @@ async def test_discovery_is_byte_identical_with_the_limits_on_and_off(monkeypatc
                     )
                 )
         for response in responses:
-            kept = {k: v for k, v in response.headers.items() if k not in ("mcp-session-id", "date")}
+            kept = {k: v for k, v in response.headers.items() if k != "date"}
             seen.append((response.status_code, response.content, kept))
         return seen
 

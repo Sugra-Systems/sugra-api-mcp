@@ -372,7 +372,9 @@ async def _open(client: httpx.AsyncClient, request_id: str | None = None) -> dic
     headers = dict(HEADERS) if request_id is None else {**HEADERS, "x-request-id": request_id}
     opened = await client.post("/mcp", json=INITIALIZE, headers=headers)
     assert opened.status_code == 200
-    return {"mcp-session-id": opened.headers["mcp-session-id"]}
+    # Stateless: no session id comes back, and none is sent after.
+    assert "mcp-session-id" not in opened.headers
+    return {}
 
 
 def _message(number: int, method: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -412,10 +414,11 @@ async def test_no_line_without_a_2xx_answer_or_a_valid_first_request_id(monkeypa
         unauthenticated = await client.post(
             "/mcp", json=call, headers={**HEADERS, **session, "x-request-id": _rid(1)}
         )
-        unknown_session = await client.post(
+        # Refused by the transport: the client does not accept its answer.
+        not_acceptable = await client.post(
             "/mcp",
             json=call,
-            headers={**HEADERS, **_OAUTH, "mcp-session-id": "f" * 32, "x-request-id": _rid(2)},
+            headers={**HEADERS, **_OAUTH, "accept": "text/html", "x-request-id": _rid(2)},
         )
         no_id = await client.post("/mcp", json=call, headers={**HEADERS, **_OAUTH, **session})
         uppercase = await client.post(
@@ -448,7 +451,7 @@ async def test_no_line_without_a_2xx_answer_or_a_valid_first_request_id(monkeypa
             ],
         )
 
-    assert (unauthenticated.status_code, unknown_session.status_code) == (401, 404)
+    assert (unauthenticated.status_code, not_acceptable.status_code) == (401, 406)
     assert [r.status_code for r in (no_id, uppercase, trimmed, second_valid, first_valid)] == [200] * 5
     assert [line.split(" ", 1)[0] for line in _summary_lines(summary, written)] == [_rid(6)]
 
