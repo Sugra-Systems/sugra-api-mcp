@@ -15,7 +15,7 @@ authors = [
 maintainers = [
     { name = "Arman Obosyan", email = "arman@sugra.systems" },
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 keywords = [
     "mcp",
     "model-context-protocol",
@@ -32,7 +32,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Information Analysis",
@@ -83,7 +82,7 @@ packages = ["sugra_api_mcp"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
@@ -94,6 +93,6 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 strict = true
 warn_unused_configs = true

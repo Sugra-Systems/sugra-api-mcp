@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.12", "3.13", "3.14"]
+        python-version: ["3.13", "3.14"]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -54,7 +54,7 @@ jobs:
       # SKIPPED, not failed, when the spec host is unreachable - an outage must
       # not read as "the catalog drifted".
       - name: Catalog parity with the live spec
-        if: matrix.python-version == '3.13'
+        if: matrix.python-version == '3.14'
         run: python scripts/check_catalog_parity.py
       - name: Tools registered
         env:
