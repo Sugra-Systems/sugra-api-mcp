@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import unicodedata
 from dataclasses import dataclass
 from functools import cache, lru_cache
 from importlib import resources
@@ -156,6 +157,35 @@ _META_KEYS = (
     "units",
     "warning",
     "warnings",
+)
+
+# What it keeps of the data's provenance, from meta or, on an envelope-less
+# payload, from _meta: when the data was observed and any notice its source
+# requires. `source` is left out: it can name a commercial upstream, which a
+# ChatGPT session is never shown by name; the tool's description names the
+# source it may cite.
+_PROVENANCE_KEYS = (
+    "attribution",
+    "data_age_days",
+    "data_time",
+    "period",
+    "stale",
+    "stale_since",
+)
+
+# Commercial upstreams a kept notice must not name (they are cited under their
+# Sugra wrapper). The API keeps them out of its notices already; a notice that
+# names one anyway, in any case, spacing or punctuation ("AlphaVantage",
+# "alpha-vantage", "alphavantage.co"), is dropped rather than repeated.
+_COMMERCIAL_NAME_FRAGMENTS = (
+    "alpha vantage",
+    "cboe",
+    "coingecko",
+    "finnhub",
+    "polygon",
+    "tiingo",
+    "tomorrow.io",
+    "yahoo",
 )
 
 
@@ -423,8 +453,10 @@ def minimize_response(result: Any) -> Any:
     """Drop request and logging metadata from a typed tool's result.
 
     A failure keeps only what went wrong and what to do next. A success loses
-    its top-level request metadata and keeps only data facts in meta. The data
-    itself is never touched: dates inside records are data, not metadata.
+    its top-level request metadata and keeps in meta only data facts and the
+    data's provenance, the latter from _meta when the payload has no meta
+    object. The data itself is never touched: dates inside records are data,
+    not metadata.
     """
     if not isinstance(result, dict):
         return result
@@ -433,10 +465,41 @@ def minimize_response(result: Any) -> Any:
     out = {key: value for key, value in result.items() if key not in _DROPPED_KEYS}
     meta = out.pop("meta", None)
     if isinstance(meta, dict):
-        kept = {key: meta[key] for key in _META_KEYS if key in meta}
-        if kept:
-            out["meta"] = kept
+        kept = {key: meta[key] for key in _META_KEYS + _PROVENANCE_KEYS if key in meta}
+    else:
+        flat = result.get("_meta")
+        flat = flat if isinstance(flat, dict) else {}
+        kept = {key: flat[key] for key in _PROVENANCE_KEYS if key in flat}
+    if "attribution" in kept and _names_a_commercial_upstream(kept["attribution"]):
+        del kept["attribution"]
+    if kept:
+        out["meta"] = kept
     return out
+
+
+def _letters_and_digits(text: str) -> str:
+    """The text compatibility-normalized and case-folded, with every character
+    that is not a letter or a digit removed."""
+    return "".join(ch for ch in unicodedata.normalize("NFKC", text).casefold() if ch.isalnum())
+
+
+def _strings(value: Any) -> list[str]:
+    """Every string in a notice, in order: the notice itself, or each key and
+    value of its objects and each item of its lists."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [text for key, item in value.items() for text in _strings(key) + _strings(item)]
+    if isinstance(value, list):
+        return [text for item in value for text in _strings(item)]
+    return []
+
+
+def _names_a_commercial_upstream(notice: Any) -> bool:
+    # Each string is normalized before the join, so no JSON escape adds a letter,
+    # and they are joined, so a name split across two strings is still a name.
+    text = "".join(map(_letters_and_digits, _strings(notice)))
+    return any(_letters_and_digits(fragment) in text for fragment in _COMMERCIAL_NAME_FRAGMENTS)
 
 
 async def _run(typed: TypedTool, *, operation_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
