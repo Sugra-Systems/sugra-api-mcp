@@ -896,6 +896,91 @@ def test_auth_middleware_challenges_the_gemini_cli_with_only_an_x_api_key_header
 
 
 @pytest.mark.parametrize(
+    "payload",
+    [
+        _initialize("cursor-vscode"),
+        [_initialize("cursor-vscode")],
+        [{"jsonrpc": "2.0", "method": "ping"}, _initialize("cursor-vscode", 2)],
+    ],
+)
+@pytest.mark.parametrize("user_agent", ["", "node"])
+def test_auth_middleware_challenges_the_cursor_initialize(auth_config, payload, user_agent):
+    """Cursor offers Connect only when the connect answers 401; after an anonymous 200 the late 401 is an error."""
+
+    async def ok(_request):
+        return JSONResponse({"ok": True})
+
+    app = Starlette(routes=[Route("/mcp", ok, methods=["POST"])])
+    app.add_middleware(AuthMiddleware, authenticator=Authenticator(auth_config))
+
+    response = TestClient(app).post("/mcp", json=payload, headers={"user-agent": user_agent})
+
+    assert response.status_code == 401
+    assert response.json() == {"error": "missing_bearer_token"}
+    assert response.headers["WWW-Authenticate"] == (
+        'Bearer resource_metadata="https://app.sugra.ai/.well-known/oauth-protected-resource"'
+    )
+
+
+def test_auth_middleware_serves_cursor_once_signed_in(auth_config):
+    """With a valid bearer the Cursor initialize goes through unchanged."""
+    payload = _initialize("cursor-vscode")
+    seen = {}
+
+    async def ok(request):
+        seen["body"] = await request.json()
+        return JSONResponse({"ok": True})
+
+    auth = Authenticator(auth_config)
+    auth.resolve = AsyncMock(return_value=ResolvedAuth(api_key="sugra_k", user_id=1, method="oauth", platform="cursor"))
+    app = Starlette(routes=[Route("/mcp", ok, methods=["POST"])])
+    app.add_middleware(AuthMiddleware, authenticator=auth)
+
+    response = TestClient(app).post(
+        "/mcp",
+        json=payload,
+        headers={"user-agent": "node", "accept": "application/json, text/event-stream", "authorization": "Bearer signed-in-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    assert seen["body"] == payload
+    auth.resolve.assert_awaited_once_with("signed-in-token", deadline=ANY)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        _initialize("cursor-vscode"),
+        [_initialize("cursor-vscode")],
+    ],
+)
+def test_auth_middleware_serves_cursor_with_an_api_key(auth_config, payload):
+    """A key sent as a bearer passes before the sign-in-first rule is ever read."""
+    from sugra_api_mcp.server import REQUEST_API_KEY_STATE
+
+    seen = {}
+
+    async def ok(request):
+        seen["body"] = await request.json()
+        seen["key"] = request.scope["state"][REQUEST_API_KEY_STATE]
+        return JSONResponse({"ok": True})
+
+    app = Starlette(routes=[Route("/mcp", ok, methods=["POST"])])
+    app.add_middleware(AuthMiddleware, authenticator=Authenticator(auth_config))
+
+    response = TestClient(app).post(
+        "/mcp",
+        json=payload,
+        headers={"user-agent": "node", "accept": "application/json, text/event-stream", "authorization": "Bearer sugra_test_key"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    assert seen == {"body": payload, "key": "sugra_test_key"}
+
+
+@pytest.mark.parametrize(
     "client_name",
     [
         "smithery-probe",
@@ -917,6 +1002,13 @@ def test_auth_middleware_challenges_the_gemini_cli_with_only_an_x_api_key_header
         "gemini-cli-mcp-client ",
         "gemini-cli",
         "my-gemini-cli-mcp-client",
+        # near misses of the Cursor name: exact match only
+        "Cursor-VSCode",
+        "cursor-vscode-2",
+        "cursor-vscode ",
+        "cursor",
+        "my-cursor-tool",
+        "my-cursor-vscode",
     ],
 )
 def test_auth_middleware_keeps_anonymous_initialize_for_other_client_names(auth_config, client_name):

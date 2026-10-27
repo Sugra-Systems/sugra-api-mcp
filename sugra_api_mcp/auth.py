@@ -159,7 +159,13 @@ SIGN_IN_FIRST_USER_AGENTS = ("grok-connectors-manager/",)
 # no User-Agent of its own, so Node's fetch sends "node". Observed 2026-10-22
 # (Gemini CLI 0.65.0): after the anonymous 200, "gemini mcp list" printed the
 # server connected with "requires authentication" and no sign-in followed.
-SIGN_IN_FIRST_CLIENT_NAMES = frozenset({"grok-validator", "gemini-cli-mcp-client"})
+# Cursor offers Connect, the button that opens its browser sign-in, only when
+# the connect fails with 401. Observed 2026-10-27 (Cursor 3.20.14): clientInfo
+# {"name": "cursor-vscode", "version": "1.0.0"}. After an anonymous 200 on
+# initialize, the 401 on the later GET stream lands as a client error with no
+# Connect; a 401 with resource_metadata on initialize makes Cursor show "Needs
+# authentication" and Connect.
+SIGN_IN_FIRST_CLIENT_NAMES = frozenset({"grok-validator", "gemini-cli-mcp-client", "cursor-vscode"})
 # Grok Build names itself grok-shell-<the server name the user configured>, so
 # it is matched on that prefix, case as sent. Observed 2026-10-22 (Grok Build
 # 1.0.62): clientInfo {"name": "grok-shell-sugra-api", "version": "1.0.62"},
