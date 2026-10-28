@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-10-18T17:00:52Z",
+  "built_at": "2026-10-28T16:53:39Z",
   "endpoint_count": 1625,
   "endpoints": [
     {
@@ -11012,7 +11012,7 @@
       "toolset": "central_banks"
     },
     {
-      "description": "",
+      "description": "Totals the box office of one actor's films within the seeded studios. The id is an nconst identifier such as nm0000158. The response carries the person, the film count, the career box office in US dollars as the sum of the known film figures, and the films; the limit parameter caps the films read (default 100, maximum 500).",
       "method": "GET",
       "operation_id": "cinema_actors_id_box_office_history",
       "parameters": [
@@ -11057,7 +11057,7 @@
       "toolset": "core"
     },
     {
-      "description": "Films from people.json — ingested at filter time to tconst in seeded studios. Coverage is decent for major actors (Disney/WB/Sony/Paramount/Universal/Netflix), limited for indie-only careers.",
+      "description": "Films from people.json - ingested at filter time to tconst in seeded studios. Coverage is decent for major actors (Disney/WB/Sony/Paramount/Universal/Netflix), limited for indie-only careers.",
       "method": "GET",
       "operation_id": "cinema_actors_id_films",
       "parameters": [
@@ -11102,7 +11102,7 @@
       "toolset": "core"
     },
     {
-      "description": "",
+      "description": "Returns the consolidated box-office record of one film, identified by a tt-id or a Wikidata Q-ID: the amount in US dollars at release, the source currency and amount, and the normalization applied, together with the film name, release date and production company. A film outside the seeded set returns 404.",
       "method": "GET",
       "operation_id": "cinema_box_office_film_id",
       "parameters": [
@@ -11133,7 +11133,7 @@
       "toolset": "core"
     },
     {
-      "description": "",
+      "description": "Ranks the films released in a given year by worldwide box office in US dollars, highest first. Only films with a known positive box office are listed, and the limit parameter caps the leaderboard (default 50, maximum 500). Each row carries the Wikidata Q-ID, the tt-id, the release date, the production company, the USD amount and the original currency and amount. Coverage is the seeded studios.",
       "method": "GET",
       "operation_id": "cinema_box_office_world_historical_year",
       "parameters": [
@@ -11179,7 +11179,7 @@
       "toolset": "core"
     },
     {
-      "description": "",
+      "description": "Reserved route for looking up films by genre slug. It currently always answers 503 because the genre slug to Wikidata Q-ID dictionary is not curated yet. Use the films search route or the studio films route instead.",
       "method": "GET",
       "operation_id": "cinema_films_genre_slug",
       "parameters": [
@@ -11258,7 +11258,7 @@
       "toolset": "core"
     },
     {
-      "description": "",
+      "description": "Lists films scheduled for release in the coming days_ahead days (default 365, maximum 1095) for a parent studio slug such as disney. The response carries the slug, the window, the count and the films, sourced from Wikidata.",
       "method": "GET",
       "operation_id": "cinema_films_upcoming_by_studio_slug",
       "parameters": [
@@ -11393,7 +11393,7 @@
       "toolset": "core"
     },
     {
-      "description": "",
+      "description": "Lists every studio in the seeded catalogue with its metadata. The response carries the studio count and the studios array.",
       "method": "GET",
       "operation_id": "cinema_studios",
       "parameters": [],
@@ -11411,7 +11411,7 @@
       "toolset": "core"
     },
     {
-      "description": "",
+      "description": "Returns the catalogue record of one studio by slug, for example netflix or disney, including its metadata and subsidiaries. An unknown slug returns 404.",
       "method": "GET",
       "operation_id": "cinema_studios_slug",
       "parameters": [
@@ -11443,7 +11443,7 @@
       "toolset": "core"
     },
     {
-      "description": "",
+      "description": "Lists films produced by a parent studio and its subsidiaries, sourced from Wikidata. The limit parameter caps the rows (default 500, maximum 5000). The response carries the slug, the subsidiary Wikidata Q-IDs, the count and the films. An unknown slug returns 404.",
       "method": "GET",
       "operation_id": "cinema_studios_slug_films",
       "parameters": [
@@ -18915,7 +18915,7 @@
       "toolset": "central_banks"
     },
     {
-      "description": "",
+      "description": "Returns the macro summary matrix for the major economies: one row per country with GDP, GDP growth, interest rate, inflation rate, jobless rate, government budget, debt to GDP, current account and population. Values are returned as published text. Responses are cached for 10 minutes.",
       "method": "GET",
       "operation_id": "economics_countries_overview",
       "parameters": [],
@@ -18933,18 +18933,18 @@
       "toolset": "macro"
     },
     {
-      "description": "",
+      "description": "Returns every macro indicator row for one country, each with its latest value, previous value, change, change percent, highest, lowest, unit and reference period. The country is a slug such as united-states; ISO country codes are not accepted. The optional Related parameter keeps only the rows whose related-items field contains the given text, case-insensitive. Responses are cached for 10 minutes.",
       "method": "GET",
       "operation_id": "economics_country_overview",
       "parameters": [
         {
-          "description": "Country code (ISO 3166-1 alpha-2/alpha-3) or slug.",
+          "description": "Country slug: the lowercase country name with words joined by hyphens, for example united-states. ISO 3166-1 country codes such as US or USA are not accepted.",
           "example": "united-states",
           "location": "path",
           "name": "country",
           "required": true,
           "schema": {
-            "description": "Country code (ISO 3166-1 alpha-2/alpha-3) or slug.",
+            "description": "Country slug: the lowercase country name with words joined by hyphens, for example united-states. ISO 3166-1 country codes such as US or USA are not accepted.",
             "title": "Country",
             "type": "string"
           }
@@ -18985,18 +18985,18 @@
       "toolset": "macro"
     },
     {
-      "description": "Dispatcher for all 10 indicator sections (gdp, labour, prices, health, money,\ntrade, government, business, consumer, housing). Replaces 10 near-identical handlers.",
+      "description": "Returns the indicator rows of one report section for one country, each with its latest value, previous value, change, change percent, highest, lowest, unit and reference period. The section is one of gdp, labour, prices, health, money, trade, government, business, consumer or housing. The country is a slug such as united-states; ISO country codes are not accepted. The optional Related parameter keeps only the rows whose related-items field contains the given text, case-insensitive. Responses are cached for 10 minutes.",
       "method": "GET",
       "operation_id": "economics_country_section",
       "parameters": [
         {
-          "description": "Country code (ISO 3166-1 alpha-2/alpha-3) or slug.",
+          "description": "Country slug: the lowercase country name with words joined by hyphens, for example united-states. ISO 3166-1 country codes such as US or USA are not accepted.",
           "example": "united-states",
           "location": "path",
           "name": "country",
           "required": true,
           "schema": {
-            "description": "Country code (ISO 3166-1 alpha-2/alpha-3) or slug.",
+            "description": "Country slug: the lowercase country name with words joined by hyphens, for example united-states. ISO 3166-1 country codes such as US or USA are not accepted.",
             "title": "Country",
             "type": "string"
           }
@@ -38385,7 +38385,7 @@
       "toolset": "trade"
     },
     {
-      "description": "",
+      "description": "Returns the structure of one IMF SDMX dataflow family such as cpi or weo: the agency, the ordered dimension list, which dimensions carry the indicator, country and frequency, the default filter values and the supported frequencies. Use it to build valid series queries. An unknown family returns 422.",
       "method": "GET",
       "operation_id": "imf_dataflows_dataflow_dimensions",
       "parameters": [
@@ -38552,7 +38552,7 @@
       "toolset": "trade"
     },
     {
-      "description": "",
+      "description": "Lists IMF geography entities (countries, regions and analytical groups), each with its code, name and entity type. The q parameter filters by a substring of the name or code, entity_type narrows the list to country, region or analytical_group, and limit caps the rows (default 200, maximum 2000).",
       "method": "GET",
       "operation_id": "imf_entities",
       "parameters": [
@@ -38936,7 +38936,7 @@
       "toolset": "trade"
     },
     {
-      "description": "",
+      "description": "Returns a 0 to 100 composite stress score for one country, built from IMF World Economic Outlook, financial soundness, international reserves and balance of payments data; a higher score means more pressure. The response includes the component scores, the methodology text, the inputs used and the observation time. It is a heuristic, not a rating. Responses are cached for 24 hours.",
       "method": "GET",
       "operation_id": "imf_signals_country_risk_country",
       "parameters": [
@@ -38969,7 +38969,7 @@
       "toolset": "trade"
     },
     {
-      "description": "",
+      "description": "Returns a 0 to 100 heuristic of external pressure for one country, built from the IMF current account outlook plus balance of payments, international investment position and commodity terms-of-trade samples; a higher score means more external pressure. The response includes the component scores, the methodology text, the inputs used and the observation time. Responses are cached for 24 hours.",
       "method": "GET",
       "operation_id": "imf_signals_external_pressure_country",
       "parameters": [
@@ -39002,7 +39002,7 @@
       "toolset": "trade"
     },
     {
-      "description": "",
+      "description": "Returns a 0 to 100 heuristic of telecom demand conditions for one country, built from IMF growth, income and inflation outlook data plus financial access survey data; a higher score means stronger demand conditions. The response includes the component scores, the methodology text, a digital finance note, the inputs used and the observation time. Responses are cached for 24 hours.",
       "method": "GET",
       "operation_id": "imf_signals_telecom_demand_country",
       "parameters": [
@@ -39035,7 +39035,7 @@
       "toolset": "trade"
     },
     {
-      "description": "",
+      "description": "Lists the published vintages of one IMF dataflow family, the latest release plus the named archived releases, with the agency and the vintage count. A vintage id can be passed to the revisions endpoint to compare it with the latest data. Responses are cached for 7 days.",
       "method": "GET",
       "operation_id": "imf_vintages_dataflow",
       "parameters": [
@@ -39285,7 +39285,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "Cumulative volume-flow indicator. Each bar adds Money Flow Volume = ((close-low) - (high-close)) / (high-low) × volume. Path-dependent and unbounded — interpret divergences against price rather than absolute level. `time_period` required by API contract but ignored (AD is cumulative).",
+      "description": "Cumulative volume-flow indicator. Each bar adds Money Flow Volume = ((close-low) - (high-close)) / (high-low) × volume. Path-dependent and unbounded - interpret divergences against price rather than absolute level. `time_period` required by API contract but ignored (AD is cumulative).",
       "method": "GET",
       "operation_id": "indicators_ad",
       "parameters": [
@@ -39384,7 +39384,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "EMA(AD, 3) - EMA(AD, 10) — Marc Chaikin's oscillator built on the Accumulation/Distribution Line. Bounded around zero, easier to read than raw AD. `time_period` ignored — Chaikin's fast=3 / slow=10 are baked in.",
+      "description": "EMA(AD, 3) - EMA(AD, 10) - Marc Chaikin's oscillator built on the Accumulation/Distribution Line. Bounded around zero, easier to read than raw AD. `time_period` ignored - Chaikin's fast=3 / slow=10 are baked in.",
       "method": "GET",
       "operation_id": "indicators_adosc",
       "parameters": [
@@ -39483,7 +39483,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "Wilder's ADX. Measures trend strength only — does not say up or down. Above 25 = trending market, below 20 = ranging. Pair with PLUS_DI / MINUS_DI (separate routes) for direction. Default `time_period=14`.",
+      "description": "Wilder's ADX. Measures trend strength only - does not say up or down. Above 25 = trending market, below 20 = ranging. Pair with PLUS_DI / MINUS_DI (separate routes) for direction. Default `time_period=14`.",
       "method": "GET",
       "operation_id": "indicators_adx",
       "parameters": [
@@ -40385,7 +40385,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "(open + high + low + close) / 4. Per-bar OHLC composite. Same as /ohlc4 — exposed under both names for TA-Lib / TradingView parity.",
+      "description": "(open + high + low + close) / 4. Per-bar OHLC composite. Same as /ohlc4 - exposed under both names for TA-Lib / TradingView parity.",
       "method": "GET",
       "operation_id": "indicators_avgprice",
       "parameters": [
@@ -40484,7 +40484,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "Bollinger Bands — middle line is SMA(close, time_period), upper / lower are middle ±2 standard deviations. Each observation row contains all three lines so they're time-aligned for plotting.",
+      "description": "Bollinger Bands - middle line is SMA(close, time_period), upper / lower are middle ±2 standard deviations. Each observation row contains all three lines so they're time-aligned for plotting.",
       "method": "GET",
       "operation_id": "indicators_bbands",
       "parameters": [
@@ -40991,7 +40991,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "Choppiness Index, range 0-100. Below 38 = strong trending market, above 61 = choppy / ranging. Useful as a regime filter — disable trend-following signals when market is choppy. Default 14.",
+      "description": "Choppiness Index, range 0-100. Below 38 = strong trending market, above 61 = choppy / ranging. Useful as a regime filter - disable trend-following signals when market is choppy. Default 14.",
       "method": "GET",
       "operation_id": "indicators_choppiness",
       "parameters": [
@@ -41972,7 +41972,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "Donchian Channel — upper = highest_high over window, lower = lowest_low, middle = (upper + lower) / 2. Classic breakout indicator (Turtle traders).",
+      "description": "Donchian Channel - upper = highest_high over window, lower = lowest_low, middle = (upper + lower) / 2. Classic breakout indicator (Turtle traders).",
       "method": "GET",
       "operation_id": "indicators_donchian",
       "parameters": [
@@ -42661,7 +42661,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "(high + low + close) / 3 — TradingView naming for typical price. Aliased /typprice.",
+      "description": "(high + low + close) / 3 - TradingView naming for typical price. Aliased /typprice.",
       "method": "GET",
       "operation_id": "indicators_hlc3",
       "parameters": [
@@ -42760,7 +42760,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "Ehlers' Hilbert Transform Discriminator output: smoothed dominant cycle period in bars. Bounded to [6, 50]. Used for adaptive indicator tuning — feed into MA period, oscillator window, etc.",
+      "description": "Ehlers' Hilbert Transform Discriminator output: smoothed dominant cycle period in bars. Bounded to [6, 50]. Used for adaptive indicator tuning - feed into MA period, oscillator window, etc.",
       "method": "GET",
       "operation_id": "indicators_ht_dcperiod",
       "parameters": [
@@ -43057,7 +43057,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "Ehlers' SineWave indicator: sine = sin(phase), lead_sine = sin(phase + 45°). lead_sine crosses sine at cycle turning points — useful as buy / sell signal in pure cycle markets. In trending markets, lines stay flat / parallel (signal is HT_TRENDMODE = 1).",
+      "description": "Ehlers' SineWave indicator: sine = sin(phase), lead_sine = sin(phase + 45°). lead_sine crosses sine at cycle turning points - useful as buy / sell signal in pure cycle markets. In trending markets, lines stay flat / parallel (signal is HT_TRENDMODE = 1).",
       "method": "GET",
       "operation_id": "indicators_ht_sine",
       "parameters": [
@@ -43156,7 +43156,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "John Ehlers' Hilbert Transform Trendline — adaptive moving average centered over the detected dominant cycle period. Smoother than fixed-window MAs in trending markets, faster to track turning points than constant-period EMAs. `time_period` is required by API contract but ignored — algorithm uses self-detected cycle period.",
+      "description": "John Ehlers' Hilbert Transform Trendline - adaptive moving average centered over the detected dominant cycle period. Smoother than fixed-window MAs in trending markets, faster to track turning points than constant-period EMAs. `time_period` is required by API contract but ignored - algorithm uses self-detected cycle period.",
       "method": "GET",
       "operation_id": "indicators_ht_trendline",
       "parameters": [
@@ -43354,7 +43354,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "Ichimoku Cloud — four lines per observation: conversion_line (Tenkan-sen, fast), base_line (Kijun-sen, medium), senkou_span_a (leading A, midpoint of Tenkan + Kijun), senkou_span_b (leading B, slow window midpoint). `time_period` controls Tenkan window only; Kijun (26) and Senkou-B (52) are fixed per Ichimoku methodology. Lagging span (Chikou) intentionally omitted — derive from close shifted by 26 periods.",
+      "description": "Ichimoku Cloud - four lines per observation: conversion_line (Tenkan-sen, fast), base_line (Kijun-sen, medium), senkou_span_a (leading A, midpoint of Tenkan + Kijun), senkou_span_b (leading B, slow window midpoint). `time_period` controls Tenkan window only; Kijun (26) and Senkou-B (52) are fixed per Ichimoku methodology. Lagging span (Chikou) intentionally omitted - derive from close shifted by 26 periods.",
       "method": "GET",
       "operation_id": "indicators_ichimoku",
       "parameters": [
@@ -43453,7 +43453,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "KAMA — smoothing constant adapts to price efficiency ratio: trends faster (closer to fast EMA), ranges slower (closer to slow EMA). Defaults: fast=2, slow=30. `time_period` is the efficiency-ratio window.",
+      "description": "KAMA - smoothing constant adapts to price efficiency ratio: trends faster (closer to fast EMA), ranges slower (closer to slow EMA). Defaults: fast=2, slow=30. `time_period` is the efficiency-ratio window.",
       "method": "GET",
       "operation_id": "indicators_kama",
       "parameters": [
@@ -43551,7 +43551,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "Keltner Channel — middle = EMA(close), upper / lower = middle ± 2*ATR. Volatility-adaptive bands; tighter than Bollinger in low-vol regimes and wider in high-vol regimes.",
+      "description": "Keltner Channel - middle = EMA(close), upper / lower = middle ± 2*ATR. Volatility-adaptive bands; tighter than Bollinger in low-vol regimes and wider in high-vol regimes.",
       "method": "GET",
       "operation_id": "indicators_kc",
       "parameters": [
@@ -44338,7 +44338,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "ln(close / close[t-n]). Standard quant return — additive across periods, near-normal distribution. Building block for Sharpe / Sortino / VaR.",
+      "description": "ln(close / close[t-n]). Standard quant return - additive across periods, near-normal distribution. Building block for Sharpe / Sortino / VaR.",
       "method": "GET",
       "operation_id": "indicators_log_return",
       "parameters": [
@@ -44436,7 +44436,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "MACD with Appel defaults (fast=12, slow=26, signal=9). Each observation row contains macd, signal, hist (= macd - signal) so the lines are time-aligned for plotting. `time_period` is required by API contract but ignored — MACD uses fixed Appel windows.",
+      "description": "MACD with Appel defaults (fast=12, slow=26, signal=9). Each observation row contains macd, signal, hist (= macd - signal) so the lines are time-aligned for plotting. `time_period` is required by API contract but ignored - MACD uses fixed Appel windows.",
       "method": "GET",
       "operation_id": "indicators_macd",
       "parameters": [
@@ -44633,7 +44633,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "John Ehlers' MESA Adaptive MA. Detects the dominant cycle period via Hilbert Transform Discriminator and adjusts smoothing alpha to the phase change of that cycle. Returns two lines: MAMA (fast adaptive) and FAMA (Following Adaptive MA, slower). Crossovers between MAMA / FAMA generate signals. `time_period` is required by API contract but ignored — algorithm uses Ehlers defaults (fast_limit=0.5, slow_limit=0.05).",
+      "description": "John Ehlers' MESA Adaptive MA. Detects the dominant cycle period via Hilbert Transform Discriminator and adjusts smoothing alpha to the phase change of that cycle. Returns two lines: MAMA (fast adaptive) and FAMA (Following Adaptive MA, slower). Crossovers between MAMA / FAMA generate signals. `time_period` is required by API contract but ignored - algorithm uses Ehlers defaults (fast_limit=0.5, slow_limit=0.05).",
       "method": "GET",
       "operation_id": "indicators_mama",
       "parameters": [
@@ -44928,7 +44928,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "(high + low) / 2 — midpoint of intra-bar range, used as anchor for Donchian / Keltner.",
+      "description": "(high + low) / 2 - midpoint of intra-bar range, used as anchor for Donchian / Keltner.",
       "method": "GET",
       "operation_id": "indicators_medprice",
       "parameters": [
@@ -45909,7 +45909,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "Joe Granville's classic. Cumulative volume signed by close direction: +volume on up bars, -volume on down bars. Path-dependent and unbounded — interpret slope and divergences. `time_period` ignored.",
+      "description": "Joe Granville's classic. Cumulative volume signed by close direction: +volume on up bars, -volume on down bars. Path-dependent and unbounded - interpret slope and divergences. `time_period` ignored.",
       "method": "GET",
       "operation_id": "indicators_obv",
       "parameters": [
@@ -46008,7 +46008,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "(open + high + low + close) / 4 — TradingView naming for average price. Aliased /avgprice.",
+      "description": "(open + high + low + close) / 4 - TradingView naming for average price. Aliased /avgprice.",
       "method": "GET",
       "operation_id": "indicators_ohlc4",
       "parameters": [
@@ -46385,7 +46385,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "Classic floor-trader pivot points. Each row contains pivot P plus three resistance levels (R1, R2, R3) and three support levels (S1, S2, S3). Levels for current bar are derived from prior bar's H/L/C — `time_period` controls lookback shift (default 1 = prior bar).",
+      "description": "Classic floor-trader pivot points. Each row contains pivot P plus three resistance levels (R1, R2, R3) and three support levels (S1, S2, S3). Levels for current bar are derived from prior bar's H/L/C - `time_period` controls lookback shift (default 1 = prior bar).",
       "method": "GET",
       "operation_id": "indicators_pivot",
       "parameters": [
@@ -46779,7 +46779,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "Parabolic Stop-And-Reverse — trailing stop indicator that flips above / below price as trend reverses. Step=0.02, max=0.2 (Wilder defaults). `time_period` is required by API contract but ignored internally — PSAR uses its own acceleration parameters.",
+      "description": "Parabolic Stop-And-Reverse - trailing stop indicator that flips above / below price as trend reverses. Step=0.02, max=0.2 (Wilder defaults). `time_period` is required by API contract but ignored internally - PSAR uses its own acceleration parameters.",
       "method": "GET",
       "operation_id": "indicators_psar",
       "parameters": [
@@ -47762,7 +47762,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "Simple Moving Average over the close price. Optionally accepts a comma-separated list of `time_period` values (max 5) to compute multiple SMAs in one request — useful for plotting fast / slow MA overlays without parallel calls.",
+      "description": "Simple Moving Average over the close price. Optionally accepts a comma-separated list of `time_period` values (max 5) to compute multiple SMAs in one request - useful for plotting fast / slow MA overlays without parallel calls.",
       "method": "GET",
       "operation_id": "indicators_sma",
       "parameters": [
@@ -48258,7 +48258,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "Stochastic applied to RSI series — second-derivative momentum. Range 0-1 (note: smaller than %K's 0-100 because of the underlying RSI scale). Smoothing fixed at 3 (Lane convention). `time_period` is the RSI + Stoch window.",
+      "description": "Stochastic applied to RSI series - second-derivative momentum. Range 0-1 (note: smaller than %K's 0-100 because of the underlying RSI scale). Smoothing fixed at 3 (Lane convention). `time_period` is the RSI + Stoch window.",
       "method": "GET",
       "operation_id": "indicators_stochrsi",
       "parameters": [
@@ -48455,7 +48455,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "T3 by Tim Tillson — 6-EMA cascade with weighted polynomial sum, volume factor v=0.7. Smooth, low-lag alternative to DEMA / TEMA.",
+      "description": "T3 by Tim Tillson - 6-EMA cascade with weighted polynomial sum, volume factor v=0.7. Smooth, low-lag alternative to DEMA / TEMA.",
       "method": "GET",
       "operation_id": "indicators_t3",
       "parameters": [
@@ -48849,7 +48849,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "Per-bar True Range = max(H - L, |H - C[-1]|, |L - C[-1]|). Building block for ATR. `time_period` ignored — TRANGE is per-bar. For smoothed version use /atr.",
+      "description": "Per-bar True Range = max(H - L, |H - C[-1]|, |L - C[-1]|). Building block for ATR. `time_period` ignored - TRANGE is per-bar. For smoothed version use /atr.",
       "method": "GET",
       "operation_id": "indicators_trange",
       "parameters": [
@@ -49439,7 +49439,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "Peter Martin's Ulcer Index — RMS of percent drawdowns from rolling peak. Unlike ATR / stddev, asymmetric: only counts downside pain. Used in Ulcer Performance Index (return / UI). Default 14.",
+      "description": "Peter Martin's Ulcer Index - RMS of percent drawdowns from rolling peak. Unlike ATR / stddev, asymmetric: only counts downside pain. Used in Ulcer Performance Index (return / UI). Default 14.",
       "method": "GET",
       "operation_id": "indicators_ulcer",
       "parameters": [
@@ -50029,7 +50029,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "Williams %R — inverted Stochastic, range -100..0. Above -20 = overbought, below -80 = oversold. Lookback `time_period` (default 14).",
+      "description": "Williams %R - inverted Stochastic, range -100..0. Above -20 = overbought, below -80 = oversold. Lookback `time_period` (default 14).",
       "method": "GET",
       "operation_id": "indicators_willr",
       "parameters": [
@@ -50127,7 +50127,7 @@
       "toolset": "technical_indicators"
     },
     {
-      "description": "Weighted Moving Average — linearly weighted by recency. Less smooth than EMA, more responsive than SMA.",
+      "description": "Weighted Moving Average - linearly weighted by recency. Less smooth than EMA, more responsive than SMA.",
       "method": "GET",
       "operation_id": "indicators_wma",
       "parameters": [
@@ -57146,7 +57146,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Returns an overview of one autonomous system: the holder, the type, whether it is currently announced and its address block. Set include_registry to true to attach the RIPE Database aut-num registry object, which costs one extra upstream call.",
       "method": "GET",
       "operation_id": "network_asn_asn",
       "parameters": [
@@ -57190,7 +57190,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Returns the abuse contacts registered for one autonomous system and the regional internet registry that is authoritative for it.",
       "method": "GET",
       "operation_id": "network_asn_asn_abuse",
       "parameters": [
@@ -57254,7 +57254,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Returns the BGP neighbours of one autonomous system, split into upstream and downstream lists, with the total neighbour count and the upstream and downstream counts.",
       "method": "GET",
       "operation_id": "network_asn_asn_peers",
       "parameters": [
@@ -57418,7 +57418,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Returns the routing status of one autonomous system: when it was first and last seen, its visibility, its announced address space and the neighbours observed.",
       "method": "GET",
       "operation_id": "network_asn_asn_routing",
       "parameters": [
@@ -57510,7 +57510,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Returns the recent BGP update activity of one autonomous system, with the update count and a note on how withdrawals are reported.",
       "method": "GET",
       "operation_id": "network_asn_asn_updates",
       "parameters": [
@@ -57542,7 +57542,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Returns the WHOIS records registered for one autonomous system, with the record count and the records.",
       "method": "GET",
       "operation_id": "network_asn_asn_whois",
       "parameters": [
@@ -57574,7 +57574,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Lists RIPE Atlas anchors, the larger always-on probes, with the total match count. Filter by country and cap the rows with limit (default 20, maximum 100).",
       "method": "GET",
       "operation_id": "network_atlas_anchor_list",
       "parameters": [
@@ -57669,7 +57669,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Lists RIPE Atlas measurements with the total match count. Filter by measurement type such as ping, by status or by target, and cap the rows with limit (default 20, maximum 100).",
       "method": "GET",
       "operation_id": "network_atlas_measurement_list",
       "parameters": [
@@ -57755,7 +57755,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Returns one RIPE Atlas measurement by numeric id: type, target and its address and ASN, protocol, status, interval, packet settings, start and stop times, probe counts and tags.",
       "method": "GET",
       "operation_id": "network_atlas_measurement_id",
       "parameters": [
@@ -57845,7 +57845,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Lists RIPE Atlas probes worldwide with the total match count. Filter by country, ASN, probe status or tag, and cap the rows with limit (default 20, maximum 100).",
       "method": "GET",
       "operation_id": "network_atlas_probe_list",
       "parameters": [
@@ -57949,7 +57949,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Lists the tags that RIPE Atlas probes can carry, with the tag count.",
       "method": "GET",
       "operation_id": "network_atlas_probe_tags",
       "parameters": [],
@@ -57967,7 +57967,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Returns one RIPE Atlas probe by numeric id: country, IPv4 and IPv6 ASN and prefix, status and its start time, coordinates, anchor flag, connection and uptime history, firmware version and tags.",
       "method": "GET",
       "operation_id": "network_atlas_probe_id",
       "parameters": [
@@ -57999,7 +57999,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Looks up many autonomous systems in one call, up to 100 per request. Each ASN counts against the daily quota, and the response flags a partial result when the time budget runs out before every ASN is done.",
       "method": "POST",
       "operation_id": "post_network_bulk_asn",
       "parameters": [],
@@ -58037,7 +58037,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Looks up many IP addresses in one call, up to 100 per request. Optional flags add reverse DNS, abuse contacts and the ASN overview to each result. Each address counts against the daily quota, and the response flags a partial result when the time budget runs out before every address is done.",
       "method": "POST",
       "operation_id": "post_network_bulk_ip",
       "parameters": [],
@@ -58090,7 +58090,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Returns the certificate issuance history of a domain from Certificate Transparency logs, paged with the after cursor returned in next_cursor. Subdomains are included by default.",
       "method": "GET",
       "operation_id": "network_cert_history",
       "parameters": [
@@ -58151,7 +58151,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Breaks down the certificates seen in Certificate Transparency logs for a domain by issuing Certificate Authority, with the total certificate count and the issuer count. Subdomains are included by default.",
       "method": "GET",
       "operation_id": "network_cert_issuers",
       "parameters": [
@@ -58195,7 +58195,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Lists the revoked certificates seen in Certificate Transparency logs for a domain, with the total certificate count and the revoked count. Subdomains are included by default.",
       "method": "GET",
       "operation_id": "network_cert_revoked",
       "parameters": [
@@ -58239,7 +58239,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Searches Certificate Transparency logs for SSL certificates issued for a domain. Pass the domain in q, choose whether subdomains are included, and page with limit (maximum 100) and the after cursor returned in next_cursor.",
       "method": "GET",
       "operation_id": "network_cert_search",
       "parameters": [
@@ -58339,7 +58339,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Discovers the subdomains of a domain from Certificate Transparency logs, listing exact names and wildcard names separately with their counts.",
       "method": "GET",
       "operation_id": "network_cert_subdomains",
       "parameters": [
@@ -58372,7 +58372,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Resolves the DNS records of a host name through the Sugra DNS resolver chain. The response carries the host, the records and a TTL of 60 seconds.",
       "method": "GET",
       "operation_id": "network_domain_host_dns",
       "parameters": [
@@ -58404,7 +58404,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Returns the raw RDAP response for a domain, fetched through the IANA bootstrap. Returns 404 when the top-level domain is not supported.",
       "method": "GET",
       "operation_id": "network_domain_host_rdap",
       "parameters": [
@@ -58436,7 +58436,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Returns domain registration data in a flat WHOIS-style shape, built from RDAP through the IANA bootstrap: registrar and its IANA id, created, expires and updated dates, status, name servers and the abuse contact. Returns 404 when the top-level domain is not supported.",
       "method": "GET",
       "operation_id": "network_domain_host_whois",
       "parameters": [
@@ -58514,7 +58514,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Lists recent BGP hijack events in which one autonomous system was the old or the new origin, detected by comparing RouteViews routing snapshots. Set lookback_days from 1 to 30 (default 7).",
       "method": "GET",
       "operation_id": "network_hijack_asn_asn",
       "parameters": [
@@ -58559,7 +58559,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Lists recent BGP hijack events for one exact IP prefix in CIDR notation, detected by comparing RouteViews routing snapshots. Set lookback_days from 1 to 30 (default 7).",
       "method": "GET",
       "operation_id": "network_hijack_prefix_cidr",
       "parameters": [
@@ -58604,7 +58604,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Lists recent BGP hijack events detected by comparing RouteViews routing snapshots. Filter by country (ISO 3166-1 alpha-2) or by an ASN involved in the event, and set lookback_days from 1 to 30 (default 7). The response carries the events and their count.",
       "method": "GET",
       "operation_id": "network_hijack_recent",
       "parameters": [
@@ -58720,7 +58720,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Returns the abuse contact registered for the network that holds a single IP address, resolved through the autonomous system that announces it.",
       "method": "GET",
       "operation_id": "network_ip_ip_abuse",
       "parameters": [
@@ -58752,7 +58752,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Returns the autonomous system number and the holding organization that announce a single IP address, resolved from the Sugra NetAtlas store. Accuracy and confidence are reported in the response metadata.",
       "method": "GET",
       "operation_id": "network_ip_ip_asn",
       "parameters": [
@@ -58784,7 +58784,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Returns the country, region, city and timezone of a single IP address, resolved from the Sugra NetAtlas store. Accuracy and geolocation confidence are reported in the response metadata.",
       "method": "GET",
       "operation_id": "network_ip_ip_geo",
       "parameters": [
@@ -58816,7 +58816,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Returns the composite privacy signal of a single IP address: boolean flags for Tor, VPN-associated ASN, hosting, anycast and mobile networks, a risk score from 0 to 100 and a confidence label.",
       "method": "GET",
       "operation_id": "network_ip_ip_privacy",
       "parameters": [
@@ -58848,7 +58848,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Returns the reverse DNS (PTR) records of a single IP address.",
       "method": "GET",
       "operation_id": "network_ip_ip_rdns",
       "parameters": [
@@ -59000,7 +59000,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Lists internet outage alerts raised within the last hours_back hours (default 168, maximum 720), optionally narrowed by entity_type and entity_code. The limit parameter caps the rows (default 50, maximum 500).",
       "method": "GET",
       "operation_id": "network_outage_alerts",
       "parameters": [
@@ -59079,7 +59079,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Searches the countries, regions and networks monitored for outages by name or code in q, optionally narrowed by entity_type. Use the codes it returns as entity_code in the outage alerts route.",
       "method": "GET",
       "operation_id": "network_outage_entities",
       "parameters": [
@@ -59128,7 +59128,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Lists every country monitored for internet outages, with its code, and the country count.",
       "method": "GET",
       "operation_id": "network_outage_entities_countries",
       "parameters": [],
@@ -59245,7 +59245,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Returns an overview of one IP prefix in CIDR notation: whether it is announced, the origin ASNs, related prefixes, the covering block and whether the prefix is a less specific one.",
       "method": "GET",
       "operation_id": "network_prefix_cidr",
       "parameters": [
@@ -59547,7 +59547,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Validates an IP prefix against RPKI route origin authorizations for a given origin ASN. The asn query parameter is required. The response carries the validation status and the validating ROAs.",
       "method": "GET",
       "operation_id": "network_prefix_cidr_rpki",
       "parameters": [
@@ -59592,7 +59592,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Searches ASNs, prefixes and holder names for the text in q (at least two characters). The response groups the matches by category and reports the category count.",
       "method": "GET",
       "operation_id": "network_search",
       "parameters": [
@@ -59643,7 +59643,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Returns the Tor relays with the highest observed bandwidth, up to limit entries (default 10, maximum 50).",
       "method": "GET",
       "operation_id": "network_tor_bandwidth",
       "parameters": [
@@ -59675,7 +59675,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Returns client estimates for Tor bridges, up to limit entries (default 20, maximum 100).",
       "method": "GET",
       "operation_id": "network_tor_clients",
       "parameters": [
@@ -59707,7 +59707,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Returns the top Tor relays ranked by consensus weight, up to limit entries (default 20, maximum 100).",
       "method": "GET",
       "operation_id": "network_tor_details",
       "parameters": [
@@ -59739,7 +59739,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Returns the Tor relays located in one country, given as a two-letter ISO code such as de, up to limit entries (default 20, maximum 100).",
       "method": "GET",
       "operation_id": "network_tor_details_country_country",
       "parameters": [
@@ -59784,7 +59784,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Returns the Tor relays that carry one directory authority flag, such as Guard, up to limit entries (default 20, maximum 100).",
       "method": "GET",
       "operation_id": "network_tor_flags_flag",
       "parameters": [
@@ -59829,7 +59829,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Searches Tor relays and bridges for the text in q (at least two characters), returning up to limit matches (default 20, maximum 100) with the relay and bridge counts.",
       "method": "GET",
       "operation_id": "network_tor_search",
       "parameters": [
@@ -59874,7 +59874,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Returns a summary of the Tor network: the number of published relays and bridges plus a list of up to limit entries (default 20, maximum 100). Set type to relay or bridge to choose which list is returned.",
       "method": "GET",
       "operation_id": "network_tor_summary",
       "parameters": [
@@ -59917,7 +59917,7 @@
       "toolset": "network"
     },
     {
-      "description": "",
+      "description": "Returns the uptime history of Tor relays, up to limit entries (default 10, maximum 50).",
       "method": "GET",
       "operation_id": "network_tor_uptime",
       "parameters": [
@@ -89749,7 +89749,7 @@
       "toolset": "hazards"
     },
     {
-      "description": "",
+      "description": "Returns analytics and insight modules for a symbol. The modules parameter takes comma-separated module keys and defaults to sec_reports.",
       "method": "GET",
       "operation_id": "market_analytics_symbol",
       "parameters": [
@@ -89795,7 +89795,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns quotes for up to 20 comma-separated symbols in one call: price, change, volume, day and 52-week ranges, exchange and market state. The optional fields parameter narrows the response to the listed keys.",
       "method": "GET",
       "operation_id": "market_batch_quotes",
       "parameters": [
@@ -89847,7 +89847,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns the market calendar for a date range of up to 31 days, defaulting to the next 7 days: earnings, dividends, splits and economic events. Choose the sections to return, filter by country, and page each section with limit and offset.",
       "method": "GET",
       "operation_id": "market_calendar",
       "parameters": [
@@ -89985,7 +89985,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Lists upcoming dividends across all symbols for a date range of up to 31 days, defaulting to the next 7 days: ex-dividend, payment, record and announcement dates. The response carries the range, the row count and the rows.",
       "method": "GET",
       "operation_id": "market_calendar_dividends",
       "parameters": [
@@ -90160,7 +90160,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Lists upcoming stock splits across all symbols for a date range of up to 31 days, defaulting to the next 7 days, with the execution dates and ratios. The response carries the range, the row count and the rows.",
       "method": "GET",
       "operation_id": "market_calendar_splits",
       "parameters": [
@@ -90217,7 +90217,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Pages through the catalog of US Treasury securities, bills, notes, bonds, TIPS and floating rate notes, auctioned and upcoming. Page with limit and offset, filter by security_type, and set upcoming_only to see forward-looking auctions only.",
       "method": "GET",
       "operation_id": "market_catalog_bonds",
       "parameters": [
@@ -90294,7 +90294,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Pages through the catalog of US-listed ETFs. Page with limit and offset. The response carries the total, the page count and the rows.",
       "method": "GET",
       "operation_id": "market_catalog_etfs",
       "parameters": [
@@ -90340,7 +90340,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Pages through the catalog of SEC-registered US mutual fund share classes. Page with limit and offset, and filter by SEC series id to list all share classes of one fund. The response carries the total, the page count and the rows.",
       "method": "GET",
       "operation_id": "market_catalog_funds",
       "parameters": [
@@ -90405,7 +90405,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Pages through the catalog of SEC-registered US stock tickers with their exchange. Page with limit and offset, and filter by exchange. The response carries the total, the page count and the rows.",
       "method": "GET",
       "operation_id": "market_catalog_stocks",
       "parameters": [
@@ -90437,7 +90437,7 @@
           }
         },
         {
-          "description": "Filter by exchange: 'Nasdaq', 'NYSE', 'CBOE', 'OTC'.",
+          "description": "Filter by exchange: 'Nasdaq', 'NYSE', 'OTC'.",
           "example": "Nasdaq",
           "location": "query",
           "name": "exchange",
@@ -90451,7 +90451,7 @@
                 "type": "null"
               }
             ],
-            "description": "Filter by exchange: 'Nasdaq', 'NYSE', 'CBOE', 'OTC'.",
+            "description": "Filter by exchange: 'Nasdaq', 'NYSE', 'OTC'.",
             "title": "Exchange"
           }
         }
@@ -90470,7 +90470,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns OHLCV price bars for a symbol. Choose the interval (1m, 5m, 15m, 30m, 1h, 1d, 1wk or 1mo) and either a range such as 1mo or 1y, or an explicit period with Unix timestamps in period1 and period2. Pre- and post-market bars and dividend and split events can be included.",
       "method": "GET",
       "operation_id": "market_chart_symbol",
       "parameters": [
@@ -90618,7 +90618,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns the market holidays of one exchange for a calendar year, full closures and early closes, with the holiday count and a link to the official holiday calendar. The year defaults to the current US Eastern year.",
       "method": "GET",
       "operation_id": "market_exchange_code_holidays",
       "parameters": [
@@ -90672,7 +90672,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns the trading hours of one exchange: its MIC, name, country, timezone, regular open and close, trading days, lunch break if any, currency and a link to the official holiday calendar.",
       "method": "GET",
       "operation_id": "market_exchange_code_schedule",
       "parameters": [
@@ -90705,7 +90705,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Lists the supported exchange codes with their market identifier code and name. Use a code in the exchange schedule and holidays routes.",
       "method": "GET",
       "operation_id": "market_exchanges",
       "parameters": [],
@@ -90723,7 +90723,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns the market identifiers for commodities and currencies by default. The modules parameter takes comma-separated group names to choose which groups are returned. Responses are cached for 1 day.",
       "method": "GET",
       "operation_id": "market_ids",
       "parameters": [
@@ -90755,7 +90755,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Lists prediction market events. The count parameter sets the number of events (default 10, maximum 50), featured keeps only featured events, tag_slug selects a topic and sort_key sets the order, 24-hour volume descending by default.",
       "method": "GET",
       "operation_id": "market_predictions_events",
       "parameters": [
@@ -90828,7 +90828,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns the historical implied-probability price series for one or more prediction markets. The markets parameter is required; start_ts, interval and fidelity set the start, the update interval and the granularity.",
       "method": "GET",
       "operation_id": "market_predictions_prices",
       "parameters": [
@@ -90906,7 +90906,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Lists the topic tags that can be used to filter prediction market events. Responses are cached for 1 day.",
       "method": "GET",
       "operation_id": "market_predictions_tags",
       "parameters": [],
@@ -90924,7 +90924,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Resolves the instrument type of a symbol, for example equity or ETF, together with its exchange, short and long names, exchange timezone and market.",
       "method": "GET",
       "operation_id": "market_quote_type_symbol",
       "parameters": [
@@ -90957,7 +90957,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Runs a custom screener. The request body carries the required query plus optional paging and sort fields. The response returns the matching records with the total, start and count.",
       "method": "POST",
       "operation_id": "post_market_screener",
       "parameters": [],
@@ -91075,7 +91075,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Lists the columns available for building a custom screener query, grouped by category. The instrument parameter selects the instrument family, such as equity, etf or mutualfund.",
       "method": "GET",
       "operation_id": "market_screener_columns",
       "parameters": [
@@ -91107,7 +91107,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Lists screener themes and investment ideas that can be explored further. The count parameter sets the number of ideas (default 5, maximum 20) and modules selects the idea modules.",
       "method": "GET",
       "operation_id": "market_screener_discover",
       "parameters": [
@@ -91154,7 +91154,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Runs a predefined screener, such as most actives, day gainers or day losers, and returns its records with the total, start and count. The count parameter caps the rows (default 25, maximum 250) and start pages through the results. An unknown screener id returns 400.",
       "method": "GET",
       "operation_id": "market_screener_scr_id",
       "parameters": [
@@ -91246,7 +91246,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Searches tickers and news headlines for the text in q. The quotes_count parameter caps the ticker matches (default 6, maximum 20) and news_count caps the headlines (default 3, maximum 10).",
       "method": "GET",
       "operation_id": "market_search",
       "parameters": [
@@ -91310,7 +91310,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns compact sparkline series for up to 20 comma-separated symbols: previous close, current price and the close values with their timestamps, for dashboards. Choose the range and the interval.",
       "method": "GET",
       "operation_id": "market_spark",
       "parameters": [
@@ -91369,7 +91369,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns the open or closed status of the US market from Sugra Finance. Responses are cached for 5 minutes.",
       "method": "GET",
       "operation_id": "market_status",
       "parameters": [],
@@ -91387,7 +91387,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns stock recommendations for the given symbol, the other symbols that the recommender links to it. Responses are cached for 5 minutes.",
       "method": "GET",
       "operation_id": "market_stock_recommender_symbol",
       "parameters": [
@@ -91420,7 +91420,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns a snapshot of the major US market indices: for each, the symbol, name, price, change, change percent, market state and exchange. Responses are cached for 5 minutes.",
       "method": "GET",
       "operation_id": "market_summary",
       "parameters": [],
@@ -91438,7 +91438,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Lists the trending tickers for a quote type. The count parameter sets the number of tickers (default 10, maximum 25) and quote_type is one of EQUITY, ETF, MUTUALFUND, FUTURE, CURRENCY or CRYPTOCURRENCY (default EQUITY). Responses are cached for 5 minutes.",
       "method": "GET",
       "operation_id": "market_trending",
       "parameters": [
@@ -91493,7 +91493,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns visualization and heatmap data for a custom query. The request body carries the required query plus optional fields. The response returns the tables and the total.",
       "method": "POST",
       "operation_id": "post_market_visualization",
       "parameters": [],
@@ -91705,7 +91705,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Lists corporate actions for a symbol, dividends and splits, with date, amount and type. The days parameter sets the look-back window (default 365, 0 returns all) and limit caps the rows.",
       "method": "GET",
       "operation_id": "quotes_symbol_actions",
       "parameters": [
@@ -91804,7 +91804,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns the analyst price target summary for a symbol: current price, low, high, mean and median targets, the number of analysts and the consensus recommendation.",
       "method": "GET",
       "operation_id": "quotes_symbol_analyst_targets",
       "parameters": [
@@ -91870,7 +91870,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Lists every stock exchange listing of the company that holds the given ticker, resolved through Wikidata. The response carries the company label, its Wikidata id, the listing count and the listings.",
       "method": "GET",
       "operation_id": "quotes_symbol_cross_listings",
       "parameters": [
@@ -91903,7 +91903,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns the dividend profile of a symbol: dividend rate and yield, ex-dividend and payment dates, payout ratio, five-year average yield and the trailing annual rate and yield.",
       "method": "GET",
       "operation_id": "quotes_symbol_dividend",
       "parameters": [
@@ -91936,7 +91936,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns the earliest and the latest available price bar for a symbol at a chosen interval, with the number of bars, the exchange and the currency. Intraday intervals reach back only a short window while daily history can span decades.",
       "method": "GET",
       "operation_id": "quotes_symbol_earliest_timestamp",
       "parameters": [
@@ -92015,7 +92015,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns the reported earnings history of a symbol by quarter: date, actual EPS, estimated EPS, the difference and the surprise percent. The limit parameter caps the number of quarters.",
       "method": "GET",
       "operation_id": "quotes_symbol_earnings_history",
       "parameters": [
@@ -92063,7 +92063,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns the company officers and executive team of a symbol, together with the full-time employee count and the compensation and governance risk fields.",
       "method": "GET",
       "operation_id": "quotes_symbol_executives",
       "parameters": [
@@ -92096,7 +92096,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns analyst forward estimates for a symbol: the earnings estimate, the revenue estimate, the EPS trend and the EPS revisions.",
       "method": "GET",
       "operation_id": "quotes_symbol_forward_estimates",
       "parameters": [
@@ -92129,7 +92129,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns what an ETF or mutual fund holds: asset class mix, sector weightings, top holdings and the fund overview. Symbols that are not funds return 404.",
       "method": "GET",
       "operation_id": "quotes_symbol_fund_composition",
       "parameters": [
@@ -92162,7 +92162,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns performance fields of an ETF or mutual fund: year-to-date, three-year and five-year average returns, last dividend, trailing and forward P/E, NAV price, 52-week range and moving averages, and the 52-week change against the S&P 500. Symbols that are not funds return 404.",
       "method": "GET",
       "operation_id": "quotes_symbol_fund_performance",
       "parameters": [
@@ -92195,7 +92195,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns the profile of an ETF or mutual fund: quote type, description, fund overview, asset class mix, top holdings and sector weightings. Symbols that are not funds return 404.",
       "method": "GET",
       "operation_id": "quotes_symbol_fund_profile",
       "parameters": [
@@ -92228,7 +92228,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns what it costs to buy and hold an ETF or mutual fund: expense ratio, front-end and deferred sales loads, annual holdings turnover, total assets, minimum initial investment, yield, last dividend and the fund family and category. Symbols that are not funds return 404.",
       "method": "GET",
       "operation_id": "quotes_symbol_fund_purchase_info",
       "parameters": [
@@ -92261,7 +92261,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns risk fields of an ETF or mutual fund: beta, three-year beta, average volume, fund risk rating when present, 52-week range and 52-week change percent. Beta is absent for many ETFs. Symbols that are not funds return 404.",
       "method": "GET",
       "operation_id": "quotes_symbol_fund_risk",
       "parameters": [
@@ -92287,14 +92287,14 @@
       "sources": [
         "markets"
       ],
-      "summary": "Fund risk metrics (beta, volume, 52-week range, Morningstar rating when present)",
+      "summary": "Fund risk metrics (beta, volume, 52-week range, fund risk rating when present)",
       "tags": [
         "Finance"
       ],
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns a short summary of an ETF or mutual fund: category, fund family, legal type, currency, total assets, NAV price, year-to-date return, expense ratio, inception date and business summary. Symbols that are not funds return 404.",
       "method": "GET",
       "operation_id": "quotes_symbol_fund_summary",
       "parameters": [
@@ -92529,7 +92529,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns the top 10 mutual fund holders of a symbol with shares held, value, percent of shares held and percent change, plus the holder count.",
       "method": "GET",
       "operation_id": "quotes_symbol_holders_funds",
       "parameters": [
@@ -92609,7 +92609,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns the top 10 institutional holders of a symbol with shares held, value, percent of shares held and percent change, plus the holder count.",
       "method": "GET",
       "operation_id": "quotes_symbol_holders_institutional",
       "parameters": [
@@ -92642,7 +92642,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns one combined snapshot of who owns a symbol: the ownership breakdown percentages plus the top 3 institutional holders, top 3 funds and top 3 insiders.",
       "method": "GET",
       "operation_id": "quotes_symbol_holders_summary",
       "parameters": [
@@ -92675,7 +92675,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns the detailed company profile of a symbol: address, website, sector and industry, business summary, employee count, officers, governance risk scores and current price and dividend fields. The optional fields parameter narrows the response to the listed keys.",
       "method": "GET",
       "operation_id": "quotes_symbol_info",
       "parameters": [
@@ -92826,7 +92826,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Lists the institutional holders of a symbol with shares held, value, report date, percent of shares held and percent change since the previous report.",
       "method": "GET",
       "operation_id": "quotes_symbol_institutional_holders",
       "parameters": [
@@ -92859,7 +92859,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Resolves a company logo for a ticker through Wikidata. The response carries the Wikidata id, the company label, the logo image file and URL, the official website and favicon, and the best URL to embed. Returns 404 when no company entry has that ticker.",
       "method": "GET",
       "operation_id": "quotes_symbol_logo",
       "parameters": [
@@ -92946,7 +92946,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns the ownership breakdown of a symbol: percent of shares held by insiders, percent held by institutions, percent of float held by institutions and the number of institutions.",
       "method": "GET",
       "operation_id": "quotes_symbol_major_holders",
       "parameters": [
@@ -92979,7 +92979,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns the market capitalization of a symbol with its basis, enterprise value, shares outstanding, the implied share count, the currency and a size category from mega to nano.",
       "method": "GET",
       "operation_id": "quotes_symbol_market_cap",
       "parameters": [
@@ -93062,7 +93062,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Lists the mutual funds that hold a symbol with shares held, value, report date, percent of shares held and percent change since the previous report.",
       "method": "GET",
       "operation_id": "quotes_symbol_mutualfund_holders",
       "parameters": [
@@ -93292,7 +93292,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Lists press releases filed by a company as Form 8-K filings, newest first. The days parameter sets the look-back window (default 180, maximum 730) and limit caps the filings (default 10, maximum 50). Set include_content to true to attach the extracted Exhibit 99 text for the first filings.",
       "method": "GET",
       "operation_id": "quotes_symbol_press_releases",
       "parameters": [
@@ -93367,7 +93367,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns the current quote for a symbol: last price, change and change percent, volume, open, day high and low, previous close, bid and ask, market cap, 50 and 200 day averages, 52-week range, currency, exchange and market state. Responses come from Sugra Finance.",
       "method": "GET",
       "operation_id": "quotes_symbol_price",
       "parameters": [
@@ -93433,7 +93433,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns analyst rating data for a symbol: the rating direction, the rating and price-target fields, and the financial score. Fields are returned as delivered by Sugra Finance.",
       "method": "GET",
       "operation_id": "quotes_symbol_ratings",
       "parameters": [
@@ -93499,7 +93499,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns the analyst recommendation counts for a symbol by period: strong buy, buy, hold, sell and strong sell.",
       "method": "GET",
       "operation_id": "quotes_symbol_recommendations",
       "parameters": [
@@ -93532,7 +93532,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Lists recent SEC filings for a symbol with their dates and links. The days parameter sets the look-back window (default 30, 0 returns all).",
       "method": "GET",
       "operation_id": "quotes_symbol_sec_filings",
       "parameters": [
@@ -93579,7 +93579,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Lists the full stock split history of a symbol, newest first, with the split date and the numerator and denominator of the ratio. The limit parameter returns only the most recent splits.",
       "method": "GET",
       "operation_id": "quotes_symbol_splits",
       "parameters": [
@@ -93632,7 +93632,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns a curated set of key financial statistics for a symbol in ten groups: valuation, profitability, balance sheet, income, per share, shares, ownership, dividend, technicals and governance.",
       "method": "GET",
       "operation_id": "quotes_symbol_statistics",
       "parameters": [
@@ -93698,7 +93698,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Returns fundamental time series for a symbol. The required type parameter takes up to 50 comma-separated field keys, for example TotalRevenue,NetIncome. Choose the periodicity (annual, quarterly, trailing or monthly) and optionally bound the range with Unix timestamps in period1 and period2.",
       "method": "GET",
       "operation_id": "quotes_symbol_timeseries",
       "parameters": [
@@ -93841,7 +93841,7 @@
       "toolset": "markets"
     },
     {
-      "description": "",
+      "description": "Lists analyst rating changes for a symbol, newest first, with the date, the firm, the new and previous grade and the action taken.",
       "method": "GET",
       "operation_id": "quotes_symbol_upgrades_downgrades",
       "parameters": [
@@ -96598,5 +96598,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "62345201d043c89154292dd8f355e36aa4fc1b39be9df4aae68ad68ec9a80166"
+  "spec_sha256": "da4c690a924ce31e396f357a546b0a4497ccfcd3e57b81240630295be789043b"
 }
