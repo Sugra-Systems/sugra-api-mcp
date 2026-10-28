@@ -3,7 +3,7 @@
 A merge to main runs the test matrix and nothing else: no job in test.yml
 deploys, logs in to a cloud account or reads a repository secret. The job and
 matrix names stay fixed because branch protection requires the checks they
-produce (`test (3.12)`, `test (3.13)`, `test (3.14)`).
+produce (`test (3.13)`, `test (3.14)`).
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ def test_the_only_job_is_the_test_matrix() -> None:
     assert list(jobs) == ["test"]
     # Any other matrix key, an include or exclude entry, or a job name would
     # rename the required checks.
-    assert jobs["test"]["strategy"]["matrix"] == {"python-version": ["3.12", "3.13", "3.14"]}
+    assert jobs["test"]["strategy"]["matrix"] == {"python-version": ["3.13", "3.14"]}
     assert "name" not in jobs["test"]
 
 
