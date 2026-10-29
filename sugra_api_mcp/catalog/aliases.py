@@ -1964,12 +1964,15 @@ COMPOUND_NAMED_OPERATIONS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = 
     ),
 }
 
-# Words an operation's summary names as the measures it is computed from,
-# never as its subject: the telecom-demand heuristic is computed from growth,
-# income and inflation, and "Dutch inflation" found it above every Dutch
-# inflation series.
+# Words an operation's summary or description names as the measures it is
+# computed from, never as its subject: the telecom-demand heuristic is
+# computed from growth, income and inflation, and "Dutch inflation" found it
+# above every Dutch inflation series. The external-pressure heuristic is
+# computed from the current account outlook, and "Germany current account"
+# found it above the country profile, which holds the current account.
 OPERATION_INPUT_WORDS: dict[str, frozenset[str]] = {
     "imf_signals_telecom_demand_country": frozenset({"growth", "income", "inflation"}),
+    "imf_signals_external_pressure_country": frozenset({"current", "account"}),
 }
 
 

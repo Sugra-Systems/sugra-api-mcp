@@ -5006,3 +5006,41 @@ def test_a_clamped_retired_operation_is_no_subject_word(catalog) -> None:
         for endpoint in catalog.endpoints]})
     ids = [hit["operation_id"] for hit in search_catalog(retired, "daily", limit=5)]
     assert ids[0] == "sec_edgar_daily_index_by_form", ids
+
+
+@pytest.mark.parametrize("query", [
+    "Buy Tesla stock", "AAPL over the last five years", "TLT SPY since 2020", "AAPL sales",
+])
+def test_a_listing_operations_description_scores_nothing_in_a_listing_question(
+        catalog, query: str) -> None:
+    """A description spells out every field a listing operation returns:
+    "Buy Tesla stock" ranked the fund purchase info and the analyst
+    recommendations above the price, on the "buy" their descriptions hold."""
+    for row in search_catalog(catalog, query, limit=2000):
+        if row["operation_id"].startswith("quotes_symbol_"):
+            assert not any(reason.startswith("description:") for reason in row["why"]), row
+
+
+def test_a_listing_operations_description_still_scores_outside_a_listing_question(
+        catalog) -> None:
+    rows = search_catalog(catalog, "fund sales loads", limit=5)
+    assert rows[0]["operation_id"] == "quotes_symbol_fund_purchase_info", rows[0]
+    assert "description:fund" in rows[0]["why"], rows[0]
+
+
+@pytest.mark.parametrize("query", [
+    "Germany current account", "current account", "Japan current account balance",
+])
+def test_the_external_pressure_heuristic_is_computed_from_the_current_account(
+        catalog, query: str) -> None:
+    """Its description names the current account outlook as an input:
+    "Germany current account" found it above the country profile."""
+    row = next((row for row in search_catalog(catalog, query, limit=2000)
+                if row["operation_id"] == "imf_signals_external_pressure_country"), None)
+    assert row is None or not any(
+        reason.endswith((":current", ":account")) for reason in row["why"]), row
+
+
+def test_the_external_pressure_heuristic_keeps_its_own_question(catalog) -> None:
+    top = search_catalog(catalog, "Germany external pressure", limit=1)[0]
+    assert top["operation_id"] == "imf_signals_external_pressure_country", top
