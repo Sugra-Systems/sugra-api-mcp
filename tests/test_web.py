@@ -119,7 +119,7 @@ def test_landing_has_one_tab_per_client_with_the_first_open(client: TestClient) 
     parser = _parse_landing(client)
     assert parser.tab_labels == [
         "Claude", "ChatGPT", "Claude Code", "Codex", "Grok",
-        "Antigravity", "Cursor", "VS Code", "Other",
+        "Antigravity", "GitHub Copilot", "Cursor", "VS Code", "Other",
     ]
     checked = [radio["id"] for radio in parser.radios if "checked" in radio]
     assert checked == ["t-claude"]
@@ -147,8 +147,8 @@ def test_landing_never_writes_a_key_or_the_alias_host(client: TestClient) -> Non
     assert servers
     for ident, body in servers.items():
         assert "https://mcp.sugra.ai/mcp" in body
-        # Antigravity signs in with the Sugra account and takes no key.
-        if ident == "cmd-antigravity":
+        # Antigravity and Copilot CLI sign in with the Sugra account and take no key.
+        if ident in ("cmd-antigravity", "cmd-copilot"):
             assert "SUGRA_API_KEY" not in body and "Authorization" not in body
         else:
             assert "SUGRA_API_KEY" in body
@@ -205,7 +205,7 @@ def test_tabs_point_at_the_public_listings_before_the_commands(client: TestClien
     assert "<pre" not in chatgpt
 
     # Tabs with no public listing for them keep only their commands.
-    for ident in ("grok", "antigravity", "cursor", "vscode", "other"):
+    for ident in ("grok", "antigravity", "copilot", "cursor", "vscode", "other"):
         panel = _panel(text, ident)
         for listing in (claude, openai, skills):
             assert listing not in panel, (ident, listing)
@@ -230,7 +230,7 @@ def test_tabs_without_a_plugin_install_skills_from_the_index(client: TestClient)
         # The skills step comes after the server step, never before it.
         assert panel.index("Skills (optional)") > panel.index("<pre")
     # Tabs with a plugin of their own keep it; the index is for everyone else.
-    for ident in ("claude", "chatgpt", "claude-code", "codex", "grok", "antigravity"):
+    for ident in ("claude", "chatgpt", "claude-code", "codex", "grok", "antigravity", "copilot"):
         assert "npx skills add" not in _panel(text, ident), ident
 
 
@@ -252,6 +252,13 @@ def test_highlighted_blocks_copy_as_the_plain_source(client: TestClient) -> None
     assert parser.pre_text["cmd-antigravity-skills"] == (
         "git clone https://github.com/Sugra-Systems/sugra-api-plugins\n"
         "agy plugin install ./sugra-api-plugins/antigravity"
+    )
+    assert parser.pre_text["cmd-copilot"] == (
+        "copilot mcp add --transport http sugra-api https://mcp.sugra.ai/mcp"
+    )
+    assert parser.pre_text["cmd-copilot-skills"] == (
+        "copilot plugin marketplace add Sugra-Systems/sugra-api-plugins\n"
+        "copilot plugin install sugra-api-skills@sugra-api-plugins"
     )
     assert parser.pre_text["cfg-url"] == "https://mcp.sugra.ai/mcp"
 

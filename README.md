@@ -117,6 +117,15 @@ agy plugin install ./sugra-api-plugins/antigravity
 
 The CLI, the Antigravity app and the IDE share the plugin. It declares the hosted server too, but Antigravity CLI 1.4.9 does not start a server that a plugin declares yet: add it with `agy mcp add` ([Antigravity](#usage-with-antigravity)).
 
+### GitHub Copilot
+
+```bash
+copilot plugin marketplace add Sugra-Systems/sugra-api-plugins
+copilot plugin install sugra-api-skills@sugra-api-plugins
+```
+
+Copilot CLI reads the same plugin as Claude Code. The plugin also adds the hosted server `https://mcp.sugra.ai/mcp`; Copilot CLI opens the Sugra sign-in page in your browser the first time it connects.
+
 ### Cursor and other agents
 
 ```bash
@@ -191,6 +200,7 @@ Supported clients:
 - **Anthropic Claude**: Claude Desktop, Claude Code (CLI), claude.ai (web)
 - **OpenAI GPT**: ChatGPT (via MCP connector)
 - **Google**: Antigravity (CLI, app and IDE), Gemini Code Assist (VS Code + JetBrains)
+- **GitHub**: Copilot CLI
 - **xAI**: Remote MCP Tools in xAI SDK and Responses API
 - **IDEs**: VS Code (native), Cursor, Zed, Cline, Continue.dev, Windsurf
 - **Custom agents**: anything built on the Python or TypeScript MCP SDK
@@ -248,6 +258,16 @@ agy mcp add sugra-api https://mcp.sugra.ai/mcp
 ```
 
 Antigravity opens the Sugra sign-in page in your browser the first time the agent uses the server. The hosted endpoint shows the gateway tools and the three [hosted-only agent tools](#hosted-only-agent-tools-mcpsugraaimcp). To add the skills as well, install the plugin ([Antigravity](#antigravity)).
+
+### Usage with GitHub Copilot CLI
+
+Copilot CLI connects the hosted endpoint and signs in with your Sugra account, so no key goes in the config:
+
+```bash
+copilot mcp add --transport http sugra-api https://mcp.sugra.ai/mcp
+```
+
+Copilot CLI opens the Sugra sign-in page in your browser the first time it connects to the server; `/mcp auth sugra-api` signs in again. The plugin ([GitHub Copilot](#github-copilot)) adds the same server together with the skills, so with the plugin installed you can skip this command.
 
 ### Cursor, Zed, Cline, Continue.dev, Windsurf
 

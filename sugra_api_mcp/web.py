@@ -333,6 +333,23 @@ _TABS: list[tuple[str, str, str]] = [
         "the command above.</p>",
     ),
     (
+        "copilot",
+        "GitHub Copilot",
+        _step("Server")
+        + _terminal("cmd-copilot", f"copilot mcp add --transport http sugra-api {ENDPOINT}")
+        + '<p class="note">Copilot CLI opens the Sugra sign-in page in your browser '
+        "the first time it connects to the server.</p>"
+        + _step("Skills (optional)")
+        + _terminal(
+            "cmd-copilot-skills",
+            f"copilot plugin marketplace add {PLUGINS_REPO}\n"
+            "copilot plugin install sugra-api-skills@sugra-api-plugins",
+        )
+        + _SKILLS_NOTE
+        + '<p class="note">The plugin adds the same server, so with the plugin '
+        "installed you can skip the server command.</p>",
+    ),
+    (
         "cursor",
         "Cursor",
         f'<a href="{CURSOR_INSTALL_LINK}" class="btn">Add to Cursor</a>'
@@ -536,7 +553,7 @@ _LANDING_HTML = f"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sugra API MCP</title>
-<meta name="description" content="Connect Claude, ChatGPT, Claude Code, Codex, Grok, Antigravity, Cursor and VS Code to Sugra API over the Model Context Protocol.">
+<meta name="description" content="Connect Claude, ChatGPT, Claude Code, Codex, Grok, Antigravity, GitHub Copilot, Cursor and VS Code to Sugra API over the Model Context Protocol.">
 <link rel="icon" href="{_SITE}/favicon.ico" sizes="32x32">
 <link rel="icon" type="image/svg+xml" href="{FAVICON_URI}">
 <link rel="apple-touch-icon" href="{_SITE}/apple-touch-icon.png">
