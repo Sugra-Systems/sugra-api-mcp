@@ -119,7 +119,7 @@ def test_landing_has_one_tab_per_client_with_the_first_open(client: TestClient) 
     parser = _parse_landing(client)
     assert parser.tab_labels == [
         "Claude", "ChatGPT", "Claude Code", "Codex", "Grok",
-        "Gemini CLI", "Cursor", "VS Code", "Other",
+        "Antigravity", "Cursor", "VS Code", "Other",
     ]
     checked = [radio["id"] for radio in parser.radios if "checked" in radio]
     assert checked == ["t-claude"]
@@ -141,11 +141,17 @@ def test_landing_never_writes_a_key_or_the_alias_host(client: TestClient) -> Non
     commands = {
         ident: body for ident, body in parser.pre_text.items() if ident.startswith("cmd-")
     }
-    servers = [body for ident, body in commands.items() if not ident.endswith("-skills")]
+    servers = {
+        ident: body for ident, body in commands.items() if not ident.endswith("-skills")
+    }
     assert servers
-    for body in servers:
+    for ident, body in servers.items():
         assert "https://mcp.sugra.ai/mcp" in body
-        assert "SUGRA_API_KEY" in body
+        # Antigravity signs in with the Sugra account and takes no key.
+        if ident == "cmd-antigravity":
+            assert "SUGRA_API_KEY" not in body and "Authorization" not in body
+        else:
+            assert "SUGRA_API_KEY" in body
     # No copyable block carries a placeholder the user would have to edit.
     for body in parser.pre_text.values():
         assert "<your" not in body
@@ -161,7 +167,6 @@ def test_header_commands_are_spelled_for_their_shell(client: TestClient) -> None
     for ident, add in (
         ("claude-code", "claude mcp add --transport http sugra"),
         ("grok", "grok mcp add --transport http sugra"),
-        ("gemini", "gemini mcp add --transport http sugra"),
     ):
         assert parser.pre_text[f"cmd-{ident}"] == (
             f'{add} {endpoint} --header "Authorization: Bearer $SUGRA_API_KEY"'
@@ -200,7 +205,7 @@ def test_tabs_point_at_the_public_listings_before_the_commands(client: TestClien
     assert "<pre" not in chatgpt
 
     # Tabs with no public listing for them keep only their commands.
-    for ident in ("grok", "gemini", "cursor", "vscode", "other"):
+    for ident in ("grok", "antigravity", "cursor", "vscode", "other"):
         panel = _panel(text, ident)
         for listing in (claude, openai, skills):
             assert listing not in panel, (ident, listing)
@@ -219,13 +224,13 @@ def test_tabs_point_at_the_public_listings_before_the_commands(client: TestClien
 def test_tabs_without_a_plugin_install_skills_from_the_index(client: TestClient) -> None:
     text = client.get("/").text
     parser = _parse_landing(client)
-    for ident in ("gemini", "cursor", "vscode", "other"):
+    for ident in ("cursor", "vscode", "other"):
         assert parser.pre_text[f"cmd-{ident}-skills"] == "npx skills add https://mcp.sugra.ai"
         panel = _panel(text, ident)
         # The skills step comes after the server step, never before it.
         assert panel.index("Skills (optional)") > panel.index("<pre")
     # Tabs with a plugin of their own keep it; the index is for everyone else.
-    for ident in ("claude", "chatgpt", "claude-code", "codex", "grok"):
+    for ident in ("claude", "chatgpt", "claude-code", "codex", "grok", "antigravity"):
         assert "npx skills add" not in _panel(text, ident), ident
 
 
@@ -242,6 +247,11 @@ def test_highlighted_blocks_copy_as_the_plain_source(client: TestClient) -> None
     }
     assert parser.pre_text["cmd-grok-skills"] == (
         "grok plugin install Sugra-Systems/sugra-api-plugins#xai"
+    )
+    assert parser.pre_text["cmd-antigravity"] == "agy mcp add sugra-api https://mcp.sugra.ai/mcp"
+    assert parser.pre_text["cmd-antigravity-skills"] == (
+        "git clone https://github.com/Sugra-Systems/sugra-api-plugins\n"
+        "agy plugin install ./sugra-api-plugins/antigravity"
     )
     assert parser.pre_text["cfg-url"] == "https://mcp.sugra.ai/mcp"
 

@@ -108,7 +108,16 @@ codex plugin add sugra-api-skills@sugra-api-plugins
 grok plugin install Sugra-Systems/sugra-api-plugins#xai
 ```
 
-### Cursor, Gemini CLI and other agents
+### Antigravity
+
+```bash
+git clone https://github.com/Sugra-Systems/sugra-api-plugins
+agy plugin install ./sugra-api-plugins/antigravity
+```
+
+The CLI, the Antigravity app and the IDE share the plugin. It declares the hosted server too, but Antigravity CLI 1.4.9 does not start a server that a plugin declares yet: add it with `agy mcp add` ([Antigravity](#usage-with-antigravity)).
+
+### Cursor and other agents
 
 ```bash
 npx skills add https://mcp.sugra.ai
@@ -181,7 +190,7 @@ Supported clients:
 
 - **Anthropic Claude**: Claude Desktop, Claude Code (CLI), claude.ai (web)
 - **OpenAI GPT**: ChatGPT (via MCP connector)
-- **Google Gemini**: Gemini CLI, Gemini Code Assist (VS Code + JetBrains)
+- **Google**: Antigravity (CLI, app and IDE), Gemini Code Assist (VS Code + JetBrains)
 - **xAI**: Remote MCP Tools in xAI SDK and Responses API
 - **IDEs**: VS Code (native), Cursor, Zed, Cline, Continue.dev, Windsurf
 - **Custom agents**: anything built on the Python or TypeScript MCP SDK
@@ -230,50 +239,15 @@ To install the skills as a plugin, which also connects the hosted server:
 
 Sign in to the plugin's server once from `/mcp`. If the Sugra API connector from claude.ai is connected too, Claude Code shows only the plugin's server. Running the local package as well gives you two Sugra servers: remove it with `claude mcp remove sugra`, or skip the plugin and copy the skill folders of sugra-api-skills into `~/.claude/skills/`.
 
-### Usage with Gemini CLI
+### Usage with Antigravity
 
-Gemini CLI reads MCP servers from `~/.gemini/settings.json` (user scope) or
-`.gemini/settings.json` in the project. For a local stdio install, add:
-
-```json
-{
-  "mcpServers": {
-    "sugra": {
-      "command": "sugra-api-mcp",
-      "env": {
-        "SUGRA_API_KEY": "sugra_xxx_yourkey..."
-      }
-    }
-  }
-}
-```
-
-If the console script is not on `PATH`, use `"command": "python"` with
-`"args": ["-m", "sugra_api_mcp"]` instead. The equivalent Gemini CLI command
-is:
+Antigravity (the `agy` CLI, the Antigravity app and the IDE) connects the hosted endpoint and signs in with your Sugra account, so no key goes in the config:
 
 ```bash
-gemini mcp add --scope user -e SUGRA_API_KEY=sugra_xxx_yourkey... sugra sugra-api-mcp
+agy mcp add sugra-api https://mcp.sugra.ai/mcp
 ```
 
-Or connect to the hosted endpoint without installing the package:
-
-```bash
-gemini mcp add --scope user --transport http \
-  --header "Authorization: Bearer sugra_xxx_yourkey..." \
-  sugra https://mcp.sugra.ai/mcp
-```
-
-Run `gemini mcp list` to check the connection, then enter `/mcp` in an
-interactive session to inspect the available tools. A local stdio connection
-shows the eight gateway tools in [Tool reference](#tool-reference); the hosted
-endpoint also shows the three [hosted-only agent tools](#hosted-only-agent-tools-appsugraaimcp).
-If a local server does not connect from a new directory, review and trust that
-workspace with `gemini trust` before retrying.
-
-These examples were checked against the
-[Gemini CLI MCP documentation](https://github.com/google-gemini/gemini-cli/blob/main/docs/tools/mcp-server.md)
-and Gemini CLI v0.51.0.
+Antigravity opens the Sugra sign-in page in your browser the first time the agent uses the server. The hosted endpoint shows the gateway tools and the three [hosted-only agent tools](#hosted-only-agent-tools-mcpsugraaimcp). To add the skills as well, install the plugin ([Antigravity](#antigravity)).
 
 ### Cursor, Zed, Cline, Continue.dev, Windsurf
 
