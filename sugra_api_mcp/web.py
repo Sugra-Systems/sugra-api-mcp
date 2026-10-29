@@ -315,9 +315,22 @@ _TABS: list[tuple[str, str, str]] = [
         + _SKILLS_NOTE,
     ),
     (
-        "gemini",
-        "Gemini CLI",
-        _header_server("gemini", "gemini mcp add --transport http sugra") + _npx_skills("gemini"),
+        "antigravity",
+        "Antigravity",
+        _step("Server")
+        + _terminal("cmd-antigravity", f"agy mcp add sugra-api {ENDPOINT}")
+        + '<p class="note">Antigravity opens the Sugra sign-in page in your browser '
+        "the first time the agent uses the server.</p>"
+        + _step("Skills (optional)")
+        + _terminal(
+            "cmd-antigravity-skills",
+            f"git clone https://github.com/{PLUGINS_REPO}\n"
+            "agy plugin install ./sugra-api-plugins/antigravity",
+        )
+        + _SKILLS_NOTE
+        + '<p class="note">The plugin declares the same server, but Antigravity CLI '
+        "1.4.9 does not start a server that a plugin declares yet, so add it with "
+        "the command above.</p>",
     ),
     (
         "cursor",
@@ -523,7 +536,7 @@ _LANDING_HTML = f"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sugra API MCP</title>
-<meta name="description" content="Connect Claude, ChatGPT, Claude Code, Codex, Grok, Gemini CLI, Cursor and VS Code to Sugra API over the Model Context Protocol.">
+<meta name="description" content="Connect Claude, ChatGPT, Claude Code, Codex, Grok, Antigravity, Cursor and VS Code to Sugra API over the Model Context Protocol.">
 <link rel="icon" href="{_SITE}/favicon.ico" sizes="32x32">
 <link rel="icon" type="image/svg+xml" href="{FAVICON_URI}">
 <link rel="apple-touch-icon" href="{_SITE}/apple-touch-icon.png">
