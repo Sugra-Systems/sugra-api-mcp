@@ -3,7 +3,8 @@
 The server passes the transport mode and the body limit to the SDK itself, so
 a new SDK release cannot move either unnoticed. The behaviour tests run the
 real app: a request is served without a session id and with a stale one, no
-session id is sent back, and GET and DELETE on the endpoint get 405.
+session id is sent back, and GET and DELETE on the endpoint get 405, after the
+401 challenge on the stack the entry point builds when they carry no credential.
 """
 
 from __future__ import annotations
@@ -15,10 +16,15 @@ import json
 from collections.abc import AsyncIterator
 
 import httpx
+import pytest
+from mcp.types import JSONRPCError
+from pydantic import ValidationError
 
 import sugra_api_mcp.tools  # noqa: F401  (registers the tools on server.mcp)
 from sugra_api_mcp import server
+from sugra_api_mcp.auth import Authenticator, AuthError, ResolvedAuth
 from sugra_api_mcp.web import PostOnlyMiddleware
+from tests.test_limits_http import _entry_point
 from tests.test_request_credentials import HEADERS, INITIALIZE
 
 _SETTINGS = {"stateless_http": True, "max_request_body_size": 4 * 1024 * 1024}
@@ -119,6 +125,51 @@ async def test_get_and_delete_on_the_endpoint_get_405_with_allow_post(monkeypatc
         assert answer.headers["content-type"] == "application/json"
         assert answer.json()["error"]["message"] == "Method Not Allowed"
         assert "mcp-session-id" not in answer.headers
+
+
+async def test_the_405_body_parses_as_the_sdks_own_transport_error() -> None:
+    # The id is the SDK's own for an error that read no request id; its
+    # JSONRPCError takes only a string or an integer id, so a null would not parse.
+    answer = await _ask_post_only("GET")
+    error = JSONRPCError.model_validate(answer.json())
+    assert error.id == "server-error"
+    with pytest.raises(ValidationError):
+        JSONRPCError.model_validate({**answer.json(), "id": None})
+
+
+async def _ask_post_only(method: str) -> httpx.Response:
+    async def unreachable(scope, receive, send) -> None:
+        raise AssertionError("PostOnlyMiddleware passed a GET or DELETE on")
+
+    app = PostOnlyMiddleware(unreachable, path=server.mcp.settings.streamable_http_path)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8002") as client:
+        return await client.request(method, "/mcp")
+
+
+@pytest.mark.parametrize("method", ["GET", "DELETE"])
+async def test_on_the_entry_points_stack_no_credential_gets_401_before_405(monkeypatch, method: str) -> None:
+    """The stack _run_server builds: PostOnlyMiddleware sits inside AuthMiddleware,
+    so a GET or DELETE on the endpoint with no credential gets the 401 challenge,
+    and only an authenticated one gets 405 with Allow: POST."""
+    async def resolve(self, token: str, deadline: float | None = None) -> ResolvedAuth:
+        if token.strip() != "jwt-good":
+            raise AuthError("Access token refused (token_revoked), sign in again")
+        return ResolvedAuth(api_key="sugra_TENANT_good", user_id=7, access_token_id="jwt-good", method="oauth")
+
+    monkeypatch.delenv("SUGRA_MCP_LIMITS", raising=False)
+    monkeypatch.setattr(Authenticator, "resolve", resolve)
+    app = _entry_point(monkeypatch)["app"]
+    headers = {**HEADERS, "accept": "text/event-stream", "mcp-session-id": "0" * 32}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="https://mcp.sugra.ai") as client:
+        anonymous = await client.request(method, "/mcp", headers=headers)
+        signed_in = await client.request(method, "/mcp", headers={**headers, "authorization": "Bearer jwt-good"})
+    assert anonymous.status_code == 401
+    assert anonymous.headers["www-authenticate"].startswith('Bearer resource_metadata="')
+    assert "allow" not in anonymous.headers
+    assert anonymous.json() == {"error": "missing_bearer_token"}
+    assert signed_in.status_code == 405
+    assert signed_in.headers["allow"] == "POST"
+    assert signed_in.json()["error"]["message"] == "Method Not Allowed"
 
 
 async def test_a_body_over_the_limit_gets_413_and_the_next_request_is_served(monkeypatch) -> None:
