@@ -879,6 +879,14 @@ def _score(
             score += US_MACRO_FED_BOOST
             why.append(_reason("pattern", "us-macro->fed"))
 
+    # In a listing question the ticker scores some fifty listing operations
+    # equally, and a strong field or the listing defaults pick between them. A
+    # description spells out every field a listing operation returns, so its
+    # words score nothing there: "last dividend", "five-year returns", "since
+    # the previous report" and "strong buy, buy" ranked the fund and holder
+    # operations above the price history, the several-listings prices and the
+    # price.
+    listing_operation = boost_quotes_symbol and endpoint.operation_id.startswith("quotes_symbol_")
     matched_query_terms: set[str] = set()
     strong_words: set[str] = set()
     keyword_words: set[str] = set()
@@ -915,7 +923,7 @@ def _score(
         # of it unless the question names it so as well: the credit-to-GDP
         # gap answers "credit to GDP gap for Japan", never "Japan GDP".
         ratio_base_only = term in profile.ratio_bases and term not in query_ratio_bases
-        if term in profile.description:
+        if term in profile.description and not listing_operation:
             score += 1
             why.append(_reason("description", term))
             if term not in country_terms and not ratio_base_only:
