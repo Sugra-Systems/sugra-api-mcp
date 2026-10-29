@@ -127,10 +127,19 @@ MAX_PUBLIC_MCP_CONTENT_LENGTH = 64 * 1024
 
 MAX_PUBLIC_MCP_BATCH_ITEMS = 16
 
+# The client-to-server notifications of the MCP spec pass without a token, by
+# exact name: a notification carries no id and gets nothing back but 202, so it
+# opens no data path. Antigravity CLI sends notifications/roots/list_changed
+# right after it connects and drops the server on a 401 before its own sign-in
+# starts. Observed 2026-10-28 (Antigravity CLI 1.4.9): "sending
+# notifications/roots/list_changed: Unauthorized".
 PUBLIC_MCP_METHODS = frozenset(
     {
         "initialize",
         "notifications/initialized",
+        "notifications/roots/list_changed",
+        "notifications/cancelled",
+        "notifications/progress",
         "tools/list",
         "resources/list",
         "prompts/list",

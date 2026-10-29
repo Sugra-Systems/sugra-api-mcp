@@ -649,6 +649,9 @@ def test_auth_middleware_allows_public_mcp_discovery_methods_without_bearer(
     [
         "initialize",
         "notifications/initialized",
+        "notifications/roots/list_changed",
+        "notifications/cancelled",
+        "notifications/progress",
         "tools/list",
         "resources/list",
         "prompts/list",
@@ -1113,3 +1116,195 @@ def test_auth_middleware_rejects_oversized_public_discovery_batch(auth_config):
     )
 
     assert response.status_code == 401
+
+
+# The client-to-server notifications of the MCP spec, as a client sends them: no
+# id, so nothing comes back but 202.
+_CLIENT_NOTIFICATIONS = [
+    {"jsonrpc": "2.0", "method": "notifications/roots/list_changed"},
+    {"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 7, "reason": "user stopped it"}},
+    {"jsonrpc": "2.0", "method": "notifications/progress", "params": {"progressToken": "p-1", "progress": 1, "total": 2}},
+]
+_INITIALIZED = {"jsonrpc": "2.0", "method": "notifications/initialized"}
+_TOOL_CALL = {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "tools/call",
+    "params": {"name": "list_toolsets", "arguments": {}},
+}
+_CHALLENGE = 'Bearer resource_metadata="https://app.sugra.ai/.well-known/oauth-protected-resource"'
+
+
+def _echo_app(authenticator: Authenticator, seen: list) -> Starlette:
+    async def echo(request):
+        seen.append(await request.json())
+        return JSONResponse({"ok": True})
+
+    app = Starlette(routes=[Route("/mcp", echo, methods=["POST"])])
+    app.add_middleware(AuthMiddleware, authenticator=authenticator)
+    return app
+
+
+@pytest.mark.parametrize("notification", _CLIENT_NOTIFICATIONS, ids=lambda n: n["method"])
+def test_auth_middleware_passes_client_notifications_without_bearer(auth_config, notification):
+    """Antigravity CLI sends roots/list_changed right after it connects and drops the
+    server on a 401, before its own sign-in starts."""
+    seen: list = []
+    app = _echo_app(Authenticator(auth_config), seen)
+
+    response = TestClient(app).post("/mcp", json=notification)
+
+    assert response.status_code == 200
+    assert seen == [notification]
+
+
+@pytest.mark.parametrize("notification", _CLIENT_NOTIFICATIONS, ids=lambda n: n["method"])
+def test_auth_middleware_passes_client_notifications_batched_with_initialized(auth_config, notification):
+    seen: list = []
+    app = _echo_app(Authenticator(auth_config), seen)
+
+    response = TestClient(app).post("/mcp", json=[_INITIALIZED, notification])
+
+    assert response.status_code == 200
+    assert seen == [[_INITIALIZED, notification]]
+
+
+@pytest.mark.parametrize("notification", _CLIENT_NOTIFICATIONS, ids=lambda n: n["method"])
+@pytest.mark.parametrize("first", [True, False], ids=["notification-first", "tool-call-first"])
+def test_auth_middleware_rejects_a_client_notification_batched_with_a_tool_call(auth_config, notification, first):
+    seen: list = []
+    app = _echo_app(Authenticator(auth_config), seen)
+    batch = [notification, _TOOL_CALL] if first else [_TOOL_CALL, notification]
+
+    response = TestClient(app).post("/mcp", json=batch)
+
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == _CHALLENGE
+    assert seen == []
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "notifications/roots/list_changed2",
+        "notifications/roots",
+        "notifications/roots/",
+        "notifications/roots/list_changed/",
+        "notifications/Roots/list_changed",
+        "notifications/roots/list_changed ",
+        "notifications/cancelled2",
+        "notifications/progress/x",
+        "notifications/",
+        "notifications/message",
+        "roots/list",
+    ],
+)
+@pytest.mark.parametrize("batched", [False, True], ids=["single", "batched-with-initialized"])
+def test_auth_middleware_rejects_near_miss_notification_names(auth_config, method, batched):
+    """Exact names only: a prefix of a public name, or a name that starts with one, is not public."""
+    seen: list = []
+    app = _echo_app(Authenticator(auth_config), seen)
+    item = {"jsonrpc": "2.0", "method": method}
+
+    response = TestClient(app).post("/mcp", json=[_INITIALIZED, item] if batched else item)
+
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == _CHALLENGE
+    assert seen == []
+
+
+@pytest.mark.parametrize("notification", _CLIENT_NOTIFICATIONS, ids=lambda n: n["method"])
+def test_auth_middleware_resolves_a_token_sent_with_a_client_notification(auth_config, notification):
+    """A token sent with a public notification is still resolved and still carried."""
+    from sugra_api_mcp.server import REQUEST_API_KEY_STATE
+
+    seen: dict = {}
+
+    async def ok(request):
+        seen["body"] = await request.json()
+        seen["key"] = request.scope["state"][REQUEST_API_KEY_STATE]
+        return JSONResponse({"ok": True})
+
+    auth = Authenticator(auth_config)
+    auth.resolve = AsyncMock(return_value=ResolvedAuth(api_key="sugra_k", user_id=1, method="oauth", platform=None))
+    app = Starlette(routes=[Route("/mcp", ok, methods=["POST"])])
+    app.add_middleware(AuthMiddleware, authenticator=auth)
+
+    response = TestClient(app).post("/mcp", json=notification, headers={"authorization": "Bearer signed-in-token"})
+
+    assert response.status_code == 200
+    assert seen == {"body": notification, "key": "sugra_k"}
+    auth.resolve.assert_awaited_once_with("signed-in-token", deadline=ANY)
+
+
+@pytest.mark.parametrize("notification", _CLIENT_NOTIFICATIONS, ids=lambda n: n["method"])
+def test_auth_middleware_refuses_a_failed_token_sent_with_a_client_notification(auth_config, notification):
+    """A presented token that fails gets invalid_token, even on a notification that is public without one."""
+    seen: list = []
+    auth = Authenticator(auth_config)
+    auth.resolve = AsyncMock(side_effect=AuthError("token_revoked"))
+    app = _echo_app(auth, seen)
+
+    response = TestClient(app).post("/mcp", json=notification, headers={"authorization": "Bearer revoked-token"})
+
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == _CHALLENGE + ', error="invalid_token"'
+    assert seen == []
+
+
+@pytest.mark.parametrize("notification", _CLIENT_NOTIFICATIONS, ids=lambda n: n["method"])
+async def test_an_anonymous_client_notification_gets_202_from_the_real_app(monkeypatch, caplog, notification):
+    """Through AuthMiddleware and the stateless SDK transport: 202 with no body, no
+    request sent back to the client (no roots/list), and nothing logged as a failure."""
+    import logging
+
+    from mcp.server.session import ServerSession
+
+    import sugra_api_mcp.tools  # noqa: F401  (registers the tools on server.mcp)
+    from sugra_api_mcp import server
+
+    received: list[str] = []
+    requested: list = []
+    real_received = ServerSession._received_notification
+
+    async def record_received(self, message):
+        received.append(type(message.root).__name__)
+        await real_received(self, message)
+
+    async def record_request(self, *args, **kwargs):
+        requested.append(args)
+        raise AssertionError("the server sent a request to the client")
+
+    monkeypatch.setattr(ServerSession, "_received_notification", record_received)
+    monkeypatch.setattr(ServerSession, "send_request", record_request)
+    monkeypatch.setattr(server.mcp, "_session_manager", None)
+    app = server.mcp.streamable_http_app()
+    authenticator = Authenticator(
+        AuthConfig(app_url="http://127.0.0.1:9", jwks_url="http://127.0.0.1:9/jwks", internal_token="x")
+    )
+    app.add_middleware(AuthMiddleware, authenticator=authenticator)
+    caplog.set_level(logging.WARNING)
+    try:
+        async with server.mcp.session_manager.run():
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:8002") as client:
+                response = await client.post(
+                    "/mcp",
+                    json=notification,
+                    headers={"accept": "application/json, text/event-stream", "content-type": "application/json"},
+                )
+    finally:
+        await authenticator.aclose()
+
+    assert response.status_code == 202
+    assert response.content == b""
+    assert requested == []
+    assert [record.getMessage() for record in caplog.records if record.levelno >= logging.WARNING] == []
+    # cancelled is handled by the session's own cancellation branch (nothing in
+    # flight to cancel); the other two reach the server session.
+    expected = {
+        "notifications/roots/list_changed": ["RootsListChangedNotification"],
+        "notifications/progress": ["ProgressNotification"],
+        "notifications/cancelled": [],
+    }
+    assert received == expected[notification["method"]]
