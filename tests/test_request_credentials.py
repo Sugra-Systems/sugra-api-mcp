@@ -333,7 +333,8 @@ async def test_every_tool_span_names_how_its_own_request_arrived(upstream, monke
     calls = [span for span in tracer.spans if span.name == "mcp.tool.call_endpoint"]
     common = {
         "mcp.caller.transport": "streamable_http",
-        # Stateless: a call belongs to no initialize, so no clientInfo names its client.
+        # Stateless: a call belongs to no initialize, so no clientInfo names its client,
+        # and neither User-Agent here is on the list that would.
         "mcp.caller.session": _session_attr(session_id),
         "mcp.caller.net": "loopback",
     }
@@ -368,12 +369,12 @@ class _Gate:
         await self.app(scope, receive, send)
 
 
-@pytest.mark.parametrize("one_session", [False, True], ids=["two-sessions", "one-session"])
-async def test_concurrent_calls_each_carry_their_own_request(monkeypatch, one_session: bool) -> None:
-    """Two calls at once, on two sessions or on one, with every auth
+async def test_concurrent_calls_each_carry_their_own_request(monkeypatch) -> None:
+    """Two calls at once, under one held session id, with every auth
     write landing before either dispatch and both upstream calls overlapping, still give
     each span the caller facts of its own request, so no last-writer state, process-wide
-    or per session, can stand in."""
+    or per session id, can stand in. One case only: the transport is stateless, so two
+    held ids would run exactly the path one does."""
     monkeypatch.setenv("SUGRA_MCP_ALLOWED_HOSTS", "app.sugra.ai,mcp.sugra.ai")
     monkeypatch.setattr(server.mcp.settings, "transport_security", server._build_transport_security())
     monkeypatch.setattr(server.mcp, "_session_manager", None)
@@ -445,14 +446,10 @@ async def test_concurrent_calls_each_carry_their_own_request(monkeypatch, one_se
         async with server.mcp.session_manager.run():
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:8002") as client:
-                session_a = await open_session(client, "app.sugra.ai", "claude-ai", "1.0.0")
-                if one_session:
-                    session_b = session_a
-                else:
-                    session_b = await open_session(client, "mcp.sugra.ai", "openai-mcp", "2.0.0")
+                session_id = await open_session(client, "app.sugra.ai", "claude-ai", "1.0.0")
                 gates.update({b"a": asyncio.Event(), b"b": asyncio.Event()})
-                # Distinct JSON-RPC ids: two in-flight requests on one session must not share one.
-                await asyncio.gather(call(client, session_a, by_key, 2), call(client, session_b, by_oauth, 3))
+                # Distinct JSON-RPC ids: two in-flight requests under one session id must not share one.
+                await asyncio.gather(call(client, session_id, by_key, 2), call(client, session_id, by_oauth, 3))
                 gates.clear()
     finally:
         await server.close_clients()
@@ -465,14 +462,14 @@ async def test_concurrent_calls_each_carry_their_own_request(monkeypatch, one_se
     )
     common = {"mcp.caller.transport": "streamable_http"}
     # Stateless: a call belongs to no initialize, so no clientInfo names its client,
-    # on one held session id or two.
+    # and neither User-Agent here is on the list that would.
     assert spans == [
         {**common, "mcp.caller.auth": "api_key", "mcp.caller.host": "mcp.sugra.ai", "mcp.caller.ua_class": "python",
          "mcp.caller.origin": "openai",
-         "mcp.caller.session": _session_attr(session_a), "mcp.caller.net": "loopback"},
+         "mcp.caller.session": _session_attr(session_id), "mcp.caller.net": "loopback"},
         {**common, "mcp.caller.auth": "oauth", "mcp.caller.host": "app.sugra.ai", "mcp.caller.ua_class": "curl",
          "mcp.caller.origin": "none",
-         "mcp.caller.session": _session_attr(session_b), "mcp.caller.net": "loopback",
+         "mcp.caller.session": _session_attr(session_id), "mcp.caller.net": "loopback",
          "mcp.caller.platform": "anthropic"},
     ]
     by_auth = sorted(

@@ -737,7 +737,11 @@ class PostOnlyMiddleware:
     a GET to open and no session for a DELETE to end, so both are refused here
     in place of the SDK's answers (an event stream on GET; a bare 405 on
     DELETE). Added inside AuthMiddleware, so a request without a credential
-    still gets the 401 challenge first."""
+    still gets the 401 challenge first.
+
+    The body's id is the string "server-error", as the SDK writes it for its
+    own transport errors that read no request id: its JSONRPCError type takes
+    only a string or an integer id, so a null would not parse as one."""
 
     def __init__(self, app: ASGIApp, path: str) -> None:
         self.app = app

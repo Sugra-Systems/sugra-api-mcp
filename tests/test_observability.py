@@ -1855,8 +1855,9 @@ _CALLER_SPAN_ATTRS = _CALLER_ATTRS | _IDENTITY_ATTRS
 _CLASS_VOCABULARY = frozenset({
     "chatgpt", "claude", "grok", "cursor", "openbb", "python", "curl", "node", "browser", "mcp", "playground", "other",
 })
-# The clientInfo name adds gemini, which no User-Agent class names.
-_CLIENT_VOCABULARY = _CLASS_VOCABULARY | {"gemini"}
+# The clientInfo name adds gemini, which no User-Agent class names, and the
+# leading User-Agent token of an HTTP call no initialize names adds codex.
+_CLIENT_VOCABULARY = _CLASS_VOCABULARY | {"gemini", "codex"}
 
 _CALLER_VALUES: dict[str, frozenset[str]] = {
     "mcp.caller.transport": frozenset({"streamable_http", "local"}),
@@ -2165,8 +2166,9 @@ def test_the_caller_vocabularies_are_exact() -> None:
 
     assert frozenset(label for label, _ in observability._UA_PATTERNS) | {"other"} == _CLASS_VOCABULARY
     assert frozenset(label for label, _ in observability._CLIENT_NAME_PATTERNS) | {"other"} == _CLIENT_VOCABULARY - {
-        "python", "curl", "node", "browser",
+        "python", "curl", "node", "browser", "codex",
     }
+    assert frozenset(observability._UA_CLIENT_TOKENS.values()) <= _CLIENT_VOCABULARY - {"other"}
     assert frozenset(observability._ORIGIN_CLASSES) == frozenset(DEFAULT_ALLOWED_ORIGINS)
     assert observability._ORIGIN_CLASSES == {
         "https://chatgpt.com": "openai",
@@ -2213,6 +2215,96 @@ def test_the_client_tables_are_pinned_alternative_by_alternative() -> None:
         ("cursor", r"cursor", True),
         ("openbb", r"openbb", True),
     ]
+    assert observability._UA_CLIENT_TOKENS == {
+        "openai-mcp": "chatgpt",
+        "codex-mcp-client": "codex",
+        "claude-user": "claude",
+        "claude-code": "claude",
+        "grok-connectors-manager": "grok",
+        "grok-cli": "grok",
+    }
+
+
+@pytest.mark.parametrize(
+    ("ua", "expected"),
+    [
+        # The User-Agents the initialize record shows for each listed client.
+        ("openai-mcp/1.0.0", ("chatgpt", "1.0.0")),
+        ("openai-mcp/1.0.0 (Codex)", ("chatgpt", "1.0.0")),
+        ("codex-mcp-client/0.50.0", ("codex", "0.50.0")),
+        ("Claude-User", ("claude", None)),
+        ("claude-code/2.1.3 (sdk-cli)", ("claude", "2.1.3")),
+        ("grok-connectors-manager/0.1.0", ("grok", "0.1.0")),
+        ("grok-cli/1.0.62", ("grok", "1.0.62")),
+        # Case and surrounding space do not matter; the token is still matched whole.
+        ("CODEX-MCP-CLIENT/0.50.0", ("codex", "0.50.0")),
+        ("  codex-mcp-client/0.50.0  ", ("codex", "0.50.0")),
+        # A version that is not plain is dropped, the client kept.
+        ("codex-mcp-client/0.50.0-alpha.1", ("codex", None)),
+        ("codex-mcp-client/sugra_SECRET", ("codex", None)),
+        ("codex-mcp-client/", ("codex", None)),
+        # Near misses, a token later in the header, and clients not listed name none.
+        ("codex-mcp-client-2/0.50.0", (None, None)),
+        ("my-codex-mcp-client/0.50.0", (None, None)),
+        ("codex/0.50.0", (None, None)),
+        ("Mozilla/5.0 (compatible; codex-mcp-client/0.50.0)", (None, None)),
+        ("ChatGPT-User/1.0", (None, None)),
+        ("gro" + chr(0x212A) + "-cli/1.0.62", (None, None)),  # a Kelvin sign lower-cases to k: ASCII only
+        ("node", (None, None)),
+        ("python-httpx/0.27.0", (None, None)),
+        ("", (None, None)),
+        ("   ", (None, None)),
+        (None, (None, None)),
+        (b"codex-mcp-client/0.50.0", (None, None)),
+        (_StrLookalike("codex-mcp-client/0.50.0"), (None, None)),
+    ],
+)
+def test_a_listed_user_agent_token_names_the_client(ua: object, expected: tuple[str | None, str | None]) -> None:
+    assert observability._user_agent_client(ua) == expected
+
+
+def test_the_user_agent_token_is_read_only_up_to_the_bound() -> None:
+    bound = observability._CALLER_TEXT_MAX
+    header = "codex-mcp-client/0.50.0"
+    assert observability._user_agent_client(" " * (bound - len(header)) + header) == ("codex", "0.50.0")
+    assert observability._user_agent_client(" " * (bound - len(header)) + header + " (x)") == ("codex", "0.50.0")
+    # A token the bound cuts is not read: not as the name, not as the version.
+    assert observability._user_agent_client(" " * (bound - len(header) + 1) + header) == (None, None)
+    assert observability._user_agent_client(" " * bound + header) == (None, None)
+    unlisted = "codex-mcp-client-2/0.50.0"
+    assert observability._user_agent_client(" " * (bound - len("codex-mcp-client")) + unlisted) == (None, None)
+    bad_version = "codex-mcp-client/0.50.0x"
+    assert observability._user_agent_client(" " * (bound - len(bad_version) + 1) + bad_version) == (None, None)
+    assert observability._user_agent_client(" " * (bound - len(bad_version)) + bad_version) == ("codex", None)
+
+
+def test_an_http_call_no_initialize_names_takes_its_client_from_the_user_agent() -> None:
+    by_user_agent = observability._caller_attrs(
+        _http_facts(client_name=None, client_version=None, user_agent="codex-mcp-client/0.50.0")
+    )
+    assert by_user_agent["mcp.caller.client"] == "codex"
+    assert by_user_agent["mcp.caller.client_version"] == "0.50.0"
+    # The User-Agent class stays the API usage mix's, which names no Codex.
+    assert by_user_agent["mcp.caller.ua_class"] == "other"
+    # An unlisted User-Agent names no client and no version, whatever else the facts hold.
+    unlisted = observability._caller_attrs(
+        _http_facts(client_name=None, client_version="9.9.9", user_agent="node")
+    )
+    assert "mcp.caller.client" not in unlisted
+    assert "mcp.caller.client_version" not in unlisted
+
+
+def test_an_initialize_name_wins_over_the_user_agent() -> None:
+    attrs = observability._caller_attrs(_http_facts(user_agent="codex-mcp-client/0.50.0"))
+    assert attrs["mcp.caller.client"] == "claude"
+    assert attrs["mcp.caller.client_version"] == "1.2.3"
+
+
+def test_a_local_call_never_reads_a_user_agent_for_its_client() -> None:
+    attrs = observability._caller_attrs(
+        observability.CallerFacts(transport="local", auth="local", user_agent="codex-mcp-client/0.50.0")
+    )
+    assert attrs == {"mcp.caller.transport": "local", "mcp.caller.auth": "local"}
 
 
 def test_a_request_without_a_host_carries_no_host_class() -> None:

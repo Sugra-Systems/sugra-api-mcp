@@ -42,7 +42,12 @@ Custom dimensions captured per MCP tool invocation:
                            and origin (HTTP only), client and client_version
                            (the clientInfo name as a class, and its version, as
                            the session's most recent initialize asserted them:
-                           any re-initialize of the session replaces both).
+                           any re-initialize of the session replaces both; an
+                           HTTP call no initialize names, as every call on the
+                           stateless transport is, takes both from the leading
+                           User-Agent product token when it is on a fixed list,
+                           the version only when the token carries a plain
+                           dotted one, else carries neither).
                            Also session (16 hex of the
                            SHA-256 of Mcp-Session-Id, never the id) and net
                            (IPv4 /24, IPv6 /48, loopback or private; only when
@@ -552,6 +557,30 @@ _CLIENT_NAME_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("openbb", re.compile(r"openbb", re.I)),
 )
 
+# The client of an HTTP call that no initialize names, from the leading product
+# token of its User-Agent. On the stateless transport a tools/call request
+# belongs to no session and so to no clientInfo, and without this its span
+# would name no client at all. The token (the text before the first space, up
+# to its "/") is matched whole, ASCII only and case-insensitively, against
+# this fixed list, and only tokens these clients were seen sending in the
+# initialize record of 2026-10-12 to 2026-10-14 are listed: ChatGPT and the
+# Codex app openai-mcp/1.0.0, Codex CLI codex-mcp-client/<version>, Claude
+# Claude-User, Claude Code claude-code/<version>, the Grok web connector
+# grok-connectors-manager/<version> and Grok Build grok-cli/<version>. ChatGPT
+# and the Codex app send the same token, so the class chatgpt covers both. The
+# version comes only from that token, as a plain dotted version, and a token
+# that runs past the bound is not read. A client not
+# listed, or a token that only resembles one, names no client: VS Code, for
+# one, until its User-Agent has been seen.
+_UA_CLIENT_TOKENS: dict[str, str] = {
+    "openai-mcp": "chatgpt",
+    "codex-mcp-client": "codex",
+    "claude-user": "claude",
+    "claude-code": "claude",
+    "grok-connectors-manager": "grok",
+    "grok-cli": "grok",
+}
+
 # The connector origins config.DEFAULT_ALLOWED_ORIGINS admits, by vendor.
 _ORIGIN_CLASSES: dict[str, str] = {
     "https://chatgpt.com": "openai",
@@ -580,6 +609,25 @@ def _text_class(value: object, patterns: tuple[tuple[str, re.Pattern[str]], ...]
         if pattern.search(text):
             return label
     return "other"
+
+
+def _user_agent_client(value: object) -> tuple[str | None, str | None]:
+    """The client class and version a listed leading User-Agent token names, else (None, None)."""
+    if type(value) is not str:
+        return None, None
+    # One character past the bound shows whether the token ends within it: a
+    # token the bound cuts is not read, so no prefix of it can pass as a name
+    # or a version.
+    text = value[: _CALLER_TEXT_MAX + 1]
+    head = text.split(None, 1)
+    token = head[0] if head else ""
+    if len(text) - len(text.lstrip()) + len(token) > _CALLER_TEXT_MAX:
+        return None, None
+    name, _, version = token.partition("/")
+    client = _UA_CLIENT_TOKENS.get(name.lower()) if name.isascii() else None
+    if client is None:
+        return None, None
+    return client, _version_of(version)
 
 
 def _host_class(value: object) -> str | None:
@@ -714,9 +762,16 @@ def _caller_attrs(facts: object) -> dict[str, str]:
         net = _network_of(getattr(facts, "client_addr", None), getattr(facts, "x_real_ip", None))
         if net is not None:
             attrs["mcp.caller.net"] = net
-    if getattr(facts, "client_name", None) is not None:
-        attrs["mcp.caller.client"] = _text_class(getattr(facts, "client_name", None), _CLIENT_NAME_PATTERNS)
-    version = _version_of(getattr(facts, "client_version", None))
+    client_name = getattr(facts, "client_name", None)
+    if client_name is None and attrs.get("mcp.caller.transport") == "streamable_http":
+        # No initialize names this call: the User-Agent's listed token may.
+        client, version = _user_agent_client(getattr(facts, "user_agent", None))
+        if client is not None:
+            attrs["mcp.caller.client"] = client
+    else:
+        if client_name is not None:
+            attrs["mcp.caller.client"] = _text_class(client_name, _CLIENT_NAME_PATTERNS)
+        version = _version_of(getattr(facts, "client_version", None))
     if version is not None:
         attrs["mcp.caller.client_version"] = version
     pseudo = _pseudo_id_of(getattr(facts, "caller", None))

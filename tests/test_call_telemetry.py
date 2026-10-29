@@ -16,7 +16,7 @@ import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import httpx
 import pytest
@@ -46,7 +46,14 @@ _SENT_KEY = {"oauth": "sugra_TENANT_telemetry", "api_key": "sugra_dummy"}
 _OPERATION = _operation_without_params()
 
 Answer = Callable[[httpx.Request], httpx.Response]
-Call = Callable[[str, str, dict[str, Any]], Awaitable[None]]
+
+
+class Call(Protocol):
+    """call(entry, tool, arguments, headers=None): headers are added to the request."""
+
+    def __call__(
+        self, entry: str, tool: str, arguments: dict[str, Any], headers: dict[str, str] | None = None
+    ) -> Awaitable[None]: ...
 
 
 def _status(code: int) -> Answer:
@@ -184,7 +191,9 @@ async def _served(monkeypatch, recorded: _Recorded) -> AsyncIterator[Call]:
                     headers={**HEADERS, **session},
                 )
 
-                async def call(entry: str, tool: str, arguments: dict[str, Any]) -> None:
+                async def call(
+                    entry: str, tool: str, arguments: dict[str, Any], headers: dict[str, str] | None = None
+                ) -> None:
                     response = await client.post(
                         "/mcp",
                         json={
@@ -198,6 +207,7 @@ async def _served(monkeypatch, recorded: _Recorded) -> AsyncIterator[Call]:
                             **session,
                             "authorization": f"Bearer {_BEARER[entry]}",
                             "x-request-id": _REQUEST_ID,
+                            **(headers or {}),
                         },
                     )
                     assert response.status_code == 200
@@ -315,6 +325,35 @@ async def test_a_key_the_api_refused_is_sent_again_on_the_next_call(monkeypatch)
         _assert_line(line, "TA", 1)
     spans = recorded.tool_spans()
     assert [span.attributes["mcp.error.code"] for span in spans] == ["upstream_http_401"] * 2
+
+
+@pytest.mark.parametrize(
+    ("user_agent", "client", "version"),
+    [
+        ("codex-mcp-client/0.50.0", "codex", "0.50.0"),
+        ("openai-mcp/1.0.0", "chatgpt", "1.0.0"),
+        ("Claude-User", "claude", None),
+        # Not on the list: no client, and never the header text.
+        ("node", None, None),
+        ("acme-agent/1.0 (QZXKWV-build)", None, None),
+    ],
+)
+@pytest.mark.parametrize("entry", ["oauth", "api_key"])
+async def test_a_call_names_its_client_by_its_user_agent(
+    monkeypatch, entry: str, user_agent: str, client: str | None, version: str | None
+) -> None:
+    """A tools/call on the stateless transport belongs to no initialize, so the
+    initialize the test sent first names nothing: the span's client is the one
+    a listed leading User-Agent token names, or none."""
+    recorded = _Recorded(_status(200))
+    async with _served(monkeypatch, recorded) as call:
+        await call(entry, "call_endpoint", _ENDPOINT, {"user-agent": user_agent})
+
+    [span] = recorded.tool_spans()
+    _assert_placed(span, entry, 1)
+    assert span.attributes.get("mcp.caller.client") == client
+    assert span.attributes.get("mcp.caller.client_version") == version
+    assert "QZXKWV" not in repr(span.attributes)
 
 
 def _traced(tool: Any) -> bool:

@@ -124,13 +124,14 @@ def _run_server(args: argparse.Namespace) -> None:
         app.router.routes.append(Route("/", landing, methods=["GET"]))
         app.router.routes.append(Route("/health", health, methods=["GET"]))
         app.router.routes.extend(skills_routes())
-        # Innermost: a GET or DELETE on the MCP endpoint gets 405 once it has
-        # passed auth (web.PostOnlyMiddleware).
-        app.add_middleware(PostOnlyMiddleware, path=mcp.settings.streamable_http_path)
         # Order matters: Starlette applies middleware in REVERSE registration
-        # order, so AuthMiddleware added first ends up as the inner layer and
-        # CORSMiddleware added second wraps it as the outer layer. OPTIONS
-        # preflight is then handled by CORS before reaching auth.
+        # order, so the layer added first is the innermost. PostOnlyMiddleware,
+        # added first, sits inside AuthMiddleware, the optional
+        # AdmissionMiddleware, CORSMiddleware and GateMiddleware: a GET or
+        # DELETE on the MCP endpoint gets 405 only once it has passed auth, and
+        # one without a credential gets the 401 challenge first. CORS, outside
+        # auth, still answers the OPTIONS preflight before auth sees it.
+        app.add_middleware(PostOnlyMiddleware, path=mcp.settings.streamable_http_path)
         app.add_middleware(AuthMiddleware, authenticator=auth)
         if request_limits is not None:
             # Between auth and CORS: it runs before the credential is checked,
