@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-10-29T06:10:37Z",
+  "built_at": "2026-10-31T12:44:10Z",
   "endpoint_count": 1625,
   "endpoints": [
     {
@@ -31066,7 +31066,7 @@
       "toolset": "fundamentals"
     },
     {
-      "description": "Fetch one financial metric by FRIENDLY name (capex, revenue, free_cash_flow, operating_cash_flow, total_assets, ...) across up to 25 tickers in a single call - no XBRL concept name needed. The name maps onto the same fallback chains the per-ticker statement endpoints use, including the IFRS taxonomy + 20-F / 40-F annual-form auto-detection for foreign private issuers (a mixed batch resolves each ticker on its own taxonomy + form); each value carries provenance (accession_number + filing_url). free_cash_flow is computed (operating cash flow minus capex, marked computed=true with both component accessions). Periods align as latest-per-ticker by each company's own fiscal calendar, NOT calendar-aligned across tickers. Unknown name returns 422 with the full catalog of valid names. Tickers without SEC XBRL facts degrade per-ticker (status not_found / concept_absent) - only an all-ticker miss is a 404. Fetches run concurrently under a wall-clock budget; any ticker not resolved in time comes back with status timeout and is listed in timed_out (a partial 200, never a gateway timeout). Source: SEC EDGAR XBRL.",
+      "description": "Fetch one financial metric by FRIENDLY name (capex, revenue, free_cash_flow, operating_cash_flow, total_assets, ...) across up to 25 tickers in a single call - no XBRL concept name needed. The name maps onto the same fallback chains the per-ticker statement endpoints use, including the IFRS taxonomy + 20-F / 40-F annual-form auto-detection for foreign private issuers (a mixed batch resolves each ticker on its own taxonomy + form); each value carries provenance (accession_number + filing_url). free_cash_flow is computed (operating cash flow minus capex, marked computed=true with both component accessions). Periods align as latest-per-ticker by each company's own fiscal calendar, NOT calendar-aligned across tickers. Unknown name returns 422 with the full catalog of valid names. Tickers without SEC XBRL facts degrade per-ticker (status not_found / concept_absent) - only an all-ticker miss is a 404. A ticker whose SEC fetch failed or timed out comes back with status error, never not_found, and the answer is not cached. Fetches run concurrently under a wall-clock budget; any ticker not resolved in time comes back with status timeout and is listed in timed_out (a partial 200, never a gateway timeout). Source: SEC EDGAR XBRL.",
       "method": "GET",
       "operation_id": "fundamentals_line_item_name",
       "parameters": [
@@ -31696,7 +31696,7 @@
       "toolset": "fundamentals"
     },
     {
-      "description": "List of SEC filings with direct document links. Filter by form type (10-K, 10-Q, 8-K, etc.) and date range.",
+      "description": "List of SEC filings with direct document links, newest first. Filter by form type (10-K, 10-Q, 8-K, etc.) and date range. Filings older than SEC's recent block are read from SEC's filing history pages when the date range or the limit reaches them, up to 3 pages per request; `complete` is false when that bound left part of the range unread, so older matching filings may be missing.",
       "method": "GET",
       "operation_id": "fundamentals_ticker_filings",
       "parameters": [
@@ -91710,13 +91710,13 @@
       "operation_id": "quotes_symbol_actions",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -91776,13 +91776,13 @@
       "operation_id": "quotes_symbol_analyst",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -91809,13 +91809,13 @@
       "operation_id": "quotes_symbol_analyst_targets",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -91842,13 +91842,13 @@
       "operation_id": "quotes_symbol_calendar",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -91875,13 +91875,13 @@
       "operation_id": "quotes_symbol_cross_listings",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "BP.L",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -91908,13 +91908,13 @@
       "operation_id": "quotes_symbol_dividend",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -91941,13 +91941,13 @@
       "operation_id": "quotes_symbol_earliest_timestamp",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -91987,13 +91987,13 @@
       "operation_id": "quotes_symbol_earnings_events",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92020,13 +92020,13 @@
       "operation_id": "quotes_symbol_earnings_history",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92068,13 +92068,13 @@
       "operation_id": "quotes_symbol_executives",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92101,13 +92101,13 @@
       "operation_id": "quotes_symbol_forward_estimates",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92134,13 +92134,13 @@
       "operation_id": "quotes_symbol_fund_composition",
       "parameters": [
         {
-          "description": "Fund ticker (ETF or mutual fund).",
+          "description": "Fund ticker (ETF or mutual fund). A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "VOO",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Fund ticker (ETF or mutual fund).",
+            "description": "Fund ticker (ETF or mutual fund). A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92167,13 +92167,13 @@
       "operation_id": "quotes_symbol_fund_performance",
       "parameters": [
         {
-          "description": "Fund ticker (ETF or mutual fund).",
+          "description": "Fund ticker (ETF or mutual fund). A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "VOO",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Fund ticker (ETF or mutual fund).",
+            "description": "Fund ticker (ETF or mutual fund). A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92200,13 +92200,13 @@
       "operation_id": "quotes_symbol_fund_profile",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "SPY",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92233,13 +92233,13 @@
       "operation_id": "quotes_symbol_fund_purchase_info",
       "parameters": [
         {
-          "description": "Fund ticker (ETF or mutual fund).",
+          "description": "Fund ticker (ETF or mutual fund). A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "VOO",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Fund ticker (ETF or mutual fund).",
+            "description": "Fund ticker (ETF or mutual fund). A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92266,13 +92266,13 @@
       "operation_id": "quotes_symbol_fund_risk",
       "parameters": [
         {
-          "description": "Fund ticker (ETF or mutual fund).",
+          "description": "Fund ticker (ETF or mutual fund). A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "VOO",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Fund ticker (ETF or mutual fund).",
+            "description": "Fund ticker (ETF or mutual fund). A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92299,13 +92299,13 @@
       "operation_id": "quotes_symbol_fund_summary",
       "parameters": [
         {
-          "description": "Fund ticker (ETF or mutual fund).",
+          "description": "Fund ticker (ETF or mutual fund). A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "VOO",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Fund ticker (ETF or mutual fund).",
+            "description": "Fund ticker (ETF or mutual fund). A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92332,13 +92332,13 @@
       "operation_id": "quotes_symbol_historical",
       "parameters": [
         {
-          "description": "Stock, ETF or index ticker symbol, for example BRK-B, ^GSPC or OR.PA. Not for currency pairs or futures.",
+          "description": "Stock, ETF or index ticker symbol, for example BRK-B, ^GSPC or OR.PA. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA). Not for currency pairs or futures.",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Stock, ETF or index ticker symbol, for example BRK-B, ^GSPC or OR.PA. Not for currency pairs or futures.",
+            "description": "Stock, ETF or index ticker symbol, for example BRK-B, ^GSPC or OR.PA. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA). Not for currency pairs or futures.",
             "pattern": "^\\^?[A-Za-z0-9]{1,10}(?:[.-][A-Za-z0-9]{1,4})?$",
             "title": "Symbol",
             "type": "string"
@@ -92534,13 +92534,13 @@
       "operation_id": "quotes_symbol_holders_funds",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92567,13 +92567,13 @@
       "operation_id": "quotes_symbol_holders_insiders",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92614,13 +92614,13 @@
       "operation_id": "quotes_symbol_holders_institutional",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92647,13 +92647,13 @@
       "operation_id": "quotes_symbol_holders_summary",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92680,13 +92680,13 @@
       "operation_id": "quotes_symbol_info",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92732,13 +92732,13 @@
       "operation_id": "quotes_symbol_insider_roster",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92765,13 +92765,13 @@
       "operation_id": "quotes_symbol_insider_transactions",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92798,13 +92798,13 @@
       "operation_id": "quotes_symbol_insights",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92831,13 +92831,13 @@
       "operation_id": "quotes_symbol_institutional_holders",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92864,13 +92864,13 @@
       "operation_id": "quotes_symbol_logo",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92897,13 +92897,13 @@
       "operation_id": "quotes_symbol_logo_png",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92951,13 +92951,13 @@
       "operation_id": "quotes_symbol_major_holders",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92984,13 +92984,13 @@
       "operation_id": "quotes_symbol_market_cap",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93067,13 +93067,13 @@
       "operation_id": "quotes_symbol_mutualfund_holders",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93100,13 +93100,13 @@
       "operation_id": "quotes_symbol_news",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93167,13 +93167,13 @@
       "operation_id": "quotes_symbol_options",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93200,13 +93200,13 @@
       "operation_id": "quotes_symbol_options_date",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93297,13 +93297,13 @@
       "operation_id": "quotes_symbol_press_releases",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93372,13 +93372,13 @@
       "operation_id": "quotes_symbol_price",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93405,13 +93405,13 @@
       "operation_id": "quotes_symbol_price_insights",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93438,13 +93438,13 @@
       "operation_id": "quotes_symbol_ratings",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93471,13 +93471,13 @@
       "operation_id": "quotes_symbol_recent_performance",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93504,13 +93504,13 @@
       "operation_id": "quotes_symbol_recommendations",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93537,13 +93537,13 @@
       "operation_id": "quotes_symbol_sec_filings",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93584,13 +93584,13 @@
       "operation_id": "quotes_symbol_splits",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "NVDA",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93637,13 +93637,13 @@
       "operation_id": "quotes_symbol_statistics",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93670,13 +93670,13 @@
       "operation_id": "quotes_symbol_technical_analysis",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93703,13 +93703,13 @@
       "operation_id": "quotes_symbol_timeseries",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93800,13 +93800,13 @@
       "operation_id": "quotes_symbol_transcript_event_id",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93846,13 +93846,13 @@
       "operation_id": "quotes_symbol_upgrades_downgrades",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93879,13 +93879,13 @@
       "operation_id": "quotes_symbol_periodicity_balance_sheet",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93929,13 +93929,13 @@
       "operation_id": "quotes_symbol_periodicity_cash_flow",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93980,13 +93980,13 @@
       "operation_id": "quotes_symbol_periodicity_income_statement",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -96598,5 +96598,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "da4c690a924ce31e396f357a546b0a4497ccfcd3e57b81240630295be789043b"
+  "spec_sha256": "bf304194b46644df4b271c2de728a65b90728db06959416af80df3cf46dc036c"
 }
