@@ -100,6 +100,9 @@ _QUERY_STOPWORDS: frozenset[str] = frozenset({
     "does", "did", "has", "have", "had",
     "will", "would", "shall", "should", "can", "could", "might", "must",
     "from", "with", "for", "about", "into", "over", "under", "against",
+    # A time window says when, never what: FRED's as_of text ("rebased since
+    # then") made "inflation history since 1970" a national question.
+    "since",
 })
 
 # Two-letter function words go only when the raw query writes them in

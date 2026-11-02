@@ -1,6 +1,6 @@
 {
-  "built_at": "2026-10-29T06:10:37Z",
-  "endpoint_count": 1625,
+  "built_at": "2026-11-02T20:40:29Z",
+  "endpoint_count": 1638,
   "endpoints": [
     {
       "description": "Pre-configured key Australian datasets: CPI, GDP, Labour, Trade, Retail, Wages, Population.",
@@ -14677,6 +14677,333 @@
       "toolset": "crypto"
     },
     {
+      "description": "List the assets the `/crypto/derivatives/*` endpoints cover: the most traded\nperpetual futures (BTC, ETH, SOL, XRP, DOGE). Each accepts its symbol or its coin\nslug as the path value. No upstream call.",
+      "method": "GET",
+      "operation_id": "crypto_derivatives_assets",
+      "parameters": [],
+      "path": "/api/v1/crypto/derivatives/assets",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "crypto",
+      "sources": [
+        "crypto"
+      ],
+      "summary": "Assets covered by the crypto derivatives endpoints",
+      "tags": [
+        "Crypto"
+      ],
+      "toolset": "crypto"
+    },
+    {
+      "description": "Current funding rate of the asset's perpetual futures, normalized to an 8-hour\nperiod and weighted by each venue's open interest. A positive rate means long\npositions pay short ones: a crowded-long market. Refreshes every 2 minutes.",
+      "method": "GET",
+      "operation_id": "crypto_derivatives_asset_funding",
+      "parameters": [
+        {
+          "description": "Asset symbol or coin slug: btc, eth, sol, xrp, doge (or bitcoin, ethereum, solana, ripple, dogecoin).",
+          "location": "path",
+          "name": "asset",
+          "required": true,
+          "schema": {
+            "description": "Asset symbol or coin slug: btc, eth, sol, xrp, doge (or bitcoin, ethereum, solana, ripple, dogecoin).",
+            "examples": [
+              "btc"
+            ],
+            "title": "Asset",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/crypto/derivatives/{asset}/funding",
+      "request_body_required": false,
+      "required_parameters": [
+        "asset"
+      ],
+      "source_family": "crypto",
+      "sources": [
+        "crypto"
+      ],
+      "summary": "Current perpetual funding rate for a crypto asset",
+      "tags": [
+        "Crypto"
+      ],
+      "toolset": "crypto"
+    },
+    {
+      "description": "Funding rate history of the asset's perpetual futures, from the venues that\npublish an hourly funding rate. That is fewer venues than the current funding rate\ncovers: a venue is in the history only where each of its rates states the period it\ncovers. Each venue's hourly rates are scaled to an 8-hour rate and averaged per UTC\nbucket; the buckets are then averaged across venues with equal weight. Only\ncompleted buckets are returned.",
+      "method": "GET",
+      "operation_id": "crypto_derivatives_asset_funding_history",
+      "parameters": [
+        {
+          "description": "Asset symbol or coin slug: btc, eth, sol, xrp, doge (or bitcoin, ethereum, solana, ripple, dogecoin).",
+          "location": "path",
+          "name": "asset",
+          "required": true,
+          "schema": {
+            "description": "Asset symbol or coin slug: btc, eth, sol, xrp, doge (or bitcoin, ethereum, solana, ripple, dogecoin).",
+            "examples": [
+              "btc"
+            ],
+            "title": "Asset",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Window in days, 1-30, ending at the last completed bucket.",
+          "location": "query",
+          "name": "days",
+          "required": false,
+          "schema": {
+            "default": 7,
+            "description": "Window in days, 1-30, ending at the last completed bucket.",
+            "examples": [
+              7
+            ],
+            "maximum": 30,
+            "minimum": 1,
+            "title": "Days",
+            "type": "integer"
+          }
+        },
+        {
+          "description": "Bucket size, aligned to UTC: 8h or 1d.",
+          "location": "query",
+          "name": "interval",
+          "required": false,
+          "schema": {
+            "default": "8h",
+            "description": "Bucket size, aligned to UTC: 8h or 1d.",
+            "enum": [
+              "8h",
+              "1d"
+            ],
+            "title": "Interval",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/crypto/derivatives/{asset}/funding/history",
+      "request_body_required": false,
+      "required_parameters": [
+        "asset"
+      ],
+      "source_family": "crypto",
+      "sources": [
+        "crypto"
+      ],
+      "summary": "Historical perpetual funding rate for a crypto asset",
+      "tags": [
+        "Crypto"
+      ],
+      "toolset": "crypto"
+    },
+    {
+      "description": "Long/short account ratio of the asset's perpetual futures: the share of accounts\nholding a net long position against those holding a net short one, averaged across\nvenues with equal weight. The last point is the current reading. A positioning\nsignal, not a measure of position size.",
+      "method": "GET",
+      "operation_id": "crypto_derivatives_asset_long_short",
+      "parameters": [
+        {
+          "description": "Asset symbol or coin slug: btc, eth, sol, xrp, doge (or bitcoin, ethereum, solana, ripple, dogecoin).",
+          "location": "path",
+          "name": "asset",
+          "required": true,
+          "schema": {
+            "description": "Asset symbol or coin slug: btc, eth, sol, xrp, doge (or bitcoin, ethereum, solana, ripple, dogecoin).",
+            "examples": [
+              "btc"
+            ],
+            "title": "Asset",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Spacing of the readings: 5m or 1h.",
+          "location": "query",
+          "name": "period",
+          "required": false,
+          "schema": {
+            "default": "1h",
+            "description": "Spacing of the readings: 5m or 1h.",
+            "enum": [
+              "5m",
+              "1h"
+            ],
+            "title": "Period",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Number of most recent readings, 1-500.",
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 100,
+            "description": "Number of most recent readings, 1-500.",
+            "examples": [
+              100
+            ],
+            "maximum": 500,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/crypto/derivatives/{asset}/long-short",
+      "request_body_required": false,
+      "required_parameters": [
+        "asset"
+      ],
+      "source_family": "crypto",
+      "sources": [
+        "crypto"
+      ],
+      "summary": "Long/short account ratio for a crypto asset",
+      "tags": [
+        "Crypto"
+      ],
+      "toolset": "crypto"
+    },
+    {
+      "description": "Mark price of the asset's perpetual futures (the price positions are valued and\nliquidated at), weighted by open interest across venues, beside the spot index\nprice and the premium of mark over index. Refreshes every 2 minutes.",
+      "method": "GET",
+      "operation_id": "crypto_derivatives_asset_mark_price",
+      "parameters": [
+        {
+          "description": "Asset symbol or coin slug: btc, eth, sol, xrp, doge (or bitcoin, ethereum, solana, ripple, dogecoin).",
+          "location": "path",
+          "name": "asset",
+          "required": true,
+          "schema": {
+            "description": "Asset symbol or coin slug: btc, eth, sol, xrp, doge (or bitcoin, ethereum, solana, ripple, dogecoin).",
+            "examples": [
+              "btc"
+            ],
+            "title": "Asset",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/crypto/derivatives/{asset}/mark-price",
+      "request_body_required": false,
+      "required_parameters": [
+        "asset"
+      ],
+      "source_family": "crypto",
+      "sources": [
+        "crypto"
+      ],
+      "summary": "Perpetual mark price and index price for a crypto asset",
+      "tags": [
+        "Crypto"
+      ],
+      "toolset": "crypto"
+    },
+    {
+      "description": "Current open interest of the asset's perpetual futures in USD, summed across\nvenues: the value of all positions still open. Refreshes every 2 minutes.",
+      "method": "GET",
+      "operation_id": "crypto_derivatives_asset_open_interest",
+      "parameters": [
+        {
+          "description": "Asset symbol or coin slug: btc, eth, sol, xrp, doge (or bitcoin, ethereum, solana, ripple, dogecoin).",
+          "location": "path",
+          "name": "asset",
+          "required": true,
+          "schema": {
+            "description": "Asset symbol or coin slug: btc, eth, sol, xrp, doge (or bitcoin, ethereum, solana, ripple, dogecoin).",
+            "examples": [
+              "btc"
+            ],
+            "title": "Asset",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/crypto/derivatives/{asset}/open-interest",
+      "request_body_required": false,
+      "required_parameters": [
+        "asset"
+      ],
+      "source_family": "crypto",
+      "sources": [
+        "crypto"
+      ],
+      "summary": "Current perpetual open interest for a crypto asset",
+      "tags": [
+        "Crypto"
+      ],
+      "toolset": "crypto"
+    },
+    {
+      "description": "Open interest history of the asset's perpetual futures in USD. Covers fewer\nvenues than the current value: only those that publish a USD history. A reading\nis returned when every answering venue reports that time, so the sum is never\nmixed across venue sets.",
+      "method": "GET",
+      "operation_id": "crypto_derivatives_asset_open_interest_history",
+      "parameters": [
+        {
+          "description": "Asset symbol or coin slug: btc, eth, sol, xrp, doge (or bitcoin, ethereum, solana, ripple, dogecoin).",
+          "location": "path",
+          "name": "asset",
+          "required": true,
+          "schema": {
+            "description": "Asset symbol or coin slug: btc, eth, sol, xrp, doge (or bitcoin, ethereum, solana, ripple, dogecoin).",
+            "examples": [
+              "btc"
+            ],
+            "title": "Asset",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Spacing of the readings: 1h or 1d (UTC).",
+          "location": "query",
+          "name": "interval",
+          "required": false,
+          "schema": {
+            "default": "1d",
+            "description": "Spacing of the readings: 1h or 1d (UTC).",
+            "enum": [
+              "1h",
+              "1d"
+            ],
+            "title": "Interval",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Number of most recent readings, 1-100.",
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 30,
+            "description": "Number of most recent readings, 1-100.",
+            "examples": [
+              30
+            ],
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/crypto/derivatives/{asset}/open-interest/history",
+      "request_body_required": false,
+      "required_parameters": [
+        "asset"
+      ],
+      "source_family": "crypto",
+      "sources": [
+        "crypto"
+      ],
+      "summary": "Historical perpetual open interest for a crypto asset",
+      "tags": [
+        "Crypto"
+      ],
+      "toolset": "crypto"
+    },
+    {
       "description": "Active advertisement placements on the on-chain DEX market. Each record reports the advertised token (chain + address), the on-chain DEX page URL the ad targets, the ad type (e.g. tokenAd), impression count reported by upstream, and the ad publish date (ISO 8601 UTC). Useful for monitoring promoted tokens appearing on the on-chain DEX front page. Sourced from on-chain DEX data.",
       "method": "GET",
       "operation_id": "crypto_dex_ads_latest",
@@ -15841,7 +16168,7 @@
       "toolset": "digital_infra"
     },
     {
-      "description": "DeFi options protocol volumes - Deribit, Lyra, Hegic, Dopex, etc. 24h, 7d, 30d notional volumes with daily and weekly change.",
+      "description": "Notional volumes of decentralised options protocols over 24h, 7d and 30d, with daily and weekly change.",
       "method": "GET",
       "operation_id": "defi_options",
       "parameters": [],
@@ -30784,7 +31111,7 @@
       "toolset": "central_banks"
     },
     {
-      "description": "Generic Federal Reserve Economic Data (FRED) series proxy. Pass any FRED series_id and receive observations plus metadata. Examples: CPIAUCSL (US CPI inflation), GDP (US GDP), UNRATE (US unemployment rate), DFF (federal funds effective rate), DGS10 (10-year Treasury yield), M2SL (M2 money supply). Covers the full FRED catalog (~800k macroeconomic time series from the St. Louis Fed).",
+      "description": "Generic Federal Reserve Economic Data (FRED) series proxy. Pass any FRED series_id and receive observations plus metadata. Examples: CPIAUCSL (US CPI inflation), GDP (US GDP), UNRATE (US unemployment rate), DFF (federal funds effective rate), DGS10 (10-year Treasury yield), M2SL (M2 money supply). Covers the full FRED catalog (~800k macroeconomic time series from the St. Louis Fed). Point-in-time: pass as_of (YYYY-MM-DD) to read the values as they were published on that date, before later revisions; the response names the vintage it reflects. See /series/{series_id}/vintages for the dates a series was revised.",
       "keywords": [
         "coffee",
         "arabica coffee",
@@ -30944,6 +31271,27 @@
             "description": "FRED value transform applied UPSTREAM: lin (level, default), chg (change), ch1 (change from year ago), pch (percent change), pc1 (percent change from year ago), pca (compounded annual rate of change), cch (continuously compounded change), cca (continuously compounded annual rate), log (natural log). Percent transforms return percent NUMBERS (pch=3.2 means 3.2 percent, not 0.032). With any transform but lin, 'units' and 'units_short' name the transform and the series' own labels move to 'level_units' and 'level_units_short'; the request is echoed under 'transform'.",
             "title": "Units"
           }
+        },
+        {
+          "description": "Point-in-time read, ISO date YYYY-MM-DD: return the observations as published on that date, before later revisions (FRED real-time period, realtime_start = realtime_end = as_of). Example: GDP with as_of=2020-07-01 returns the latest Q1 2020 estimate available on that date, not today's revised one. Works with every other parameter. The response adds 'as_of' and 'vintage_date' (the latest revision date on or before as_of, i.e. the vintage the values come from). 'title', 'units', 'units_short', 'frequency', 'seasonal_adjustment', 'last_updated', 'observation_start' and 'observation_end' are the series' own as of that date too (a series rebased since then keeps the units its values were published with, and 'observation_end' is the last observation that existed then). 'license' stays today's. A malformed date, a date before 1776-07-04 (FRED's earliest real-time date) or after today in US Central time (taken as UTC-6) answers 400 before any lookup; a date before the series' first vintage answers 400 after one. Omit it for today's values.",
+          "location": "query",
+          "name": "as_of",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Point-in-time read, ISO date YYYY-MM-DD: return the observations as published on that date, before later revisions (FRED real-time period, realtime_start = realtime_end = as_of). Example: GDP with as_of=2020-07-01 returns the latest Q1 2020 estimate available on that date, not today's revised one. Works with every other parameter. The response adds 'as_of' and 'vintage_date' (the latest revision date on or before as_of, i.e. the vintage the values come from). 'title', 'units', 'units_short', 'frequency', 'seasonal_adjustment', 'last_updated', 'observation_start' and 'observation_end' are the series' own as of that date too (a series rebased since then keeps the units its values were published with, and 'observation_end' is the last observation that existed then). 'license' stays today's. A malformed date, a date before 1776-07-04 (FRED's earliest real-time date) or after today in US Central time (taken as UTC-6) answers 400 before any lookup; a date before the series' first vintage answers 400 after one. Omit it for today's values.",
+            "examples": [
+              "2020-07-01"
+            ],
+            "title": "As Of"
+          }
         }
       ],
       "path": "/api/v1/fred/series/{series_id}",
@@ -30956,6 +31304,69 @@
         "central_banks"
       ],
       "summary": "FRED series observations - US CPI inflation, GDP, unemployment rate, federal funds rate, Treasury yields, M2 money supply, ~800k more",
+      "tags": [
+        "Central Banks & Monetary"
+      ],
+      "toolset": "central_banks"
+    },
+    {
+      "description": "Lists the vintage dates of a FRED series: the dates on which its values were first released or revised (St. Louis Fed ALFRED). Use a date from this list as the as_of parameter of /series/{series_id} to read the series exactly as it was published then - the basis of a backtest that must not see later revisions. Newest first by default; limit bounds the list and the response declares when more dates exist.",
+      "method": "GET",
+      "operation_id": "fred_series_series_id_vintages",
+      "parameters": [
+        {
+          "description": "FRED series identifier in upper-snake-case. Common examples: GDP (US Gross Domestic Product), PAYEMS (US nonfarm payrolls), CPIAUCSL (US Consumer Price Index), UNRATE (US unemployment rate).",
+          "location": "path",
+          "name": "series_id",
+          "required": true,
+          "schema": {
+            "description": "FRED series identifier in upper-snake-case. Common examples: GDP (US Gross Domestic Product), PAYEMS (US nonfarm payrolls), CPIAUCSL (US Consumer Price Index), UNRATE (US unemployment rate).",
+            "examples": [
+              "GDP"
+            ],
+            "pattern": "^[A-Z0-9_]{1,80}$",
+            "title": "Series Id",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Max vintage dates to return (1-1000). With sort_order=desc these are the newest. When the series holds more, the response also carries `vintage_dates_truncated` and `vintage_dates_available`; `vintage_dates_available` is null when FRED reported no total.",
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 500,
+            "description": "Max vintage dates to return (1-1000). With sort_order=desc these are the newest. When the series holds more, the response also carries `vintage_dates_truncated` and `vintage_dates_available`; `vintage_dates_available` is null when FRED reported no total.",
+            "maximum": 1000,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        {
+          "description": "'desc' returns the newest vintage dates first (default); 'asc' the oldest.",
+          "location": "query",
+          "name": "sort_order",
+          "required": false,
+          "schema": {
+            "default": "desc",
+            "description": "'desc' returns the newest vintage dates first (default); 'asc' the oldest.",
+            "pattern": "^(asc|desc)$",
+            "title": "Sort Order",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/fred/series/{series_id}/vintages",
+      "request_body_required": false,
+      "required_parameters": [
+        "series_id"
+      ],
+      "source_family": "central_banks",
+      "sources": [
+        "central_banks"
+      ],
+      "summary": "FRED series vintages - the dates a series was revised or first released, for point-in-time (as-of) reads",
       "tags": [
         "Central Banks & Monetary"
       ],
@@ -31066,7 +31477,7 @@
       "toolset": "fundamentals"
     },
     {
-      "description": "Fetch one financial metric by FRIENDLY name (capex, revenue, free_cash_flow, operating_cash_flow, total_assets, ...) across up to 25 tickers in a single call - no XBRL concept name needed. The name maps onto the same fallback chains the per-ticker statement endpoints use, including the IFRS taxonomy + 20-F / 40-F annual-form auto-detection for foreign private issuers (a mixed batch resolves each ticker on its own taxonomy + form); each value carries provenance (accession_number + filing_url). free_cash_flow is computed (operating cash flow minus capex, marked computed=true with both component accessions). Periods align as latest-per-ticker by each company's own fiscal calendar, NOT calendar-aligned across tickers. Unknown name returns 422 with the full catalog of valid names. Tickers without SEC XBRL facts degrade per-ticker (status not_found / concept_absent) - only an all-ticker miss is a 404. Fetches run concurrently under a wall-clock budget; any ticker not resolved in time comes back with status timeout and is listed in timed_out (a partial 200, never a gateway timeout). Source: SEC EDGAR XBRL.",
+      "description": "Fetch one financial metric by FRIENDLY name (capex, revenue, free_cash_flow, operating_cash_flow, total_assets, ...) across up to 25 tickers in a single call - no XBRL concept name needed. The name maps onto the same fallback chains the per-ticker statement endpoints use, including the IFRS taxonomy + 20-F / 40-F annual-form auto-detection for foreign private issuers (a mixed batch resolves each ticker on its own taxonomy + form); each value carries provenance (accession_number + filing_url). free_cash_flow is computed (operating cash flow minus capex, marked computed=true with both component accessions). Periods align as latest-per-ticker by each company's own fiscal calendar, NOT calendar-aligned across tickers. Unknown name returns 422 with the full catalog of valid names. Tickers without SEC XBRL facts degrade per-ticker (status not_found / concept_absent) - only an all-ticker miss is a 404. A ticker whose SEC fetch failed or timed out comes back with status error, never not_found, and the answer is not cached. Fetches run concurrently under a wall-clock budget; any ticker not resolved in time comes back with status timeout and is listed in timed_out (a partial 200, never a gateway timeout). Source: SEC EDGAR XBRL.",
       "method": "GET",
       "operation_id": "fundamentals_line_item_name",
       "parameters": [
@@ -31696,7 +32107,7 @@
       "toolset": "fundamentals"
     },
     {
-      "description": "List of SEC filings with direct document links. Filter by form type (10-K, 10-Q, 8-K, etc.) and date range.",
+      "description": "List of SEC filings with direct document links, newest first. Filter by form type (10-K, 10-Q, 8-K, etc.) and date range. Filings older than SEC's recent block are read from SEC's filing history pages when the date range or the limit reaches them, up to 3 pages per request; `complete` is false when that bound left part of the range unread, so older matching filings may be missing.",
       "method": "GET",
       "operation_id": "fundamentals_ticker_filings",
       "parameters": [
@@ -78894,6 +79305,423 @@
       "toolset": "statistics"
     },
     {
+      "description": "Returns one indicator of the Sugra statistics catalog: its name, unit, usual period, the Sugra direction it belongs to, the place types that have data, the first and last period and the agencies that publish it, each with its website. Pass an agency code as `agency=` to `/series` or `/places` to pick that agency's numbers.",
+      "method": "GET",
+      "operation_id": "statistics_indicators_indicator",
+      "parameters": [
+        {
+          "description": "Sugra indicator code.",
+          "location": "path",
+          "name": "indicator",
+          "required": true,
+          "schema": {
+            "description": "Sugra indicator code.",
+            "examples": [
+              "median-household-income"
+            ],
+            "maxLength": 80,
+            "title": "Indicator",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/statistics/indicators/{indicator}",
+      "request_body_required": false,
+      "required_parameters": [
+        "indicator"
+      ],
+      "source_family": "research",
+      "sources": [
+        "research"
+      ],
+      "summary": "Describe one official statistics indicator",
+      "tags": [
+        "Research"
+      ],
+      "toolset": "research"
+    },
+    {
+      "description": "Returns the place codes that `/series` and `/places` accept, from a place name (`q`) or from coordinates (`lat` and `lon`). Each place carries its code, the code system, its name, its type and its country. Coordinates return every place that contains the point, from the smallest up.",
+      "method": "GET",
+      "operation_id": "statistics_places_resolve",
+      "parameters": [
+        {
+          "description": "Place name.",
+          "location": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 2,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Place name.",
+            "examples": [
+              "Los Angeles County"
+            ],
+            "title": "Q"
+          }
+        },
+        {
+          "description": "Latitude in degrees.",
+          "location": "query",
+          "name": "lat",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 90,
+                "minimum": -90,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Latitude in degrees.",
+            "examples": [
+              34.0522
+            ],
+            "title": "Lat"
+          }
+        },
+        {
+          "description": "Longitude in degrees.",
+          "location": "query",
+          "name": "lon",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maximum": 180,
+                "minimum": -180,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Longitude in degrees.",
+            "examples": [
+              -118.2437
+            ],
+            "title": "Lon"
+          }
+        }
+      ],
+      "path": "/api/v1/statistics/places/resolve",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "research",
+      "sources": [
+        "research"
+      ],
+      "summary": "Find a place code by name or coordinates",
+      "tags": [
+        "Research"
+      ],
+      "toolset": "research"
+    },
+    {
+      "description": "Returns one value per place for every place of one type inside a parent place, for example every county of California (`parent=06&type=county`) or every NUTS 2 region of Germany (`parent=DEU&type=nuts2`). All rows come from one agency; when no agency publishes the population of any of the places, `date=latest` takes it from Wikidata, one value per place from 2015 on. `date=latest` (the default) gives each place's latest value; a year, month or day gives the value for that period. At most 5,000 rows: a larger request answers 413, narrow it with a smaller parent.",
+      "method": "GET",
+      "operation_id": "statistics_places_indicator",
+      "parameters": [
+        {
+          "description": "Sugra indicator code.",
+          "location": "path",
+          "name": "indicator",
+          "required": true,
+          "schema": {
+            "description": "Sugra indicator code.",
+            "examples": [
+              "median-household-income"
+            ],
+            "maxLength": 80,
+            "title": "Indicator",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Code of the place that contains the rows.",
+          "location": "query",
+          "name": "parent",
+          "required": true,
+          "schema": {
+            "description": "Code of the place that contains the rows.",
+            "examples": [
+              "06"
+            ],
+            "maxLength": 40,
+            "title": "Parent",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Place type of the rows: country, state, county, city, metro, zcta, admin1, admin2, nuts1, nuts2 or nuts3.",
+          "location": "query",
+          "name": "type",
+          "required": true,
+          "schema": {
+            "description": "Place type of the rows: country, state, county, city, metro, zcta, admin1, admin2, nuts1, nuts2 or nuts3.",
+            "examples": [
+              "county"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        {
+          "description": "`latest`, or a period: 2023, 2023-06 or 2023-06-30.",
+          "location": "query",
+          "name": "date",
+          "required": false,
+          "schema": {
+            "default": "latest",
+            "description": "`latest`, or a period: 2023, 2023-06 or 2023-06-30.",
+            "examples": [
+              "latest"
+            ],
+            "title": "Date",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Agency code from `/indicators/{indicator}`.",
+          "location": "query",
+          "name": "agency",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Agency code from `/indicators/{indicator}`.",
+            "examples": [
+              "census-bureau"
+            ],
+            "title": "Agency"
+          }
+        }
+      ],
+      "path": "/api/v1/statistics/places/{indicator}",
+      "request_body_required": false,
+      "required_parameters": [
+        "indicator",
+        "parent",
+        "type"
+      ],
+      "source_family": "research",
+      "sources": [
+        "research"
+      ],
+      "summary": "Official statistics for every place of a type inside a region",
+      "tags": [
+        "Research"
+      ],
+      "toolset": "research"
+    },
+    {
+      "description": "Searches the Sugra statistics catalog by meaning and returns matching indicators, best first, with their name, unit, period, the place types that have data, the first and last period and the agencies that publish them. Optional `place` keeps only indicators with data for that type of place. Use the `indicator` code with `/series/{indicator}` or `/places/{indicator}`.",
+      "method": "GET",
+      "operation_id": "statistics_search",
+      "parameters": [
+        {
+          "description": "What to look for, in plain words.",
+          "location": "query",
+          "name": "q",
+          "required": true,
+          "schema": {
+            "description": "What to look for, in plain words.",
+            "examples": [
+              "median household income"
+            ],
+            "maxLength": 200,
+            "minLength": 2,
+            "title": "Q",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Optional place code; keeps indicators with data for that type of place.",
+          "location": "query",
+          "name": "place",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional place code; keeps indicators with data for that type of place.",
+            "examples": [
+              "USA"
+            ],
+            "title": "Place"
+          }
+        },
+        {
+          "description": "Maximum number of results.",
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "description": "Maximum number of results.",
+            "maximum": 50,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v1/statistics/search",
+      "request_body_required": false,
+      "required_parameters": [
+        "q"
+      ],
+      "source_family": "research",
+      "sources": [
+        "research"
+      ],
+      "summary": "Find official statistics indicators by meaning",
+      "tags": [
+        "Research"
+      ],
+      "toolset": "research"
+    },
+    {
+      "description": "Returns the series of one indicator for one place, as published by one agency, in date order. Places are given by open codes: ISO 3166-1 alpha-3 for countries (USA), ISO 3166-2 for regions (IN-MH), FIPS for US states and counties (06, 06037), NUTS for European regions (DE11), zcta:94043 for US ZIP code areas, or a code returned by `/places/resolve`. Without `agency` the first agency with data is used; projections and model estimates are never served. When no agency publishes a place's population, it comes from Wikidata as one value, the latest from 2015 on. The agency, its website and its method are in `data.source`.",
+      "method": "GET",
+      "operation_id": "statistics_series_indicator",
+      "parameters": [
+        {
+          "description": "Sugra indicator code.",
+          "location": "path",
+          "name": "indicator",
+          "required": true,
+          "schema": {
+            "description": "Sugra indicator code.",
+            "examples": [
+              "median-household-income"
+            ],
+            "maxLength": 80,
+            "title": "Indicator",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Place code.",
+          "location": "query",
+          "name": "place",
+          "required": true,
+          "schema": {
+            "description": "Place code.",
+            "examples": [
+              "06037"
+            ],
+            "maxLength": 40,
+            "title": "Place",
+            "type": "string"
+          }
+        },
+        {
+          "description": "First period to include: 2020, 2020-06 or 2020-06-30.",
+          "location": "query",
+          "name": "start",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First period to include: 2020, 2020-06 or 2020-06-30.",
+            "examples": [
+              "2015"
+            ],
+            "title": "Start"
+          }
+        },
+        {
+          "description": "Last period to include: 2024, 2024-06 or 2024-06-30.",
+          "location": "query",
+          "name": "end",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last period to include: 2024, 2024-06 or 2024-06-30.",
+            "examples": [
+              "2024"
+            ],
+            "title": "End"
+          }
+        },
+        {
+          "description": "Agency code from `/indicators/{indicator}`.",
+          "location": "query",
+          "name": "agency",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Agency code from `/indicators/{indicator}`.",
+            "examples": [
+              "census-bureau"
+            ],
+            "title": "Agency"
+          }
+        }
+      ],
+      "path": "/api/v1/statistics/series/{indicator}",
+      "request_body_required": false,
+      "required_parameters": [
+        "indicator",
+        "place"
+      ],
+      "source_family": "research",
+      "sources": [
+        "research"
+      ],
+      "summary": "Official statistics series for one place",
+      "tags": [
+        "Research"
+      ],
+      "toolset": "research"
+    },
+    {
       "description": "All Treasury auctions since 1979: date, CUSIP, yield, bid-to-cover, offering amount.",
       "method": "GET",
       "operation_id": "treasury_auctions",
@@ -83149,18 +83977,18 @@
       "toolset": "environment"
     },
     {
-      "description": "Return metadata for a single NWS Weather Forecast Office (WFO). The NWS operates 122 WFOs across the US; each carries a three-letter code (e.g. `LWX` for Baltimore/Washington, `OKX` for Upton NY, `DTX` for Detroit/Pontiac, `SLC` for Salt Lake City). The response includes the street address, phone, email, NWS region, and the lists of counties and zones the office is responsible for. Attribution: NOAA National Weather Service (api.weather.gov).",
+      "description": "Return metadata for a single NWS Weather Forecast Office (WFO). The NWS operates 122 WFOs across the US; each carries a three-letter code (e.g. `LWX` for Baltimore/Washington, `BOX` for Boston/Norton MA, `DTX` for Detroit/Pontiac, `SLC` for Salt Lake City). The response includes the street address, phone, email, NWS region, and the lists of counties and zones the office is responsible for. Attribution: NOAA National Weather Service (api.weather.gov).",
       "method": "GET",
       "operation_id": "weather_nws_office_office_id",
       "parameters": [
         {
-          "description": "WFO three-letter code (e.g. `LWX`, `OKX`, `DTX`, `SLC`, `BUF`).",
+          "description": "WFO three-letter code (e.g. `LWX`, `BOX`, `DTX`, `SLC`, `BUF`).",
           "example": "LWX",
           "location": "path",
           "name": "office_id",
           "required": true,
           "schema": {
-            "description": "WFO three-letter code (e.g. `LWX`, `OKX`, `DTX`, `SLC`, `BUF`).",
+            "description": "WFO three-letter code (e.g. `LWX`, `BOX`, `DTX`, `SLC`, `BUF`).",
             "title": "Office Id",
             "type": "string"
           }
@@ -83228,7 +84056,7 @@
       "toolset": "environment"
     },
     {
-      "description": "Return the latest NWS text product of the requested AWIPS type for the requested issuing location. Includes the full raw `product_text` (plain-text WFO forecaster prose, typically 500-3000 words). Common product types: `AFD` (Area Forecast Discussion), `HWO` (Hazardous Weather Outlook), `RER` (Record Report), `SPS` (Special Weather Statement), `ZFP` (Zone Forecast Product), `LSR` (Local Storm Report). Common locations are AWIPS site codes (e.g. `LWX`, `OKX`, `DTX`) - often identical to the WFO code. Attribution: NOAA National Weather Service (api.weather.gov).",
+      "description": "Return the latest NWS text product of the requested AWIPS type for the requested issuing location. Includes the full raw `product_text` (plain-text WFO forecaster prose, typically 500-3000 words). Common product types: `AFD` (Area Forecast Discussion), `HWO` (Hazardous Weather Outlook), `RER` (Record Report), `SPS` (Special Weather Statement), `ZFP` (Zone Forecast Product), `LSR` (Local Storm Report). Common locations are AWIPS site codes (e.g. `LWX`, `BOX`, `DTX`) - often identical to the WFO code. Attribution: NOAA National Weather Service (api.weather.gov).",
       "method": "GET",
       "operation_id": "weather_nws_product_type_id_location_id_latest",
       "parameters": [
@@ -83245,13 +84073,13 @@
           }
         },
         {
-          "description": "AWIPS site code for the issuing office (e.g. `LWX`, `OKX`, `DTX`).",
+          "description": "AWIPS site code for the issuing office (e.g. `LWX`, `BOX`, `DTX`).",
           "example": "LWX",
           "location": "path",
           "name": "location_id",
           "required": true,
           "schema": {
-            "description": "AWIPS site code for the issuing office (e.g. `LWX`, `OKX`, `DTX`).",
+            "description": "AWIPS site code for the issuing office (e.g. `LWX`, `BOX`, `DTX`).",
             "title": "Location Id",
             "type": "string"
           }
@@ -91710,13 +92538,13 @@
       "operation_id": "quotes_symbol_actions",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -91776,13 +92604,13 @@
       "operation_id": "quotes_symbol_analyst",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -91809,13 +92637,13 @@
       "operation_id": "quotes_symbol_analyst_targets",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -91842,13 +92670,13 @@
       "operation_id": "quotes_symbol_calendar",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -91875,13 +92703,13 @@
       "operation_id": "quotes_symbol_cross_listings",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "BP.L",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -91908,13 +92736,13 @@
       "operation_id": "quotes_symbol_dividend",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -91941,13 +92769,13 @@
       "operation_id": "quotes_symbol_earliest_timestamp",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -91987,13 +92815,13 @@
       "operation_id": "quotes_symbol_earnings_events",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92020,13 +92848,13 @@
       "operation_id": "quotes_symbol_earnings_history",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92068,13 +92896,13 @@
       "operation_id": "quotes_symbol_executives",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92101,13 +92929,13 @@
       "operation_id": "quotes_symbol_forward_estimates",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92134,13 +92962,13 @@
       "operation_id": "quotes_symbol_fund_composition",
       "parameters": [
         {
-          "description": "Fund ticker (ETF or mutual fund).",
+          "description": "Fund ticker (ETF or mutual fund). A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "VOO",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Fund ticker (ETF or mutual fund).",
+            "description": "Fund ticker (ETF or mutual fund). A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92167,13 +92995,13 @@
       "operation_id": "quotes_symbol_fund_performance",
       "parameters": [
         {
-          "description": "Fund ticker (ETF or mutual fund).",
+          "description": "Fund ticker (ETF or mutual fund). A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "VOO",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Fund ticker (ETF or mutual fund).",
+            "description": "Fund ticker (ETF or mutual fund). A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92200,13 +93028,13 @@
       "operation_id": "quotes_symbol_fund_profile",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "SPY",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92233,13 +93061,13 @@
       "operation_id": "quotes_symbol_fund_purchase_info",
       "parameters": [
         {
-          "description": "Fund ticker (ETF or mutual fund).",
+          "description": "Fund ticker (ETF or mutual fund). A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "VOO",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Fund ticker (ETF or mutual fund).",
+            "description": "Fund ticker (ETF or mutual fund). A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92266,13 +93094,13 @@
       "operation_id": "quotes_symbol_fund_risk",
       "parameters": [
         {
-          "description": "Fund ticker (ETF or mutual fund).",
+          "description": "Fund ticker (ETF or mutual fund). A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "VOO",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Fund ticker (ETF or mutual fund).",
+            "description": "Fund ticker (ETF or mutual fund). A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92299,13 +93127,13 @@
       "operation_id": "quotes_symbol_fund_summary",
       "parameters": [
         {
-          "description": "Fund ticker (ETF or mutual fund).",
+          "description": "Fund ticker (ETF or mutual fund). A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "VOO",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Fund ticker (ETF or mutual fund).",
+            "description": "Fund ticker (ETF or mutual fund). A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92332,13 +93160,13 @@
       "operation_id": "quotes_symbol_historical",
       "parameters": [
         {
-          "description": "Stock, ETF or index ticker symbol, for example BRK-B, ^GSPC or OR.PA. Not for currency pairs or futures.",
+          "description": "Stock, ETF or index ticker symbol, for example BRK-B, ^GSPC or OR.PA. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA). Not for currency pairs or futures.",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Stock, ETF or index ticker symbol, for example BRK-B, ^GSPC or OR.PA. Not for currency pairs or futures.",
+            "description": "Stock, ETF or index ticker symbol, for example BRK-B, ^GSPC or OR.PA. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA). Not for currency pairs or futures.",
             "pattern": "^\\^?[A-Za-z0-9]{1,10}(?:[.-][A-Za-z0-9]{1,4})?$",
             "title": "Symbol",
             "type": "string"
@@ -92534,13 +93362,13 @@
       "operation_id": "quotes_symbol_holders_funds",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92567,13 +93395,13 @@
       "operation_id": "quotes_symbol_holders_insiders",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92614,13 +93442,13 @@
       "operation_id": "quotes_symbol_holders_institutional",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92647,13 +93475,13 @@
       "operation_id": "quotes_symbol_holders_summary",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92680,13 +93508,13 @@
       "operation_id": "quotes_symbol_info",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92732,13 +93560,13 @@
       "operation_id": "quotes_symbol_insider_roster",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92765,13 +93593,13 @@
       "operation_id": "quotes_symbol_insider_transactions",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92798,13 +93626,13 @@
       "operation_id": "quotes_symbol_insights",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92831,13 +93659,13 @@
       "operation_id": "quotes_symbol_institutional_holders",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92864,13 +93692,13 @@
       "operation_id": "quotes_symbol_logo",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92897,13 +93725,13 @@
       "operation_id": "quotes_symbol_logo_png",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92951,13 +93779,13 @@
       "operation_id": "quotes_symbol_major_holders",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -92984,13 +93812,13 @@
       "operation_id": "quotes_symbol_market_cap",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93067,13 +93895,13 @@
       "operation_id": "quotes_symbol_mutualfund_holders",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93100,13 +93928,13 @@
       "operation_id": "quotes_symbol_news",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93167,13 +93995,13 @@
       "operation_id": "quotes_symbol_options",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93200,13 +94028,13 @@
       "operation_id": "quotes_symbol_options_date",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93297,13 +94125,13 @@
       "operation_id": "quotes_symbol_press_releases",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93372,13 +94200,13 @@
       "operation_id": "quotes_symbol_price",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93405,13 +94233,13 @@
       "operation_id": "quotes_symbol_price_insights",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93438,13 +94266,13 @@
       "operation_id": "quotes_symbol_ratings",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93471,13 +94299,13 @@
       "operation_id": "quotes_symbol_recent_performance",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93504,13 +94332,13 @@
       "operation_id": "quotes_symbol_recommendations",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93537,13 +94365,13 @@
       "operation_id": "quotes_symbol_sec_filings",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93584,13 +94412,13 @@
       "operation_id": "quotes_symbol_splits",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "NVDA",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93637,13 +94465,13 @@
       "operation_id": "quotes_symbol_statistics",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93670,13 +94498,13 @@
       "operation_id": "quotes_symbol_technical_analysis",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93703,13 +94531,13 @@
       "operation_id": "quotes_symbol_timeseries",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93800,13 +94628,13 @@
       "operation_id": "quotes_symbol_transcript_event_id",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93846,13 +94674,13 @@
       "operation_id": "quotes_symbol_upgrades_downgrades",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93879,13 +94707,13 @@
       "operation_id": "quotes_symbol_periodicity_balance_sheet",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93929,13 +94757,13 @@
       "operation_id": "quotes_symbol_periodicity_cash_flow",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -93980,13 +94808,13 @@
       "operation_id": "quotes_symbol_periodicity_income_statement",
       "parameters": [
         {
-          "description": "Security ticker symbol.",
+          "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
           "example": "AAPL",
           "location": "path",
           "name": "symbol",
           "required": true,
           "schema": {
-            "description": "Security ticker symbol.",
+            "description": "Ticker symbol. A share class takes a hyphen (BRK-B); a dot marks a venue (BP.L, OR.PA).",
             "title": "Symbol",
             "type": "string"
           }
@@ -96598,5 +97426,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "da4c690a924ce31e396f357a546b0a4497ccfcd3e57b81240630295be789043b"
+  "spec_sha256": "a296d3da750c87a1ee2b712ecb17fde67df9acdfa63d7b92c479166de840c1aa"
 }
