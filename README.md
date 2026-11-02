@@ -393,10 +393,11 @@ API key works as Bearer. If you run your own HTTP process, see
 `SUGRA_TIMEOUT` caps each downstream HTTP call from this server to the Sugra API (default 30 seconds). It is one link in a longer chain; when a tool call fails, `elapsed_ms` in the error payload tells you which link cut it:
 
 ```
-MCP client (agent harness)         own tool timeout, often 60-180s, client-controlled
-  -> hosted proxy (app.sugra.ai)   86400s, effectively unlimited
-    -> this server (httpx)         SUGRA_TIMEOUT, default 30s
-      -> Sugra API -> upstreams    15-60s per upstream call, server-side
+MCP client (agent harness)          own tool timeout, often 60-180s, client-controlled
+  -> hosted edge (mcp.sugra.ai)     86400s, effectively unlimited
+    -> container ingress            240s, the platform's ceiling
+      -> this server (httpx)        SUGRA_TIMEOUT, default 30s
+        -> Sugra API -> upstreams   15-60s per upstream call, server-side
 ```
 
 Tool failures return structured JSON instead of raising, so agents can pick a retry strategy:
