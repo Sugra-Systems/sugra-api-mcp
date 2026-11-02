@@ -25,7 +25,7 @@
 
 **Give any AI agent access to 1,600+ data endpoints across markets, economics, companies, government, news, climate, maritime and entity screening - through one MCP server.**
 
-Works with ChatGPT, Claude, Gemini, xAI, Cursor, VS Code and any MCP client.
+Works with ChatGPT, Claude, GitHub Copilot, Gemini, xAI, Cursor, VS Code and any MCP client.
 
 Official [Model Context Protocol](https://modelcontextprotocol.io) server for the [Sugra API](https://sugra.ai): one connector, a bundled endpoint catalog, and structured tool results with source attribution on every answer.
 
@@ -136,7 +136,7 @@ Or copy the skill folders of sugra-api-skills into the agent's skills directory.
 
 ### ChatGPT
 
-The skills install from [OpenAI's Plugins Directory](https://chatgpt.com/plugins/plugins_6aa4f7db79848191a81e4048990545ef). The MCP server attaches as a hosted connector at `https://mcp.sugra.ai/mcp` (permanent alias `https://app.sugra.ai/mcp`).
+The skills install from [OpenAI's Plugins Directory](https://chatgpt.com/plugins/plugins_6aa4f7db79848191a81e4048990545ef). The MCP server attaches as a hosted connector at `https://mcp.sugra.ai/mcp`.
 
 Six workflow prompts ship with the server and turn these into one-click flows in clients that surface MCP prompts:
 
@@ -383,9 +383,9 @@ When running with `--transport streamable-http` the server allows unauthenticate
 - Raw API key (`sugra_...`) - passed through as the downstream `x-api-key`. Compatible with earlier local API-key setups.
 - OAuth JWT - signature verified against the issuer's JWKS. The audience must match `https://app.sugra.ai/mcp`, the token must include `sugra:read`, and hosted access is validated against APP before resolving the user's primary API key. Successful hosted OAuth requests update MCP connection activity in APP.
 
-Most users should use the hosted endpoint `https://mcp.sugra.ai/mcp` with an API
-key as Bearer instead of self-hosting OAuth; standalone OAuth clients sign in at
-the alias `https://app.sugra.ai/mcp` for now. If you run your own HTTP process, see
+Most users should use the hosted endpoint `https://mcp.sugra.ai/mcp` instead of
+self-hosting OAuth: OAuth clients sign in there with their Sugra account, and an
+API key works as Bearer. If you run your own HTTP process, see
 [docs/self-hosting.md](docs/self-hosting.md).
 
 ## Timeouts and the error contract

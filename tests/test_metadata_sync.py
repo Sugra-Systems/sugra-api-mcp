@@ -155,13 +155,23 @@ def test_hosted_tool_count_with_internal_token():
     assert int(out.stdout.strip()) == EXPECTED_HOSTED_TOOL_COUNT
 
 
+def test_server_json_description_names_no_tool_count():
+    # One registry description covers the stdio package and the hosted remote,
+    # whose tool counts differ, and listings never print a tool count.
+    server_description = _server_json()["description"].lower()
+    counts = [str(n) for n in range(1, 21)] + list(NUMBER_WORDS.values())
+    for count in counts:
+        assert f"{count} tools" not in server_description
+    assert len(_server_json()["description"]) <= 100, "registry description limit"
+
+
+def test_server_json_remote_is_the_canonical_url():
+    remotes = _server_json()["remotes"]
+    assert [remote["url"] for remote in remotes] == ["https://mcp.sugra.ai/mcp"]
+
+
 def test_public_tool_count_wording_is_not_stale():
     expected_word = NUMBER_WORDS[EXPECTED_TOOL_COUNT]
-
-    server_description = _server_json()["description"].lower()
-    assert f"{expected_word} tools" in server_description, (
-        f"server.json description should advertise '{expected_word} tools'"
-    )
 
     assert sugra_api_mcp.__doc__ is not None
     assert f"{expected_word} gateway tools" in sugra_api_mcp.__doc__.lower(), (
