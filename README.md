@@ -1,4 +1,4 @@
-# sugra-api-mcp
+# Sugra MCP
 
 <!-- mcp-name: ai.sugra/api-mcp -->
 
@@ -10,7 +10,6 @@
   <a href="https://pypi.org/project/sugra-api-mcp/"><img src="https://img.shields.io/pypi/v/sugra-api-mcp?label=PyPI&color=F5A623" alt="PyPI"></a>
   <a href="https://pypi.org/project/sugra-api-mcp/"><img src="https://img.shields.io/pypi/pyversions/sugra-api-mcp?label=Python" alt="Python versions"></a>
   <a href="https://github.com/Sugra-Systems/sugra-api-mcp/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Sugra-Systems/sugra-api-mcp?label=License" alt="License"></a>
-  <a href="https://smithery.ai/servers/sugra-systems/sugra-api"><img src="https://smithery.ai/badge/sugra-systems/sugra-api" alt="Smithery"></a>
 </p>
 
 <p align="center">
@@ -23,11 +22,21 @@
   <sub>Published in the official OpenAI Plugins Directory. Available for ChatGPT and Codex.</sub>
 </p>
 
-**Give any AI agent access to 1,600+ data endpoints across markets, economics, companies, government, news, climate, maritime and entity screening - through one MCP server.**
+Sugra MCP connects AI agents to 1,600+ endpoints from 200 primary sources across 36 data domains. An agent searches the catalog, reads an endpoint's description and calls it, and every answer carries its source and date.
 
-Works with ChatGPT, Claude, GitHub Copilot, Gemini, xAI, Cursor, VS Code and any MCP client.
+### Use cases
 
-Official [Model Context Protocol](https://modelcontextprotocol.io) server for the [Sugra API](https://sugra.ai): one connector, a bundled endpoint catalog, and structured tool results with source attribution on every answer.
+- Markets: quotes, price history, company financials, SEC filings, funds, options, crypto and commodities.
+- Macroeconomics: inflation, GDP, interest rates, jobs, trade and public finance from central banks and national statistics offices.
+- Entities: legal entity identifiers, corporate registries, sanctions and PEP screening.
+- News: headlines, feeds and media analytics.
+- Network: IP and ASN lookups, routing history, geolocation and internet outages.
+- Earth: weather, climate, air quality, energy, natural hazards and vessel traffic.
+- Research: paper and preprint search, citations and authors.
+
+Built for agents that answer with sourced, dated numbers, from a single question to a multi-step research workflow.
+
+Works with Claude, ChatGPT, Codex, GitHub Copilot, Grok, Cursor, Antigravity, VS Code and any MCP client.
 
 ## See it in action
 
@@ -73,10 +82,10 @@ Every tool result carries structured metadata - source attribution, freshness, a
 flowchart LR
     A["AI agent<br/>(ChatGPT, Claude, Gemini, xAI, IDEs)"] --> B["Sugra MCP<br/>gateway tools, plus agent tools when hosted"]
     B --> C["Sugra API<br/>1,600+ endpoints, 36 data domains"]
-    C --> D["160+ primary sources<br/>markets, economics, government,<br/>news, climate, maritime"]
+    C --> D["200 primary sources<br/>markets, economics, government,<br/>news, climate, maritime"]
 ```
 
-Behind the gateway sits the Sugra API: 160+ primary sources - sovereign statistics agencies, central banks, intergovernmental bodies and more - feeding 1,600+ endpoints across 36 data domains. The server ships a bundled catalog of the full endpoint surface, so discovery (search, describe, toolsets) runs locally without network calls; only actual data requests hit the API.
+Behind the gateway sits the Sugra API: 200 primary sources - sovereign statistics agencies, central banks, intergovernmental bodies and more - feeding 1,600+ endpoints across 36 data domains. The server ships a bundled catalog of the full endpoint surface, so discovery (search, describe, toolsets) runs locally without network calls; only actual data requests hit the API.
 
 ## What agents build with it
 

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "sugra-api-mcp"
 version = "0.13.0"
-description = "Primary-source data for AI agents: markets, macro, entities, news, network, earth and research."
+description = "Connect AI agents to primary sources - markets, macro, entities, news, network, earth and research."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
