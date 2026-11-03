@@ -2,9 +2,9 @@
 
 fetch_data ran only the top search hit, so params meant for another hit were
 refused with unknown_parameters: "Bitcoin price" with coin_id hit an operation
-that takes no params at all. Another hit within the first five now runs
+that takes no params at all. Another hit within the first six now runs
 instead, but only on evidence: a sent key the top hit does not declare, that
-is no misspelling of one of its names, and that at most five operations
+is no misspelling of one of its names, and that at most eight operations
 declare. The hit must be a GET, declare every sent key, not be an open-query
 operation, and score at least half the top. A mismatch on common keys only
 (limit, currency) stays refused, and the refusal names the hits that would
@@ -51,7 +51,8 @@ def _client(monkeypatch) -> _RecordingClient:
 
 
 def _ranks(query: str) -> list[str]:
-    return [hit["operation_id"] for hit in search_catalog(load_catalog(), query, limit=5)]
+    return [hit["operation_id"] for hit in search_catalog(
+        load_catalog(), query, limit=gateway._SELECTION_WINDOW)]
 
 
 # ---- the bundled catalog ----
@@ -71,9 +72,9 @@ async def test_a_rare_key_of_another_hit_runs_that_hit(monkeypatch) -> None:
     assert result["meta"]["endpoint"] == "/api/v1/crypto/bitcoin/price"
 
 
-async def test_the_window_reaches_the_fifth_hit(monkeypatch) -> None:
-    """The plan said the first three; the history operation ranks fifth."""
-    assert _ranks("Bitcoin price history").index("crypto_coin_id_history") == 4
+async def test_the_window_reaches_the_sixth_hit(monkeypatch) -> None:
+    """The plan said the first three; the history operation ranks sixth."""
+    assert _ranks("Bitcoin price history").index("crypto_coin_id_history") == 5
     client = _client(monkeypatch)
 
     result = await gateway.fetch_data(
@@ -118,7 +119,7 @@ async def test_limit_alone_never_moves_the_selection(monkeypatch) -> None:
 
 
 async def test_a_misspelled_key_keeps_did_you_mean(monkeypatch) -> None:
-    """vs_currency is rare and the fifth hit declares it, but it reads as currency."""
+    """vs_currency is rare and the sixth hit declares it, but it reads as currency."""
     client = _client(monkeypatch)
 
     result = await gateway.fetch_data(
@@ -276,7 +277,7 @@ async def test_a_hit_under_half_the_top_score_is_not_selected(monkeypatch) -> No
 
 
 async def test_the_candidate_list_stays_at_three(monkeypatch) -> None:
-    """The selection reads five hits; the payloads still list the first three."""
+    """The selection reads six hits; the payloads still list the first three."""
     client = _client(monkeypatch)
 
     result = await gateway.fetch_data(query="Bitcoin price", params={"vs_currency": "usd"})
@@ -338,9 +339,9 @@ def _declaring(total: int) -> list[Endpoint]:
     return [_gauge("top_op"), _gauge("candidate_op", "gauge_id"), *fillers]
 
 
-async def test_five_declaring_operations_are_rare(monkeypatch) -> None:
+async def test_eight_declaring_operations_are_rare(monkeypatch) -> None:
     hits = [{"operation_id": "top_op", "score": 40}, {"operation_id": "candidate_op", "score": 40}]
-    client = _patch(monkeypatch, _declaring(5), hits)
+    client = _patch(monkeypatch, _declaring(8), hits)
 
     result = await gateway.fetch_data(query="gauge", params={"gauge_id": "G1"})
 
@@ -348,9 +349,9 @@ async def test_five_declaring_operations_are_rare(monkeypatch) -> None:
     assert result["meta"]["fetch_data"]["selected_by"] == "params"
 
 
-async def test_six_declaring_operations_are_not_rare(monkeypatch) -> None:
+async def test_nine_declaring_operations_are_not_rare(monkeypatch) -> None:
     hits = [{"operation_id": "top_op", "score": 40}, {"operation_id": "candidate_op", "score": 40}]
-    client = _patch(monkeypatch, _declaring(6), hits)
+    client = _patch(monkeypatch, _declaring(9), hits)
 
     result = await gateway.fetch_data(query="gauge", params={"gauge_id": "G1"})
 
