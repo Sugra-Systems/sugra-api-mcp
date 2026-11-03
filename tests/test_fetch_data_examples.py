@@ -1,7 +1,7 @@
 """The examples in fetch_data's description must run as written.
 
 fetch_data runs the top search hit unless a sent key is rare and foreign to
-it and a GET hit among the first five, scoring at least half the top,
+it and a GET hit among the first six, scoring at least half the top,
 declares every sent key (test_fetch_data_selection.py); a param the operation
 that runs does not declare returns unknown_parameters.
 

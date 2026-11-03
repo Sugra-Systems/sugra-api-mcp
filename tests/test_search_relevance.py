@@ -482,7 +482,7 @@ def test_us_macro_query_lands_the_us_series_first(catalog) -> None:
 
 # A curated series by its everyday name: the macro operation answers with the
 # series' key first, and for a US series FRED's generic proxy stays among the
-# five hits fetch_data selects from, for a call that sends a FRED series id.
+# six hits fetch_data selects from, for a call that sends a FRED series id.
 MACRO_KEY_TOP_1 = [
     ("US nonfarm payrolls", "us/payrolls"),
     ("US housing starts", "us/housing-starts"),
@@ -3679,13 +3679,17 @@ def test_an_operation_that_answers_through_the_statistics_alias_takes_the_countr
 
 def test_an_operation_in_neither_group_keeps_its_rank(catalog) -> None:
     """The Penn World Table takes the country as an ISO3 code, so it neither
-    earns the boost nor is a national source: it keeps its place above the
-    national GDP sources."""
+    earns the boost nor is a national source: the two groups trade slots
+    between them and it keeps its own. Which national source lands next to it
+    follows the group's slots: FRED's vintage dates, a national source that
+    names GDP, added one and put Spain's GDP one place above it."""
     results = search_catalog(catalog, "GDP", limit=200)
     ranks = {r["operation_id"]: i for i, r in enumerate(results)}
-    pwt = ranks["research_pwt_country_iso3"]
+    pwt = next(r for r in results if r["operation_id"] == "research_pwt_country_iso3")
+    assert not any(note.startswith(("lifted-above:", "clamped-below:")) for note in pwt["why"])
+    answers = [i for i, r in enumerate(results) if "pattern:any-country->param" in r["why"]]
     for operation in ("ine_gdp", "ons_gdp", "stat_finland_gdp"):
-        assert ranks.get(operation, len(ranks)) > pwt, (operation, ranks.get(operation), pwt)
+        assert ranks.get(operation, len(ranks)) > max(answers), (operation, ranks.get(operation))
 
 
 @pytest.mark.parametrize("query", ["GDP in bn", "bn GDP"])

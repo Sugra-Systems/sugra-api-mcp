@@ -273,7 +273,7 @@ def test_a_key_hit_ranks_first_and_says_how_to_call_it(keyed_catalog: Catalog) -
 
 def test_fred_proxy_stays_below_the_key_and_inside_the_selection_window(keyed_catalog: Catalog) -> None:
     """A model that sends a FRED series id still runs the proxy: fetch_data
-    selects from the first five hits, and the key's own operation does not
+    selects from the first six hits, and the key's own operation does not
     declare series_id."""
     results = search_catalog(keyed_catalog, "US 10-year Treasury yield", limit=gateway._SELECTION_WINDOW)
     ids = _top_ids(results)
