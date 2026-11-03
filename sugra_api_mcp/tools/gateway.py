@@ -644,12 +644,13 @@ def _closest_declared(key: str, accepted: list[str]) -> str | None:
 
 # fetch_data selection. The search window is wider than the candidate list the
 # payloads carry: "Bitcoin price history" with coin_id and days finds the
-# operation that declares both at rank 5.
-_SELECTION_WINDOW = 5
+# operation that declares both at rank 6, below the derivatives mark price.
+_SELECTION_WINDOW = 6
 _CANDIDATE_LIST = 3
 # A key at most this many operations declare is evidence of which operation
-# the caller means. A common one (limit, symbol, start_date) is not.
-_RARE_KEY_MAX_OPERATIONS = 5
+# the caller means. A common one (limit, symbol, start_date) is not: hundreds
+# declare those. Five broke when FRED's vintages made series_id six.
+_RARE_KEY_MAX_OPERATIONS = 8
 # Another hit runs only when it scores at least this share of the top match.
 _RESELECT_SCORE_FLOOR = 0.5
 _MAX_ALTERNATIVES = 3
@@ -1376,7 +1377,7 @@ async def fetch_data(
             }
 
         # Every payload below lists the first three hits, as before the
-        # selection window grew to five.
+        # selection window grew to six.
         candidates = results[:_CANDIDATE_LIST]
         top_match = _hit_operation_id(results[0])
         endpoint = None
