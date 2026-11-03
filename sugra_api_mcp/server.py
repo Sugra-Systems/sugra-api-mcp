@@ -582,8 +582,8 @@ MAX_REQUEST_BODY_BYTES = 4 * 1024 * 1024
 # so the text names only tools every profile is listed (list_toolsets,
 # list_sources) and leaves each tool's use to its own description.
 SERVER_INSTRUCTIONS = (
-    "Sugra API - read-only data across markets, macro, entities, news, network and "
-    "earth. Each listed tool's description says what it returns, and its input schema "
+    "Sugra MCP - read-only Sugra Data across markets, macro, entities, news, network "
+    "and earth. Each listed tool's description says what it returns, and its input schema "
     "describes each input it takes. list_toolsets and list_sources show the areas of the "
     "catalog behind them."
 )

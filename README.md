@@ -160,10 +160,10 @@ Every answer carries source attribution and freshness metadata, so agents cite i
 
 ## Hosted MCP (recommended)
 
-No install. In Claude, ChatGPT and Codex, add the Sugra API MCP server from a directory:
+No install. In Claude, ChatGPT and Codex, add the Sugra MCP server from a directory:
 
-- **Claude** (web, desktop, mobile, Claude Code and Cowork): [Add to Claude](https://url.sugra.ai/claude) opens the Sugra API MCP server in Anthropic's Connectors Directory; connect it and sign in with your Sugra account. In claude.ai the directory is under [Customize > Connectors](https://claude.ai/customize/connectors). Claude Code signed in with a claude.ai account picks the connector up automatically; `/mcp` lists it.
-- **ChatGPT and Codex**: [Add to ChatGPT](https://url.sugra.ai/openai) opens the Sugra API MCP server in the OpenAI Plugins Directory.
+- **Claude** (web, desktop, mobile, Claude Code and Cowork): [Add to Claude](https://url.sugra.ai/claude) opens the Sugra MCP server in Anthropic's Connectors Directory; connect it and sign in with your Sugra account. In claude.ai the directory is under [Customize > Connectors](https://claude.ai/customize/connectors). Claude Code signed in with a claude.ai account picks the connector up automatically; `/mcp` lists it.
+- **ChatGPT and Codex**: [Add to ChatGPT](https://url.sugra.ai/openai) opens the Sugra MCP server in the OpenAI Plugins Directory.
 
 Any other MCP client, or a manual setup, points at the hosted Streamable HTTP endpoint:
 
@@ -176,7 +176,7 @@ https://mcp.sugra.ai/mcp
 - As a custom connector in claude.ai: Customize -> Connectors -> Add custom connector
 - In ChatGPT: Settings -> Connectors -> Add MCP server
 
-Already added Sugra to Claude as a custom connector? That connection keeps working and shows under "Custom". Connecting the Sugra API MCP server from the directory as well gives you two connections, so remove the custom one first, then connect from the directory.
+Already added Sugra to Claude as a custom connector? That connection keeps working and shows under "Custom". Connecting the Sugra MCP server from the directory as well gives you two connections, so remove the custom one first, then connect from the directory.
 
 ## Local package
 
@@ -204,15 +204,15 @@ The same call through an agent: connect the server to your client (next section)
 
 ## Connect your client
 
-Supported clients:
+Supported clients: Claude, Claude Code, ChatGPT, Codex, Grok, Cursor, Antigravity, GitHub Copilot, VS Code, Zed, Cline, Continue and any MCP client.
 
-- **Anthropic Claude**: Claude Desktop, Claude Code (CLI), claude.ai (web)
-- **OpenAI GPT**: ChatGPT (via MCP connector)
-- **Google**: Antigravity (CLI, app and IDE), Gemini Code Assist (VS Code + JetBrains)
-- **GitHub**: Copilot CLI
-- **xAI**: Remote MCP Tools in xAI SDK and Responses API
-- **IDEs**: VS Code (native), Cursor, Zed, Cline, Continue.dev, Windsurf
-- **Custom agents**: anything built on the Python or TypeScript MCP SDK
+- **Claude**: claude.ai (web), Claude Desktop; **Claude Code** (CLI)
+- **ChatGPT** (MCP connector) and **Codex** (app and CLI)
+- **Grok**: Remote MCP Tools in the xAI SDK and Responses API
+- **Antigravity**: CLI, app and IDE
+- **GitHub Copilot**: Copilot CLI
+- **Editors**: VS Code (native), Cursor, Zed, Cline, Continue
+- **Any MCP client**: anything built on the Python or TypeScript MCP SDK
 
 ### Claude Desktop (stdio)
 
@@ -239,7 +239,7 @@ Restart Claude Desktop. Sugra tools appear in the tools menu.
 
 ### Claude Code (Anthropic CLI)
 
-Signed in to Claude Code with a claude.ai account? [Add to Claude](https://url.sugra.ai/claude) connects the Sugra API MCP server from the Connectors Directory in claude.ai, and it appears in `/mcp` without any local install. To run the local package instead:
+Signed in to Claude Code with a claude.ai account? [Add to Claude](https://url.sugra.ai/claude) connects the Sugra MCP server from the Connectors Directory in claude.ai, and it appears in `/mcp` without any local install. To run the local package instead:
 
 ```bash
 claude mcp add sugra -- sugra-api-mcp
@@ -278,17 +278,17 @@ copilot mcp add --transport http sugra-api https://mcp.sugra.ai/mcp
 
 Copilot CLI opens the Sugra sign-in page in your browser the first time it connects to the server; `/mcp auth sugra-api` signs in again. The plugin ([GitHub Copilot](#github-copilot)) adds the same server together with the skills, so with the plugin installed you can skip this command.
 
-### Cursor, Zed, Cline, Continue.dev, Windsurf
+### Cursor, Zed, Cline, Continue
 
 Each of these has an MCP settings file (typically `mcp.json` or equivalent) with the same stdio config shape as Claude Desktop.
 
 ### ChatGPT
 
-[Add to ChatGPT](https://url.sugra.ai/openai) installs the Sugra API MCP server from the OpenAI Plugins Directory. Or add the hosted HTTP endpoint (below) as an MCP connector, since ChatGPT does not launch local stdio processes.
+[Add to ChatGPT](https://url.sugra.ai/openai) installs the Sugra MCP server from the OpenAI Plugins Directory. Or add the hosted HTTP endpoint (below) as an MCP connector, since ChatGPT does not launch local stdio processes.
 
 ### HTTP (claude.ai, ChatGPT, remote agents)
 
-In claude.ai, [Add to Claude](https://url.sugra.ai/claude) connects the Sugra API MCP server from Anthropic's Connectors Directory; in ChatGPT, [Add to ChatGPT](https://url.sugra.ai/openai) installs it from the OpenAI Plugins Directory. For a manual setup or any other Streamable HTTP MCP client, use the hosted endpoint:
+In claude.ai, [Add to Claude](https://url.sugra.ai/claude) connects the Sugra MCP server from Anthropic's Connectors Directory; in ChatGPT, [Add to ChatGPT](https://url.sugra.ai/openai) installs it from the OpenAI Plugins Directory. For a manual setup or any other Streamable HTTP MCP client, use the hosted endpoint:
 
 ```
 https://mcp.sugra.ai/mcp
