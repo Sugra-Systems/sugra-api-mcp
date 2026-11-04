@@ -76,10 +76,10 @@ def _assert_held(result: dict[str, Any], *cut: str) -> None:
         assert response_chars(result[key]) > 1_000
 
 
-def test_the_bound_leaves_room_under_the_cap_and_the_readme_names_it() -> None:
+def test_the_bound_leaves_room_under_the_cap_and_the_reference_names_it() -> None:
     assert _DETAIL_CHARS * 2 < _ERROR_CHARS < MAX_RESPONSE_CHARS
-    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
-    assert f"held to {_ERROR_CHARS:,} characters" in readme
+    reference = Path(__file__).resolve().parents[1] / "docs" / "reference.md"
+    assert f"held to {_ERROR_CHARS:,} characters" in reference.read_text(encoding="utf-8")
 
 
 # ---- transport failures ----
