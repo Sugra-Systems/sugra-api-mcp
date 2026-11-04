@@ -110,6 +110,7 @@ Cursor: [Install in Cursor](https://cursor.com/en/install-mcp?name=sugra&config=
 
 ```bash
 git clone https://github.com/Sugra-Systems/sugra-api-plugins
+mkdir -p ~/.cursor/plugins/local
 cp -R sugra-api-plugins/cursor ~/.cursor/plugins/local/sugra-api-skills
 ```
 
@@ -224,7 +225,7 @@ The CLI, the app and the IDE share the server. Antigravity opens the Sugra sign-
 <details>
 <summary><b>Other agents</b></summary>
 
-Add `https://mcp.sugra.ai/mcp` as a remote MCP server in any client that speaks Streamable HTTP.
+Add the address above as a remote MCP server in any client that speaks Streamable HTTP.
 
 </details>
 

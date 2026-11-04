@@ -2,8 +2,9 @@
 
 A merge to main runs the test matrix and nothing else: no job in test.yml
 deploys, logs in to a cloud account or reads a repository secret. The job and
-matrix names stay fixed because branch protection requires the checks they
-produce (`test (3.13)`, `test (3.14)`, `test (3.15)`).
+matrix names stay fixed because branch protection requires two of the checks
+they produce (`test (3.13)`, `test (3.14)`); `test (3.15)` runs beside them
+and is not required.
 """
 
 from __future__ import annotations
