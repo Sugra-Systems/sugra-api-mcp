@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-11-03T05:06:44Z",
+  "built_at": "2026-11-04T21:22:20Z",
   "endpoint_count": 1638,
   "endpoints": [
     {
@@ -20118,23 +20118,27 @@
           "country": {
             "anyOf": [
               {
+                "maxLength": 64,
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "Optional country, ISO 3166-1 alpha-2 (alpha-3 or the English name are read too). Compared with the countries the list record names (nationality, citizenship, registration and address are one list in the corpus): present raises a candidate, absent demotes it, a record with no country is never demoted. Weighs less than dob.",
             "title": "Country"
           },
           "dob": {
             "anyOf": [
               {
+                "maxLength": 32,
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "Optional date of birth, YYYY-MM-DD or YYYY. Compared with the dates of birth person records hold: the same day raises a candidate, the same year (when either side holds only a year) raises it less, within one year has no effect, two or more years from every date the record holds demotes it. A record with no date of birth is never demoted.",
             "title": "Dob"
           },
           "identifier": {
@@ -20194,12 +20198,14 @@
           "nationality": {
             "anyOf": [
               {
+                "maxLength": 64,
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "Optional nationality, same format and rule as country; country and nationality together count once.",
             "title": "Nationality"
           },
           "threshold_hit": {
@@ -20252,7 +20258,7 @@
       "toolset": "entity_screening"
     },
     {
-      "description": "Screen a person or organization name against the sanctions corpus and return a screening signal (`clear`, `review`, or `hit`) with matched records. Fail-CLOSED on staleness: if the underlying list is stale, a `hit` or `clear` result is downgraded to `review` and `meta.stale_screening` is set to `true`. ENTITY-4: optional `corpus` selects `sanctions` (default - Western/IGO + PEP), `rf_regulatory` (Russian domestic Minjust lists), or `all`.",
+      "description": "Screen a person or organization name against the sanctions corpus and return a screening signal (`clear`, `review`, or `hit`) with matched records. Fail-CLOSED on staleness: if the underlying list is stale, a `hit` or `clear` result is downgraded to `review` and `meta.stale_screening` is set to `true`. ENTITY-4: optional `corpus` selects `sanctions` (default - Western/IGO + PEP), `rf_regulatory` (Russian domestic Minjust lists), or `all`. Optional `dob`, `country` and `nationality` re-score and re-order the name candidates against what each list record holds: a match raises a candidate, a contradiction demotes it (it stays listed, so the verdict never turns `clear` because of them), a record that holds no such data is never demoted. Each match carries `name_score` and `secondary_fields` with the outcome per field.",
       "method": "POST",
       "operation_id": "post_entity_screen",
       "parameters": [],
@@ -20284,23 +20290,27 @@
           "country": {
             "anyOf": [
               {
+                "maxLength": 64,
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "Optional country, ISO 3166-1 alpha-2 (alpha-3 or the English name are read too). Compared with the countries the list record names (nationality, citizenship, registration and address are one list in the corpus): present raises a candidate, absent demotes it, a record with no country is never demoted. Weighs less than dob.",
             "title": "Country"
           },
           "dob": {
             "anyOf": [
               {
+                "maxLength": 32,
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "Optional date of birth, YYYY-MM-DD or YYYY. Compared with the dates of birth person records hold: the same day raises a candidate, the same year (when either side holds only a year) raises it less, within one year has no effect, two or more years from every date the record holds demotes it. A record with no date of birth is never demoted.",
             "title": "Dob"
           },
           "identifier": {
@@ -20360,12 +20370,14 @@
           "nationality": {
             "anyOf": [
               {
+                "maxLength": 64,
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "Optional nationality, same format and rule as country; country and nationality together count once.",
             "title": "Nationality"
           },
           "threshold_hit": {
@@ -20400,7 +20412,7 @@
       "toolset": "entity_screening"
     },
     {
-      "description": "Screen up to 1000 names in one request, each against the OFAC SDN corpus, returning a per-item screening signal (`clear`, `review`, or `hit`) plus an aggregate summary. Each item is screened with the same fail-CLOSED staleness and partial-coverage downgrade as POST /screen. Billing: each item counts as one billable screen (N items = N screens). Fail-CLOSED: if no sanctions list is loaded the whole batch returns 503 (never a per-item false clear).",
+      "description": "Screen up to 1000 names in one request, each against the OFAC SDN corpus, returning a per-item screening signal (`clear`, `review`, or `hit`) plus an aggregate summary. Each item is screened with the same fail-CLOSED staleness and partial-coverage downgrade as POST /screen, and an item's optional `dob`, `country` and `nationality` re-score its candidates as they do on POST /screen. Billing: each item counts as one billable screen (N items = N screens). Fail-CLOSED: if no sanctions list is loaded the whole batch returns 503 (never a per-item false clear).",
       "method": "POST",
       "operation_id": "post_entity_screen_batch",
       "parameters": [],
@@ -20427,23 +20439,27 @@
                 "country": {
                   "anyOf": [
                     {
+                      "maxLength": 64,
                       "type": "string"
                     },
                     {
                       "type": "null"
                     }
                   ],
+                  "description": "Optional country, ISO 3166-1 alpha-2 (alpha-3 or the English name are read too). Compared with the countries the list record names (nationality, citizenship, registration and address are one list in the corpus): present raises a candidate, absent demotes it, a record with no country is never demoted. Weighs less than dob.",
                   "title": "Country"
                 },
                 "dob": {
                   "anyOf": [
                     {
+                      "maxLength": 32,
                       "type": "string"
                     },
                     {
                       "type": "null"
                     }
                   ],
+                  "description": "Optional date of birth, YYYY-MM-DD or YYYY. Compared with the dates of birth person records hold: the same day raises a candidate, the same year (when either side holds only a year) raises it less, within one year has no effect, two or more years from every date the record holds demotes it. A record with no date of birth is never demoted.",
                   "title": "Dob"
                 },
                 "id": {
@@ -20466,12 +20482,14 @@
                 "nationality": {
                   "anyOf": [
                     {
+                      "maxLength": 64,
                       "type": "string"
                     },
                     {
                       "type": "null"
                     }
                   ],
+                  "description": "Optional nationality, same format and rule as country; country and nationality together count once.",
                   "title": "Nationality"
                 }
               },
@@ -97426,5 +97444,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "53e7d0a26258ed06371609a90cee80076e68e68ce5f28265d2521125b929f1a8"
+  "spec_sha256": "35513849eb5f9e1c9578e9b2db0a94eeb741667a740863f27b5ec0dd26b45204"
 }
