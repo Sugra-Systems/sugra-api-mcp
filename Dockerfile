@@ -9,7 +9,7 @@
 #
 # No environment variable is required to start the container; configuration
 # such as SUGRA_API_KEY is supplied at run time (docker run -e / compose).
-FROM python:3.13-slim
+FROM python:3.15-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1

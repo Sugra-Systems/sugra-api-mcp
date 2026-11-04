@@ -459,7 +459,7 @@ async def test_call_endpoint_catches_unexpected_exception(monkeypatch) -> None:
     assert result["operation_id"] == "quotes_symbol_price"
     assert result["exception_type"] == "RuntimeError"
     assert "unexpected internal failure" in result["reason"]
-    # The README contract promises elapsed_ms on ALL error
+    # The error contract (docs/reference.md) promises elapsed_ms on ALL error
     # payloads - the safety-net path must carry it too.
     assert isinstance(result["elapsed_ms"], int)
 

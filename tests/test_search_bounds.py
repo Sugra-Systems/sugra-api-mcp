@@ -138,9 +138,9 @@ def test_the_term_bound_counts_ascii_runs_only() -> None:
     assert search._tokens("café ticker") == ["caf", "ticker"]
 
 
-def test_the_readme_describes_the_ascii_term_rule() -> None:
-    text = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
-    assert "two or more ASCII letters or digits" in text
+def test_the_reference_describes_the_ascii_term_rule() -> None:
+    reference = Path(__file__).resolve().parents[1] / "docs" / "reference.md"
+    assert "two or more ASCII letters or digits" in reference.read_text(encoding="utf-8")
 
 
 
