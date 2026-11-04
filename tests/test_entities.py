@@ -270,10 +270,55 @@ async def test_screen_with_country_or_nationality_alone_carries_outcomes(monkeyp
 
         result = await entities.sugra_entity_screen(name="Jane Doe", **kwargs)
 
+        # The field reaches the request body and turns the outcome on: both
+        # come from the one place the fields are named.
+        assert fake.calls[0][3] == {"name": "Jane Doe", **kwargs}, kwargs
         assert [m["secondary_fields"] for m in result["matches"]] == [
             {"dob": "match", "country": "match"},
             {"dob": "contradict", "country": "unknown"},
         ], kwargs
+
+
+async def test_screen_sends_all_three_secondary_fields_together(monkeypatch) -> None:
+    fake = FakeClient(post_payload=_SCREEN_RAW_SECONDARY)
+    monkeypatch.setattr(entities, "get_client", lambda: fake)
+
+    result = await entities.sugra_entity_screen(
+        name="Jane Doe", country="US", dob="1980-01-01", nationality="GB")
+
+    assert fake.calls[0][3] == {"name": "Jane Doe", "country": "US",
+                                "dob": "1980-01-01", "nationality": "GB"}
+    assert all("secondary_fields" in m for m in result["matches"])
+
+
+async def test_screen_with_dob_leaves_out_a_null_secondary_fields(monkeypatch) -> None:
+    # One rule for both added keys: a key the API sent as null, or did not
+    # send, is left out, never passed through as null.
+    raw = {
+        "data": {"screening": {"status": "review", "matches": [
+            {"list": "ofac_sdn", "matched_name": "DOE, Jane", "score": 0.9,
+             "match_type": "name_fuzzy", "name_score": 0.9,
+             "secondary_fields": None},
+            {"list": "ofac_sdn", "matched_name": "DOE, J", "score": 0.8,
+             "match_type": "name_fuzzy", "name_score": None,
+             "secondary_fields": None},
+            {"list": "ofac_sdn", "matched_name": "DOE", "score": 0.75,
+             "match_type": "name_fuzzy"},
+        ]}},
+        "meta": {},
+    }
+    fake = FakeClient(post_payload=raw)
+    monkeypatch.setattr(entities, "get_client", lambda: fake)
+
+    result = await entities.sugra_entity_screen(name="Jane Doe", dob="1980-01-01")
+
+    assert result["matches"] == [
+        {"name": "DOE, Jane", "score": 0.9, "list": "ofac_sdn", "type": "name_fuzzy",
+         "name_score": 0.9},
+        {"name": "DOE, J", "score": 0.8, "list": "ofac_sdn", "type": "name_fuzzy"},
+        {"name": "DOE", "score": 0.75, "list": "ofac_sdn", "type": "name_fuzzy"},
+    ]
+    assert None not in [v for m in result["matches"] for v in m.values()]
 
 
 async def test_screen_without_secondary_fields_keeps_the_four_key_match(monkeypatch) -> None:
@@ -343,6 +388,41 @@ def test_screen_field_texts_say_the_fields_re_score_and_never_drop(monkeypatch) 
         assert chr(0x2014) not in text  # no em dash in public copy
     assert "secondary_fields" in schema["description"]
     assert "name_score" in schema["description"]
+
+
+def _flat(text: str) -> str:
+    return " ".join(text.split())
+
+
+def test_screen_texts_say_only_what_the_api_scoring_does(monkeypatch) -> None:
+    # Each sentence below is what the API's scoring code does (the comment over
+    # sugra_entity_screen names it); a change there must change this copy.
+    monkeypatch.setenv("SUGRA_API_KEY", "dummy")
+    schema = _screen_tool_schema()
+    props = schema["properties"]
+    description = _flat(schema["description"])
+
+    # The candidate set is cut on the name score; every candidate in it sets
+    # the verdict to review or hit, so the fields cannot turn it clear.
+    assert ("They never add or remove a candidate: every candidate the name "
+            "screen found stays in `matches`, so the verdict can move between "
+            "`hit` and `review` on the adjusted score but does not turn `clear` "
+            "because of them.") in description
+    assert "never turns `clear`" not in description
+    # name_score and secondary_fields are carried only when the API returns
+    # them (the projection leaves a null out).
+    assert ("each match also carries, when the API returns them, `name_score` "
+            "(the name-only score) and `secondary_fields`") in description
+    assert ("`unknown` (the record holds no such data, or for `dob` is not a "
+            "person)") in description
+    # dob is compared only against a person record.
+    assert ("A record with no date of birth, or one that is not a person, is "
+            "never demoted.") in props["dob"]["description"]
+    # Country: GEO_MATCH raises, GEO_CONTRADICT demotes only a record that
+    # holds ISO countries, both smaller than every dob band.
+    assert ("a list record that names the country raises a candidate, one that "
+            "names only other countries demotes it, and a record with no "
+            "country is never demoted. Weighs less than dob.") in props["country"]["description"]
 
 
 async def test_screen_propagates_api_error_as_clean_dict(monkeypatch) -> None:
