@@ -9,7 +9,8 @@ for:
 - Public directory sandboxes (Glama Try in Browser, and similar)
 
 User-facing configuration is a single secret: `SUGRA_API_KEY`. See the
-[README environment variables](../README.md#environment-variables) section.
+[environment variables](reference.md#environment-variables) section of the
+package reference.
 
 ## Docker Compose (HTTP on port 8001)
 

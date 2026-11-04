@@ -68,7 +68,7 @@ def test_dockerfile_pins_expected_base_image_family() -> None:
     froms = [
         instr.split()[1] for instr in _dockerfile_instructions() if instr.startswith("FROM ")
     ]
-    assert froms == ["python:3.13-slim"]
+    assert froms == ["python:3.15-slim"]
 
 
 def test_dockerfile_builds_package_from_repo_source_with_http_extra() -> None:
