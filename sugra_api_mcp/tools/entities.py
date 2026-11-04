@@ -116,24 +116,39 @@ def _disclaimer_of(meta: dict[str, Any]) -> str:
     return value if isinstance(value, str) and value else _FALLBACK_DISCLAIMER
 
 
-def _compact_match(match: dict[str, Any]) -> dict[str, Any]:
+# Request fields that re-score the name candidates. When the call sends any of
+# them, each compact match also carries the API's per-field outcome.
+_SECONDARY_FIELDS = ("dob", "country", "nationality")
+
+
+def _compact_match(match: dict[str, Any], secondary: bool = False) -> dict[str, Any]:
     """Project one screening match to {name, score, list, type}.
 
     Drops the heavy / rare fields (rationale arrays, source_id, list_published,
     restriction_type, program) that bloat the agent context (Spec 9.8 MCP-OUT).
+    With ``secondary`` (the request sent dob, country or nationality) the match
+    also carries ``secondary_fields`` as the API returned it, and ``name_score``
+    when the API returned one, so the agent can see why a score moved.
     """
-    return {
+    out = {
         "name": match.get("matched_name"),
         "score": match.get("score"),
         "list": match.get("list"),
         "type": match.get("match_type"),
     }
+    if secondary:
+        name_score = match.get("name_score")
+        if name_score is not None:
+            out["name_score"] = name_score
+        out["secondary_fields"] = match.get("secondary_fields")
+    return out
 
 
-def _project_screen(payload: dict[str, Any]) -> dict[str, Any]:
+def _project_screen(payload: dict[str, Any], secondary: bool = False) -> dict[str, Any]:
     """Compact projection for POST /entity/screen.
 
-    {status, matches:[{name, score, list, type}], disclaimer}
+    {status, matches:[{name, score, list, type}], disclaimer}; with
+    ``secondary`` each match adds ``name_score`` and ``secondary_fields``.
     """
     data = payload.get("data") or {}
     meta = payload.get("meta") or {}
@@ -141,7 +156,9 @@ def _project_screen(payload: dict[str, Any]) -> dict[str, Any]:
     matches = screening.get("matches") or []
     return {
         "status": screening.get("status"),
-        "matches": [_compact_match(m) for m in matches if isinstance(m, dict)],
+        "matches": [
+            _compact_match(m, secondary) for m in matches if isinstance(m, dict)
+        ],
         "disclaimer": _disclaimer_of(meta),
     }
 
@@ -247,15 +264,38 @@ async def sugra_entity_screen(
     ],
     country: Annotated[
         str | None,
-        Field(description="Optional ISO 3166-1 alpha-2 country to narrow the match."),
+        Field(
+            description=(
+                "Optional country, ISO 3166-1 alpha-2 (alpha-3 or the English "
+                "name are read too). Re-scores and re-orders the name "
+                "candidates, never drops one: a list record that names the "
+                "country raises a candidate, one that names only other "
+                "countries demotes it, and a record with no country is never "
+                "demoted. Weighs less than dob."
+            ),
+        ),
     ] = None,
     dob: Annotated[
         str | None,
-        Field(description="Optional date of birth for a person, YYYY-MM-DD."),
+        Field(
+            description=(
+                "Optional date of birth for a person, YYYY-MM-DD or YYYY. "
+                "Re-scores and re-orders the name candidates, never drops one: "
+                "the same day raises a candidate, the same year (when either "
+                "side holds only a year) raises it less, within one year has no "
+                "effect, two or more years from every date the record holds "
+                "demotes it. A record with no date of birth is never demoted."
+            ),
+        ),
     ] = None,
     nationality: Annotated[
         str | None,
-        Field(description="Optional nationality to narrow the match."),
+        Field(
+            description=(
+                "Optional nationality, same format and rule as country; "
+                "country and nationality together count once."
+            ),
+        ),
     ] = None,
 ) -> dict[str, Any]:
     """Screen a person or organization name against the Sugra sanctions corpus.
@@ -266,17 +306,29 @@ async def sugra_entity_screen(
     `clear` result is not proof of absence, and a `hit` is a candidate match to
     review, not a finding.
 
+    Optional `dob`, `country` and `nationality` re-score and re-order the name
+    candidates against what each list record holds. They never add or remove a
+    candidate, so the verdict never turns `clear` because of them. A record
+    that holds no such data is never demoted, and a value that cannot be read
+    has no effect.
+
     Output is COMPACT to protect the agent context budget:
     `{status, matches:[{name, score, list, type}], disclaimer}`. The verdict
-    `status` is one of `clear`, `review`, or `hit`. The heavy raw fields
-    (match rationale, source ids, publish dates) are dropped; use the Sugra API
-    directly when the full screening envelope is needed.
+    `status` is one of `clear`, `review`, or `hit`. When the call sends `dob`,
+    `country` or `nationality`, `score` is the adjusted score and each match
+    also carries `name_score` (the name-only score) and `secondary_fields`,
+    the outcome per field sent: `match`, `near`, `contradict`, `unknown` (the
+    record holds no such data) or `unrecognized` (the value sent could not be
+    read). The heavy raw fields (match rationale, source ids, publish dates)
+    are dropped; use the Sugra API directly when the full screening envelope
+    is needed.
 
     Args:
         name: The person or organization name to screen (required).
-        country: Optional ISO 3166-1 alpha-2 country to narrow the match.
-        dob: Optional date of birth (YYYY-MM-DD) for a person.
-        nationality: Optional nationality to narrow the match.
+        country: Optional country, ISO 3166-1 alpha-2; re-scores, never drops.
+        dob: Optional date of birth for a person, YYYY-MM-DD or YYYY;
+            re-scores, never drops.
+        nationality: Optional nationality, same format and rule as country.
     """
     body: dict[str, Any] = {"name": name}
     for key, val in (("country", country), ("dob", dob), ("nationality", nationality)):
@@ -287,7 +339,7 @@ async def sugra_entity_screen(
     payload = await client.post(f"{_ENTITY_BASE}/screen", json=body)
     if _is_error(payload):
         return _clean_error(payload)
-    return _project_screen(payload)
+    return _project_screen(payload, any(k in body for k in _SECONDARY_FIELDS))
 
 
 @mcp.tool(annotations=read_only("Sugra Entity lookup"))
