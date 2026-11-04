@@ -252,18 +252,18 @@ _TABS: list[tuple[str, str, str]] = [
     (
         "claude",
         "Claude",
-        "<p>The Sugra API MCP server is listed in Anthropic's Connectors Directory.</p>"
+        "<p>The Sugra MCP server is listed in Anthropic's Connectors Directory.</p>"
         f'<a href="{CLAUDE_LISTING}" class="btn"'
-        " title=\"The Sugra API MCP server in Anthropic's Connectors Directory\">"
+        " title=\"The Sugra MCP server in Anthropic's Connectors Directory\">"
         "Add to Claude</a>",
     ),
     (
         "chatgpt",
         "ChatGPT",
-        "<p>The Sugra API MCP server is listed in OpenAI's Plugins Directory"
+        "<p>The Sugra MCP server is listed in OpenAI's Plugins Directory"
         " for ChatGPT and Codex.</p>"
         f'<a href="{OPENAI_LISTING}" class="btn"'
-        " title=\"The Sugra API MCP server in OpenAI's Plugins Directory\">"
+        " title=\"The Sugra MCP server in OpenAI's Plugins Directory\">"
         "Add to ChatGPT</a>"
         + _step("Skills (optional)")
         + f"<p>{_OPENAI_SKILLS_LINK} are listed in OpenAI's Plugins Directory too.</p>"
@@ -273,7 +273,7 @@ _TABS: list[tuple[str, str, str]] = [
         "claude-code",
         "Claude Code",
         "<p>Signed in to Claude Code with a claude.ai account? "
-        f'<a href="{CLAUDE_LISTING}">Add the Sugra API MCP server in Claude</a> and it '
+        f'<a href="{CLAUDE_LISTING}">Add the Sugra MCP server in Claude</a> and it '
         "appears in <code>/mcp</code> on its own. Otherwise, add it with your API key.</p>"
         + _header_server("claude-code", "claude mcp add --transport http sugra")
         + _step("Skills (optional)")
@@ -287,7 +287,7 @@ _TABS: list[tuple[str, str, str]] = [
     (
         "codex",
         "Codex",
-        "<p>In the Codex app, install the Sugra API MCP server from "
+        "<p>In the Codex app, install the Sugra MCP server from "
         f'<a href="{OPENAI_LISTING}">OpenAI\'s Plugins Directory</a>. '
         "In the Codex CLI, add it with your API key.</p>"
         + _step("Server")
@@ -446,8 +446,8 @@ _FOOTER_COLUMNS = [
         "Products",
         [
             ("All products", f"{_SITE}/products"),
+            ("Sugra MCP", f"{_SITE}/mcp"),
             ("Sugra API", f"{_SITE}/api"),
-            ("Sugra Assist", f"{_SITE}/sugra-assist"),
         ],
     ),
     (
@@ -552,8 +552,8 @@ _LANDING_HTML = f"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sugra API MCP</title>
-<meta name="description" content="Connect Claude, ChatGPT, Claude Code, Codex, Grok, Antigravity, GitHub Copilot, Cursor and VS Code to Sugra API over the Model Context Protocol.">
+<title>Sugra MCP</title>
+<meta name="description" content="Connect Claude, Claude Code, ChatGPT, Codex, Grok, Cursor, Antigravity, GitHub Copilot, VS Code, Zed, Cline, Continue and any MCP client to Sugra Data over the Model Context Protocol.">
 <link rel="icon" href="{_SITE}/favicon.ico" sizes="32x32">
 <link rel="icon" type="image/svg+xml" href="{FAVICON_URI}">
 <link rel="apple-touch-icon" href="{_SITE}/apple-touch-icon.png">
@@ -683,8 +683,8 @@ _LANDING_HTML = f"""<!doctype html>
 {_site_header()}
 <main>
   <div class="hero">
-    <h1>Sugra API MCP</h1>
-    <p>Connector between LLM agents and world data. 1,600+ endpoints aggregating
+    <h1>Sugra MCP</h1>
+    <p>The connector between AI assistants and Sugra Data: 1,600+ endpoints from
     160+ primary sources across 36 data domains, served over the Model Context
     Protocol.</p>
   </div>

@@ -35,7 +35,7 @@ def _chatgpt() -> bool:
 def market_snapshot(symbol: str) -> str:
     """Build a sourced price and profile snapshot for one ticker symbol."""
     if _chatgpt():
-        return f"""Build a market snapshot for {symbol} using the Sugra API MCP tools.
+        return f"""Build a market snapshot for {symbol} using the Sugra MCP tools.
 
 1. Call get_stock_quotes with {{"symbols": "{symbol}"}} for the current price.
 2. Call get_stock_statistics with {{"symbol": "{symbol}"}} for the key company facts: valuation multiples, market capitalisation, margins and dividend yield. For an ETF or a fund, call get_fund_summary with {{"symbol": "{symbol}"}} instead.
@@ -43,7 +43,7 @@ def market_snapshot(symbol: str) -> str:
 4. Add broad context with get_sector_relative_strength (no inputs needed) for how US sectors are moving.
 5. Present a compact snapshot: latest price with its timestamp, key profile facts, and the market backdrop.
 6. Attribute every figure to its source and state the as-of date for each number."""
-    return f"""Build a market snapshot for {symbol} using the Sugra API MCP tools.
+    return f"""Build a market snapshot for {symbol} using the Sugra MCP tools.
 
 1. Call call_endpoint with operation_id "quotes_symbol_price" and params {{"symbol": "{symbol}"}} for the current price.
 2. Call call_endpoint with operation_id "fundamentals_ticker_profile" and params {{"ticker": "{symbol}"}} for the company profile.

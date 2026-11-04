@@ -35,7 +35,7 @@
 
 Sugra MCP is built and run by [Sugra Systems, Inc.](https://sugra.systems) It brings Sugra Data into AI assistants and agents over the Model Context Protocol: 1,600+ endpoints from 200 primary sources across 36 data domains - central banks, national statistics offices, regulators, intergovernmental bodies and more. The agent searches the catalog, reads an endpoint's description and calls it, and every answer carries its source and date.
 
-Published in Anthropic's Connectors Directory, the OpenAI Plugins Directory and the GitHub MCP Registry. Works with Claude, Claude Code, ChatGPT, Codex, GitHub Copilot, VS Code, Grok, Cursor, Antigravity, Zed, Cline, Continue and any MCP client.
+Published in Anthropic's Connectors Directory, the OpenAI Plugins Directory and the GitHub MCP Registry. Works with Claude, Claude Code, ChatGPT, Codex, Grok, Cursor, Antigravity, GitHub Copilot, VS Code, Zed, Cline, Continue and any MCP client.
 
 **Watch:** [How Sugra MCP works](https://www.youtube.com/watch?v=xRC_VNtfI6Q) &middot; [Seven directions, one key](https://www.youtube.com/watch?v=rsTZL3w61PQ)
 

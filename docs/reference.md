@@ -224,7 +224,7 @@ The test matrix runs on Python 3.13, 3.14 and 3.15.
 
 The server starts and lists its tools without a key, but API-calling tools (`call_endpoint`, `fetch_data`, the entity tools) return `{"error": "missing_api_key"}` until the server can find one. Depending on how you run it:
 
-- As an MCP tool from your client (Claude, ChatGPT, Gemini, xAI, IDE, etc.): check the `env` block in your MCP config file. Value should be a full key like `sugra_ao1_...`, not empty and not wrapped in extra quotes.
+- As an MCP tool from your client (Claude, Claude Code, ChatGPT, Codex, Grok, Cursor, Antigravity, GitHub Copilot, VS Code, Zed, Cline, Continue and any MCP client): check the `env` block in your MCP config file. Value should be a full key like `sugra_ao1_...`, not empty and not wrapped in extra quotes.
 - Shell / CI: `export SUGRA_API_KEY=sugra_...` before running `sugra-api-mcp`.
 - HTTP mode: set via `.env` or systemd `EnvironmentFile`, not the shell.
 
