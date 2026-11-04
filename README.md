@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/sugra-api-mcp/"><img src="https://img.shields.io/pypi/v/sugra-api-mcp?label=PyPI&color=F5A623" alt="PyPI"></a>
-  <a href="https://pypi.org/project/sugra-api-mcp/"><img src="https://img.shields.io/pypi/pyversions/sugra-api-mcp?label=Python" alt="Python versions"></a>
+  <a href="https://pypi.org/project/sugra-api-mcp/"><img src="https://img.shields.io/badge/Python-3.13_%7C_3.14_%7C_3.15-007ec6" alt="Python 3.13 | 3.14 | 3.15"></a>
   <a href="https://github.com/Sugra-Systems/sugra-api-mcp/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Sugra-Systems/sugra-api-mcp?label=License" alt="License"></a>
 </p>
 
@@ -269,7 +269,6 @@ The server also ships six workflow prompts (market snapshot, macro briefing, san
 - [Rate limits and errors](https://docs.sugra.ai/doc-2263384)
 - [Plans and billing](https://docs.sugra.ai/doc-2444799)
 - [Changelog](https://docs.sugra.ai/doc-2263381)
-- [Package reference](https://github.com/Sugra-Systems/sugra-api-mcp/blob/main/docs/reference.md) - response shaping, size limits, error codes, environment variables, the CLI and Docker
 - [Self-hosting](https://github.com/Sugra-Systems/sugra-api-mcp/blob/main/docs/self-hosting.md) - running your own HTTP server
 
 ## Blog
