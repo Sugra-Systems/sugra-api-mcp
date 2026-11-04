@@ -78,12 +78,7 @@ Every tool result carries structured metadata - source attribution, freshness, a
 
 ## How it works
 
-```mermaid
-flowchart LR
-    A["AI agent<br/>(ChatGPT, Claude, Gemini, xAI, IDEs)"] --> B["Sugra MCP<br/>gateway tools, plus agent tools when hosted"]
-    B --> C["Sugra API<br/>1,600+ endpoints, 36 data domains"]
-    C --> D["200 primary sources<br/>markets, economics, government,<br/>news, climate, maritime"]
-```
+An AI agent calls Sugra MCP, which serves the gateway tools on every install and adds agent tools on the hosted server.
 
 Behind the gateway sits the Sugra API: 200 primary sources - sovereign statistics agencies, central banks, intergovernmental bodies and more - feeding 1,600+ endpoints across 36 data domains. The server ships a bundled catalog of the full endpoint surface, so discovery (search, describe, toolsets) runs locally without network calls; only actual data requests hit the API.
 
