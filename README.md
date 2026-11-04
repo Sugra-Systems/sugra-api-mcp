@@ -186,7 +186,7 @@ Runs on your machine over stdio (or self-hosted HTTP) with an API key:
 pip install sugra-api-mcp
 ```
 
-- Eight gateway tools
+- Eleven gateway tools
 - stdio for desktop clients and IDEs, Streamable HTTP for self-hosting
 - Authenticates with `SUGRA_API_KEY`
 
@@ -301,7 +301,7 @@ In ChatGPT: Settings -> Connectors -> Add MCP server.
 
 ## Tool reference
 
-The local package exposes eight gateway tools. The hosted endpoint adds three composed analysis tools on top (see Hosted MCP above). The package exposes exactly eight tools:
+The local package exposes eleven gateway tools. The hosted endpoint adds three composed analysis tools on top (see Hosted MCP above). The package exposes exactly eleven tools:
 
 | Tool | Purpose |
 |---|---|
@@ -313,6 +313,11 @@ The local package exposes eight gateway tools. The hosted endpoint adds three co
 | `list_sources` | Show bundled catalog source metadata. |
 | `sugra_entity_screen` | Screen a name against sanctions and watchlists (Sugra Entity). |
 | `sugra_entity_lookup` | Composed entity lookup by identifier - `anchor` is `lei` or `vat`, plus the identifier `value`; returns registry identity + screening (Sugra Entity). |
+| `search_statistics` | Find official statistics indicators by meaning, with the place types that have data, the period covered and the agencies that publish them. |
+| `find_statistics_place` | Turn a place name into the place codes `get_statistics` takes. |
+| `get_statistics` | The values of one indicator: a series over time for a place, or with `place_type` one value for every place of that type inside a region (every county of a US state, every NUTS 2 region of a country). |
+
+The three statistics tools are the researcher's path through the statistics catalog: find the indicator, see where it has data, then get the values. Each call is one API request, and each answer names the source of its values.
 
 `call_endpoint` and `fetch_data` both support response shaping with `limit`, `fields`, and `include_raw`. Shaping works on enveloped (`{"data": ...}`) and envelope-less payloads alike; `fields` entries may use dotted paths into nested objects (`geo.city`), and `meta.shaped` reports what was actually applied (`fields_applied` / `fields_unmatched`, `limit_applied`, `records_path`, `order`, `kept_end`) rather than echoing the request. `limit` and `fields` work on the records list: the envelope `data` list, a bare top-level array, or the one list inside an object `data` when exactly one of `data`, `entries`, `events`, `history`, `items`, `observations`, `points`, `records`, `results`, `rows`, `series`, `timeseries` holds a list (for example `data.items` on the latest news, `data.observations` on a FRED series). When `data` has no such single list but every one of its values is an object holding exactly one list named `observations`, as with several named sub-series side by side, `limit` bounds each `data.<key>.observations` list on its own; `fields` there still names keys of `data`. Keys beside that list, such as `total` and `count`, stay as sent, and lists nested inside records are never truncated. A `fields` entry that names a key of `data` itself projects that object instead, and a projection that matches nothing leaves the payload whole. `meta.shaped.limit_applied` says whether the bound took effect, and `meta.shaped.records_path` names the list used (`data`, `data.<key>`, `data.*.observations`, or null when no records list was used). `limit` keeps the newest end of the records list when every record carries one date or period key (such as `date`, `period` or `year`) in one format and the list runs one way by it: the last N records of an oldest-first list, in their order, or the first N of a newest-first list. Otherwise it keeps the first N records. Whenever a limit bounds a records list, `meta.shaped.order` says `asc`, `desc` or `unknown` and `meta.shaped.kept_end` says `newest` or `first`, each as a map by sub-series name for sibling sub-series. A top-level JSON array (or scalar) is always wrapped as `{"data": ...}` so the MCP result stays an object; otherwise FastMCP output validation reports the successful call as an error and drops the rows.
 
@@ -326,7 +331,7 @@ The local package exposes eight gateway tools. The hosted endpoint adds three co
 
 ### Hosted-only agent tools (mcp.sugra.ai/mcp)
 
-The hosted MCP endpoint at `https://mcp.sugra.ai/mcp` serves the same eight tools PLUS three composed agent tools that are not available on stdio or self-hosted installs:
+The hosted MCP endpoint at `https://mcp.sugra.ai/mcp` serves the same eleven tools PLUS three composed agent tools that are not available on stdio or self-hosted installs:
 
 | Tool | Purpose |
 |---|---|
@@ -334,7 +339,7 @@ The hosted MCP endpoint at `https://mcp.sugra.ai/mcp` serves the same eight tool
 | `get_snapshot` | Entity plus a named recipe to one composed current view with freshness, provenance, coverage, and billing blocks. Composed calls charge a fixed recipe cost (1-2 requests) from the daily quota. |
 | `get_timeseries` | Entity plus metric (`price`, `macro_series`, `etf_flows`, `etf_monthly_flows`) to a bounded series with an explicit downsampling flag. `etf_flows` estimates at filing cadence; `etf_monthly_flows` is the fund's own NPORT-P monthly creations and redemptions. |
 
-These three tools wrap an internal composed plane that requires an infrastructure credential available only on the hosted deployment. The tool code ships inside the package, but it is registered only by the hosted HTTP entry point and only when that credential is present - `pip install sugra-api-mcp` (stdio and self-hosted HTTP) always exposes the classic eight-tool gateway. Hosted-only examples in any documentation are labeled as such. For compliance entity lookups (LEI / VAT, sanctions screening) use `sugra_entity_lookup` and `sugra_entity_screen`, which work on every transport.
+These three tools wrap an internal composed plane that requires an infrastructure credential available only on the hosted deployment. The tool code ships inside the package, but it is registered only by the hosted HTTP entry point and only when that credential is present - `pip install sugra-api-mcp` (stdio and self-hosted HTTP) always exposes the classic eleven-tool gateway. Hosted-only examples in any documentation are labeled as such. For compliance entity lookups (LEI / VAT, sanctions screening) use `sugra_entity_lookup` and `sugra_entity_screen`, which work on every transport.
 
 ### ChatGPT tool set
 

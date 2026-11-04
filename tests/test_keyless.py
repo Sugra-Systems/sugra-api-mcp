@@ -24,13 +24,13 @@ from sugra_api_mcp import server
 from sugra_api_mcp.catalog.builder import build_catalog_from_openapi
 from sugra_api_mcp.client import SugraClient
 from sugra_api_mcp.config import MISSING_API_KEY_HINT
-from sugra_api_mcp.tools import entities, gateway
+from sugra_api_mcp.tools import entities, gateway, statistics
 from tests.test_request_credentials import _answer_api_requests
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURE = Path(__file__).parent / "fixtures" / "openapi_minimal.json"
 
-EXPECTED_TOOL_COUNT = 8
+EXPECTED_TOOL_COUNT = 11
 EXPECTED_PROMPT_COUNT = 6
 # The default surface: the opt-in ui:// widget is off, and
 # _keyless_env removes SUGRA_MCP_UI_WIDGETS so the runner's env cannot add it.
@@ -166,6 +166,17 @@ async def test_sugra_entity_lookup_keyless_returns_missing_api_key(keyless) -> N
 
     assert result["error"] == "missing_api_key"
     assert result["hint"] == MISSING_API_KEY_HINT
+
+
+async def test_statistics_tools_keyless_return_missing_api_key(keyless) -> None:
+    results = [
+        await statistics.search_statistics("median household income"),
+        await statistics.find_statistics_place("Los Angeles County"),
+        await statistics.get_statistics("median-household-income", "06037"),
+        await statistics.get_statistics("median-household-income", "06", place_type="county"),
+    ]
+
+    assert results == [{"error": "missing_api_key", "hint": MISSING_API_KEY_HINT}] * 4
 
 
 # ---------------------------------------------------------------------------

@@ -10,8 +10,8 @@ is provider-agnostic - swap the LLM client and keep the MCP wiring.
 
 ## What you get
 
-The hosted Sugra MCP server at `https://mcp.sugra.ai/mcp` exposes eleven tools:
-eight gateway tools plus three composed agent tools.
+The hosted Sugra MCP server at `https://mcp.sugra.ai/mcp` exposes fourteen tools:
+eleven gateway tools plus three composed agent tools.
 
 | Tool | What it does |
 |------|--------------|
@@ -23,12 +23,15 @@ eight gateway tools plus three composed agent tools.
 | `list_sources` | List the available Sugra data sources |
 | `sugra_entity_screen` | Screen a person or organization name for a sanctions screening signal |
 | `sugra_entity_lookup` | Resolve an entity by LEI or VAT id into a composed KYB view |
+| `search_statistics` | Find official statistics indicators by meaning |
+| `find_statistics_place` | Turn a place name into the place codes `get_statistics` takes |
+| `get_statistics` | Values of one indicator for a place, or for every place of a type in a region |
 | `resolve_entity` | Resolve free text to a canonical market or macro entity |
 | `get_snapshot` | Composed current view of an entity via a named recipe |
 | `get_timeseries` | Bounded timeseries for an entity: price, macro series, or ETF flows |
 
 The last three are composed agent tools and register on the hosted endpoint
-only; a self-hosted `sugra-api-mcp` install serves the eight gateway tools.
+only; a self-hosted `sugra-api-mcp` install serves the eleven gateway tools.
 
 Sugra toolsets cover Sugra Finance, Sugra Economics, Sugra News, Sugra Crypto,
 Sugra Forex, Sugra Weather, and more - all behind one gateway.
@@ -82,7 +85,7 @@ since January 2026, easing from 3.72 percent in December 2025. Source: Sugra Eco
 
 1. The agent connects to the hosted Sugra MCP server over Streamable HTTP,
    sending your Sugra API key as an `Authorization: Bearer` header.
-2. It calls `listTools` to discover the eleven Sugra tools and maps each tool's
+2. It calls `listTools` to discover the fourteen Sugra tools and maps each tool's
    input schema into the Anthropic tool-use format.
 3. It runs a standard tool-use loop: the model decides which Sugra tool to call,
    the agent runs it over MCP, returns the result, and repeats until the model

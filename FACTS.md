@@ -9,8 +9,8 @@ every release and update the snapshot date below.
 
 | Transport | Tools | Names |
 |---|---|---|
-| stdio / self-hosted HTTP (`pip install sugra-api-mcp`) | 8 | fetch_data, search_endpoints, describe_endpoint, call_endpoint, list_toolsets, list_sources, sugra_entity_screen, sugra_entity_lookup |
-| Hosted (`https://mcp.sugra.ai/mcp` and `https://app.sugra.ai/mcp`) | 11 | the 8 above plus resolve_entity, get_snapshot, get_timeseries |
+| stdio / self-hosted HTTP (`pip install sugra-api-mcp`) | 11 | fetch_data, search_endpoints, describe_endpoint, call_endpoint, list_toolsets, list_sources, sugra_entity_screen, sugra_entity_lookup, search_statistics, find_statistics_place, get_statistics |
+| Hosted (`https://mcp.sugra.ai/mcp` and `https://app.sugra.ai/mcp`) | 14 | the 11 above plus resolve_entity, get_snapshot, get_timeseries |
 
 The three hosted-only tools wrap an internal composed plane and register only
 on the hosted deployment. Never claim 6 tools or 27 tools anywhere. 27 was the
@@ -18,7 +18,7 @@ pre-gateway curated surface and never shipped in this package after v0.4.0.
 
 ## Prompts and resources (every transport)
 
-- Prompts (6): market_snapshot, macro_briefing, sanctions_screening, sector_compare, earth_conditions, source_overview. Prompt text names only the 8 gateway tools, never hosted-only agent tools.
+- Prompts (6): market_snapshot, macro_briefing, sanctions_screening, sector_compare, earth_conditions, source_overview. Prompt text names only the 11 gateway tools, never hosted-only agent tools.
 - Resources (8 by default): sugra://catalog/domains, sugra://catalog/sources, sugra://attribution, and five skills under sugra://skills/ (explore-catalog, envelope-attribution, auth-limits, hosted-vs-gateway, cross-domain-briefing). Each URI serves the SKILL.md of a Sugra-Systems/sugra-api-skills skill (discover-and-call, envelope-and-attribution, auth-and-quota, connect, cross-domain-briefing) from the commit pinned in sugra_api_mcp/skills_index.json. The plugin packages (`sugra-api-skills@sugra-api-plugins`) live in Sugra-Systems/sugra-api-plugins, not here.
 - Price-chart widget (opt-in, off by default): ui://sugra/price-chart.html, the SEP-1865 template declared on call_endpoint through `_meta.ui`, is served only when the process starts with `SUGRA_MCP_UI_WIDGETS` set to 1, true, yes or on. Off, the template is neither listed in resources/list nor declared on any tool. On, it is a ninth resource and call_endpoint declares it.
 
