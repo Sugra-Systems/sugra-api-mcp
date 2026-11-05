@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-11-04T21:22:20Z",
+  "built_at": "2026-11-05T04:09:40Z",
   "endpoint_count": 1638,
   "endpoints": [
     {
@@ -20589,7 +20589,7 @@
       "toolset": "entity_screening"
     },
     {
-      "description": "Resolve an entity by `(anchor, value)` and compose the requested slices into the canonical KYB envelope. `anchor` is `lei` (via GLEIF), `vat` (via the EU VIES service), or `siren` / `siret` (via INSEE Sirene). Use `?include=` (comma list of `profile,screening,ownership`) to select slices; the default is all three. The `vat`, `siren` and `siret` anchors have no ownership graph (no LEI) and a withheld identity is never screened `clear`. Fail-CLOSED: a screening failure returns 503, never a `clear`. `?as_of=YYYY-MM-DD` scopes ONLY the screening slice to the dated snapshot for that date (point-in-time); the identity / ownership / VIES / Sirene slices are live external lookups with no historical snapshot and remain current. A malformed as_of returns 422; a date whose snapshot is absent returns 503 (fail-closed, never a live fallback). A 404 means the upstream answered that no such record exists (for `lei`, also an LEI record from GLEIF that has no entity block); when GLEIF fails a `lei` lookup (a timeout returns 504; any other non-2xx answer but 404, a connection error, an unreadable body or a 2xx answer that holds no LEI record returns 503) the response carries `Retry-After` and is never a 404 - retry the same request.",
+      "description": "Resolve an entity by `(anchor, value)` and compose the requested slices into the canonical KYB envelope. `anchor` is `lei` (via GLEIF), `vat` (via the EU VIES service), or `siren` / `siret` (via INSEE Sirene). Use `?include=` (comma list of `profile,screening,ownership`) to select slices; the default is all three. The `vat`, `siren` and `siret` anchors have no ownership graph (no LEI) and a withheld identity is never screened `clear`. Fail-CLOSED: a screening failure returns 503, never a `clear`. `?as_of=YYYY-MM-DD` scopes ONLY the screening slice to the dated snapshot for that date (point-in-time); the identity / ownership / VIES / Sirene slices are live external lookups with no historical snapshot and remain current. A malformed as_of returns 422; a date whose snapshot is absent returns 503 (fail-closed, never a live fallback). A 404 means the upstream answered that no such record exists (for `lei`, also an LEI record from GLEIF that has no entity block); when GLEIF fails a `lei` lookup (a timeout returns 504; any other non-2xx answer but 404, a connection error, an unreadable body or a 2xx answer with no usable LEI record returns 503) the response carries `Retry-After` and is never a 404 - retry the same request.",
       "method": "GET",
       "operation_id": "entity_anchor_value",
       "parameters": [
@@ -79447,7 +79447,7 @@
       "toolset": "research"
     },
     {
-      "description": "Returns one value per place for every place of one type inside a parent place, for example every county of California (`parent=06&type=county`) or every NUTS 2 region of Germany (`parent=DEU&type=nuts2`). All rows come from one agency; when no agency publishes the population of any of the places, `date=latest` takes it from Wikidata, one value per place from 2015 on. `date=latest` (the default) gives each place's latest value; a year, month or day gives the value for that period. At most 5,000 rows: a larger request answers 413, narrow it with a smaller parent.",
+      "description": "Returns one value per place for every place of one type inside a parent place, for example every county of California (`parent=06&type=county`) or every NUTS 2 region of Germany (`parent=DEU&type=nuts2`). All rows come from one source, picked in the order of `/series/{indicator}`: an agency's own figures first, then figures computed from an agency's data, then model projections, then Google's own data. When no source has the population of any of the places, `date=latest` takes it from Wikidata, one value per place from 2015 on. `date=latest` (the default) gives each place's latest value; a year, month or day gives the value for that period. At most 5,000 rows: a larger request answers 413, narrow it with a smaller parent.",
       "method": "GET",
       "operation_id": "statistics_places_indicator",
       "parameters": [
@@ -79551,7 +79551,7 @@
       "toolset": "research"
     },
     {
-      "description": "Searches the Sugra statistics catalog by meaning and returns matching indicators, best first, with their name, unit, period, the place types that have data, the first and last period and the agencies that publish them. Optional `place` keeps only indicators with data for that type of place. Use the `indicator` code with `/series/{indicator}` or `/places/{indicator}`.",
+      "description": "Searches the Sugra statistics catalog by meaning and returns matching indicators, best first, with their name, unit, period, the place types that have data, the first and last period and the agencies that publish them. When fewer than `limit` match by meaning, indicators whose names hold the query's words follow. Optional `place` keeps only indicators with data for that type of place. Use the `indicator` code with `/series/{indicator}` or `/places/{indicator}`.",
       "method": "GET",
       "operation_id": "statistics_search",
       "parameters": [
@@ -79624,7 +79624,7 @@
       "toolset": "research"
     },
     {
-      "description": "Returns the series of one indicator for one place, as published by one agency, in date order. Places are given by open codes: ISO 3166-1 alpha-3 for countries (USA), ISO 3166-2 for regions (IN-MH), FIPS for US states and counties (06, 06037), NUTS for European regions (DE11), zcta:94043 for US ZIP code areas, or a code returned by `/places/resolve`. Without `agency` the first agency with data is used; projections and model estimates are never served. When no agency publishes a place's population, it comes from Wikidata as one value, the latest from 2015 on. The agency, its website and its method are in `data.source`.",
+      "description": "Returns the series of one indicator for one place, as published by one agency, in date order. Places are given by open codes: ISO 3166-1 alpha-3 for countries (USA), ISO 3166-2 for regions (IN-MH), FIPS for US states and counties (06, 06037), NUTS for European regions (DE11), zcta:94043 for US ZIP code areas, or a code returned by `/places/resolve`. Without `agency` the figures an agency publishes itself come first; when there are none, figures computed from an agency's data (a sum, count or average), then model projections, then Google's own data. Computed figures and projections are named by the agency and say so in `meta.notes`; projections may lie in the future. When none of these has a place's population, it comes from Wikidata as one value, the latest from 2015 on. The source, its website and its method are in `data.source`.",
       "method": "GET",
       "operation_id": "statistics_series_indicator",
       "parameters": [
@@ -97444,5 +97444,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "35513849eb5f9e1c9578e9b2db0a94eeb741667a740863f27b5ec0dd26b45204"
+  "spec_sha256": "c8d7c282052dce6d726d9e28cd2dc3328dfc16b3111ec3c59558f39726d3ef4d"
 }
