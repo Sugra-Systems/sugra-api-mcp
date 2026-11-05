@@ -109,15 +109,32 @@ def test_prompt_operation_ids_exist_in_bundled_catalog(monkeypatch, prompt_name)
             pytest.fail(f"{prompt_name} references unknown operation_id {operation_id}")
 
 
-def test_sanctions_screening_says_secondary_fields_rescore_not_narrow(monkeypatch):
+def test_sanctions_screening_step_one_agrees_with_the_entity_screen_contract(
+    monkeypatch,
+):
+    from sugra_api_mcp.catalog.loader import load_catalog
+
     mcp, _ = _registered_prompts(monkeypatch)
     text = _render_text(mcp, "sanctions_screening")
     step_one = next(line for line in text.splitlines() if line.startswith("1. "))
+    contract = load_catalog().get("post_entity_screen").description
+
+    # Each claim the prompt makes about dob, country and nationality must be
+    # a phrase the bundled operation description itself uses, so the prompt
+    # cannot drift from the contract it relays.
+    claims = (
+        "re-score and re-order the name candidates",
+        "a contradiction demotes",
+        "it stays listed",
+    )
+    for claim in claims:
+        assert claim in contract, f"contract no longer says {claim!r}"
+        assert claim in step_one, f"step 1 does not say {claim!r}"
 
     assert step_one == (
         '1. Call sugra_entity_screen with name="Example Holdings". Add country, dob, '
-        "or nationality when known: they re-score and re-order the matches the name "
-        "found, and never add or remove one."
+        "or nationality when known: they re-score and re-order the name candidates, "
+        "and a contradiction demotes a candidate (it stays listed)."
     )
     assert "narrow" not in step_one.lower()
 
