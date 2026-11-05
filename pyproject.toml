@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sugra-api-mcp"
-version = "0.14.0"
-description = "Connect AI agents to primary sources - markets, macro, entities, news, network, earth and research."
+version = "0.14.1"
+description = "Connect AI agents to primary sources - markets, macro, news, earth, network, entities and research."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
@@ -18,14 +18,13 @@ maintainers = [
 requires-python = ">=3.13"
 keywords = [
     "mcp",
+    "mcp-server",
     "model-context-protocol",
-    "sugra",
-    "finance",
-    "macro",
-    "claude",
     "ai-agents",
     "llm",
+    "sugra",
     "data",
+    "primary-sources",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -67,8 +66,10 @@ dev = [
 sugra-api-mcp = "sugra_api_mcp.__main__:main"
 
 [project.urls]
-Homepage = "https://sugra.ai"
-Documentation = "https://docs.sugra.ai"
+Homepage = "https://mcp.sugra.ai"
+Website = "https://sugra.systems"
+Documentation = "https://docs.sugra.ai/doc-2263382"
+Changelog = "https://docs.sugra.ai/doc-2263381"
 Repository = "https://github.com/Sugra-Systems/sugra-api-mcp"
 Issues = "https://github.com/Sugra-Systems/sugra-api-mcp/issues"
 Security = "https://github.com/Sugra-Systems/sugra-api-mcp/blob/main/SECURITY.md"

@@ -2,17 +2,17 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "ai.sugra/api-mcp",
   "title": "Sugra MCP",
-  "description": "Connect AI agents to primary sources - markets, macro, entities, news, network, earth and research.",
+  "description": "Connect AI agents to primary sources - markets, macro, news, earth, network, entities and research.",
   "repository": {
     "url": "https://github.com/Sugra-Systems/sugra-api-mcp",
     "source": "github"
   },
-  "version": "0.14.0",
+  "version": "0.14.1",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "sugra-api-mcp",
-      "version": "0.14.0",
+      "version": "0.14.1",
       "transport": {
         "type": "stdio"
       },
