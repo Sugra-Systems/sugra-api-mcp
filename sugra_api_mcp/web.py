@@ -42,6 +42,7 @@ REGISTER_URL = "https://app.sugra.ai/register"
 CLAUDE_LISTING = "https://url.sugra.ai/claude"
 OPENAI_LISTING = "https://url.sugra.ai/openai"
 OPENAI_SKILLS_LISTING = "https://chatgpt.com/plugins/plugins_6aa4f7db79848191a81e4048990545ef"
+GITHUB_LISTING = "https://url.sugra.ai/gh"
 
 # Cursor resolves ${env:NAME} in url and headers when it starts the server.
 CURSOR_CONFIG = {
@@ -335,7 +336,10 @@ _TABS: list[tuple[str, str, str]] = [
     (
         "copilot",
         "GitHub Copilot",
-        _step("Server")
+        "<p>The Sugra MCP server is listed in the "
+        f'<a href="{GITHUB_LISTING}">GitHub MCP Registry</a>. '
+        "In Copilot CLI, add it with the command below.</p>"
+        + _step("Server")
         + _terminal("cmd-copilot", f"copilot mcp add --transport http sugra-api {ENDPOINT}")
         + '<p class="note">Copilot CLI opens the Sugra sign-in page in your browser '
         "the first time it connects to the server.</p>"
@@ -361,7 +365,10 @@ _TABS: list[tuple[str, str, str]] = [
     (
         "vscode",
         "VS Code",
-        _step("Add to <code>.vscode/mcp.json</code>")
+        "<p>The Sugra MCP server is listed in the "
+        f'<a href="{GITHUB_LISTING}">GitHub MCP Registry</a>, whose Install in VS Code '
+        "button adds it. Or add it by hand.</p>"
+        + _step("Add to <code>.vscode/mcp.json</code>")
         + _json_block("cfg-vscode", _VSCODE_JSON)
         + '<p class="note">VS Code asks for the key when the server starts.</p>'
         + _npx_skills("vscode"),
