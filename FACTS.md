@@ -26,12 +26,12 @@ pre-gateway curated surface and never shipped in this package after v0.4.0.
 
 Two different counters. Do not equate them.
 
-- Live `GET https://sugra.ai/stats` (2026-11-03): 1,683 endpoints, 200 sources, 36 categories. Public copy: "1,600+" / "200" / 36 domains.
-- Bundled MCP catalog (built_at 2026-11-05T04:09:40Z): 1,638 GET/POST operations from live OpenAPI (spec_sha256 c8d7c282052d...). Version 0.11.0 is the first cut with this bundle and the official skill pack; the wheel publishes when the owner pushes tag v0.11.0.
+- Live `GET https://sugra.ai/stats` (2026-11-05): 1,683 endpoints, 200 sources, 36 categories. Public copy: "1,600+" / "200" / 36 domains.
+- Bundled MCP catalog (built_at 2026-11-05T04:09:40Z): 1,638 GET/POST operations from live OpenAPI (spec_sha256 c8d7c282052d...).
 
 ## Fixed facts
 
-- Package: sugra-api-mcp on PyPI (MIT), Python 3.13+, current version 0.13.0
+- Package: sugra-api-mcp on PyPI (MIT), Python 3.13+, current version 0.14.1
 - Repository: https://github.com/Sugra-Systems/sugra-api-mcp
 - Canonical HTTP URL: `https://mcp.sugra.ai/mcp` (API-key Bearer or OAuth)
 - Permanent alias: `https://app.sugra.ai/mcp` (API-key Bearer or OAuth)
