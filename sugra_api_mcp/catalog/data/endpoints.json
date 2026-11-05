@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-11-05T05:33:05Z",
+  "built_at": "2026-11-05T19:22:55Z",
   "endpoint_count": 1638,
   "endpoints": [
     {
@@ -32898,13 +32898,13 @@
           }
         },
         {
-          "description": "Country named in the article (ISO code).",
+          "description": "Country named in the article, as an ISO 3166-1 alpha-2 code (CN is China, DE Germany). UK, USA and GBR also work. GDELT stores FIPS 10-4 codes; the ISO code is mapped onto them. A code that names no country matches nothing.",
           "example": "US",
           "location": "query",
           "name": "country",
           "required": false,
           "schema": {
-            "description": "Country named in the article (ISO code).",
+            "description": "Country named in the article, as an ISO 3166-1 alpha-2 code (CN is China, DE Germany). UK, USA and GBR also work. GDELT stores FIPS 10-4 codes; the ISO code is mapped onto them. A code that names no country matches nothing.",
             "title": "Country",
             "type": "string"
           }
@@ -33451,13 +33451,13 @@
           }
         },
         {
-          "description": "Country named in the article (ISO code).",
+          "description": "Country named in the article, as an ISO 3166-1 alpha-2 code (CN is China, DE Germany). UK, USA and GBR also work. GDELT stores FIPS 10-4 codes; the ISO code is mapped onto them. A code that names no country matches nothing.",
           "example": "US",
           "location": "query",
           "name": "country",
           "required": false,
           "schema": {
-            "description": "Country named in the article (ISO code).",
+            "description": "Country named in the article, as an ISO 3166-1 alpha-2 code (CN is China, DE Germany). UK, USA and GBR also work. GDELT stores FIPS 10-4 codes; the ISO code is mapped onto them. A code that names no country matches nothing.",
             "title": "Country",
             "type": "string"
           }
@@ -34381,7 +34381,7 @@
       "toolset": "environment"
     },
     {
-      "description": "Return the audit trail of field-level changes applied to a LEI record (and its linked relationship records). Each entry carries the modified field (XPath pointer into the CDF XML schema), modification type (`INSERT`, `UPDATE`, `DELETE`), prior value, new value, and change date. Useful for detecting entity status flips, address changes, renewal events, and ownership restructurings.",
+      "description": "Return the audit trail of field-level changes applied to a LEI record (and its linked relationship records). Each entry carries the modified field (XPath pointer into the CDF XML schema), modification type (`INSERT`, `UPDATE`, `DELETE`), prior value, new value, and change date. Useful for detecting entity status flips, address changes, renewal events, and ownership restructurings. Returns an empty list when GLEIF answers 404, as it does for an unknown LEI; that empty list is cached like any answer. When GLEIF fails or does not answer in time the route returns 503 or 504 with `Retry-After`, never an empty list.",
       "method": "GET",
       "operation_id": "gleif_audit_lei",
       "parameters": [
@@ -34701,7 +34701,7 @@
       "toolset": "corporate_registry"
     },
     {
-      "description": "List the ISO 6166 International Securities Identification Numbers (ISINs) mapped to a LEI. Issuers file ISIN-to-LEI mappings with GLEIF to support regulatory reporting (EMIR, MiFID II). Each entry carries the 12-character ISIN and the parent LEI. Returns an empty list when the entity has no reported ISIN mappings.",
+      "description": "List the ISO 6166 International Securities Identification Numbers (ISINs) mapped to a LEI. Issuers file ISIN-to-LEI mappings with GLEIF to support regulatory reporting (EMIR, MiFID II). Each entry carries the 12-character ISIN and the parent LEI. Returns an empty list when the entity has no reported ISIN mappings, and also when GLEIF answers 404, as it does for an unknown LEI; that empty list is cached like any answer. When GLEIF fails or does not answer in time the route returns 503 or 504 with `Retry-After`, never an empty list.",
       "method": "GET",
       "operation_id": "gleif_lei_records_lei_isins",
       "parameters": [
@@ -34901,7 +34901,7 @@
       "toolset": "corporate_registry"
     },
     {
-      "description": "List fund LEIs reported as managed by the subject entity. Each fund is returned as a full LEI record with entity and registration blocks. Applies to asset managers and investment advisors who file fund-manager relationships with GLEIF. Returns an empty list when the entity manages no reported funds.",
+      "description": "List fund LEIs reported as managed by the subject entity. Each fund is returned as a full LEI record with entity and registration blocks. Applies to asset managers and investment advisors who file fund-manager relationships with GLEIF. Returns an empty list when the entity manages no reported funds, and also when GLEIF answers 404, as it does for an unknown LEI; that empty list is cached like any answer. When GLEIF fails or does not answer in time the route returns 503 or 504 with `Retry-After`, never an empty list.",
       "method": "GET",
       "operation_id": "gleif_managed_funds_lei",
       "parameters": [
@@ -35059,7 +35059,7 @@
       "toolset": "corporate_registry"
     },
     {
-      "description": "Return a one-hop ownership graph for an entity - its direct-parent relationship record (with validity periods and corroboration), its ultimate-parent relationship record, and the first page of direct children (subsidiaries). Use `/lei-records/{lei}/direct-parent` or `/lei-records/{lei}/ultimate-parent` when only the parent LEI record itself is needed; this endpoint adds the relationship-layer metadata (validity, corroboration documents) and the child list in one call.",
+      "description": "Return a one-hop ownership graph for an entity - its direct-parent relationship record (with validity periods and corroboration), its ultimate-parent relationship record, and the first page of direct children (subsidiaries). Use `/lei-records/{lei}/direct-parent` or `/lei-records/{lei}/ultimate-parent` when only the parent LEI record itself is needed; this endpoint adds the relationship-layer metadata (validity, corroboration documents) and the child list in one call. A read GLEIF answers 404 for, as it does for an unknown LEI, comes back as a null relationship or an empty child list, cached like any answer. When GLEIF fails or does not answer in time on any of the three reads the route returns 503 or 504 with `Retry-After`, never a null parent relationship or an empty child list.",
       "method": "GET",
       "operation_id": "gleif_relationships_lei",
       "parameters": [
@@ -79359,7 +79359,7 @@
       "toolset": "research"
     },
     {
-      "description": "Returns the place codes that `/series` and `/places` accept, from a place name (`q`) or from coordinates (`lat` and `lon`). Each place carries its code, the code system, its name, its type and its country. Coordinates return every place that contains the point, from the smallest up.",
+      "description": "Returns the place codes that `/series` and `/places` accept, from a place name (`q`) or from coordinates (`lat` and `lon`). Each place carries its code, the code system, its name, its type and its country. A name finds the whole world, a continent or a world region too (`q=Sub-Saharan Africa`), those named exactly first. Coordinates return every place that contains the point, from the smallest up.",
       "method": "GET",
       "operation_id": "statistics_places_resolve",
       "parameters": [
@@ -79447,7 +79447,7 @@
       "toolset": "research"
     },
     {
-      "description": "Returns one value per place for every place of one type inside a parent place, for example every county of California (`parent=06&type=county`) or every NUTS 2 region of Germany (`parent=DEU&type=nuts2`). All rows come from one source, picked in the order of `/series/{indicator}`: an agency's own figures first, then figures computed from an agency's data, then model projections, then Google's own data. When no source has the population of any of the places, `date=latest` takes it from Wikidata, one value per place from 2015 on. `date=latest` (the default) gives each place's latest value; a year, month or day gives the value for that period. At most 5,000 rows: a larger request answers 413, narrow it with a smaller parent.",
+      "description": "Returns one value per place for every place of one type inside a parent place, for example every county of California (`parent=06&type=county`) or every NUTS 2 region of Germany (`parent=DEU&type=nuts2`). Under the whole world (`parent=world`) the rows are countries, continents or world regions (groups of countries such as Sub-Saharan Africa or the least developed countries); under a continent or a world region they are its countries. All rows come from one source, picked in the order of `/series/{indicator}`: an agency's own figures first, then figures computed from an agency's data, then model projections, then Google's own data. When no source has the population of any of the places, `date=latest` takes it from Wikidata, one value per place from 2015 on. `date=latest` (the default) gives each place's latest value; a year, month or day gives the value for that period. At most 5,000 rows: a larger request answers 413, narrow it with a smaller parent.",
       "method": "GET",
       "operation_id": "statistics_places_indicator",
       "parameters": [
@@ -79482,12 +79482,12 @@
           }
         },
         {
-          "description": "Place type of the rows: country, state, county, city, metro, zcta, admin1, admin2, nuts1, nuts2 or nuts3.",
+          "description": "Place type of the rows: country, state, county, city, metro, zcta, admin1, admin2, nuts1, nuts2, nuts3, continent or region.",
           "location": "query",
           "name": "type",
           "required": true,
           "schema": {
-            "description": "Place type of the rows: country, state, county, city, metro, zcta, admin1, admin2, nuts1, nuts2 or nuts3.",
+            "description": "Place type of the rows: country, state, county, city, metro, zcta, admin1, admin2, nuts1, nuts2, nuts3, continent or region.",
             "examples": [
               "county"
             ],
@@ -79624,7 +79624,7 @@
       "toolset": "research"
     },
     {
-      "description": "Returns the series of one indicator for one place, as published by one agency, in date order. Places are given by open codes: ISO 3166-1 alpha-3 for countries (USA), ISO 3166-2 for regions (IN-MH), FIPS for US states and counties (06, 06037), NUTS for European regions (DE11), zcta:94043 for US ZIP code areas, or a code returned by `/places/resolve`. Without `agency` the figures an agency publishes itself come first; when there are none, figures computed from an agency's data (a sum, count or average), then model projections, then Google's own data. Computed figures and projections are named by the agency and say so in `meta.notes`; projections may lie in the future. When none of these has a place's population, it comes from Wikidata as one value, the latest from 2015 on. The source, its website and its method are in `data.source`.",
+      "description": "Returns the series of one indicator for one place, as published by one agency, in date order. Places are given by open codes: ISO 3166-1 alpha-3 for countries (USA), ISO 3166-2 for regions (IN-MH), FIPS for US states and counties (06, 06037), NUTS for European regions (DE11), zcta:94043 for US ZIP code areas, `world` for the whole world, or a code returned by `/places/resolve`, continents and world regions among them. Without `agency` the figures an agency publishes itself come first; when there are none, figures computed from an agency's data (a sum, count or average), then model projections, then Google's own data. Computed figures and projections are named by the agency and say so in `meta.notes`; projections may lie in the future. When none of these has a place's population, it comes from Wikidata as one value, the latest from 2015 on. The source, its website and its method are in `data.source`.",
       "method": "GET",
       "operation_id": "statistics_series_indicator",
       "parameters": [
@@ -97444,5 +97444,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "5a8b178c175dbe6588fbfc4741fdbd4b3c068c809f361076d9e2c33170a6ab9e"
+  "spec_sha256": "498b1c2b7dbc7376e64c797b141fb29311158cd6a853d94b3443dbe10aaf6850"
 }
