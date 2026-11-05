@@ -196,7 +196,7 @@ async def _call_operation(args: argparse.Namespace) -> dict[str, object]:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="sugra-api-mcp",
-        description="Sugra API MCP server - connector between LLM agents and world data.",
+        description="Sugra MCP server - the connector between AI assistants and Sugra Data.",
     )
     _add_server_args(parser)
     subparsers = parser.add_subparsers(dest="command")

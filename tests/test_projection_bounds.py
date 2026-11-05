@@ -309,13 +309,14 @@ def test_the_raw_bound_applies_only_with_fields(monkeypatch) -> None:
     assert response.shape_response(payload, fields=["a"])["data"] == [{"a": i} for i in range(50)]
 
 
-def test_the_raw_bound_sits_far_above_the_size_cap_and_the_readme_names_it() -> None:
+def test_the_raw_bound_sits_far_above_the_size_cap_and_the_reference_names_it() -> None:
     # The 16-day forecast is over the size cap until fields=["daily"] cuts it to fit.
     forecast = len(json.dumps(_forecast_body(16)))
     assert MAX_RESPONSE_CHARS < forecast < response.MAX_PROJECTION_RAW_CHARS
-    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
-    assert "2,000,000" in readme
-    assert "projection_too_large" in readme
+    reference = Path(__file__).resolve().parents[1] / "docs" / "reference.md"
+    text = reference.read_text(encoding="utf-8")
+    assert "2,000,000" in text
+    assert "projection_too_large" in text
 
 
 # ---- shaping runs on its own pool, never on the event loop -----------------

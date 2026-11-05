@@ -1,504 +1,284 @@
-# Sugra MCP
-
 <!-- mcp-name: ai.sugra/api-mcp -->
 
 <p align="center">
-  <img src="https://app.sugra.ai/images/brand/sugra-app-icon.svg" alt="sugra.ai" width="112" height="112" />
+  <a href="https://mcp.sugra.ai"><img src="https://app.sugra.ai/images/brand/sugra-app-icon.svg" alt="Sugra" width="88" height="88"></a>
 </p>
+
+<h1 align="center">Sugra MCP</h1>
+
+<p align="center">Connect AI agents to primary sources - markets, macro, news, earth, network, entities and research.</p>
 
 <p align="center">
   <a href="https://pypi.org/project/sugra-api-mcp/"><img src="https://img.shields.io/pypi/v/sugra-api-mcp?label=PyPI&color=F5A623" alt="PyPI"></a>
-  <a href="https://pypi.org/project/sugra-api-mcp/"><img src="https://img.shields.io/pypi/pyversions/sugra-api-mcp?label=Python" alt="Python versions"></a>
+  <a href="https://pypi.org/project/sugra-api-mcp/"><img src="https://img.shields.io/badge/Python-3.13_%7C_3.14_%7C_3.15-007ec6" alt="Python 3.13 | 3.14 | 3.15"></a>
   <a href="https://github.com/Sugra-Systems/sugra-api-mcp/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Sugra-Systems/sugra-api-mcp?label=License" alt="License"></a>
 </p>
 
 <p align="center">
   <a href="https://url.sugra.ai/claude"><img src="https://img.shields.io/badge/Add_to_Claude-F5A623?style=for-the-badge" alt="Add to Claude"></a>
   <a href="https://url.sugra.ai/openai"><img src="https://img.shields.io/badge/Add_to_ChatGPT-F5A623?style=for-the-badge" alt="Add to ChatGPT"></a>
+  <a href="https://vscode.dev/redirect/mcp/install?name=sugra&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fmcp.sugra.ai%2Fmcp%22%7D"><img src="https://img.shields.io/badge/Install_in_VS_Code-F5A623?style=for-the-badge" alt="Install in VS Code"></a>
+  <a href="https://cursor.com/en/install-mcp?name=sugra&config=eyJ1cmwiOiJodHRwczovL21jcC5zdWdyYS5haS9tY3AifQ=="><img src="https://img.shields.io/badge/Install_in_Cursor-F5A623?style=for-the-badge" alt="Install in Cursor"></a>
 </p>
 
 <p align="center">
-  <sub>Published in Anthropic's Connectors Directory. Available in Claude on the web, desktop and mobile, Claude Code and Cowork.</sub><br>
-  <sub>Published in the official OpenAI Plugins Directory. Available for ChatGPT and Codex.</sub>
+  <a href="https://sugra.systems"><b>Website</b></a>
+  &nbsp;&middot;&nbsp;
+  <a href="https://docs.sugra.ai/doc-2263382"><b>Documentation</b></a>
+  &nbsp;&middot;&nbsp;
+  <a href="https://www.youtube.com/playlist?list=PLQID7oZL4d9U"><b>Videos</b></a>
+  &nbsp;&middot;&nbsp;
+  <a href="https://sugra.systems/blog/"><b>Blog</b></a>
+  &nbsp;&middot;&nbsp;
+  <a href="https://app.sugra.ai/register"><b>Free API key</b></a>
 </p>
 
-Sugra MCP connects AI agents to 1,600+ endpoints from 200 primary sources across 36 data domains. An agent searches the catalog, reads an endpoint's description and calls it, and every answer carries its source and date.
+Sugra MCP is built and run by [Sugra Systems, Inc.](https://sugra.systems) It brings Sugra Data into AI assistants and agents over the Model Context Protocol: 1,600+ endpoints from 200 primary sources across 36 data domains - central banks, national statistics offices, regulators, intergovernmental bodies and more. The agent searches the catalog, reads an endpoint's description and calls it, and every answer carries its source and date.
 
-### Use cases
+Published in Anthropic's Connectors Directory, the OpenAI Plugins Directory and the GitHub MCP Registry. Works with Claude, Claude Code, ChatGPT, Codex, Grok, Cursor, Antigravity, GitHub Copilot, VS Code, Zed, Cline, Continue and any MCP client.
 
-- Markets: quotes, price history, company financials, SEC filings, funds, options, crypto and commodities.
-- Macroeconomics: inflation, GDP, interest rates, jobs, trade and public finance from central banks and national statistics offices.
-- Entities: legal entity identifiers, corporate registries, sanctions and PEP screening.
-- News: headlines, feeds and media analytics.
-- Network: IP and ASN lookups, routing history, geolocation and internet outages.
-- Earth: weather, climate, air quality, energy, natural hazards and vessel traffic.
-- Research: paper and preprint search, citations and authors.
+**Watch:** [How Sugra MCP works](https://www.youtube.com/watch?v=xRC_VNtfI6Q) &middot; [Seven directions, one key](https://www.youtube.com/watch?v=rsTZL3w61PQ)
 
-Built for agents that answer with sourced, dated numbers, from a single question to a multi-step research workflow.
+## Seven directions
 
-Works with Claude, ChatGPT, Codex, GitHub Copilot, Grok, Cursor, Antigravity, VS Code and any MCP client.
+| Direction | What an agent can ask for | Learn more |
+|---|---|---|
+| **Sugra Finance** | Quotes, price history, company financials, SEC filings, funds, options, futures and Treasuries | [Docs](https://docs.sugra.ai/doc-2263396) &middot; [Video](https://www.youtube.com/watch?v=SrzPRJqbOFk) &middot; [Article](https://sugra.systems/blog/sugra-finance) |
+| **Sugra Macro** | Inflation, GDP, interest rates, jobs, trade and public finance of whole countries | [Docs](https://docs.sugra.ai/doc-2263397) &middot; [Video](https://www.youtube.com/watch?v=ZAnxj02DqbA) &middot; [Article](https://sugra.systems/blog/sugra-macro) |
+| **Sugra News** | Headlines, feeds and the world's media attention | [Docs](https://docs.sugra.ai/doc-2263399) &middot; [Video](https://www.youtube.com/watch?v=--6gZUoqzPk) &middot; [Article](https://sugra.systems/blog/sugra-news) |
+| **Sugra Earth** | Weather, climate, air quality, energy, natural hazards and vessel traffic | [Docs](https://docs.sugra.ai/doc-2263394) &middot; [Video](https://www.youtube.com/watch?v=OtdeGwffI7c) &middot; [Article](https://sugra.systems/blog/sugra-earth) |
+| **Sugra NetAtlas** | IP and ASN lookups, routing history, geolocation and internet outages | [Docs](https://docs.sugra.ai/doc-2263398) &middot; [Video](https://www.youtube.com/watch?v=8Z98lcvMYXA) &middot; [Article](https://sugra.systems/blog/sugra-netatlas) |
+| **Sugra Entity** | Legal entity identifiers, company registries, sanctions and PEP screening | [Docs](https://docs.sugra.ai/doc-2263395) &middot; [Video](https://www.youtube.com/watch?v=ApI7ueQ5ds8) &middot; [Article](https://sugra.systems/blog/sugra-entity) |
+| **Sugra Research** | Papers, preprints, citations and authors | [Docs](https://docs.sugra.ai/doc-2263400) &middot; [Article](https://sugra.systems/blog/sugra-research) |
 
-## See it in action
+## Install
 
-An agent answering a real question end to end - resolving entities, pulling live snapshots and history, and citing the source and freshness on every number:
+The server is hosted, so there is nothing to run. Add Sugra from your agent's directory or install the `sugra-api-skills` plugin, then connect as shown below. The plugin also carries the [Sugra API Skills](https://github.com/Sugra-Systems/sugra-api-skills), which give the agent the procedure - find an operation, read the response, cite the source.
 
-![Compare NVIDIA, AMD and Intel over the past 12 months, answered live through the Sugra MCP](https://raw.githubusercontent.com/Sugra-Systems/sugra-api-mcp/main/docs/media/sugra-mcp-demo-markets.gif)
+<details>
+<summary><b>Anthropic</b> - Claude and Claude Code</summary>
 
-More examples:
+Claude (claude.ai, Desktop, mobile and Cowork): [Add to Claude](https://url.sugra.ai/claude) opens Sugra in Anthropic's Connectors Directory.
 
-**Macro research** - one prompt builds a full G7 inflation and policy-rate table, each cell dated and sourced, with the unavailable ones flagged rather than faked:
-
-![A G7 inflation and central bank policy rate table assembled live from the Sugra API](https://raw.githubusercontent.com/Sugra-Systems/sugra-api-mcp/main/docs/media/sugra-mcp-demo-macro.gif)
-
-**Cross-domain snapshot** - Brent crude, marine weather and regional risk pulled together for a shipping desk, each with its source and timestamp:
-
-![A Red Sea shipping snapshot combining Brent crude, marine weather and hazard sourcing](https://raw.githubusercontent.com/Sugra-Systems/sugra-api-mcp/main/docs/media/sugra-mcp-demo-shipping.gif)
-
-
-## What a session looks like
-
-Hosted MCP transcript (the three composed tools shown here run on the hosted endpoint). Captured example - wording and figures vary by run and as new BLS data is published:
+Claude Code, the plugin with the skills and the server:
 
 ```text
-User: Where does US inflation stand, and how has it trended over the past year?
-
-resolve_entity("US inflation")
-  -> macro indicator cpi_us (U.S. Bureau of Labor Statistics)
-get_snapshot("cpi_us")
-  -> latest reading with freshness, provenance and quota cost
-get_timeseries("cpi_us", metric="macro_series", range="1y")
-  -> 12 monthly points with an explicit downsampling flag
-
-Agent: US CPI printed 2.9% year over year in the latest release, down from
-3.5% twelve months earlier - a steady decline since spring.
-Source: U.S. Bureau of Labor Statistics via the Sugra API.
-```
-
-Every tool result carries structured metadata - source attribution, freshness, and rate-limit cost - so agents can cite sources and budget requests instead of guessing.
-
-## How it works
-
-```mermaid
-flowchart LR
-    A["AI agent<br/>(ChatGPT, Claude, Gemini, xAI, IDEs)"] --> B["Sugra MCP<br/>gateway tools, plus agent tools when hosted"]
-    B --> C["Sugra API<br/>1,600+ endpoints, 36 data domains"]
-    C --> D["200 primary sources<br/>markets, economics, government,<br/>news, climate, maritime"]
-```
-
-Behind the gateway sits the Sugra API: 200 primary sources - sovereign statistics agencies, central banks, intergovernmental bodies and more - feeding 1,600+ endpoints across 36 data domains. The server ships a bundled catalog of the full endpoint surface, so discovery (search, describe, toolsets) runs locally without network calls; only actual data requests hit the API.
-
-## What agents build with it
-
-The Sugra API skills live in [Sugra-Systems/sugra-api-skills](https://github.com/Sugra-Systems/sugra-api-skills). The server serves five of them as MCP resources (`sugra://skills/...`) from a pinned commit of that repository: `resources/read` the URI after connect.
-
-## Agent skills
-
-These skills teach the catalog loop. The Claude Code plugin also connects the hosted Sugra MCP server; the Codex and Grok plugins and the skill folders add no MCP tools, so connect the server separately there (hosted or local). The plugin package for each agent lives in [Sugra-Systems/sugra-api-plugins](https://github.com/Sugra-Systems/sugra-api-plugins).
-
-### Claude Code
-
-```
 /plugin marketplace add Sugra-Systems/sugra-api-plugins
 /plugin install sugra-api-skills@sugra-api-plugins
 ```
 
-Skills appear as `/sugra-api-skills:<skill>`, for example `/sugra-api-skills:discover-and-call`. The plugin also adds the hosted server `https://mcp.sugra.ai/mcp`; sign in to it once from `/mcp`.
+</details>
 
-### Codex
+<details>
+<summary><b>OpenAI</b> - ChatGPT and Codex</summary>
+
+[Add to ChatGPT](https://url.sugra.ai/openai) opens Sugra in the OpenAI Plugins Directory, which serves both ChatGPT and Codex. In ChatGPT the skills install together with the server.
+
+Codex, the skills plugin:
 
 ```bash
 codex plugin marketplace add Sugra-Systems/sugra-api-plugins
 codex plugin add sugra-api-skills@sugra-api-plugins
 ```
 
-### Grok
+</details>
 
-```bash
-grok plugin install Sugra-Systems/sugra-api-plugins#xai
-```
+<details>
+<summary><b>GitHub</b> - Copilot and VS Code</summary>
 
-### Antigravity
-
-```bash
-git clone https://github.com/Sugra-Systems/sugra-api-plugins
-agy plugin install ./sugra-api-plugins/antigravity
-```
-
-The CLI, the Antigravity app and the IDE share the plugin. It declares the hosted server too, but Antigravity CLI 1.4.9 does not start a server that a plugin declares yet: add it with `agy mcp add` ([Antigravity](#usage-with-antigravity)).
-
-### GitHub Copilot
+GitHub Copilot CLI, the plugin with the skills and the server:
 
 ```bash
 copilot plugin marketplace add Sugra-Systems/sugra-api-plugins
 copilot plugin install sugra-api-skills@sugra-api-plugins
 ```
 
-Copilot CLI reads the same plugin as Claude Code. The plugin also adds the hosted server `https://mcp.sugra.ai/mcp`; Copilot CLI opens the Sugra sign-in page in your browser the first time it connects.
+VS Code: [Install in VS Code](https://vscode.dev/redirect/mcp/install?name=sugra&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fmcp.sugra.ai%2Fmcp%22%7D) adds the server.
 
-### Cursor and other agents
+</details>
+
+<details>
+<summary><b>xAI</b> - Grok and Cursor</summary>
+
+Grok, the plugin with the skills and the server:
+
+```bash
+grok plugin install Sugra-Systems/sugra-api-plugins#xai
+```
+
+Cursor: [Install in Cursor](https://cursor.com/en/install-mcp?name=sugra&config=eyJ1cmwiOiJodHRwczovL21jcC5zdWdyYS5haS9tY3AifQ==) adds the server. The plugin with the skills and the server:
+
+```bash
+git clone https://github.com/Sugra-Systems/sugra-api-plugins
+mkdir -p ~/.cursor/plugins/local
+cp -R sugra-api-plugins/cursor ~/.cursor/plugins/local/sugra-api-skills
+```
+
+</details>
+
+<details>
+<summary><b>Antigravity</b></summary>
+
+The skills plugin:
+
+```bash
+git clone https://github.com/Sugra-Systems/sugra-api-plugins
+agy plugin install ./sugra-api-plugins/antigravity
+```
+
+Antigravity does not start the server from the plugin: add it as shown under Connect.
+
+</details>
+
+<details>
+<summary><b>Other agents</b></summary>
+
+The skills, for any agent that reads Agent Skills:
 
 ```bash
 npx skills add https://mcp.sugra.ai
 ```
 
-Or copy the skill folders of sugra-api-skills into the agent's skills directory.
+The server: add it as shown under Connect.
 
-### ChatGPT
+</details>
 
-The skills install from [OpenAI's Plugins Directory](https://chatgpt.com/plugins/plugins_6aa4f7db79848191a81e4048990545ef). The MCP server attaches as a hosted connector at `https://mcp.sugra.ai/mcp`.
+### Run it locally
 
-Six workflow prompts ship with the server and turn these into one-click flows in clients that surface MCP prompts:
-
-- **Market and macro research** - "Compare inflation and central bank policy rates across the G7." (`macro_briefing`)
-- **Equity snapshots with sources** - "Where does NVIDIA stand today - price, profile, and market backdrop?" (`market_snapshot`)
-- **Sanctions and compliance screening** - "Screen this supplier and resolve its LEI identity." (`sanctions_screening`)
-- **Sector comparison** - "Energy versus technology: valuations and flows side by side." (`sector_compare`)
-- **Climate, maritime and trade intelligence** - "Red Sea shipping this week: chokepoint transits, crude price, and weather on the route." (`earth_conditions` plus the transport and commodities catalog)
-- **Source discovery** - "What does the catalog offer for fixed income, and from which institutions?" (`source_overview`)
-
-Every answer carries source attribution and freshness metadata, so agents cite instead of guessing.
-
-## Hosted MCP (recommended)
-
-No install. In Claude, ChatGPT and Codex, add the Sugra API MCP server from a directory:
-
-- **Claude** (web, desktop, mobile, Claude Code and Cowork): [Add to Claude](https://url.sugra.ai/claude) opens the Sugra API MCP server in Anthropic's Connectors Directory; connect it and sign in with your Sugra account. In claude.ai the directory is under [Customize > Connectors](https://claude.ai/customize/connectors). Claude Code signed in with a claude.ai account picks the connector up automatically; `/mcp` lists it.
-- **ChatGPT and Codex**: [Add to ChatGPT](https://url.sugra.ai/openai) opens the Sugra API MCP server in the OpenAI Plugins Directory.
-
-Any other MCP client, or a manual setup, points at the hosted Streamable HTTP endpoint:
-
-```
-https://mcp.sugra.ai/mcp
-```
-
-- The gateway tools plus the composed agent tools `resolve_entity`, `get_snapshot` and `get_timeseries`
-- OAuth sign-in through the Claude and ChatGPT connector flows, or `Authorization: Bearer sugra_xxx_...` with an API key
-- As a custom connector in claude.ai: Customize -> Connectors -> Add custom connector
-- In ChatGPT: Settings -> Connectors -> Add MCP server
-
-Already added Sugra to Claude as a custom connector? That connection keeps working and shows under "Custom". Connecting the Sugra API MCP server from the directory as well gives you two connections, so remove the custom one first, then connect from the directory.
-
-## Local package
-
-Runs on your machine over stdio (or self-hosted HTTP) with an API key:
+The PyPI package runs the server on your machine over stdio with an API key. Python 3.13 or newer:
 
 ```bash
 pip install sugra-api-mcp
-```
-
-- Eight gateway tools
-- stdio for desktop clients and IDEs, Streamable HTTP for self-hosting
-- Authenticates with `SUGRA_API_KEY`
-
-Get a free API key at [app.sugra.ai/register](https://app.sugra.ai/register) (Free tier: 50 req/day).
-
-## Quick start
-
-```bash
-pip install sugra-api-mcp
-export SUGRA_API_KEY=sugra_xxx_...   # free key: app.sugra.ai/register
+export SUGRA_API_KEY=sugra_...        # free key: https://app.sugra.ai/register
 sugra-api-mcp call quotes_symbol_price --params '{"symbol":"AAPL"}'
 ```
 
-The same call through an agent: connect the server to your client (next section) and ask "What is AAPL trading at? Use Sugra." The agent finds `quotes_symbol_price` in the catalog and calls it with the symbol.
+## Connect
 
-## Connect your client
+Every client connects to one address. Sign in with your Sugra account, or send an API key as `Authorization: Bearer <key>`:
 
-Supported clients:
+```text
+https://mcp.sugra.ai/mcp
+```
 
-- **Anthropic Claude**: Claude Desktop, Claude Code (CLI), claude.ai (web)
-- **OpenAI GPT**: ChatGPT (via MCP connector)
-- **Google**: Antigravity (CLI, app and IDE), Gemini Code Assist (VS Code + JetBrains)
-- **GitHub**: Copilot CLI
-- **xAI**: Remote MCP Tools in xAI SDK and Responses API
-- **IDEs**: VS Code (native), Cursor, Zed, Cline, Continue.dev, Windsurf
-- **Custom agents**: anything built on the Python or TypeScript MCP SDK
+<details>
+<summary><b>Anthropic</b> - Claude and Claude Code</summary>
 
-### Claude Desktop (stdio)
+Claude: connect Sugra in the directory and sign in with your Sugra account. Added Sugra earlier as a custom connector? Remove that one before you connect from the directory, or you will have two.
 
-Add to `claude_desktop_config.json`:
+Claude Code signed in with a claude.ai account picks the connector up on its own. With the plugin, sign in to its server from `/mcp`.
 
-- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
-- Linux: Claude Desktop has no Linux build. On Linux, `pip install sugra-api-mcp` and use Claude Code (CLI), an IDE client, or the hosted HTTP endpoint below.
+</details>
+
+<details>
+<summary><b>OpenAI</b> - ChatGPT and Codex</summary>
+
+In ChatGPT or Codex, connect Sugra and sign in with your Sugra account.
+
+</details>
+
+<details>
+<summary><b>GitHub</b> - Copilot and VS Code</summary>
+
+GitHub Copilot CLI, by hand:
+
+```bash
+copilot mcp add --transport http sugra-api https://mcp.sugra.ai/mcp
+```
+
+VS Code, by hand, `.vscode/mcp.json`:
+
+```json
+{ "servers": { "sugra": { "type": "http", "url": "https://mcp.sugra.ai/mcp" } } }
+```
+
+Both open the Sugra sign-in page in your browser the first time they connect.
+
+</details>
+
+<details>
+<summary><b>xAI</b> - Grok and Cursor</summary>
+
+Grok connects through the plugin.
+
+Cursor, by hand, `~/.cursor/mcp.json`:
+
+```json
+{ "mcpServers": { "sugra": { "url": "https://mcp.sugra.ai/mcp" } } }
+```
+
+To sign in, open Cursor Settings, then Tools & MCPs, and select Connect next to `sugra`.
+
+</details>
+
+<details>
+<summary><b>Antigravity</b></summary>
+
+```bash
+agy mcp add sugra-api https://mcp.sugra.ai/mcp
+```
+
+The CLI, the app and the IDE share the server. Antigravity opens the Sugra sign-in page the first time the agent uses it.
+
+</details>
+
+<details>
+<summary><b>Other agents</b></summary>
+
+Add the address above as a remote MCP server in any client that speaks Streamable HTTP.
+
+</details>
+
+<details>
+<summary><b>Local package</b> - Claude Desktop, Cursor and other stdio clients</summary>
 
 ```json
 {
   "mcpServers": {
     "sugra": {
       "command": "sugra-api-mcp",
-      "env": {
-        "SUGRA_API_KEY": "sugra_xxx_yourkey..."
-      }
+      "env": { "SUGRA_API_KEY": "sugra_..." }
     }
   }
 }
 ```
 
-Restart Claude Desktop. Sugra tools appear in the tools menu.
+Claude Desktop reads it from `claude_desktop_config.json`, Cursor from `~/.cursor/mcp.json`. Other stdio clients take the same command and environment variable in their own MCP settings.
 
-### Claude Code (Anthropic CLI)
+</details>
 
-Signed in to Claude Code with a claude.ai account? [Add to Claude](https://url.sugra.ai/claude) connects the Sugra API MCP server from the Connectors Directory in claude.ai, and it appears in `/mcp` without any local install. To run the local package instead:
+## Tools
 
-```bash
-claude mcp add sugra -- sugra-api-mcp
-# then set the env var that sugra-api-mcp reads
-export SUGRA_API_KEY=sugra_xxx_...
-```
-
-Or edit `~/.claude/config.json` manually with the same shape as Claude Desktop above.
-
-To install the skills as a plugin, which also connects the hosted server:
-
-```
-/plugin marketplace add Sugra-Systems/sugra-api-plugins
-/plugin install sugra-api-skills@sugra-api-plugins
-```
-
-Sign in to the plugin's server once from `/mcp`. If the Sugra API connector from claude.ai is connected too, Claude Code shows only the plugin's server. Running the local package as well gives you two Sugra servers: remove it with `claude mcp remove sugra`, or skip the plugin and copy the skill folders of sugra-api-skills into `~/.claude/skills/`.
-
-### Usage with Antigravity
-
-Antigravity (the `agy` CLI, the Antigravity app and the IDE) connects the hosted endpoint and signs in with your Sugra account, so no key goes in the config:
-
-```bash
-agy mcp add sugra-api https://mcp.sugra.ai/mcp
-```
-
-Antigravity opens the Sugra sign-in page in your browser the first time the agent uses the server. The hosted endpoint shows the gateway tools and the three [hosted-only agent tools](#hosted-only-agent-tools-mcpsugraaimcp). To add the skills as well, install the plugin ([Antigravity](#antigravity)).
-
-### Usage with GitHub Copilot CLI
-
-Copilot CLI connects the hosted endpoint and signs in with your Sugra account, so no key goes in the config:
-
-```bash
-copilot mcp add --transport http sugra-api https://mcp.sugra.ai/mcp
-```
-
-Copilot CLI opens the Sugra sign-in page in your browser the first time it connects to the server; `/mcp auth sugra-api` signs in again. The plugin ([GitHub Copilot](#github-copilot)) adds the same server together with the skills, so with the plugin installed you can skip this command.
-
-### Cursor, Zed, Cline, Continue.dev, Windsurf
-
-Each of these has an MCP settings file (typically `mcp.json` or equivalent) with the same stdio config shape as Claude Desktop.
-
-### ChatGPT
-
-[Add to ChatGPT](https://url.sugra.ai/openai) installs the Sugra API MCP server from the OpenAI Plugins Directory. Or add the hosted HTTP endpoint (below) as an MCP connector, since ChatGPT does not launch local stdio processes.
-
-### HTTP (claude.ai, ChatGPT, remote agents)
-
-In claude.ai, [Add to Claude](https://url.sugra.ai/claude) connects the Sugra API MCP server from Anthropic's Connectors Directory; in ChatGPT, [Add to ChatGPT](https://url.sugra.ai/openai) installs it from the OpenAI Plugins Directory. For a manual setup or any other Streamable HTTP MCP client, use the hosted endpoint:
-
-```
-https://mcp.sugra.ai/mcp
-```
-
-Authenticate with OAuth in the connector flow or with `Authorization: Bearer sugra_xxx_...`.
-
-As a custom connector in claude.ai: Customize -> Connectors -> Add custom connector.
-In ChatGPT: Settings -> Connectors -> Add MCP server.
-
-## Tool reference
-
-The local package exposes eight gateway tools. The hosted endpoint adds three composed analysis tools on top (see Hosted MCP above). The package exposes exactly eight tools:
-
-| Tool | Purpose |
+| Tool | What it does |
 |---|---|
-| `fetch_data` | One-step: find best endpoint for a natural-language query and call it. Combines search + call in one round trip. |
-| `search_endpoints` | Search the bundled endpoint catalog. Runtime search does not fetch `/openapi.json`. |
-| `describe_endpoint` | Inspect an endpoint by `operation_id`, including path, method, parameters, required inputs, `agent_hints`, and `request_body_schema` for JSON-body POST operations. |
-| `call_endpoint` | Call a Sugra API operation by `operation_id`. Arbitrary path calls are no longer supported. |
-| `list_toolsets` | List catalog groups with endpoint counts and descriptions. |
-| `list_sources` | Show bundled catalog source metadata. |
-| `sugra_entity_screen` | Screen a name against sanctions and watchlists (Sugra Entity). |
-| `sugra_entity_lookup` | Composed entity lookup by identifier - `anchor` is `lei` or `vat`, plus the identifier `value`; returns registry identity + screening (Sugra Entity). |
+| `fetch_data` | Finds the best endpoint for a plain-language request and calls it, in one step |
+| `search_endpoints` | Searches the catalog of 1,600+ endpoints |
+| `describe_endpoint` | Shows an endpoint's parameters, required inputs and cost hints |
+| `call_endpoint` | Calls an endpoint by its operation id, with optional `limit` and `fields` |
+| `list_toolsets` | Lists the catalog groups with their endpoint counts |
+| `list_sources` | Lists the sources behind the catalog |
+| `sugra_entity_screen` | Screens a name against sanctions lists and watchlists |
+| `sugra_entity_lookup` | Looks up a company by LEI or VAT number, with screening |
+| `resolve_entity` | Hosted only: turns a ticker, company, indicator, coin or currency pair into one entity |
+| `get_snapshot` | Hosted only: one current view of an entity, with freshness and provenance |
+| `get_timeseries` | Hosted only: a bounded series of an entity's price or macro metric |
 
-`call_endpoint` and `fetch_data` both support response shaping with `limit`, `fields`, and `include_raw`. Shaping works on enveloped (`{"data": ...}`) and envelope-less payloads alike; `fields` entries may use dotted paths into nested objects (`geo.city`), and `meta.shaped` reports what was actually applied (`fields_applied` / `fields_unmatched`, `limit_applied`, `records_path`, `order`, `kept_end`) rather than echoing the request. `limit` and `fields` work on the records list: the envelope `data` list, a bare top-level array, or the one list inside an object `data` when exactly one of `data`, `entries`, `events`, `history`, `items`, `observations`, `points`, `records`, `results`, `rows`, `series`, `timeseries` holds a list (for example `data.items` on the latest news, `data.observations` on a FRED series). When `data` has no such single list but every one of its values is an object holding exactly one list named `observations`, as with several named sub-series side by side, `limit` bounds each `data.<key>.observations` list on its own; `fields` there still names keys of `data`. Keys beside that list, such as `total` and `count`, stay as sent, and lists nested inside records are never truncated. A `fields` entry that names a key of `data` itself projects that object instead, and a projection that matches nothing leaves the payload whole. `meta.shaped.limit_applied` says whether the bound took effect, and `meta.shaped.records_path` names the list used (`data`, `data.<key>`, `data.*.observations`, or null when no records list was used). `limit` keeps the newest end of the records list when every record carries one date or period key (such as `date`, `period` or `year`) in one format and the list runs one way by it: the last N records of an oldest-first list, in their order, or the first N of a newest-first list. Otherwise it keeps the first N records. Whenever a limit bounds a records list, `meta.shaped.order` says `asc`, `desc` or `unknown` and `meta.shaped.kept_end` says `newest` or `first`, each as a map by sub-series name for sibling sub-series. A top-level JSON array (or scalar) is always wrapped as `{"data": ...}` so the MCP result stays an object; otherwise FastMCP output validation reports the successful call as an error and drops the rows.
+The server also ships six workflow prompts (market snapshot, macro briefing, sanctions screening, sector comparison, earth conditions, source overview) and serves five of the Sugra API Skills as MCP resources under `sugra://skills/`.
 
-`fields` takes at most 32 paths, each at most 256 characters and 16 dotted parts; past any of these the call answers `projection_too_large` before any request is made. With `fields`, one projection also visits at most 100,000 list items, runs for at most 5 seconds, and takes a response of at most 2,000,000 characters of JSON before projection. That bound sits far above the 18,000-character limit on the result, which applies after projection: a 16-day weather forecast is about 295,000 characters before `fields=["daily"]` cuts it to fit. None of these bounds applies without `fields`. Shaping runs on its own pool of two worker threads, never on the event loop: at most 8 jobs run or wait for a worker, 4 of them for one caller, and a call that finds no free slot within 2 seconds answers `server_busy` with scope `shaping` or `caller_shaping`.
+## Documentation
 
-`describe_endpoint` returns computed `agent_hints` per endpoint so agents can budget time and parallelism before calling:
+- [Sugra MCP](https://docs.sugra.ai/doc-2263382)
+- [Quickstart](https://docs.sugra.ai/doc-2263383)
+- [Rate limits and errors](https://docs.sugra.ai/doc-2263384)
+- [Plans and billing](https://docs.sugra.ai/doc-2444799)
+- [Changelog](https://docs.sugra.ai/doc-2263381)
+- [Self-hosting](https://github.com/Sugra-Systems/sugra-api-mcp/blob/main/docs/self-hosting.md) - running your own HTTP server
 
-- `duration_class` - `fast` (under ~2s, snapshot-backed), `slow` (live upstream proxying, occasionally 15s+), or `heavy` (per-item upstream work, large batches can exceed the gateway timeout)
-- `max_concurrency` - advisory ceiling for parallel calls from one session
-- `bulk_cost` - on per-item bulk endpoints: 1 request credit per item in the request body (the API reports the total in the `X-RateLimit-Cost` response header)
+## Blog
 
-### Hosted-only agent tools (mcp.sugra.ai/mcp)
-
-The hosted MCP endpoint at `https://mcp.sugra.ai/mcp` serves the same eight tools PLUS three composed agent tools that are not available on stdio or self-hosted installs:
-
-| Tool | Purpose |
-|---|---|
-| `resolve_entity` | Free text (ticker, company, indicator, coin, currency pair) to a canonical market or macro entity. Ambiguous matches return ranked candidates, never a silent pick. |
-| `get_snapshot` | Entity plus a named recipe to one composed current view with freshness, provenance, coverage, and billing blocks. Composed calls charge a fixed recipe cost (1-2 requests) from the daily quota. |
-| `get_timeseries` | Entity plus metric (`price`, `macro_series`, `etf_flows`, `etf_monthly_flows`) to a bounded series with an explicit downsampling flag. `etf_flows` estimates at filing cadence; `etf_monthly_flows` is the fund's own NPORT-P monthly creations and redemptions. |
-
-These three tools wrap an internal composed plane that requires an infrastructure credential available only on the hosted deployment. The tool code ships inside the package, but it is registered only by the hosted HTTP entry point and only when that credential is present - `pip install sugra-api-mcp` (stdio and self-hosted HTTP) always exposes the classic eight-tool gateway. Hosted-only examples in any documentation are labeled as such. For compliance entity lookups (LEI / VAT, sanctions screening) use `sugra_entity_lookup` and `sugra_entity_screen`, which work on every transport.
-
-### ChatGPT tool set
-
-A session whose MCP `initialize` names the client `openai-mcp` (ChatGPT), or that sends no client name and a User-Agent starting with it, lists 142 typed tools in place of `search_endpoints`, `describe_endpoint`, `call_endpoint` and `fetch_data`, beside the other tools above: one tool per operation, with a verb name such as `get_stock_quotes` or `get_price_history`, its own input schema and a compact result. Typed tools take no raw location inputs (coordinates, addresses, postal codes). A typed tool may take fewer inputs than its operation: `get_latest_news`, `search_news` and `search_global_news_articles` take one required topic or name and a count, while other clients still reach every input of those operations through `call_endpoint`. Of the 145 typed tools defined, those three are not listed to such a session (`CHATGPT_UNLISTED_TYPED_TOOLS` in `sugra_api_mcp/server.py`). Nothing such a session is listed names a tool it is not listed: `list_toolsets` and `list_sources` carry a description without the `search_endpoints` filter tip, and the prompts and the `sugra://skills/` resources it reads come in a wording that names only the tools it is listed. Every other client lists the tools above unchanged; any client may still call any of these tools by name. The set is defined in `sugra_api_mcp/catalog/data/typed_tools.json`.
-
-## CLI
-
-Server startup is unchanged:
-
-```bash
-sugra-api-mcp
-sugra-api-mcp --transport streamable-http --port 8001
-```
-
-Catalog and gateway helpers:
-
-```bash
-sugra-api-mcp doctor
-sugra-api-mcp list-toolsets
-sugra-api-mcp search "NASDAQ futures"
-sugra-api-mcp describe cot_financial
-sugra-api-mcp call quotes_symbol_price --params '{"symbol":"AAPL"}'
-```
-
-## Environment variables
-
-User-facing configuration for local installs, MCP clients, Docker stdio, and
-directory sandboxes (for example Glama Try in Browser). Set only this:
-
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `SUGRA_API_KEY` | For API calls | - | Your Sugra API key (`sugra_...`). Get a free key at [app.sugra.ai/register](https://app.sugra.ai/register) (Free tier: 50 req/day). Not needed to start the server: catalog tools (`search_endpoints`, `describe_endpoint`, `list_toolsets`, `list_sources`) work without it; API-calling tools return a structured `missing_api_key` error until it is set. In HTTP mode with a client Bearer token this is only a fallback. |
-
-Optional overrides (leave unset unless you need them):
-
-| Variable | Default | Description |
-|---|---|---|
-| `SUGRA_API_BASE` | `https://sugra.ai` | Override the Sugra API base URL (self-hosted or beta API only). |
-| `SUGRA_TIMEOUT` | `30` | Downstream HTTP timeout in seconds for calls from this server to the Sugra API. |
-
-Operator-only settings for self-hosted Streamable HTTP (reverse proxy CORS/hosts,
-OAuth authorization-server wiring, and shared secrets) are documented in
-[docs/self-hosting.md](docs/self-hosting.md). Do not put operator secrets into
-public directory sandboxes. `SUGRA_MCP_TRUST_PROXY_HEADERS` (off by default)
-makes the server read `X-Real-IP` and `X-Forwarded-Host`; set it only behind a
-reverse proxy that overwrites both on every request, and never where clients
-can reach the process directly (details in the same guide).
-`SUGRA_MCP_LIMITS` (off by default) turns on request limits counted in the
-server's own memory; the same guide lists its settings.
-
-### HTTP transport with OAuth
-
-When running with `--transport streamable-http` the server allows unauthenticated MCP discovery requests (`initialize`, `notifications/initialized`, `tools/list`, `resources/list`, `prompts/list`, and `ping`) so ChatGPT Apps and other mixed-auth clients can discover tool metadata. Tool calls still require `Authorization: Bearer ...`. Two token formats are accepted:
-
-- Raw API key (`sugra_...`) - passed through as the downstream `x-api-key`. Compatible with earlier local API-key setups.
-- OAuth JWT - signature verified against the issuer's JWKS. The audience must match `https://app.sugra.ai/mcp`, the token must include `sugra:read`, and hosted access is validated against APP before resolving the user's primary API key. Successful hosted OAuth requests update MCP connection activity in APP.
-
-Most users should use the hosted endpoint `https://mcp.sugra.ai/mcp` instead of
-self-hosting OAuth: OAuth clients sign in there with their Sugra account, and an
-API key works as Bearer. If you run your own HTTP process, see
-[docs/self-hosting.md](docs/self-hosting.md).
-
-## Timeouts and the error contract
-
-`SUGRA_TIMEOUT` caps each downstream HTTP call from this server to the Sugra API (default 30 seconds). It is one link in a longer chain; when a tool call fails, `elapsed_ms` in the error payload tells you which link cut it:
-
-```
-MCP client (agent harness)          own tool timeout, often 60-180s, client-controlled
-  -> hosted edge (mcp.sugra.ai)     86400s, effectively unlimited
-    -> container ingress            240s, the platform's ceiling
-      -> this server (httpx)        SUGRA_TIMEOUT, default 30s
-        -> Sugra API -> upstreams   15-60s per upstream call, server-side
-```
-
-Tool failures return structured JSON instead of raising, so agents can pick a retry strategy:
-
-| `error` value | Meaning | Retry strategy |
-|---|---|---|
-| `upstream_timeout` | No response within `SUGRA_TIMEOUT` (`elapsed_ms` close to `timeout_s` x 1000) | Retry once: the aborted attempt usually completes server-side and warms upstream caches. Then narrow the request (smaller batch, tighter filters). |
-| `upstream_connect_error` | Could not reach the Sugra API (DNS failure, connection refused) | Retry after a short delay. |
-| `upstream_transport_error` | Connection dropped mid-request | Retry once. |
-| `invalid_request_url` | The request could not be built, most often because its parameters make the URL longer than 65,536 characters; nothing was sent | Send fewer or shorter parameter values, or split the request. |
-| `unusable_api_key` | The API key holds a character this server cannot send in a request header (one outside ASCII, a line break or another control character, or a space or a tab at either end); nothing was sent | Do not retry: the key has to be replaced (see Troubleshooting). |
-| `response_too_deep` | The API's response is nested too deeply to measure, so it is not returned | Retry once; report if persistent. |
-| free-text string + `status_code` | The API answered with HTTP 4xx/5xx; `retry_after` included when the API sent a Retry-After header | Honor `retry_after` for 429/503; fix the request for 4xx. |
-| `tool_execution_failed` | Unexpected failure inside the gateway (`exception_type` included) | Report if persistent. |
-| `query_too_long` | A `search_endpoints` or `fetch_data` query has more than 64 terms or 1000 characters (`max_terms` and `max_chars` included). A term is a run of two or more ASCII letters or digits, and repeats count; nothing was searched | Shorten the query to the instrument, series, place or task. |
-| `projection_too_large` | A `fields` projection passed one of its bounds. `limit_kind` names it: `fields` (more than 32 paths), `path_chars` (a path over 256 characters), `path_parts` (a path over 16 dotted parts), `rows` (over 100,000 list items visited), `shaping_ms` (over 5 seconds) or `raw_chars` (a response over 2,000,000 characters before projection). `limit`, `actual`, `field_index` (from 0, for `path_chars` and `path_parts`) and `operation_id` are included, never the field text; the first three kinds are refused before any request is made | Name fewer or shorter fields, add `limit`, narrow the request, or omit `fields`. |
-| `server_busy` | A concurrency limit was reached. `scope` is `tool_calls`, `search` or `shaping` for a server-wide limit, `caller_tool_calls`, `caller_search` or `caller_shaping` for the limit on one caller. With `shaping` or `caller_shaping` the API request was already made and its response was dropped; with any other scope the call did no work | Retry after a few seconds. |
-
-All error payloads carry `elapsed_ms`. `url` is present on transport and HTTP errors (not on `tool_execution_failed`, which can fire before a URL exists). On the three transport errors and `invalid_request_url`, `status_code` is `null` (no HTTP status was received) - consumers comparing `status_code` numerically should guard for that. If a tool call instead fails with a bare client-side message and no structured JSON, the timeout fired in your agent harness above this server: raise the client's tool timeout, not `SUGRA_TIMEOUT`.
-
-## Examples
-
-Ask Claude:
-
-- "Search Sugra endpoints for NASDAQ futures."
-- "Describe the `cot_financial` operation."
-- "Call `quotes_symbol_price` with symbol AAPL and return only symbol and price."
-- "List available Sugra toolsets."
-
-## Troubleshooting
-
-**Looking for `get_market_price`, `get_macro_indicator`, or `get_news`?** Those curated tool names appear in some older directory listings and never shipped in this package - use `fetch_data` for one-step natural-language calls or `search_endpoints` plus `call_endpoint` for explicit routing.
-
-
-**`missing_api_key` in tool responses**
-
-The server starts and lists its tools without a key, but API-calling tools (`call_endpoint`, `fetch_data`, the entity tools) return `{"error": "missing_api_key"}` until the server can find one. Depending on how you run it:
-- As an MCP tool from your client (Claude, ChatGPT, Gemini, xAI, IDE, etc.): check the `env` block in your MCP config file. Value should be a full key like `sugra_ao1_...`, not empty and not wrapped in extra quotes.
-- Shell / CI: `export SUGRA_API_KEY=sugra_...` before running `sugra-api-mcp`.
-- HTTP mode: set via `.env` or systemd `EnvironmentFile`, not the shell.
-
-`sugra-api-mcp doctor` reports whether the key is visible to the process.
-
-**`unusable_api_key` in tool responses**
-
-The key the server has for the call holds a character this server cannot send in a request header (a letter outside ASCII, an invisible character, a line break or another control character, or a space or a tab at either end), so API-calling tools send no request and return `{"error": "unusable_api_key"}`, and a retry fails the same way. Depending on where the key comes from:
-- A key pasted into a config file or an environment variable can pick up an invisible character on the way. Copy it again from [app.sugra.ai/developer/keys](https://app.sugra.ai/developer/keys).
-- The key itself holds such a character, as some older keys do: rotate it at [app.sugra.ai/developer/keys](https://app.sugra.ai/developer/keys) and use the new one. Over a sign-in connection (claude.ai, ChatGPT) the server uses your account's key and reads it again within five minutes. If the page does not offer to rotate the key, email support@sugra.systems.
-
-**`401 Unauthorized` or `403 Forbidden` in tool responses**
-
-Key accepted but rejected. Common causes:
-- Key was regenerated in [app.sugra.ai/developer/keys](https://app.sugra.ai/developer/keys) and your config still has the old one.
-- Typo - key contains only lowercase letters and digits, no spaces, no trailing newlines.
-- Free tier was deactivated. Sign in to verify status.
-
-**`429 Too Many Requests`**
-
-Hit your plan's daily limit. Response headers include `X-RateLimit-Reset` with the UTC timestamp when the counter resets (midnight UTC). Over MCP the tool result carries `reason: daily_limit_reached`, `status_code: 429`, `retry_after`, a `retry_hint` that tells the model not to call a data tool again before the reset (the `X-RateLimit-Reset` time, or 00:00 UTC when the API sent no reset time or a value that is not one) and to tell the user, and `daily_limit` and `plan` when the API named them. Plans: [sugra.systems/api/pricing](https://sugra.systems/api/pricing).
-
-Before the limit is reached, a `call_endpoint` or `fetch_data` result shows what is left: `meta.quota` holds `limit`, `remaining` (requests left today) and `resets_at`, copied from the API's `X-RateLimit-*` response headers. A result carries no `meta.quota` when the API did not report a quota.
-
-**`Invalid Host header`** (only if self-hosting HTTP mode)
-
-FastMCP has DNS rebinding protection for public hostnames behind a reverse
-proxy. See [docs/self-hosting.md](docs/self-hosting.md) for the allowed-hosts
-setting.
-
-**Tool result truncated with `meta.truncated` notice**
-
-Some endpoints return very large payloads (long price histories, hourly forecasts, full catalogs). A result is capped at 18,000 characters of JSON with ASCII escapes, so a CJK or accented character counts as its six-character escape and non-ASCII text is counted generously. Clients limit what they pass to the model in their own ways: Claude Code writes a tool result over 50,000 characters to a file instead of handing it to the model, and Codex limits a tool result by tokens, with a budget the user sets, and cuts the middle out beyond it. Every shape we measured at 18,000 characters, the densest included, stayed within Codex's default budget; a denser result, or a lower budget set in the client, can still be trimmed by the client. The cap is the same for every client. A larger result is cut to fit, whatever its shape: the lists at most two levels under `data` (`data`, `data.<key>`, `data.<key>.<key>`, whatever the key is called) are measured record by record, a big list is cut before small ones beside it, and a cut list keeps at least one record. A list keeps the newest end by the same order rule as `limit`, else its first records; through `call_endpoint`, a forecast or calendar keeps its records from today onward instead, oldest-first or newest-first alike, with `kept_end` `nearest`. `fetch_data` runs its operation through `call_endpoint` and is cut the same way, its `meta.fetch_data` (written when the response's `meta` is an object or absent) counted within the cap. The cut runs on the shaping pool, never on the event loop, so a full pool answers `server_busy`; it has a 5-second clock, read between records, and past it the result is refused; the fixed tools stop waiting for a cut half a second after that clock, and `call_endpoint` half a second after two such clocks, as its `fields` projection has its own; both then answer `response_too_large`, and a cut that cannot start within the pool's 2-second wait answers `server_busy`. A failure from the Sugra API, or on the way to it, is held to 17,000 characters before any gate sees it, and so is a refusal the server builds itself, which can echo what the call sent (an unknown `operation_id` or parameter, a path left unresolved): a value too long to fit, such as a long API message, URL or header, is cut to end in `...` and marked `<key>_truncated: true` beside it, and no key is dropped, so the status and every short value stay as they are. The fixed tools gate an error body like any other result; an error payload over the cap that `call_endpoint` passes on as it came is refused without being measured. `meta.truncated` says what was cut: `reason` (`exceeds_response_size_cap`), `path` of the largest list cut with its `original_count`, `kept_count`, `order` and `kept_end`, the sizes `original_chars`, `kept_chars` and `cap_chars`, a `lists` entry per path (with `kept_range`, the first and last date kept) when several lists were cut, and a `retry_hint` that names what was kept and only the parameters the operation has. A forecast of up to about two weeks keeps the hours from today and its whole `daily` list, and the hint offers `fields=["daily"]` or a smaller `params.forecast_days`; a 16-day forecast can lose its last days as well, and its hint then offers only a smaller `params.forecast_days`, although `fields=["daily"]` returns all 16 days within the cap; a quote history keeps its newest bars, and the hint offers `params.limit` or a narrower `params.start` to `params.end`. When no cut fits, the result is a `response_too_large` error whose message gives the size and the limit in characters and names the large part: a record that is larger than the limit by itself, a record that does not fit beside the rest of the response and the cut notice (with both sizes, and how many other lists hold such a record), the one record each list keeps when only together they do not fit (with their sum and the largest of them), or the part outside the lists that is too large, and when it can, the `fields` that leave the large part out. The refusal itself always fits the cap: when it would not, it keeps only the size line and a URL cut to 300 characters.
-
-**`Python version 3.13 or higher is required`**
-
-sugra-api-mcp requires Python 3.13+. Check: `python --version`. If you have 3.12 or older:
-- Ubuntu: install Python 3.13 or newer from your distribution packages or the deadsnakes PPA.
-- macOS: `brew install python@3.13`
-- Windows: download from [python.org](https://www.python.org/downloads/)
-
-Then recreate your venv.
-
-**Hosted `mcp.sugra.ai/mcp` returns 5xx**
-
-The hosted endpoint can briefly restart after deploys. Wait 60 seconds and retry. If persistent, email support@sugra.systems.
-
-**Debugging tool calls locally**
-
-Run with stdio and log JSON-RPC messages:
-```bash
-SUGRA_API_KEY=sugra_... sugra-api-mcp 2>&1 | tee mcp-debug.log
-```
-Send manual JSON-RPC from a second terminal using `nc` or an MCP inspector.
+- [Sugra Data: seven directions, one key](https://sugra.systems/blog/platform-intro)
+- [Sugra MCP in Anthropic's Connectors Directory](https://sugra.systems/blog/sugra-api-mcp-server-anthropic-connectors-directory)
+- [Sugra API Skills](https://sugra.systems/blog/sugra-api-skills)
 
 ## Development
 
@@ -506,61 +286,17 @@ Send manual JSON-RPC from a second terminal using `nc` or an MCP inspector.
 git clone https://github.com/Sugra-Systems/sugra-api-mcp
 cd sugra-api-mcp
 pip install -e ".[dev,http]"
-export SUGRA_API_KEY=sugra_...
-python -m sugra_api_mcp  # stdio mode
-python -m sugra_api_mcp --transport streamable-http --port 8001  # HTTP mode
-python scripts/build_endpoint_catalog.py  # rebuild bundled catalog from sibling API openapi.json
-python scripts/build_endpoint_catalog.py --source https://sugra.ai/openapi.json  # from the live spec
-# On DRIFT, catalog-parity.yml opens or updates PR branch ci/catalog-resync.
-```
-
-Run tests:
-
-```bash
 pytest
 ```
 
-## Docker
+The test matrix runs on Python 3.13, 3.14 and 3.15.
 
-Build the image from the repository root:
+## Help
 
-```bash
-docker build -t sugra-api-mcp .
-```
-
-Run in stdio mode (the default entrypoint) for MCP clients that spawn a local process:
-
-```bash
-docker run -i --rm -e SUGRA_API_KEY=sugra_... sugra-api-mcp
-```
-
-Run the Streamable HTTP transport on port 8001 with Docker Compose:
-
-```bash
-export SUGRA_API_KEY=sugra_...
-docker compose up -d
-```
-
-Then point your MCP client at `http://localhost:8001/mcp`. The compose service
-passes `SUGRA_API_KEY` and the optional overrides (`SUGRA_API_BASE`,
-`SUGRA_TIMEOUT`) from your shell when set, and checks container health against
-`http://localhost:8001/health`. Reverse-proxy and OAuth operator settings are
-documented in [docs/self-hosting.md](docs/self-hosting.md).
-
-Every response the application sends, errors included, carries the header
-`Server: sugra-api-mcp`. So does uvicorn's own 400 for a request it cannot
-parse under the httptools parser, which the `http` extra installs and uvicorn
-picks by default; under the h11 parser that 400 goes out without the header.
-Set `SUGRA_MCP_SERVER_VERSION=1` (or `true`, `yes`, `on`) in the server's
-environment to add the package version to that header
-(`sugra-api-mcp/<version>`) and to the `/health` response, which leaves the
-version out otherwise.
-
-A note on auth: no environment variable is baked into the image and none is
-required for the container to start. In HTTP mode clients authenticate per
-request with `Authorization: Bearer sugra_...`, so `SUGRA_API_KEY` on the
-container is only a fallback for requests without a Bearer token.
+- [Status and support](https://docs.sugra.ai/doc-2444802)
+- Email: [support@sugra.systems](mailto:support@sugra.systems)
+- Reporting a vulnerability: [SECURITY.md](https://github.com/Sugra-Systems/sugra-api-mcp/blob/main/SECURITY.md)
 
 ## License
 
-MIT © 2026 Sugra Systems, Inc.
+MIT &copy; 2026 [Sugra Systems, Inc.](https://sugra.systems)
