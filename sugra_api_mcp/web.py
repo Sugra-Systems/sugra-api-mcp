@@ -685,7 +685,7 @@ _LANDING_HTML = f"""<!doctype html>
   <div class="hero">
     <h1>Sugra MCP</h1>
     <p>The connector between AI assistants and Sugra Data: 1,600+ endpoints from
-    160+ primary sources across 36 data domains, served over the Model Context
+    200 primary sources across 36 data domains, served over the Model Context
     Protocol.</p>
   </div>
   {_tabs_html()}

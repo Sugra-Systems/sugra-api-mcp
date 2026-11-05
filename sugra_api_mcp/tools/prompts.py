@@ -153,7 +153,7 @@ def source_overview(domain: str) -> str:
 3. Pick the tools listed in this session whose descriptions fall under {domain}, and read their input schemas for the inputs each takes.
 4. Frame the sources by tier and name them openly: sovereign (for example FRED, BLS, ECB, NOAA, USGS), intergovernmental (for example IMF, GDACS, EUMETSAT), and academic or nonprofit programs.
 5. Summarize the {domain} coverage: what data exists, typical inputs, and three to five example tools to call next.
-6. Note that the catalog spans 1,600+ endpoints across 160+ primary sources, and that the tools listed in this session reach a part of them."""
+6. Note that the catalog spans 1,600+ endpoints across 200 primary sources, and that the tools listed in this session reach a part of them."""
     return f"""Explain what the Sugra catalog offers for the {domain} domain.
 
 1. Call list_toolsets to see every endpoint group with its endpoint count.
@@ -161,4 +161,4 @@ def source_overview(domain: str) -> str:
 3. Run search_endpoints with query "{domain}" (add the toolset filter when one matches) to sample concrete endpoints, then describe_endpoint on the most relevant hits.
 4. Frame the sources by tier and name them openly: sovereign (for example FRED, BLS, ECB, NOAA, USGS), intergovernmental (for example IMF, GDACS, EUMETSAT), and academic or nonprofit programs.
 5. Summarize the {domain} coverage: what data exists, typical parameters, and three to five example operation_ids to call next.
-6. Note that the catalog spans 1,600+ endpoints across 160+ primary sources, all reachable through call_endpoint or fetch_data."""
+6. Note that the catalog spans 1,600+ endpoints across 200 primary sources, all reachable through call_endpoint or fetch_data."""
