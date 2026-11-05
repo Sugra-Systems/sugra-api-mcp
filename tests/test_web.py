@@ -204,7 +204,15 @@ def test_tabs_point_at_the_public_listings_before_the_commands(client: TestClien
     assert chatgpt.index(openai) < chatgpt.index(skills)
     assert "<pre" not in chatgpt
 
-    # Tabs with no public listing for them keep only their commands.
+    github = 'href="https://url.sugra.ai/gh"'
+    copilot = _panel(text, "copilot")
+    assert copilot.index(github) < copilot.index('id="cmd-copilot"')
+    vscode = _panel(text, "vscode")
+    assert vscode.index(github) < vscode.index('id="cfg-vscode"')
+    for ident in ("claude", "chatgpt", "claude-code", "codex", "grok", "antigravity", "cursor", "other"):
+        assert github not in _panel(text, ident), ident
+
+    # Tabs with no Anthropic or OpenAI listing for them name none of those listings.
     for ident in ("grok", "antigravity", "copilot", "cursor", "vscode", "other"):
         panel = _panel(text, ident)
         for listing in (claude, openai, skills):
