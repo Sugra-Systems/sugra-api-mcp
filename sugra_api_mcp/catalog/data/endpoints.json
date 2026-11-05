@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-11-05T04:09:40Z",
+  "built_at": "2026-11-05T05:33:05Z",
   "endpoint_count": 1638,
   "endpoints": [
     {
@@ -34635,7 +34635,7 @@
       "toolset": "corporate_registry"
     },
     {
-      "description": "Fetch a single LEI record by its 20-character ISO 17442 identifier. Returns the entity block (legal name, other names, legal address, HQ address, jurisdiction, legal form, status, creation date) and the registration block (issuing Local Operating Unit, initial registration date, last update, next renewal, corroboration level). Linked identifiers (BIC, MIC, ISIN mappings, Open Corporates ID, S&P Global ID) are attached where available.",
+      "description": "Fetch a single LEI record by its 20-character ISO 17442 identifier. Returns the entity block (legal name, other names, legal address, HQ address, jurisdiction, legal form, status, creation date) and the registration block (issuing Local Operating Unit, initial registration date, last update, next renewal, corroboration level). Linked identifiers (BIC, MIC, ISIN mappings, Open Corporates ID, S&P Global ID) are attached where available. A 404 means GLEIF answered that the LEI does not exist; when GLEIF fails or does not answer in time the route returns 503 or 504 with `Retry-After`, never a 404.",
       "method": "GET",
       "operation_id": "gleif_lei_records_lei",
       "parameters": [
@@ -34668,7 +34668,7 @@
       "toolset": "corporate_registry"
     },
     {
-      "description": "Fetch the direct (immediate) parent of an entity by LEI. Direct parent is the entity that owns or controls the subject via accounting consolidation (reported on the LEI Level 2 relationship record). Returns null when the entity reports no parent (ultimate parent, standalone company, exempt from reporting). The full parent LEI record is embedded when one exists.",
+      "description": "Fetch the direct (immediate) parent of an entity by LEI. Direct parent is the entity that owns or controls the subject via accounting consolidation (reported on the LEI Level 2 relationship record). Returns null when the entity reports no parent (ultimate parent, standalone company, exempt from reporting). The full parent LEI record is embedded when one exists. When GLEIF fails or does not answer in time the route returns 503 or 504 with `Retry-After`, never a null parent.",
       "method": "GET",
       "operation_id": "gleif_lei_records_lei_direct_parent",
       "parameters": [
@@ -34763,7 +34763,7 @@
       "toolset": "corporate_registry"
     },
     {
-      "description": "Fetch the ultimate parent (top of the ownership chain) of an entity by LEI. Ultimate parent is the entity at the top of the accounting consolidation chain. Returns null when the entity reports no ultimate parent (standalone, already the ultimate parent, or exempt from reporting). The full parent LEI record is embedded when one exists.",
+      "description": "Fetch the ultimate parent (top of the ownership chain) of an entity by LEI. Ultimate parent is the entity at the top of the accounting consolidation chain. Returns null when the entity reports no ultimate parent (standalone, already the ultimate parent, or exempt from reporting). The full parent LEI record is embedded when one exists. When GLEIF fails or does not answer in time the route returns 503 or 504 with `Retry-After`, never a null parent.",
       "method": "GET",
       "operation_id": "gleif_lei_records_lei_ultimate_parent",
       "parameters": [
@@ -97444,5 +97444,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "c8d7c282052dce6d726d9e28cd2dc3328dfc16b3111ec3c59558f39726d3ef4d"
+  "spec_sha256": "5a8b178c175dbe6588fbfc4741fdbd4b3c068c809f361076d9e2c33170a6ab9e"
 }
