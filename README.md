@@ -17,6 +17,7 @@
 <p align="center">
   <a href="https://url.sugra.ai/claude"><img src="https://img.shields.io/badge/Add_to_Claude-F5A623?style=for-the-badge" alt="Add to Claude"></a>
   <a href="https://url.sugra.ai/openai"><img src="https://img.shields.io/badge/Add_to_ChatGPT-F5A623?style=for-the-badge" alt="Add to ChatGPT"></a>
+  <a href="https://url.sugra.ai/gh"><img src="https://img.shields.io/badge/GitHub_MCP_Registry-F5A623?style=for-the-badge" alt="GitHub MCP Registry"></a>
   <a href="https://vscode.dev/redirect/mcp/install?name=sugra&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fmcp.sugra.ai%2Fmcp%22%7D"><img src="https://img.shields.io/badge/Install_in_VS_Code-F5A623?style=for-the-badge" alt="Install in VS Code"></a>
   <a href="https://cursor.com/en/install-mcp?name=sugra&config=eyJ1cmwiOiJodHRwczovL21jcC5zdWdyYS5haS9tY3AifQ=="><img src="https://img.shields.io/badge/Install_in_Cursor-F5A623?style=for-the-badge" alt="Install in Cursor"></a>
 </p>
@@ -35,7 +36,7 @@
 
 Sugra MCP is built and run by [Sugra Systems, Inc.](https://sugra.systems) It brings Sugra Data into AI assistants and agents over the Model Context Protocol: 1,600+ endpoints from 200 primary sources across 36 data domains - central banks, national statistics offices, regulators, intergovernmental bodies and more. The agent searches the catalog, reads an endpoint's description and calls it, and every answer carries its source and date.
 
-Published in Anthropic's Connectors Directory, the OpenAI Plugins Directory and the GitHub MCP Registry. Works with Claude, Claude Code, ChatGPT, Codex, Grok, Cursor, Antigravity, GitHub Copilot, VS Code, Zed, Cline, Continue and any MCP client.
+Published in [Anthropic's Connectors Directory](https://url.sugra.ai/claude), the [OpenAI Plugins Directory](https://url.sugra.ai/openai) and the [GitHub MCP Registry](https://url.sugra.ai/gh). Works with Claude, Claude Code, ChatGPT, Codex, Grok, Cursor, Antigravity, GitHub Copilot, VS Code, Zed, Cline, Continue and any MCP client.
 
 **Watch:** [How Sugra MCP works](https://www.youtube.com/watch?v=xRC_VNtfI6Q) &middot; [Seven directions, one key](https://www.youtube.com/watch?v=rsTZL3w61PQ)
 
@@ -85,6 +86,8 @@ codex plugin add sugra-api-skills@sugra-api-plugins
 
 <details>
 <summary><b>GitHub</b> - Copilot and VS Code</summary>
+
+[GitHub MCP Registry](https://url.sugra.ai/gh) opens Sugra in GitHub's registry. Its Install MCP server button adds the server to VS Code, VS Code Insiders or the GitHub Copilot app.
 
 GitHub Copilot CLI, the plugin with the skills and the server:
 
