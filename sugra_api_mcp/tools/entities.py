@@ -123,13 +123,13 @@ _SECONDARY_MATCH_KEYS = ("name_score", "secondary_fields")
 
 
 def _compact_match(match: dict[str, Any], secondary: bool = False) -> dict[str, Any]:
-    """Project one screening match to {name, score, list, type}.
+    """Project one screening match to {name, score, list, type, name_score?, secondary_fields?}.
 
     Drops the heavy / rare fields (rationale arrays, source_id, list_published,
     restriction_type, program) that bloat the agent context (Spec 9.8 MCP-OUT).
-    With ``secondary`` (the request sent dob, country or nationality) the match
-    also carries ``name_score`` and ``secondary_fields``, each only when the
-    API returned a value for it, so the agent can see why a score moved.
+    ``name_score`` and ``secondary_fields`` are carried only with ``secondary``
+    (the request sent dob, country or nationality) and only when the API
+    returned a value for them.
     """
     out = {
         "name": match.get("matched_name"),
@@ -148,9 +148,8 @@ def _compact_match(match: dict[str, Any], secondary: bool = False) -> dict[str, 
 def _project_screen(payload: dict[str, Any], secondary: bool = False) -> dict[str, Any]:
     """Compact projection for POST /entity/screen.
 
-    {status, matches:[{name, score, list, type}], disclaimer}; with
-    ``secondary`` each match adds ``name_score`` and ``secondary_fields`` when
-    the API returned them.
+    {status, matches:[{name, score, list, type, name_score?, secondary_fields?}],
+    disclaimer}; the two conditional keys as ``_compact_match`` carries them.
     """
     data = payload.get("data") or {}
     meta = payload.get("meta") or {}
@@ -257,12 +256,8 @@ def _resolve_include(include: list[str] | None) -> tuple[set[str], list[str]]:
     return mcp_tokens, api_tokens
 
 
-# The dob / country / nationality copy below states the API's scoring as read in
-# prod-sugra-ai-API: helpers/entity_secondary.py (the dob bands, GEO_MATCH and
-# GEO_CONTRADICT, unknown and unrecognized never move a score) and screen_name
-# in helpers/entity_matcher.py (the window is cut on the name score before the
-# re-score, and every candidate in it sets the verdict to review or hit).
-# A change there changes this copy; tests/test_entities.py pins it.
+# This tool only forwards dob / country / nationality and projects the answer;
+# the re-scoring is the API's, so the copy below says no more than that.
 @mcp.tool(annotations=read_only("Sugra Entity screen"))
 @trace_mcp_tool("sugra_entity_screen")
 async def sugra_entity_screen(
@@ -274,12 +269,8 @@ async def sugra_entity_screen(
         str | None,
         Field(
             description=(
-                "Optional country, ISO 3166-1 alpha-2 (alpha-3 or the English "
-                "name are read too). Re-scores and re-orders the name "
-                "candidates, never drops one: a list record that names the "
-                "country raises a candidate, one that names only other "
-                "countries demotes it, and a record with no country is never "
-                "demoted. Weighs less than dob."
+                "Optional country code. Forwarded to the API, which re-scores "
+                "and re-orders the name candidates."
             ),
         ),
     ] = None,
@@ -287,13 +278,8 @@ async def sugra_entity_screen(
         str | None,
         Field(
             description=(
-                "Optional date of birth for a person, YYYY-MM-DD or YYYY. "
-                "Re-scores and re-orders the name candidates, never drops one: "
-                "the same day raises a candidate, the same year (when either "
-                "side holds only a year) raises it less, within one year has no "
-                "effect, two or more years from every date the record holds "
-                "demotes it. A record with no date of birth, or one that is "
-                "not a person, is never demoted."
+                "Optional date of birth for a person, a date string. Forwarded "
+                "to the API, which re-scores and re-orders the name candidates."
             ),
         ),
     ] = None,
@@ -301,8 +287,8 @@ async def sugra_entity_screen(
         str | None,
         Field(
             description=(
-                "Optional nationality, same format and rule as country; "
-                "country and nationality together count once."
+                "Optional nationality. Forwarded to the API, which re-scores "
+                "and re-orders the name candidates."
             ),
         ),
     ] = None,
@@ -315,31 +301,23 @@ async def sugra_entity_screen(
     `clear` result is not proof of absence, and a `hit` is a candidate match to
     review, not a finding.
 
-    Optional `dob`, `country` and `nationality` re-score and re-order the name
-    candidates against what each list record holds. They never add or remove a
-    candidate: every candidate the name screen found stays in `matches`, so
-    the verdict can move between `hit` and `review` on the adjusted score but
-    does not turn `clear` because of them. A record that holds no such data is
-    never demoted, and a value that cannot be read has no effect.
+    Optional `dob`, `country` and `nationality` are forwarded to the Sugra API,
+    which re-scores and re-orders the candidates the name screen found; it
+    never adds or removes one.
 
     Output is COMPACT to protect the agent context budget:
-    `{status, matches:[{name, score, list, type}], disclaimer}`. The verdict
-    `status` is one of `clear`, `review`, or `hit`. When the call sends `dob`,
-    `country` or `nationality`, `score` is the adjusted score and each match
-    also carries, when the API returns them, `name_score` (the name-only
-    score) and `secondary_fields`, the outcome per field sent: `match`,
-    `near`, `contradict`, `unknown` (the record holds no such data, or for
-    `dob` is not a person) or `unrecognized` (the value sent could not be
-    read). The heavy raw fields (match rationale, source ids, publish dates)
-    are dropped; use the Sugra API directly when the full screening envelope
-    is needed.
+    `{status, matches:[{name, score, list, type, name_score?, secondary_fields?}], disclaimer}`.
+    The verdict `status` is one of `clear`, `review`, or `hit`. A match carries
+    `name_score` and `secondary_fields` only when the call sends `dob`,
+    `country` or `nationality` and the API returns them. The heavy raw fields
+    (match rationale, source ids, publish dates) are dropped; use the Sugra API
+    directly when the full screening envelope is needed.
 
     Args:
         name: The person or organization name to screen (required).
-        country: Optional country, ISO 3166-1 alpha-2; re-scores, never drops.
-        dob: Optional date of birth for a person, YYYY-MM-DD or YYYY;
-            re-scores, never drops.
-        nationality: Optional nationality, same format and rule as country.
+        country: Optional country code.
+        dob: Optional date of birth for a person, a date string.
+        nationality: Optional nationality.
     """
     # The one place the re-scoring fields are named: the request body and the
     # flag that adds the per-match outcome are both built from it.

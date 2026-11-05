@@ -368,61 +368,44 @@ def _screen_tool_schema() -> dict[str, Any]:
     return {"description": tool.description, "properties": tool.inputSchema["properties"]}
 
 
-def test_screen_field_texts_say_the_fields_re_score_and_never_drop(monkeypatch) -> None:
-    monkeypatch.setenv("SUGRA_API_KEY", "dummy")
-    schema = _screen_tool_schema()
-    props = schema["properties"]
-
-    dob = props["dob"]["description"]
-    country = props["country"]["description"]
-    nationality = props["nationality"]["description"]
-    assert "YYYY-MM-DD or YYYY" in dob
-    for text in (dob, country):
-        assert "never drops one" in text
-        assert "is never demoted" in text
-    assert "same format and rule as country" in nationality
-    assert "count once" in nationality
-    # The old text promised filtering; the fields never remove a candidate.
-    for text in (dob, country, nationality, schema["description"]):
-        assert "narrow" not in text
-        assert chr(0x2014) not in text  # no em dash in public copy
-    assert "secondary_fields" in schema["description"]
-    assert "name_score" in schema["description"]
-
-
 def _flat(text: str) -> str:
     return " ".join(text.split())
 
 
-def test_screen_texts_say_only_what_the_api_scoring_does(monkeypatch) -> None:
-    # Each sentence below is what the API's scoring code does (the comment over
-    # sugra_entity_screen names it); a change there must change this copy.
+def test_screen_texts_wording_is_pinned(monkeypatch) -> None:
+    # Only the wording is pinned here: the tool forwards dob, country and
+    # nationality and projects the answer, and the scoring behind it is the
+    # API's to test, not this repository's.
     monkeypatch.setenv("SUGRA_API_KEY", "dummy")
     schema = _screen_tool_schema()
     props = schema["properties"]
     description = _flat(schema["description"])
 
-    # The candidate set is cut on the name score; every candidate in it sets
-    # the verdict to review or hit, so the fields cannot turn it clear.
-    assert ("They never add or remove a candidate: every candidate the name "
-            "screen found stays in `matches`, so the verdict can move between "
-            "`hit` and `review` on the adjusted score but does not turn `clear` "
-            "because of them.") in description
-    assert "never turns `clear`" not in description
-    # name_score and secondary_fields are carried only when the API returns
-    # them (the projection leaves a null out).
-    assert ("each match also carries, when the API returns them, `name_score` "
-            "(the name-only score) and `secondary_fields`") in description
-    assert ("`unknown` (the record holds no such data, or for `dob` is not a "
-            "person)") in description
-    # dob is compared only against a person record.
-    assert ("A record with no date of birth, or one that is not a person, is "
-            "never demoted.") in props["dob"]["description"]
-    # Country: GEO_MATCH raises, GEO_CONTRADICT demotes only a record that
-    # holds ISO countries, both smaller than every dob band.
-    assert ("a list record that names the country raises a candidate, one that "
-            "names only other countries demotes it, and a record with no "
-            "country is never demoted. Weighs less than dob.") in props["country"]["description"]
+    forwarded = "Forwarded to the API, which re-scores and re-orders the name candidates."
+    assert props["country"]["description"] == "Optional country code. " + forwarded
+    assert props["dob"]["description"] == (
+        "Optional date of birth for a person, a date string. " + forwarded)
+    assert props["nationality"]["description"] == "Optional nationality. " + forwarded
+    assert ("Optional `dob`, `country` and `nationality` are forwarded to the "
+            "Sugra API, which re-scores and re-orders the candidates the name "
+            "screen found; it never adds or removes one.") in description
+    # The shape is stated once, with the two conditional keys inline.
+    assert ("`{status, matches:[{name, score, list, type, name_score?, "
+            "secondary_fields?}], disclaimer}`") in description
+    assert "{name, score, list, type}]" not in description
+    assert ("A match carries `name_score` and `secondary_fields` only when the "
+            "call sends `dob`, `country` or `nationality` and the API returns "
+            "them.") in description
+
+    # Claims about the API's scoring this repository cannot show stay out.
+    texts = [description, *(p["description"] for p in props.values())]
+    for text in texts:
+        for absent in ("two or more years", "within one year", "alpha-3",
+                       "English name", "count once", "weighs less",
+                       "never demoted", "narrow", "turn `clear`", "adjusted score",
+                       "`near`", "`contradict`", "`unrecognized`"):
+            assert absent.lower() not in text.lower(), (absent, text)
+        assert chr(0x2014) not in text  # no em dash in public copy
 
 
 async def test_screen_propagates_api_error_as_clean_dict(monkeypatch) -> None:
