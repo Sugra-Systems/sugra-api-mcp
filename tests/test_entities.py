@@ -382,10 +382,20 @@ def test_screen_texts_wording_is_pinned(monkeypatch) -> None:
     description = _flat(schema["description"])
 
     forwarded = "Forwarded to the API, which re-scores and re-orders the name candidates."
-    assert props["country"]["description"] == "Optional country code. " + forwarded
+    assert props["country"]["description"] == (
+        "Optional ISO 3166-1 alpha-2 country code. " + forwarded)
     assert props["dob"]["description"] == (
-        "Optional date of birth for a person, a date string. " + forwarded)
-    assert props["nationality"]["description"] == "Optional nationality. " + forwarded
+        "Optional date of birth for a person, YYYY-MM-DD. " + forwarded)
+    assert props["nationality"]["description"] == (
+        "Optional nationality, ISO 3166-1 alpha-2 country code. " + forwarded)
+    for arg_line in ("country: Optional ISO 3166-1 alpha-2 country code.",
+                     "dob: Optional date of birth for a person, YYYY-MM-DD.",
+                     "nationality: Optional nationality, ISO 3166-1 alpha-2 "
+                     "country code."):
+        assert arg_line in description, arg_line
+    # Only the one input format each field names: no year-only dob claim.
+    assert "or YYYY" not in description
+    assert all("or YYYY" not in p["description"] for p in props.values())
     assert ("Optional `dob`, `country` and `nationality` are forwarded to the "
             "Sugra API, which re-scores and re-orders the candidates the name "
             "screen found; it never adds or removes one.") in description

@@ -269,8 +269,8 @@ async def sugra_entity_screen(
         str | None,
         Field(
             description=(
-                "Optional country code. Forwarded to the API, which re-scores "
-                "and re-orders the name candidates."
+                "Optional ISO 3166-1 alpha-2 country code. Forwarded to the "
+                "API, which re-scores and re-orders the name candidates."
             ),
         ),
     ] = None,
@@ -278,7 +278,7 @@ async def sugra_entity_screen(
         str | None,
         Field(
             description=(
-                "Optional date of birth for a person, a date string. Forwarded "
+                "Optional date of birth for a person, YYYY-MM-DD. Forwarded "
                 "to the API, which re-scores and re-orders the name candidates."
             ),
         ),
@@ -287,8 +287,9 @@ async def sugra_entity_screen(
         str | None,
         Field(
             description=(
-                "Optional nationality. Forwarded to the API, which re-scores "
-                "and re-orders the name candidates."
+                "Optional nationality, ISO 3166-1 alpha-2 country code. "
+                "Forwarded to the API, which re-scores and re-orders the name "
+                "candidates."
             ),
         ),
     ] = None,
@@ -315,9 +316,9 @@ async def sugra_entity_screen(
 
     Args:
         name: The person or organization name to screen (required).
-        country: Optional country code.
-        dob: Optional date of birth for a person, a date string.
-        nationality: Optional nationality.
+        country: Optional ISO 3166-1 alpha-2 country code.
+        dob: Optional date of birth for a person, YYYY-MM-DD.
+        nationality: Optional nationality, ISO 3166-1 alpha-2 country code.
     """
     # The one place the re-scoring fields are named: the request body and the
     # flag that adds the per-match outcome are both built from it.
