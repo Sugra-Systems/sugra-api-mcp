@@ -16,6 +16,7 @@ from starlette.testclient import TestClient
 
 from sugra_api_mcp import __version__, skills_index, web
 from sugra_api_mcp.auth import PUBLIC_GET_PATHS, Authenticator, AuthMiddleware
+from sugra_api_mcp.client_logos import LOGOS
 from sugra_api_mcp.config import SERVER_PRODUCT, AuthConfig
 from sugra_api_mcp.web import health, landing, skills_routes
 
@@ -300,6 +301,58 @@ def test_landing_carries_the_standard_chrome(client: TestClient) -> None:
     assert len(docs) == 2
     assert set(docs) == {"https://docs.sugra.ai"}
     assert "decisions that matter." in client.get("/").text
+
+
+def test_hero_leads_to_a_key_the_repository_and_the_listings(client: TestClient) -> None:
+    text = client.get("/").text
+    parser = _parse_landing(client)
+    hero = text[text.index('<div class="hero">') : text.index('<div class="tabs">')]
+    assert 'href="https://app.sugra.ai/register?from=mcp.hero.get-api-key"' in hero
+    assert ("GitHub", "https://github.com/Sugra-Systems/sugra-api-mcp") in parser.links
+    assert hero.index("Get API key") < hero.index('class="about"')
+    assert hero.index('href="https://github.com/Sugra-Systems/sugra-api-mcp"') < hero.index(
+        'class="about"'
+    )
+    for listing in (
+        "https://url.sugra.ai/claude",
+        "https://url.sugra.ai/openai",
+        "https://url.sugra.ai/gh",
+    ):
+        assert f'href="{listing}"' in hero
+    assert "1,600+ endpoints" in hero and "200 primary sources" in hero
+
+
+def test_every_tab_label_leads_with_its_client_logo(client: TestClient) -> None:
+    text = client.get("/").text
+    idents = [ident for ident, _label, _panel in web._TABS]
+    assert set(LOGOS) == set(idents)
+    for ident in idents:
+        assert (
+            f'<label for="t-{ident}"><span class="logo" aria-hidden="true">{LOGOS[ident]}</span>'
+            in text
+        ), ident
+    # The open tab keeps a dark ground: an amber fill would bury the colored logos.
+    assert "#t-claude:checked ~ .labels label[for=t-claude] { color: #F5A623;" in text
+    assert "background: #F5A623" not in web._tabs_css()
+
+
+def test_client_logos_are_inert_svg_with_unique_ids() -> None:
+    ids: list[str] = []
+    for ident, svg in LOGOS.items():
+        assert svg.startswith("<svg ") and svg.endswith("</svg>"), ident
+        assert "<script" not in svg and "href" not in svg, ident
+        assert "<title" not in svg and "<text" not in svg, ident
+        assert not re.search(r"\son\w+\s*=", svg), ident
+        assert not re.search(r'<svg[^>]*\s(?:width|height)="', svg), ident
+        ids += re.findall(r'\sid="([^"]+)"', svg)
+    assert len(ids) == len(set(ids))
+
+
+def test_vscode_logo_stays_the_blue_icon() -> None:
+    # Microsoft's brand terms allow the icon unmodified only: never recolor it.
+    svg = LOGOS["vscode"]
+    assert "#0065A9" in svg and "#007ACC" in svg and "#1F9CF0" in svg
+    assert "currentColor" not in svg
 
 
 def test_cursor_install_link_carries_the_env_reference_not_a_key() -> None:

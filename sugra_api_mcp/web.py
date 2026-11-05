@@ -7,8 +7,10 @@ listed file (sugra_api_mcp.skills_index). Everything else on the app stays
 behind AuthMiddleware. The auth-side allowlist lives in
 sugra_api_mcp.auth.PUBLIC_GET_PATHS - the two lists must stay in sync.
 
-The landing carries the standard Sugra header and footer and one install tab
-per client. A tab whose client has a public listing points there first, and
+The landing carries the standard Sugra header and footer, a short description
+with the API key and repository links, and one install tab per client, each
+label led by that client's logo (sugra_api_mcp.client_logos, drawn as its maker
+publishes it). A tab whose client has a public listing points there first, and
 the commands follow for everyone else. Every copyable command or config names the API key only through
 the SUGRA_API_KEY environment variable (or, in VS Code, an input prompt),
 spelled for the shell that runs it; the Other tab describes the header in
@@ -30,6 +32,7 @@ from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from . import __version__, skills_index
+from .client_logos import LOGOS
 from .config import SERVER_PRODUCT, server_version_disclosed
 
 SITE = "https://mcp.sugra.ai"
@@ -37,6 +40,7 @@ ENDPOINT = f"{SITE}/mcp"
 PLUGINS_REPO = "Sugra-Systems/sugra-api-plugins"
 DOCS_URL = "https://docs.sugra.ai"
 REGISTER_URL = "https://app.sugra.ai/register"
+REPO_URL = "https://github.com/Sugra-Systems/sugra-api-mcp"
 
 # Public listings come first on every tab that has one; GitHub is the fallback.
 CLAUDE_LISTING = "https://url.sugra.ai/claude"
@@ -391,8 +395,9 @@ def _tabs_css() -> str:
     rules = []
     for ident, _label, _panel in _TABS:
         rules.append(
+            # The open tab keeps a dark ground so every logo shows in its own colors.
             f"#t-{ident}:checked ~ .labels label[for=t-{ident}] "
-            "{ color: #0F1117; background: #F5A623; border-color: #F5A623; }"
+            "{ color: #F5A623; background: #0F1117; border-color: #F5A623; }"
         )
         rules.append(
             f"#t-{ident}:focus-visible ~ .labels label[for=t-{ident}] "
@@ -409,7 +414,9 @@ def _tabs_html() -> str:
         for index, (ident, _label, _panel) in enumerate(_TABS)
     )
     labels = "\n      ".join(
-        f'<label for="t-{ident}">{label}</label>' for ident, label, _panel in _TABS
+        f'<label for="t-{ident}"><span class="logo" aria-hidden="true">{LOGOS[ident]}</span>'
+        f"{label}</label>"
+        for ident, label, _panel in _TABS
     )
     panels = "\n    ".join(
         f'<section class="panel" id="p-{ident}" aria-label="{label}">{panel}</section>'
@@ -498,6 +505,10 @@ _SOCIAL = [
         "M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z",
     ),
 ]
+_GITHUB_ICON = (
+    '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">'
+    f'<path d="{dict((label, path) for label, _url, path in _SOCIAL)["GitHub"]}"/></svg>'
+)
 _LEGAL = [
     ("Privacy", f"{_SITE}/privacy-policy"),
     ("Terms", f"{_SITE}/terms-of-service"),
@@ -598,13 +609,35 @@ _LANDING_HTML = f"""<!doctype html>
   h1 {{ font-family: 'DM Serif Display', Georgia, serif; font-weight: 400;
         font-size: 2rem; margin: 0 0 0.4rem; }}
   p {{ color: #9AA3B2; line-height: 1.55; margin: 0.4rem 0 1rem; }}
-  .tabs {{ margin-top: 1.8rem; }}
+  .hero .lead {{ color: #EDF0F4; font-size: 1.15rem; margin: 0.2rem 0 0.6rem; }}
+  .cta {{ display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75rem;
+          margin-top: 1.4rem; }}
+  .btn.ghost {{ background: transparent; color: #EDF0F4; box-shadow: inset 0 0 0 1px #30363D; }}
+  .btn.ghost:hover {{ opacity: 1; box-shadow: inset 0 0 0 1px #F5A623; }}
+  .btn svg {{ width: 1rem; height: 1rem; vertical-align: -0.15em; margin-right: 0.45rem; }}
+  .about {{ display: grid; gap: 0.75rem; grid-template-columns: 1fr; margin-top: 2.4rem; }}
+  @media (min-width: 40rem) {{ .about {{ grid-template-columns: repeat(3, 1fr); }} }}
+  .feature {{ background: #161B27; border: 1px solid #1E2330; border-radius: 12px;
+              padding: 1rem 1.1rem; }}
+  .feature h2 {{ font-size: 0.95rem; font-weight: 600; color: #EDF0F4; margin: 0 0 0.35rem; }}
+  .feature p {{ font-size: 0.9rem; margin: 0; }}
+  .listed {{ text-align: center; font-size: 0.9rem; margin: 1.2rem 0 0; }}
+  .listed a {{ color: #F5A623; text-decoration: none; }}
+  .listed a:hover {{ text-decoration: underline; }}
+  .kicker {{ font-family: 'DM Mono', ui-monospace, monospace; font-size: 0.75rem;
+             text-transform: uppercase; letter-spacing: 0.08em; color: #9AA3B2;
+             text-align: center; margin: 2.6rem 0 0.9rem; }}
+  .tabs {{ margin-top: 0; }}
   .tabs input {{ position: absolute; opacity: 0; pointer-events: none; }}
-  .labels {{ display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1rem; }}
-  .labels label {{ cursor: pointer; border: 1px solid #1E2330; background: #161B27;
-                   color: #EDF0F4; border-radius: 999px; padding: 0.35rem 0.75rem;
+  .labels {{ display: flex; flex-wrap: wrap; justify-content: center; gap: 0.45rem;
+             margin-bottom: 1rem; }}
+  .labels label {{ display: inline-flex; align-items: center; gap: 0.45rem; cursor: pointer;
+                   border: 1px solid #1E2330; background: #161B27; color: #EDF0F4;
+                   border-radius: 999px; padding: 0.4rem 0.85rem 0.4rem 0.6rem;
                    font-size: 0.85rem; }}
   .labels label:hover {{ border-color: #F5A623; }}
+  .logo {{ display: inline-flex; color: #EDF0F4; }}
+  .logo svg {{ width: 1rem; height: 1rem; display: block; }}
   .panel {{ display: none; background: #161B27; border: 1px solid #1E2330;
             border-radius: 12px; padding: 1.2rem; }}
   .panel p {{ margin: 0 0 0.8rem; }}
@@ -691,13 +724,31 @@ _LANDING_HTML = f"""<!doctype html>
 <main>
   <div class="hero">
     <h1>Sugra MCP</h1>
+    <p class="lead">Connect AI agents to primary sources - markets, macro, news, earth,
+    network, entities and research.</p>
     <p>The connector between AI assistants and Sugra Data: 1,600+ endpoints from
     200 primary sources across 36 data domains, served over the Model Context
     Protocol.</p>
+    <div class="cta">
+      <a href="{REGISTER_URL}?from=mcp.hero.get-api-key" class="btn">Get API key</a>
+      <a href="{REPO_URL}" class="btn ghost">{_GITHUB_ICON}GitHub</a>
+    </div>
   </div>
+  <section class="about" aria-label="What Sugra MCP does">
+    <div class="feature"><h2>Primary sources</h2><p>Central banks, national statistics
+    offices, regulators, intergovernmental bodies and more.</p></div>
+    <div class="feature"><h2>Search, read, call</h2><p>The agent searches the catalog,
+    reads an endpoint's description and calls it.</p></div>
+    <div class="feature"><h2>Source and date</h2><p>Every answer carries its source
+    and date.</p></div>
+  </section>
+  <p class="listed">Published in <a href="{CLAUDE_LISTING}">Anthropic's Connectors
+  Directory</a>, the <a href="{OPENAI_LISTING}">OpenAI Plugins Directory</a> and the
+  <a href="{GITHUB_LISTING}">GitHub MCP Registry</a>.</p>
+  <p class="kicker">Connect your client</p>
   {_tabs_html()}
   <div class="links">
-    <a href="https://github.com/Sugra-Systems/sugra-api-mcp">GitHub</a>
+    <a href="{REPO_URL}">GitHub</a>
     <a href="https://pypi.org/project/sugra-api-mcp/">PyPI</a>
     <a href="{DOCS_URL}">Docs</a>
   </div>
