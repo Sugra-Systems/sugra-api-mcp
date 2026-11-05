@@ -109,6 +109,19 @@ def test_prompt_operation_ids_exist_in_bundled_catalog(monkeypatch, prompt_name)
             pytest.fail(f"{prompt_name} references unknown operation_id {operation_id}")
 
 
+def test_sanctions_screening_says_secondary_fields_rescore_not_narrow(monkeypatch):
+    mcp, _ = _registered_prompts(monkeypatch)
+    text = _render_text(mcp, "sanctions_screening")
+    step_one = next(line for line in text.splitlines() if line.startswith("1. "))
+
+    assert step_one == (
+        '1. Call sugra_entity_screen with name="Example Holdings". Add country, dob, '
+        "or nationality when known: they re-score and re-order the matches the name "
+        "found, and never add or remove one."
+    )
+    assert "narrow" not in step_one.lower()
+
+
 def test_prompt_module_source_follows_copy_rules():
     from sugra_api_mcp.tools import prompts as prompts_module
 

@@ -88,7 +88,7 @@ def sanctions_screening(name: str) -> str:
     """Screen a name against the sanctions corpus and report the signal."""
     return f"""Screen the name "{name}" against the Sugra sanctions corpus.
 
-1. Call sugra_entity_screen with name="{name}". Add country, dob, or nationality when known to narrow matching.
+1. Call sugra_entity_screen with name="{name}". Add country, dob, or nationality when known: they re-score and re-order the matches the name found, and never add or remove one.
 2. Read the status field: "clear", "review", or "hit".
 3. Report the top matches with their scores and the lists they came from.
 4. Always relay the disclaimer: the result is a screening signal, not a compliance determination. A "clear" result is not proof of absence, and a "hit" is a candidate match to review, not a finding. PEP and adverse-media coverage is supplementary and non-comprehensive.
