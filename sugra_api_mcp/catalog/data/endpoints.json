@@ -1,6 +1,6 @@
 {
-  "built_at": "2026-11-05T19:22:55Z",
-  "endpoint_count": 1638,
+  "built_at": "2026-11-06T21:31:37Z",
+  "endpoint_count": 1653,
   "endpoints": [
     {
       "description": "Pre-configured key Australian datasets: CPI, GDP, Labour, Trade, Retail, Wages, Population.",
@@ -5488,6 +5488,43 @@
       "toolset": "central_banks"
     },
     {
+      "description": "The daily yield of the current 10-year German Federal bond (Bund) benchmark issue, the Deutsche Bundesbank's own series (BBSSY.D.REN.EUR.A630.000000WT1010.A), in percent per annum and unaltered. The top level is the Germany row of the 10-year government bond yield panel: the newest trading day and its yield, with the benchmark issue beside it (ISIN and the day it became the benchmark), so a switch to a new benchmark issue is visible. data lists the latest trading days, oldest first. Days the Bundesbank marks as having no value (weekends and public holidays) are left out, never filled. The Bundesbank publishes one value per business day; this route keeps a copy for at most three hours, so a newly published value shows here within three hours. Quelle: Deutsche Bundesbank.",
+      "method": "GET",
+      "operation_id": "bundesbank_bund_10y",
+      "parameters": [
+        {
+          "description": "How many of the latest trading days to return in data, 1 to 250 (default 1). Weekends and public holidays have no value and are not counted.",
+          "location": "query",
+          "name": "days",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How many of the latest trading days to return in data, 1 to 250 (default 1). Weekends and public holidays have no value and are not counted.",
+            "title": "Days"
+          }
+        }
+      ],
+      "path": "/api/v1/bundesbank/bund-10y",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "central_banks",
+      "sources": [
+        "central_banks"
+      ],
+      "summary": "Germany 10-year Bund yield (Deutsche Bundesbank, daily)",
+      "tags": [
+        "Central Banks & Monetary"
+      ],
+      "toolset": "central_banks"
+    },
+    {
       "description": "Search the catalog of listed companies. All filters are optional and combined with AND. Each result carries the company's listings (ticker, exchange, MIC, currency, identifiers). By default only companies with at least one active listing are returned; set `include_delisted=true` to include companies whose listings are all delisted.",
       "method": "GET",
       "operation_id": "catalog_equities",
@@ -6516,7 +6553,7 @@
       "toolset": "markets"
     },
     {
-      "description": "List curated Statistics Netherlands StatLine series for the Netherlands.",
+      "description": "List curated Statistics Netherlands series for the Netherlands. Each series reads a Dutch table of the CBS open data API v4; `table` is that table's identifier.",
       "method": "GET",
       "operation_id": "cbs_catalog",
       "parameters": [],
@@ -6534,19 +6571,19 @@
       "toolset": "statistics"
     },
     {
-      "description": "Fetch an English StatLine cube by table id after totals filters. Never an unfiltered TypedDataSet. Tables without a totals member on every category dimension are 502. Use /cbs/catalog for curated series.",
+      "description": "Fetch any table the CBS open data API v4 catalog lists, by its exact identifier (case matters: 86141NED, 80590ned, 6-digit and unsuffixed ids too), with every dimension filtered to its totals member. CBS publishes these tables in Dutch: `filters` name v4 dimension and member codes, and `topics` and the keys of each row's `values` are v4 measure codes, with CBS's Dutch titles and units in `topic_labels`. An English StatLine id (digits plus ENG) is answered from its Dutch twin, named in `table` and `twin_of` and in meta.notes. A cell CBS publishes without a number is left out of `values` and counted in `null_values`. Unknown ids are 404; tables without a totals member on every dimension are 502. Use /cbs/catalog for curated series.",
       "method": "GET",
       "operation_id": "cbs_table_table_id",
       "parameters": [
         {
-          "description": "English StatLine table id, five digits plus ENG.",
-          "example": "86141ENG",
+          "description": "CBS v4 table identifier, exact case (for example 86141NED). An English id such as 86141ENG is answered from its Dutch twin.",
+          "example": "86141NED",
           "location": "path",
           "name": "table_id",
           "required": true,
           "schema": {
-            "description": "English StatLine table id, five digits plus ENG.",
-            "pattern": "^[0-9]{5}ENG$",
+            "description": "CBS v4 table identifier, exact case (for example 86141NED). An English id such as 86141ENG is answered from its Dutch twin.",
+            "pattern": "^[0-9A-Za-z_-]{2,16}$",
             "title": "Table Id",
             "type": "string"
           }
@@ -6597,7 +6634,7 @@
       "sources": [
         "statistics"
       ],
-      "summary": "CBS StatLine table at totals",
+      "summary": "CBS open data table at totals",
       "tags": [
         "Statistical Agencies"
       ],
@@ -20086,7 +20123,7 @@
       "toolset": "entity_screening"
     },
     {
-      "description": "Screen a person or organization name (name_fuzzy) or a Russian registry identifier (identifier_exact: inn/ogrn/snils/reg_number/domain/url) against Russian domestic regulatory lists currently loaded in the Entity corpus (Minjust extremist organizations / 114-FZ; foreign agents / undesirable when present). Provide name OR identifier, not both. Default listing is active-only; set include_excluded=true for research mode. This is NOT a Western sanctions screen - use POST /entity/screen for OFAC/EU/UN/... Fail-CLOSED: if no RF regulatory list is loaded, returns 503. Identifier mode requires the SQL RF package (ENTITY_RF_SQL).",
+      "description": "Screen a person or organization name (name_fuzzy) or a Russian registry identifier (identifier_exact: inn/ogrn/snils/reg_number/domain/url) against Russian domestic regulatory lists currently loaded in the Entity corpus (Minjust extremist organizations / 114-FZ; foreign agents / undesirable when present). Provide name OR identifier, not both. Default listing is active-only; set include_excluded=true for research mode. This is NOT a Western sanctions screen - use POST /entity/screen for OFAC/EU/UN/... Fail-CLOSED: if no RF regulatory list is loaded, returns 503. Identifier mode requires the SQL RF package (ENTITY_RF_SQL). `max_matches`, `total_matches`, `total_matches_exact` and `truncated` work as on POST /entity/screen, in name and identifier mode. When more than 200 register records share words with the name, the screen scores at most 200 of them and `total_matches_exact` is false.",
       "method": "POST",
       "operation_id": "post_entity_rf_watchlists_screen",
       "parameters": [],
@@ -20182,6 +20219,14 @@
             "title": "Include Excluded",
             "type": "boolean"
           },
+          "max_matches": {
+            "default": 10,
+            "description": "How many matches to return, 1 to 100 (default 10), best score first. `screening.total_matches` counts the records that matched (a lower bound when `screening.total_matches_exact` is false) and `screening.truncated` is true when the answer may have left some out.",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Max Matches",
+            "type": "integer"
+          },
           "name": {
             "anyOf": [
               {
@@ -20258,7 +20303,7 @@
       "toolset": "entity_screening"
     },
     {
-      "description": "Screen a person or organization name against the sanctions corpus and return a screening signal (`clear`, `review`, or `hit`) with matched records. Fail-CLOSED on staleness: if the underlying list is stale, a `hit` or `clear` result is downgraded to `review` and `meta.stale_screening` is set to `true`. ENTITY-4: optional `corpus` selects `sanctions` (default - Western/IGO + PEP), `rf_regulatory` (Russian domestic Minjust lists), or `all`. Optional `dob`, `country` and `nationality` re-score and re-order the name candidates against what each list record holds: a match raises a candidate, a contradiction demotes it (it stays listed, so the verdict never turns `clear` because of them), a record that holds no such data is never demoted. Each match carries `name_score` and `secondary_fields` with the outcome per field.",
+      "description": "Screen a person or organization name against the sanctions corpus and return a screening signal (`clear`, `review`, or `hit`) with matched records. Fail-CLOSED on staleness: if the underlying list is stale, a `hit` or `clear` result is downgraded to `review` and `meta.stale_screening` is set to `true`. ENTITY-4: optional `corpus` selects `sanctions` (default - Western/IGO + PEP), `rf_regulatory` (Russian domestic Minjust lists), or `all`. Optional `dob`, `country` and `nationality` re-score and re-order the name candidates against what each list record holds: a match raises a candidate, a contradiction demotes it (it stays listed, so the verdict never turns `clear` because of them), a record that holds no such data is never demoted. Each match carries `name_score` and `secondary_fields` with the outcome per field. The answer holds at most `max_matches` matches (default 10, up to 100), best score first: `total_matches` counts the records that matched, `total_matches_exact` is false when that count is a lower bound, and `truncated` says whether the answer may have left some out. Which matches enter that window is decided by name score, before `dob`, `country` and `nationality` are applied: matches with an equal name score enter it one per list in turn (one record of each list, then a second, and so on), and at an equal name score the matches flagged `incomplete_coverage` enter after the others, each of the two groups spread on its own. `dob`, `country` and `nationality` then re-score the matches in the window and can change their order: a match flagged `incomplete_coverage` can move ahead of complete ones, and matches with an equal final `score` are not guaranteed to alternate between lists.",
       "method": "POST",
       "operation_id": "post_entity_screen",
       "parameters": [],
@@ -20353,6 +20398,14 @@
             "default": false,
             "title": "Include Excluded",
             "type": "boolean"
+          },
+          "max_matches": {
+            "default": 10,
+            "description": "How many matches to return, 1 to 100 (default 10), best score first. `screening.total_matches` counts the records that matched (a lower bound when `screening.total_matches_exact` is false) and `screening.truncated` is true when the answer may have left some out.",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Max Matches",
+            "type": "integer"
           },
           "name": {
             "anyOf": [
@@ -20589,7 +20642,7 @@
       "toolset": "entity_screening"
     },
     {
-      "description": "Resolve an entity by `(anchor, value)` and compose the requested slices into the canonical KYB envelope. `anchor` is `lei` (via GLEIF), `vat` (via the EU VIES service), or `siren` / `siret` (via INSEE Sirene). Use `?include=` (comma list of `profile,screening,ownership`) to select slices; the default is all three. The `vat`, `siren` and `siret` anchors have no ownership graph (no LEI) and a withheld identity is never screened `clear`. Fail-CLOSED: a screening failure returns 503, never a `clear`. `?as_of=YYYY-MM-DD` scopes ONLY the screening slice to the dated snapshot for that date (point-in-time); the identity / ownership / VIES / Sirene slices are live external lookups with no historical snapshot and remain current. A malformed as_of returns 422; a date whose snapshot is absent returns 503 (fail-closed, never a live fallback). A 404 means the upstream answered that no such record exists (for `lei`, also an LEI record from GLEIF that has no entity block); when GLEIF fails a `lei` lookup (a timeout returns 504; any other non-2xx answer but 404, a connection error, an unreadable body or a 2xx answer with no usable LEI record returns 503) the response carries `Retry-After` and is never a 404 - retry the same request.",
+      "description": "Resolve an entity by `(anchor, value)` and compose the requested slices into the canonical KYB envelope. `anchor` is `lei` (via GLEIF), `vat` (via the EU VIES service), or `siren` / `siret` (via INSEE Sirene). Use `?include=` (comma list of `profile,screening,ownership`) to select slices; the default is all three. The `vat`, `siren` and `siret` anchors have no ownership graph (no LEI) and a withheld identity is never screened `clear`. Fail-CLOSED: a screening failure returns 503, never a `clear`. `?as_of=YYYY-MM-DD` scopes ONLY the screening slice to the dated snapshot for that date (point-in-time); the identity / ownership / VIES / Sirene slices are live external lookups with no historical snapshot and remain current. A malformed as_of returns 422; a date whose snapshot is absent returns 503 (fail-closed, never a live fallback). A 404 means the upstream answered that no such record exists (for `lei`, also an LEI record from GLEIF that has no entity block); when GLEIF fails a `lei` lookup (a timeout returns 504; any other non-2xx answer but 404, a connection error, an unreadable body or a 2xx answer with no usable LEI record returns 503) the response carries `Retry-After` and is never a 404 - retry the same request. Without `as_of` (or when `as_of` does not apply because the screening slice is not requested), the GLEIF ownership lookups of a `lei` request get what is left of the request's configured time limit: when they do not finish in time, the `ownership` slice is null, the 50%-rule's `evidence` is `unavailable`, `meta.partial` is true and `meta.errors` names the time limit, while the entity and its screening verdict are still returned - retry the request for the full ownership graph.",
       "method": "GET",
       "operation_id": "entity_anchor_value",
       "parameters": [
@@ -34381,7 +34434,7 @@
       "toolset": "environment"
     },
     {
-      "description": "Return the audit trail of field-level changes applied to a LEI record (and its linked relationship records). Each entry carries the modified field (XPath pointer into the CDF XML schema), modification type (`INSERT`, `UPDATE`, `DELETE`), prior value, new value, and change date. Useful for detecting entity status flips, address changes, renewal events, and ownership restructurings. Returns an empty list when GLEIF answers 404, as it does for an unknown LEI; that empty list is cached like any answer. When GLEIF fails or does not answer in time the route returns 503 or 504 with `Retry-After`, never an empty list.",
+      "description": "Return the audit trail of field-level changes applied to a LEI record (and its linked relationship records). Each entry carries the modified field (XPath pointer into the CDF XML schema), modification type (`INSERT`, `UPDATE`, `DELETE`), prior value, new value, and change date. Useful for detecting entity status flips, address changes, renewal events, and ownership restructurings. An LEI GLEIF has no record of answers 404, so an empty list always means a known entity. When GLEIF fails or does not answer in time the route returns 503 or 504 with `Retry-After`, never an empty list.",
       "method": "GET",
       "operation_id": "gleif_audit_lei",
       "parameters": [
@@ -34668,7 +34721,7 @@
       "toolset": "corporate_registry"
     },
     {
-      "description": "Fetch the direct (immediate) parent of an entity by LEI. Direct parent is the entity that owns or controls the subject via accounting consolidation (reported on the LEI Level 2 relationship record). Returns null when the entity reports no parent (ultimate parent, standalone company, exempt from reporting). The full parent LEI record is embedded when one exists. When GLEIF fails or does not answer in time the route returns 503 or 504 with `Retry-After`, never a null parent.",
+      "description": "Fetch the direct (immediate) parent of an entity by LEI. Direct parent is the entity that owns or controls the subject via accounting consolidation (reported on the LEI Level 2 relationship record). Returns null when the entity reports no parent (ultimate parent, standalone company, exempt from reporting). The full parent LEI record is embedded when one exists. An LEI GLEIF has no record of answers 404, so a null parent always means a known entity with no reported parent. When GLEIF fails or does not answer in time the route returns 503 or 504 with `Retry-After`, never a null parent.",
       "method": "GET",
       "operation_id": "gleif_lei_records_lei_direct_parent",
       "parameters": [
@@ -34701,7 +34754,7 @@
       "toolset": "corporate_registry"
     },
     {
-      "description": "List the ISO 6166 International Securities Identification Numbers (ISINs) mapped to a LEI. Issuers file ISIN-to-LEI mappings with GLEIF to support regulatory reporting (EMIR, MiFID II). Each entry carries the 12-character ISIN and the parent LEI. Returns an empty list when the entity has no reported ISIN mappings, and also when GLEIF answers 404, as it does for an unknown LEI; that empty list is cached like any answer. When GLEIF fails or does not answer in time the route returns 503 or 504 with `Retry-After`, never an empty list.",
+      "description": "List the ISO 6166 International Securities Identification Numbers (ISINs) mapped to a LEI. Issuers file ISIN-to-LEI mappings with GLEIF to support regulatory reporting (EMIR, MiFID II). Each entry carries the 12-character ISIN and the parent LEI. Returns an empty list when the entity has no reported ISIN mappings. An LEI GLEIF has no record of answers 404, so an empty list always means a known entity. When GLEIF fails or does not answer in time the route returns 503 or 504 with `Retry-After`, never an empty list.",
       "method": "GET",
       "operation_id": "gleif_lei_records_lei_isins",
       "parameters": [
@@ -34763,7 +34816,7 @@
       "toolset": "corporate_registry"
     },
     {
-      "description": "Fetch the ultimate parent (top of the ownership chain) of an entity by LEI. Ultimate parent is the entity at the top of the accounting consolidation chain. Returns null when the entity reports no ultimate parent (standalone, already the ultimate parent, or exempt from reporting). The full parent LEI record is embedded when one exists. When GLEIF fails or does not answer in time the route returns 503 or 504 with `Retry-After`, never a null parent.",
+      "description": "Fetch the ultimate parent (top of the ownership chain) of an entity by LEI. Ultimate parent is the entity at the top of the accounting consolidation chain. Returns null when the entity reports no ultimate parent (standalone, already the ultimate parent, or exempt from reporting). The full parent LEI record is embedded when one exists. An LEI GLEIF has no record of answers 404, so a null parent always means a known entity with no reported ultimate parent. When GLEIF fails or does not answer in time the route returns 503 or 504 with `Retry-After`, never a null parent.",
       "method": "GET",
       "operation_id": "gleif_lei_records_lei_ultimate_parent",
       "parameters": [
@@ -34901,7 +34954,7 @@
       "toolset": "corporate_registry"
     },
     {
-      "description": "List fund LEIs reported as managed by the subject entity. Each fund is returned as a full LEI record with entity and registration blocks. Applies to asset managers and investment advisors who file fund-manager relationships with GLEIF. Returns an empty list when the entity manages no reported funds, and also when GLEIF answers 404, as it does for an unknown LEI; that empty list is cached like any answer. When GLEIF fails or does not answer in time the route returns 503 or 504 with `Retry-After`, never an empty list.",
+      "description": "List fund LEIs reported as managed by the subject entity. Each fund is returned as a full LEI record with entity and registration blocks. Applies to asset managers and investment advisors who file fund-manager relationships with GLEIF. Returns an empty list when the entity manages no reported funds. An LEI GLEIF has no record of answers 404, so an empty list always means a known entity. When GLEIF fails or does not answer in time the route returns 503 or 504 with `Retry-After`, never an empty list.",
       "method": "GET",
       "operation_id": "gleif_managed_funds_lei",
       "parameters": [
@@ -35059,7 +35112,7 @@
       "toolset": "corporate_registry"
     },
     {
-      "description": "Return a one-hop ownership graph for an entity - its direct-parent relationship record (with validity periods and corroboration), its ultimate-parent relationship record, and the first page of direct children (subsidiaries). Use `/lei-records/{lei}/direct-parent` or `/lei-records/{lei}/ultimate-parent` when only the parent LEI record itself is needed; this endpoint adds the relationship-layer metadata (validity, corroboration documents) and the child list in one call. A read GLEIF answers 404 for, as it does for an unknown LEI, comes back as a null relationship or an empty child list, cached like any answer. When GLEIF fails or does not answer in time on any of the three reads the route returns 503 or 504 with `Retry-After`, never a null parent relationship or an empty child list.",
+      "description": "Return a one-hop ownership graph for an entity - its direct-parent relationship record (with validity periods and corroboration), its ultimate-parent relationship record, and the first page of direct children (subsidiaries). Use `/lei-records/{lei}/direct-parent` or `/lei-records/{lei}/ultimate-parent` when only the parent LEI record itself is needed; this endpoint adds the relationship-layer metadata (validity, corroboration documents) and the child list in one call. A relationship the entity does not report comes back as null, and no children as an empty list. An LEI GLEIF has no record of answers 404, so a null relationship or an empty child list always means a known entity. When GLEIF fails or does not answer in time on any of the three reads the route returns 503 or 504 with `Retry-After`, never a null parent relationship or an empty child list.",
       "method": "GET",
       "operation_id": "gleif_relationships_lei",
       "parameters": [
@@ -35551,6 +35604,82 @@
         "statistics"
       ],
       "summary": "Available GUS series",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "The Statistics Poland (GUS) consumer tendency survey, monthly since 2018-01: the current (BWUK) and leading (WWUK) consumer confidence indicators and the balance of each of the survey's 16 questions, in balance points (positive answers minus negative answers). Every series is keyed by GUS's own code and carries its label and unit. Default: BWUK and WWUK; pass series=2.1,5 for others or series=all for every one. A month GUS prints as 'x' (no value: the quarterly questions 13 to 15, question 2.1 before it was introduced) is null, never zero. Read from the month's GUS publication, cached for a day. Every answer names the GUS edition with its publication and read dates: Source: Statistics Poland (GUS), Consumer tendency, month (published, obtained), processed by Sugra.",
+      "method": "GET",
+      "operation_id": "gus_consumer_confidence",
+      "parameters": [
+        {
+          "description": "GUS series codes separated by commas (BWUK, WWUK, 1 to 15, 2.1) or all. Default BWUK,WWUK.",
+          "example": "BWUK,WWUK",
+          "location": "query",
+          "name": "series",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "GUS series codes separated by commas (BWUK, WWUK, 1 to 15, 2.1) or all. Default BWUK,WWUK.",
+            "title": "Series"
+          }
+        },
+        {
+          "description": "First month: 2020 or 2020-01.",
+          "example": "2024-01",
+          "location": "query",
+          "name": "start_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First month: 2020 or 2020-01.",
+            "title": "Start Period"
+          }
+        },
+        {
+          "description": "Last month: 2026 or 2026-10.",
+          "example": "2026-10",
+          "location": "query",
+          "name": "end_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last month: 2026 or 2026-10.",
+            "title": "End Period"
+          }
+        }
+      ],
+      "path": "/api/v1/gus/consumer-confidence",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Poland consumer confidence (GUS)",
       "tags": [
         "Statistical Agencies"
       ],
@@ -51357,6 +51486,63 @@
       "toolset": "statistics"
     },
     {
+      "description": "INSEE synthetic household confidence indicator for France, monthly since 1972-10, seasonally adjusted, in index points (long-run mean 100, standard deviation 10): BDM series 001587668. Every month carries INSEE's observation status and quality mark (DEF final, P provisional); a month with no published number is null, never zero. Live from INSEE, cached for a day. Source : Insee, with the series' last update date, Licence Ouverte 2.0. Declared before the generic series route so this key is never read as a series key.",
+      "method": "GET",
+      "operation_id": "insee_household_confidence",
+      "parameters": [
+        {
+          "description": "First month: 2020 or 2020-01.",
+          "example": "2024-01",
+          "location": "query",
+          "name": "start_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First month: 2020 or 2020-01.",
+            "title": "Start Period"
+          }
+        },
+        {
+          "description": "Last month: 2026 or 2026-10.",
+          "example": "2026-10",
+          "location": "query",
+          "name": "end_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last month: 2026 or 2026-10.",
+            "title": "End Period"
+          }
+        }
+      ],
+      "path": "/api/v1/insee/household-confidence",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "France household confidence (INSEE)",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
       "description": "Fetch French economic data by series key. Use /insee/catalog for available series. BDM covers CPI, GDP, unemployment, industry, trade and confidence. Melodi adds population, wages, housing-stock and poverty-rate.",
       "method": "GET",
       "operation_id": "insee_series",
@@ -52314,12 +52500,12 @@
       "toolset": "macro"
     },
     {
-      "description": "Scheduled monetary policy meetings and announcement days of six central banks, as PUBLISHED on each bank's own site - a static committed table refreshed yearly, independent of any data-release feed. Every row carries the decision publication day (decision_date), the meeting window for two-day formats, and whether the decision ships with the bank's forecast publication (type=projections). Defaults to upcoming meetings; pass upcoming=false for the full published table, or from/to for a window.",
+      "description": "Scheduled monetary policy meetings and announcement days of eight central banks, as PUBLISHED on each bank's own site - a static committed table refreshed yearly, independent of any data-release feed. Every row carries the decision publication day (decision_date), the meeting window for two-day formats, and whether the decision ships with the bank's forecast publication (type=projections). Defaults to upcoming meetings; pass upcoming=false for the full published table, or from/to for a window.",
       "method": "GET",
       "operation_id": "macro_cb_calendar",
       "parameters": [
         {
-          "description": "Narrow to one bank: fomc, ecb, boe, boj, snb, riksbank.",
+          "description": "Narrow to one bank: fomc, ecb, boe, boj, snb, riksbank, bi, banxico.",
           "example": "fomc",
           "location": "query",
           "name": "bank",
@@ -52333,7 +52519,7 @@
                 "type": "null"
               }
             ],
-            "description": "Narrow to one bank: fomc, ecb, boe, boj, snb, riksbank.",
+            "description": "Narrow to one bank: fomc, ecb, boe, boj, snb, riksbank, bi, banxico.",
             "title": "Bank"
           }
         },
@@ -52402,7 +52588,7 @@
       "sources": [
         "macro"
       ],
-      "summary": "Central bank meeting calendar (FOMC, ECB, BoE, BoJ, SNB, Riksbank)",
+      "summary": "Central bank meeting calendar (FOMC, ECB, BoE, BoJ, SNB, Riksbank, Bank Indonesia, Banco de Mexico)",
       "tags": [
         "Economics"
       ],
@@ -52414,13 +52600,13 @@
       "operation_id": "macro_cb_calendar_bank",
       "parameters": [
         {
-          "description": "fomc, ecb, boe, boj, snb or riksbank.",
+          "description": "fomc, ecb, boe, boj, snb, riksbank, bi or banxico.",
           "example": "fomc",
           "location": "path",
           "name": "bank",
           "required": true,
           "schema": {
-            "description": "fomc, ecb, boe, boj, snb or riksbank.",
+            "description": "fomc, ecb, boe, boj, snb, riksbank, bi or banxico.",
             "title": "Bank",
             "type": "string"
           }
@@ -52493,6 +52679,115 @@
         "macro"
       ],
       "summary": "One central bank's published meeting schedule",
+      "tags": [
+        "Economics"
+      ],
+      "toolset": "macro"
+    },
+    {
+      "description": "Sugra Macro: the Switzerland monthly consumer sentiment index (headline ks_i63_index_m) and its sub-indices, in points, with English labels. Each point carries the index value and, in a separate field, its standard deviation; the deviation is never served as the value. Seasonally unadjusted (na) and seasonally and calendar adjusted (csa) are two series and are never mixed: choose one with seas_adj. The monthly series are published unadjusted only today, so csa answers 404 until a seasonally adjusted monthly series is published. Live, cached for a day.",
+      "method": "GET",
+      "operation_id": "macro_consumer_sentiment_switzerland",
+      "parameters": [
+        {
+          "description": "Series code: the headline ks_i63_index_m or a sub-index. Omit for all 14.",
+          "location": "query",
+          "name": "structure",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Series code: the headline ks_i63_index_m or a sub-index. Omit for all 14.",
+            "title": "Structure"
+          }
+        },
+        {
+          "description": "na (default, not seasonally adjusted) or csa (seasonally and calendar adjusted; 404 while no such monthly series is published).",
+          "location": "query",
+          "name": "seas_adj",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "na (default, not seasonally adjusted) or csa (seasonally and calendar adjusted; 404 while no such monthly series is published).",
+            "title": "Seas Adj"
+          }
+        },
+        {
+          "description": "First month: 2024 or 2024-01.",
+          "location": "query",
+          "name": "start_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First month: 2024 or 2024-01.",
+            "title": "Start Period"
+          }
+        },
+        {
+          "description": "Last month: 2026 or 2026-09.",
+          "location": "query",
+          "name": "end_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last month: 2026 or 2026-09.",
+            "title": "End Period"
+          }
+        }
+      ],
+      "path": "/api/v1/macro/consumer-sentiment/switzerland",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "macro",
+      "sources": [
+        "macro"
+      ],
+      "summary": "Switzerland consumer sentiment index",
+      "tags": [
+        "Economics"
+      ],
+      "toolset": "macro"
+    },
+    {
+      "description": "List the Switzerland monthly consumer sentiment series of Sugra Macro: the headline index and its sub-indices (the survey questions), with English labels, the unit (points) and the seasonal adjustments each is served in. Live, cached for a day.",
+      "method": "GET",
+      "operation_id": "macro_consumer_sentiment_switzerland_catalog",
+      "parameters": [],
+      "path": "/api/v1/macro/consumer-sentiment/switzerland/catalog",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "macro",
+      "sources": [
+        "macro"
+      ],
+      "summary": "Switzerland consumer sentiment series",
       "tags": [
         "Economics"
       ],
@@ -52899,6 +53194,61 @@
         "macro"
       ],
       "summary": "Sugra Macro - available macroeconomic indicators catalog",
+      "tags": [
+        "Economics"
+      ],
+      "toolset": "macro"
+    },
+    {
+      "description": "Sugra Macro: the regional manufacturing composite index for the US South Atlantic states, seasonally adjusted, current conditions, monthly since 1993-11, in index points (a diffusion index: the share of surveyed firms reporting an increase minus the share reporting a decrease). One row per month, served as the first day of the survey month. A month the survey has no value for is listed with a null value and counted in missing_months, never served as text or as zero. Live, cached for a day; a new month appears after the survey's monthly release, up to a day later.",
+      "method": "GET",
+      "operation_id": "macro_manufacturing_survey_us_south_atlantic",
+      "parameters": [
+        {
+          "description": "First month: 2020 or 2020-01.",
+          "location": "query",
+          "name": "start_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First month: 2020 or 2020-01.",
+            "title": "Start Period"
+          }
+        },
+        {
+          "description": "Last month: 2026 or 2026-10.",
+          "location": "query",
+          "name": "end_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last month: 2026 or 2026-10.",
+            "title": "End Period"
+          }
+        }
+      ],
+      "path": "/api/v1/macro/manufacturing-survey/us-south-atlantic",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "macro",
+      "sources": [
+        "macro"
+      ],
+      "summary": "US South Atlantic manufacturing composite index",
       "tags": [
         "Economics"
       ],
@@ -62542,30 +62892,30 @@
       "toolset": "trade"
     },
     {
-      "description": "Fetch OECD time series for a country and indicator.\n\n`country` is an ISO 3-letter code (e.g. USA, DEU, GBR).\n`indicator` is a key from the OECD catalog (e.g. gdp_growth, cpi, unemployment).",
+      "description": "Fetch OECD time series for a country and indicator.\n\n`country` is an ISO 3-letter code (e.g. USA, DEU, GBR).\n`indicator` is a key from the OECD catalog (e.g. gdp_growth, cpi, unemployment).\n\nconsumer_confidence and business_confidence are composite survey results as the OECD republishes\neach area's national survey. Each point is dated by its survey month or quarter. The unit is\n\"balance or index, national methodology\": values follow each country's own methodology and are\nnot comparable across countries. business_confidence needs `activity`.\n\ncorporate_tax_rate_central, corporate_tax_rate_combined and top_personal_income_tax_rate are\nstatutory tax rates as the OECD publishes them in its Tax Database, processed by Sugra: one value\nper tax year (date YYYY), in percent of taxable income for the corporate rates and in percent of\ngross wage earnings for the top personal rate. They are statutory rates, not effective tax rates.\ncorporate_tax_rate_central is the central government rate; corporate_tax_rate_combined adds\nsub-central taxes. The corporate rates cover about 146 jurisdictions, the top personal rate the\n38 OECD members.",
       "method": "GET",
       "operation_id": "oecd_country_indicator",
       "parameters": [
         {
-          "description": "ISO 3166-1 alpha-3 code of an OECD member (e.g. USA, DEU, GBR); alpha-2 codes and slugs are not accepted. List: /api/v1/oecd/catalog.",
+          "description": "ISO 3166-1 alpha-3 code of an OECD member (e.g. USA, DEU, GBR); alpha-2 codes and slugs are not accepted. For consumer_confidence and business_confidence the areas also include non-members, the euro area (EA20) and the European Union (EU). For the two corporate tax rates the areas also include non-member jurisdictions (for example HKG, SGP, IND). List: /api/v1/oecd/catalog.",
           "example": "USA",
           "location": "path",
           "name": "country",
           "required": true,
           "schema": {
-            "description": "ISO 3166-1 alpha-3 code of an OECD member (e.g. USA, DEU, GBR); alpha-2 codes and slugs are not accepted. List: /api/v1/oecd/catalog.",
+            "description": "ISO 3166-1 alpha-3 code of an OECD member (e.g. USA, DEU, GBR); alpha-2 codes and slugs are not accepted. For consumer_confidence and business_confidence the areas also include non-members, the euro area (EA20) and the European Union (EU). For the two corporate tax rates the areas also include non-member jurisdictions (for example HKG, SGP, IND). List: /api/v1/oecd/catalog.",
             "title": "Country",
             "type": "string"
           }
         },
         {
-          "description": "OECD catalog indicator key (e.g. gdp_growth, cpi, unemployment). List: /api/v1/oecd/catalog.",
+          "description": "OECD catalog indicator key (e.g. gdp_growth, cpi, unemployment, consumer_confidence, business_confidence, corporate_tax_rate_central, corporate_tax_rate_combined, top_personal_income_tax_rate). List: /api/v1/oecd/catalog.",
           "example": "gdp_growth",
           "location": "path",
           "name": "indicator",
           "required": true,
           "schema": {
-            "description": "OECD catalog indicator key (e.g. gdp_growth, cpi, unemployment). List: /api/v1/oecd/catalog.",
+            "description": "OECD catalog indicator key (e.g. gdp_growth, cpi, unemployment, consumer_confidence, business_confidence, corporate_tax_rate_central, corporate_tax_rate_combined, top_personal_income_tax_rate). List: /api/v1/oecd/catalog.",
             "title": "Indicator",
             "type": "string"
           }
@@ -62586,7 +62936,7 @@
           }
         },
         {
-          "description": "SDMX startPeriod (inclusive). Use YYYY (safe for any frequency), or match the indicator's granularity: YYYY-MM for monthly, YYYY-Qn for quarterly. Overrides the last_n-derived window.",
+          "description": "SDMX startPeriod (inclusive). Use YYYY (safe for any frequency), or match the indicator's granularity: YYYY-MM for monthly, YYYY-Qn for quarterly. Overrides the last_n-derived window. For the annual tax rates a month or quarter is read as its year.",
           "location": "query",
           "name": "start",
           "required": false,
@@ -62600,7 +62950,7 @@
                 "type": "null"
               }
             ],
-            "description": "SDMX startPeriod (inclusive). Use YYYY (safe for any frequency), or match the indicator's granularity: YYYY-MM for monthly, YYYY-Qn for quarterly. Overrides the last_n-derived window.",
+            "description": "SDMX startPeriod (inclusive). Use YYYY (safe for any frequency), or match the indicator's granularity: YYYY-MM for monthly, YYYY-Qn for quarterly. Overrides the last_n-derived window. For the annual tax rates a month or quarter is read as its year.",
             "examples": [
               "2015"
             ],
@@ -62608,7 +62958,7 @@
           }
         },
         {
-          "description": "SDMX endPeriod (inclusive upper bound), same format as start. Independent of start.",
+          "description": "SDMX endPeriod (inclusive upper bound), same format as start. Independent of start. For the annual tax rates a month or quarter is read as its year.",
           "location": "query",
           "name": "end",
           "required": false,
@@ -62622,11 +62972,63 @@
                 "type": "null"
               }
             ],
-            "description": "SDMX endPeriod (inclusive upper bound), same format as start. Independent of start.",
+            "description": "SDMX endPeriod (inclusive upper bound), same format as start. Independent of start. For the annual tax rates a month or quarter is read as its year.",
             "examples": [
               "2024"
             ],
             "title": "End"
+          }
+        },
+        {
+          "description": "Activity of the surveyed firms, required for business_confidence and not accepted for any other indicator: C manufacturing, F construction, G47 retail trade, GTU services.",
+          "location": "query",
+          "name": "activity",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "enum": [
+                  "C",
+                  "F",
+                  "G47",
+                  "GTU"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Activity of the surveyed firms, required for business_confidence and not accepted for any other indicator: C manufacturing, F construction, G47 retail trade, GTU services.",
+            "examples": [
+              "GTU"
+            ],
+            "title": "Activity"
+          }
+        },
+        {
+          "description": "consumer_confidence and business_confidence only: the survey frequency to return when an area holds both. Omitted, an area is served monthly when it holds a monthly series and quarterly otherwise.",
+          "location": "query",
+          "name": "frequency",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "enum": [
+                  "monthly",
+                  "quarterly"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "consumer_confidence and business_confidence only: the survey frequency to return when an area holds both. Omitted, an area is served monthly when it holds a monthly series and quarterly otherwise.",
+            "examples": [
+              "quarterly"
+            ],
+            "title": "Frequency"
           }
         }
       ],
@@ -77283,6 +77685,352 @@
       "toolset": "statistics"
     },
     {
+      "description": "List the eight Statistics Netherlands (CBS) consumer confidence measures with their CBS codes, Sugra's English names and the unit (balance points). No upstream call.",
+      "method": "GET",
+      "operation_id": "statistical_agencies_cbs_confidence_catalog",
+      "parameters": [],
+      "path": "/api/v1/statistical-agencies/cbs-confidence/catalog",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "CBS consumer confidence measures",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Statistics Netherlands (CBS) consumer confidence for the Netherlands, monthly, seasonally adjusted, in balance points: consumer confidence M001093, economic climate D001095, willingness to buy M001128 and the five survey questions behind them. Live from the CBS open data API (table 83693NED, no key needed upstream), cached for a day. A measure CBS no longer carries is listed in missing_measures and in meta.notes. Licence CC BY 4.0, reshaped by Sugra; not unchanged official CBS statistics.",
+      "method": "GET",
+      "operation_id": "statistical_agencies_cbs_confidence_series",
+      "parameters": [
+        {
+          "description": "CBS measure code: M001093, D001095, M001128, M001099, M001098, D001113, D001115, D001122. Omit for all eight.",
+          "location": "query",
+          "name": "measure",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "CBS measure code: M001093, D001095, M001128, M001099, M001098, D001113, D001115, D001122. Omit for all eight.",
+            "title": "Measure"
+          }
+        },
+        {
+          "description": "First month: 2020 or 2020-01.",
+          "location": "query",
+          "name": "start_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First month: 2020 or 2020-01.",
+            "title": "Start Period"
+          }
+        },
+        {
+          "description": "Last month: 2026 or 2026-10.",
+          "location": "query",
+          "name": "end_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last month: 2026 or 2026-10.",
+            "title": "End Period"
+          }
+        }
+      ],
+      "path": "/api/v1/statistical-agencies/cbs-confidence/series",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "CBS consumer confidence series",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Czech Statistical Office (ČSÚ) business and consumer confidence as balances (share of positive minus share of negative answers, in points), monthly, for the Czech Republic. Same seven indicators as /confidence/index, which carries the base index; the two measures are never mixed in one series. Live from ČSÚ open data set KPR2, cached for a day. CC BY 4.0, reshaped by Sugra; not unchanged official ČSÚ statistics.",
+      "method": "GET",
+      "operation_id": "statistical_agencies_czso_confidence_balance",
+      "parameters": [
+        {
+          "description": "ČSÚ indicator code: 5860, 5865, 5865P, 5865S, 5865O, 5865L, 5866. Omit for all seven.",
+          "location": "query",
+          "name": "indicator",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ČSÚ indicator code: 5860, 5865, 5865P, 5865S, 5865O, 5865L, 5866. Omit for all seven.",
+            "title": "Indicator"
+          }
+        },
+        {
+          "description": "First month: 2020 or 2020-01.",
+          "location": "query",
+          "name": "start_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First month: 2020 or 2020-01.",
+            "title": "Start Period"
+          }
+        },
+        {
+          "description": "Last month: 2026 or 2026-10.",
+          "location": "query",
+          "name": "end_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last month: 2026 or 2026-10.",
+            "title": "End Period"
+          }
+        }
+      ],
+      "path": "/api/v1/statistical-agencies/czso/confidence/balance",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "ČSÚ confidence balance",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "List the seven Czech Statistical Office (ČSÚ) business and consumer confidence indicators with their ČSÚ codes and English names, and the two measures (base index and balance) with their units. No upstream call.",
+      "method": "GET",
+      "operation_id": "statistical_agencies_czso_confidence_catalog",
+      "parameters": [],
+      "path": "/api/v1/statistical-agencies/czso/confidence/catalog",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "ČSÚ confidence indicators and measures",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Czech Statistical Office (ČSÚ) business and consumer confidence as base indices (long-term average = 100), monthly, for the Czech Republic. Seven indicators: composite 5860, business 5865, industry 5865P, construction 5865S, trade 5865O, services 5865L, consumers 5866. Base index and balance are two measures: this route never carries balances (see /confidence/balance). Live from ČSÚ open data set KPR1, cached for a day. CC BY 4.0, reshaped by Sugra; not unchanged official ČSÚ statistics.",
+      "method": "GET",
+      "operation_id": "statistical_agencies_czso_confidence_index",
+      "parameters": [
+        {
+          "description": "ČSÚ indicator code: 5860, 5865, 5865P, 5865S, 5865O, 5865L, 5866. Omit for all seven.",
+          "location": "query",
+          "name": "indicator",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ČSÚ indicator code: 5860, 5865, 5865P, 5865S, 5865O, 5865L, 5866. Omit for all seven.",
+            "title": "Indicator"
+          }
+        },
+        {
+          "description": "First month: 2020 or 2020-01.",
+          "location": "query",
+          "name": "start_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First month: 2020 or 2020-01.",
+            "title": "Start Period"
+          }
+        },
+        {
+          "description": "Last month: 2026 or 2026-10.",
+          "location": "query",
+          "name": "end_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last month: 2026 or 2026-10.",
+            "title": "End Period"
+          }
+        }
+      ],
+      "path": "/api/v1/statistical-agencies/czso/confidence/index",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "ČSÚ confidence base index",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "List the thirteen Statistics Denmark consumer confidence indicators (the headline F1 and the twelve questions F2 to F13) with their StatBank codes, Statistics Denmark's English texts and the unit (balance points). No upstream call.",
+      "method": "GET",
+      "operation_id": "statistical_agencies_dst_confidence_catalog",
+      "parameters": [],
+      "path": "/api/v1/statistical-agencies/dst-confidence/catalog",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Statistics Denmark consumer confidence indicators",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Statistics Denmark consumer confidence for Denmark, monthly since 1974-10, in balance points, not seasonally adjusted: the consumer confidence indicator F1 and the twelve survey questions F2 to F13. Live from StatBank table FORV1 (no key needed upstream), cached for a day. A month without a figure ('..' or '.') is absent from the series, never zero; an indicator the table carries no figure for is listed in missing_indicators and in meta.notes. Source: Statistics Denmark, StatBank.dk/FORV1 (CC BY 4.0), processed by Sugra; not unchanged official statistics.",
+      "method": "GET",
+      "operation_id": "statistical_agencies_dst_confidence_series",
+      "parameters": [
+        {
+          "description": "FORV1 indicator code: F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12, F13. Omit for all thirteen.",
+          "location": "query",
+          "name": "indicator",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "FORV1 indicator code: F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12, F13. Omit for all thirteen.",
+            "title": "Indicator"
+          }
+        },
+        {
+          "description": "First month: 2020 or 2020-01.",
+          "location": "query",
+          "name": "start_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First month: 2020 or 2020-01.",
+            "title": "Start Period"
+          }
+        },
+        {
+          "description": "Last month: 2026 or 2026-10.",
+          "location": "query",
+          "name": "end_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last month: 2026 or 2026-10.",
+            "title": "End Period"
+          }
+        }
+      ],
+      "path": "/api/v1/statistical-agencies/dst-confidence/series",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "Statistics Denmark consumer confidence series",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
       "description": "Generic SIDRA data fetch. Parameters map to the upstream path-form query `/api/v3/agregados/{id}/periodos/{P}/variaveis/{V}?localidades=...&classificacao=...`. Returns flat rows (one per variable x locality x period); missing upstream values (`...`, `-`) coerce to null. When an aggregate declares a classification dimension and the caller omits it, SIDRA returns 500 - inspect `/metadata` first.",
       "method": "GET",
       "operation_id": "statistical_agencies_ibge_aggregates_aggregate_id_data",
@@ -77884,6 +78632,92 @@
         "statistics"
       ],
       "summary": "Brazilian states and Federal District (N3)",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "List the monthly indicators of the Economic Tendency Survey of the National Institute of Economic Research (NIER) for Sweden, since 1996-01: the Economic Tendency Indicator (KIFI), the business sector and its sectors, household confidence and the industry breakdowns. Each carries its NIER code, an English name, the unit (index) and the months it has values for. The indices are NIER's own standardised measure, not the Eurostat consumer confidence balance for Sweden, and are never mixed with it.",
+      "method": "GET",
+      "operation_id": "statistical_agencies_nier_economic_tendency_catalog",
+      "parameters": [],
+      "path": "/api/v1/statistical-agencies/nier-economic-tendency/catalog",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "NIER economic tendency indicators for Sweden",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Monthly series of the Economic Tendency Survey of the National Institute of Economic Research (NIER) for Sweden, since 1996-01, for the indicators you name. Values are standardised index points (mean 100, standard deviation 10 over each indicator's history; above 100 is stronger than normal). Observation time is the survey month. A month for which NIER published no value is returned with a null value, never zero. The indices are NIER's own measure, not the Eurostat consumer confidence balance for Sweden, and are never mixed with it. Find the codes with the catalog route. Source: National Institute of Economic Research (NIER).",
+      "method": "GET",
+      "operation_id": "statistical_agencies_nier_economic_tendency_series",
+      "parameters": [
+        {
+          "description": "NIER indicator code, or several separated by commas, for example KIFI or KIFI,bhus,BTVI. Case-insensitive; at most 20. Codes are listed by the catalog route.",
+          "location": "query",
+          "name": "indicator",
+          "required": true,
+          "schema": {
+            "description": "NIER indicator code, or several separated by commas, for example KIFI or KIFI,bhus,BTVI. Case-insensitive; at most 20. Codes are listed by the catalog route.",
+            "title": "Indicator",
+            "type": "string"
+          }
+        },
+        {
+          "description": "First survey month: 2020 or 2020-01.",
+          "location": "query",
+          "name": "start_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First survey month: 2020 or 2020-01.",
+            "title": "Start Period"
+          }
+        },
+        {
+          "description": "Last survey month: 2026 or 2026-10.",
+          "location": "query",
+          "name": "end_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last survey month: 2026 or 2026-10.",
+            "title": "End Period"
+          }
+        }
+      ],
+      "path": "/api/v1/statistical-agencies/nier-economic-tendency/series",
+      "request_body_required": false,
+      "required_parameters": [
+        "indicator"
+      ],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "NIER economic tendency series for Sweden",
       "tags": [
         "Statistical Agencies"
       ],
@@ -79447,7 +80281,7 @@
       "toolset": "research"
     },
     {
-      "description": "Returns one value per place for every place of one type inside a parent place, for example every county of California (`parent=06&type=county`) or every NUTS 2 region of Germany (`parent=DEU&type=nuts2`). Under the whole world (`parent=world`) the rows are countries, continents or world regions (groups of countries such as Sub-Saharan Africa or the least developed countries); under a continent or a world region they are its countries. All rows come from one source, picked in the order of `/series/{indicator}`: an agency's own figures first, then figures computed from an agency's data, then model projections, then Google's own data. When no source has the population of any of the places, `date=latest` takes it from Wikidata, one value per place from 2015 on. `date=latest` (the default) gives each place's latest value; a year, month or day gives the value for that period. At most 5,000 rows: a larger request answers 413, narrow it with a smaller parent.",
+      "description": "Returns one value per place for every place of one type inside a parent place, for example every county of California (`parent=06&type=county`) or every NUTS 2 region of Germany (`parent=DEU&type=nuts2`). Under the whole world (`parent=world`) the rows are countries, continents or world regions (groups of countries such as Sub-Saharan Africa or the least developed countries); under a continent or a world region they are its countries. US schools (`public-school`, `private-school`) are listed under a county, a city or a ZIP code area, US school districts (`school-district`) under a state, each by its NCES id. All rows come from one source, picked in the order of `/series/{indicator}`: an agency's own figures first, then figures computed from an agency's data, then model projections, then Google's own data. When no source has the population of any of the places, `date=latest` takes it from Wikidata, one value per place from 2015 on. `date=latest` (the default) gives each place's latest value; a year, month or day gives the value for that period. At most 5,000 rows: a larger request answers 413, narrow it with a smaller parent.",
       "method": "GET",
       "operation_id": "statistics_places_indicator",
       "parameters": [
@@ -79482,12 +80316,12 @@
           }
         },
         {
-          "description": "Place type of the rows: country, state, county, city, metro, zcta, admin1, admin2, nuts1, nuts2, nuts3, continent or region.",
+          "description": "Place type of the rows: country, state, county, city, metro, zcta, admin1, admin2, nuts1, nuts2, nuts3, school-district, public-school, private-school, continent or region.",
           "location": "query",
           "name": "type",
           "required": true,
           "schema": {
-            "description": "Place type of the rows: country, state, county, city, metro, zcta, admin1, admin2, nuts1, nuts2, nuts3, continent or region.",
+            "description": "Place type of the rows: country, state, county, city, metro, zcta, admin1, admin2, nuts1, nuts2, nuts3, school-district, public-school, private-school, continent or region.",
             "examples": [
               "county"
             ],
@@ -79624,7 +80458,7 @@
       "toolset": "research"
     },
     {
-      "description": "Returns the series of one indicator for one place, as published by one agency, in date order. Places are given by open codes: ISO 3166-1 alpha-3 for countries (USA), ISO 3166-2 for regions (IN-MH), FIPS for US states and counties (06, 06037), NUTS for European regions (DE11), zcta:94043 for US ZIP code areas, `world` for the whole world, or a code returned by `/places/resolve`, continents and world regions among them. Without `agency` the figures an agency publishes itself come first; when there are none, figures computed from an agency's data (a sum, count or average), then model projections, then Google's own data. Computed figures and projections are named by the agency and say so in `meta.notes`; projections may lie in the future. When none of these has a place's population, it comes from Wikidata as one value, the latest from 2015 on. The source, its website and its method are in `data.source`.",
+      "description": "Returns the series of one indicator for one place, as published by one agency, in date order. Places are given by open codes: ISO 3166-1 alpha-3 for countries (USA), ISO 3166-2 for regions (IN-MH), FIPS for US states and counties (06, 06037), NUTS for European regions (DE11), zcta:94043 for US ZIP code areas, the NCES id behind `nces:` for US schools and school districts (nces:062961004587), `world` for the whole world, or a code returned by `/places/resolve`, continents and world regions among them. Without `agency` the figures an agency publishes itself come first; when there are none, figures computed from an agency's data (a sum, count or average), then model projections, then Google's own data. Computed figures and projections are named by the agency and say so in `meta.notes`; projections may lie in the future. When none of these has a place's population, it comes from Wikidata as one value, the latest from 2015 on. The source, its website and its method are in `data.source`.",
       "method": "GET",
       "operation_id": "statistics_series_indicator",
       "parameters": [
@@ -97444,5 +98278,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "498b1c2b7dbc7376e64c797b141fb29311158cd6a853d94b3443dbe10aaf6850"
+  "spec_sha256": "06843715860164b201ba98750d6fff4054a5f8a958fe397a3445f278a41a1d48"
 }
