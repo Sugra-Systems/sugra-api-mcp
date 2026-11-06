@@ -406,6 +406,13 @@ def test_screen_texts_wording_is_pinned(monkeypatch) -> None:
     assert ("A match carries `name_score` and `secondary_fields` only when the "
             "call sends `dob`, `country` or `nationality` and the API returns "
             "them.") in description
+    # One sentence per key, word for word: the name-only score and the outcome
+    # tokens, with nothing on how the API weighs a field.
+    assert ("`name_score` is the match score from the name alone, before those "
+            "fields were applied.") in description
+    assert ("`secondary_fields` gives, for each of those fields the call sent, "
+            "how the list record compares: `match`, `near`, `contradict`, "
+            "`unknown` or `unrecognized`.") in description
 
     # Claims about the API's scoring this repository cannot show stay out.
     texts = [description, *(p["description"] for p in props.values())]
@@ -413,7 +420,7 @@ def test_screen_texts_wording_is_pinned(monkeypatch) -> None:
         for absent in ("two or more years", "within one year", "alpha-3",
                        "English name", "count once", "weighs less",
                        "never demoted", "narrow", "turn `clear`", "adjusted score",
-                       "`near`", "`contradict`", "`unrecognized`"):
+                       "raises", "demote"):
             assert absent.lower() not in text.lower(), (absent, text)
         assert chr(0x2014) not in text  # no em dash in public copy
 
