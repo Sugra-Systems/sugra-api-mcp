@@ -235,7 +235,9 @@ SOURCE_COUNTRY_PREFIXES: dict[str, str] = {
     "norges_bank_": "NO",
     "stat_finland_": "FI",
     "statistical_agencies_statbank_dk_": "DK",
-    "destatis_": "DE",
+    # The Bundesbank answers for Germany alone: its 10-year Bund yield ranked
+    # first for "10-year yield" and "France 10 year yield".
+    "destatis_": "DE", "bundesbank_": "DE",
     "statistical_agencies_ibge_": "BR", "bcb_": "BR",
     "central_banks_bcra_": "AR",
     "central_banks_bcrp_": "PE",
@@ -1969,10 +1971,18 @@ COMPOUND_NAMED_OPERATIONS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = 
 # computed from growth, income and inflation, and "Dutch inflation" found it
 # above every Dutch inflation series. The external-pressure heuristic is
 # computed from the current account outlook, and "Germany current account"
-# found it above the country profile, which holds the current account.
+# found it above the country profile, which holds the current account. The
+# OECD indicator operation names the base and the setter of its tax rates
+# ("in percent of gross wage earnings", "the central government rate") and the
+# method of its surveys ("national methodology"), none of them a series it
+# holds: "government debt to GDP", "national debt to GDP" and "ratio to GDP"
+# found it above the country profile and the credit-to-GDP gap, and "wages by
+# country" above the ILO wage series.
 OPERATION_INPUT_WORDS: dict[str, frozenset[str]] = {
     "imf_signals_telecom_demand_country": frozenset({"growth", "income", "inflation"}),
     "imf_signals_external_pressure_country": frozenset({"current", "account"}),
+    "oecd_country_indicator": frozenset({
+        "earnings", "government", "gross", "national", "wage"}),
 }
 
 

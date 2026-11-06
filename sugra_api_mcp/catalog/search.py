@@ -495,7 +495,7 @@ class _EndpointProfile:
     """
 
     __slots__ = (
-        "description", "keywords", "operation_id", "params", "path",
+        "description", "keywords", "measures", "operation_id", "params", "path",
         "ratio_bases", "summary", "tags", "takes_country_param", "text",
         "text_normalized",
     )
@@ -527,6 +527,10 @@ class _EndpointProfile:
         ])
         self.text = frozenset(text_tokens)
         self.text_normalized = " ".join(text_tokens)
+        # The words that can name what the operation measures: its text less
+        # the words it names only as an input (OPERATION_INPUT_WORDS). The
+        # OECD indicator's "national methodology" names no national debt.
+        self.measures = self.text - OPERATION_INPUT_WORDS.get(endpoint.operation_id, frozenset())
 
 
 # Keyed by object identity and holding the endpoint itself, so an id is never
@@ -955,10 +959,13 @@ def _score(
                 and term not in coverage_excluded
                 and term not in alias_consumed):
             matched_query_terms.add(term)
-    # "consumer prices" names the CPI as "CPI" does.
+    # "consumer prices" names the CPI as "CPI" does. A spelling of silenced
+    # words names nothing, as an alias of them does: the OECD indicator's
+    # "gross wage earnings" is no wage it serves.
     for statistic in spelled_statistics:
         if any(_alias_matches_profile(profile, spelling)
-               for spelling in COUNTRY_STATISTIC_SPELLINGS[statistic]):
+               for spelling in COUNTRY_STATISTIC_SPELLINGS[statistic]
+               if not set(_tokens(spelling)) <= silenced):
             matched_words.add(statistic)
 
     # Coverage: breadth of DISTINCT query-term matches beats depth of
@@ -1743,7 +1750,7 @@ def search_catalog(
         numerators = frozenset().union(*ratio_numerators.values())
 
         def place_slot(i: int) -> tuple[bool, int, bool, str]:
-            names = not numerators or _names_any(numerators, _profile(scored[i][1]).text)
+            names = not numerators or _names_any(numerators, _profile(scored[i][1]).measures)
             return not names, *slot_of(i)
 
         group = {i: "subject" for i in subjects} | {i: "place" for i in places} | {
