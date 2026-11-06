@@ -407,9 +407,11 @@ def test_screen_texts_wording_is_pinned(monkeypatch) -> None:
             "call sends `dob`, `country` or `nationality` and the API returns "
             "them.") in description
     # One sentence per key, word for word: the name-only score and the outcome
-    # tokens, with nothing on how the API weighs a field.
-    assert ("`name_score` is the match score from the name alone, before those "
-            "fields were applied.") in description
+    # tokens, with nothing on how the API weighs a field. The name_score
+    # sentence points at the re-scoring the paragraph above already states;
+    # it adds no direction or size of the change.
+    assert ("`name_score` is the match score from the name alone, before the "
+            "API re-scores the match with those fields.") in description
     assert ("`secondary_fields` gives, for each of those fields the call sent, "
             "how the list record compares: `match`, `near`, `contradict`, "
             "`unknown` or `unrecognized`.") in description
@@ -420,7 +422,8 @@ def test_screen_texts_wording_is_pinned(monkeypatch) -> None:
         for absent in ("two or more years", "within one year", "alpha-3",
                        "English name", "count once", "weighs less",
                        "never demoted", "narrow", "turn `clear`", "adjusted score",
-                       "raises", "demote"):
+                       "raises", "demot", "weigh", "boost", "penali", "lower the",
+                       "higher score"):
             assert absent.lower() not in text.lower(), (absent, text)
         assert chr(0x2014) not in text  # no em dash in public copy
 
