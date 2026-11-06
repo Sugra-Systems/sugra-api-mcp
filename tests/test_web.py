@@ -6,6 +6,7 @@ import base64
 import json
 import re
 from html.parser import HTMLParser
+from importlib import resources
 from urllib.parse import unquote
 
 import pytest
@@ -14,7 +15,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from sugra_api_mcp import __version__, skills_index, web
+from sugra_api_mcp import __version__, client_logos, skills_index, web
 from sugra_api_mcp.auth import PUBLIC_GET_PATHS, Authenticator, AuthMiddleware
 from sugra_api_mcp.client_logos import LOGOS
 from sugra_api_mcp.config import SERVER_PRODUCT, AuthConfig
@@ -361,6 +362,29 @@ def test_vscode_logo_stays_the_blue_icon() -> None:
     svg = LOGOS["vscode"]
     assert "#0065A9" in svg and "#007ACC" in svg and "#1F9CF0" in svg
     assert "currentColor" not in svg
+
+
+def test_client_logo_licenses_ship_with_the_package() -> None:
+    # MIT and ISC ask that their copyright and permission notice go with copies:
+    # the texts sit beside client_logos.py, so the wheel carries them.
+    notices = (resources.files("sugra_api_mcp") / "THIRD_PARTY_NOTICES.txt").read_text(
+        encoding="utf-8"
+    )
+    mit, isc = notices.split("2. ISC License - Lucide")
+    assert "Copyright (c) 2023 LobeHub" in mit
+    assert (
+        "The above copyright notice and this permission notice shall be included in all\n"
+        "copies or substantial portions of the Software." in mit
+    )
+    for ident in LOGOS.keys() - {"vscode", "other"}:
+        assert re.search(rf"[\s,]{re.escape(ident)}[,\s]", mit.split("Source:")[0]), ident
+    assert "Covers: other" in isc
+    assert "Copyright (c) 2026 Lucide Icons and Contributors" in isc
+    assert (
+        "provided that the above\ncopyright notice and this permission notice appear in all copies."
+        in isc
+    )
+    assert "THIRD_PARTY_NOTICES.txt" in (client_logos.__doc__ or "")
 
 
 def test_cursor_install_link_carries_the_env_reference_not_a_key() -> None:
