@@ -191,6 +191,233 @@ async def test_screen_omits_none_optional_params(monkeypatch) -> None:
     assert body == {"name": "Jane Doe", "dob": "1980-01-01"}
 
 
+# The API answer when the request sent dob, country or nationality: `score` is
+# the adjusted score, `name_score` the name-only score before the fields moved
+# it, and `secondary_fields` the outcome per field sent. With none sent the API
+# still returns `name_score` (equal to `score`) and `secondary_fields: null`.
+_SCREEN_RAW_SECONDARY = {
+    "data": {
+        "screening": {
+            "status": "hit",
+            "matches": [
+                {
+                    "list": "ofac_sdn",
+                    "matched_name": "DOE, Jane",
+                    "score": 1.0,
+                    "name_score": 0.95,
+                    "secondary_fields": {"dob": "match", "country": "match"},
+                    "match_type": "name_fuzzy",
+                    "rationale": ["dob 1980-01-01 matches the record"],
+                    "source_id": "ofac-1",
+                },
+                {
+                    "list": "eu_consolidated",
+                    "matched_name": "DOE Janet",
+                    "score": 0.8,
+                    "name_score": 0.9,
+                    "secondary_fields": {"dob": "contradict", "country": "unknown"},
+                    "match_type": "name_fuzzy",
+                    "rationale": ["dob 1980-01-01 contradicts the record"],
+                    "source_id": "eu-2",
+                },
+            ],
+        }
+    },
+    "meta": {"disclaimer": "Screening signal, not a compliance determination."},
+}
+
+_SCREEN_RAW_NAME_ONLY = {
+    "data": {
+        "screening": {
+            "status": "review",
+            "matches": [
+                {
+                    "list": "ofac_sdn",
+                    "matched_name": "DOE, Jane",
+                    "score": 0.95,
+                    "name_score": 0.95,
+                    "secondary_fields": None,
+                    "match_type": "name_fuzzy",
+                },
+            ],
+        }
+    },
+    "meta": {"disclaimer": "Screening signal, not a compliance determination."},
+}
+
+
+async def test_screen_with_dob_carries_secondary_outcomes_per_match(monkeypatch) -> None:
+    fake = FakeClient(post_payload=_SCREEN_RAW_SECONDARY)
+    monkeypatch.setattr(entities, "get_client", lambda: fake)
+
+    result = await entities.sugra_entity_screen(name="Jane Doe", dob="1980-01-01")
+
+    assert result["matches"] == [
+        {"name": "DOE, Jane", "score": 1.0, "list": "ofac_sdn", "type": "name_fuzzy",
+         "name_score": 0.95, "secondary_fields": {"dob": "match", "country": "match"}},
+        {"name": "DOE Janet", "score": 0.8, "list": "eu_consolidated", "type": "name_fuzzy",
+         "name_score": 0.9,
+         "secondary_fields": {"dob": "contradict", "country": "unknown"}},
+    ]
+    # The heavy fields stay dropped in this mode too.
+    assert "rationale" not in repr(result) and "source_id" not in repr(result)
+
+
+async def test_screen_with_country_or_nationality_alone_carries_outcomes(monkeypatch) -> None:
+    for kwargs in ({"country": "US"}, {"nationality": "US"}, {"dob": "1980"}):
+        fake = FakeClient(post_payload=_SCREEN_RAW_SECONDARY)
+        monkeypatch.setattr(entities, "get_client", lambda fake=fake: fake)
+
+        result = await entities.sugra_entity_screen(name="Jane Doe", **kwargs)
+
+        # The field reaches the request body and turns the outcome on: both
+        # come from the one place the fields are named.
+        assert fake.calls[0][3] == {"name": "Jane Doe", **kwargs}, kwargs
+        assert [m["secondary_fields"] for m in result["matches"]] == [
+            {"dob": "match", "country": "match"},
+            {"dob": "contradict", "country": "unknown"},
+        ], kwargs
+
+
+async def test_screen_sends_all_three_secondary_fields_together(monkeypatch) -> None:
+    fake = FakeClient(post_payload=_SCREEN_RAW_SECONDARY)
+    monkeypatch.setattr(entities, "get_client", lambda: fake)
+
+    result = await entities.sugra_entity_screen(
+        name="Jane Doe", country="US", dob="1980-01-01", nationality="GB")
+
+    assert fake.calls[0][3] == {"name": "Jane Doe", "country": "US",
+                                "dob": "1980-01-01", "nationality": "GB"}
+    assert all("secondary_fields" in m for m in result["matches"])
+
+
+async def test_screen_with_dob_leaves_out_a_null_secondary_fields(monkeypatch) -> None:
+    # One rule for both added keys: a key the API sent as null, or did not
+    # send, is left out, never passed through as null.
+    raw = {
+        "data": {"screening": {"status": "review", "matches": [
+            {"list": "ofac_sdn", "matched_name": "DOE, Jane", "score": 0.9,
+             "match_type": "name_fuzzy", "name_score": 0.9,
+             "secondary_fields": None},
+            {"list": "ofac_sdn", "matched_name": "DOE, J", "score": 0.8,
+             "match_type": "name_fuzzy", "name_score": None,
+             "secondary_fields": None},
+            {"list": "ofac_sdn", "matched_name": "DOE", "score": 0.75,
+             "match_type": "name_fuzzy"},
+        ]}},
+        "meta": {},
+    }
+    fake = FakeClient(post_payload=raw)
+    monkeypatch.setattr(entities, "get_client", lambda: fake)
+
+    result = await entities.sugra_entity_screen(name="Jane Doe", dob="1980-01-01")
+
+    assert result["matches"] == [
+        {"name": "DOE, Jane", "score": 0.9, "list": "ofac_sdn", "type": "name_fuzzy",
+         "name_score": 0.9},
+        {"name": "DOE, J", "score": 0.8, "list": "ofac_sdn", "type": "name_fuzzy"},
+        {"name": "DOE", "score": 0.75, "list": "ofac_sdn", "type": "name_fuzzy"},
+    ]
+    assert None not in [v for m in result["matches"] for v in m.values()]
+
+
+async def test_screen_without_secondary_fields_keeps_the_four_key_match(monkeypatch) -> None:
+    # The API always returns name_score; with no dob, country or nationality
+    # sent the compact match stays exactly {name, score, list, type}.
+    fake = FakeClient(post_payload=_SCREEN_RAW_NAME_ONLY)
+    monkeypatch.setattr(entities, "get_client", lambda: fake)
+
+    result = await entities.sugra_entity_screen(name="Jane Doe")
+
+    assert result["matches"] == [
+        {"name": "DOE, Jane", "score": 0.95, "list": "ofac_sdn", "type": "name_fuzzy"},
+    ]
+
+
+async def test_screen_with_dob_leaves_out_a_name_score_the_api_did_not_send(monkeypatch) -> None:
+    raw = {
+        "data": {"screening": {"status": "review", "matches": [
+            {"list": "ofac_sdn", "matched_name": "DOE, Jane", "score": 0.9,
+             "match_type": "name_fuzzy", "secondary_fields": {"dob": "unknown"}},
+            {"list": "ofac_sdn", "matched_name": "DOE, J", "score": 0.8,
+             "match_type": "name_fuzzy", "name_score": None,
+             "secondary_fields": {"dob": "unrecognized"}},
+        ]}},
+        "meta": {},
+    }
+    fake = FakeClient(post_payload=raw)
+    monkeypatch.setattr(entities, "get_client", lambda: fake)
+
+    result = await entities.sugra_entity_screen(name="Jane Doe", dob="1980-01-01")
+
+    assert result["matches"] == [
+        {"name": "DOE, Jane", "score": 0.9, "list": "ofac_sdn", "type": "name_fuzzy",
+         "secondary_fields": {"dob": "unknown"}},
+        {"name": "DOE, J", "score": 0.8, "list": "ofac_sdn", "type": "name_fuzzy",
+         "secondary_fields": {"dob": "unrecognized"}},
+    ]
+
+
+def _screen_tool_schema() -> dict[str, Any]:
+    import asyncio
+
+    from sugra_api_mcp import tools  # noqa: F401  (import registers all tools)
+    from sugra_api_mcp.server import mcp
+
+    tool = next(t for t in asyncio.run(mcp.list_tools()) if t.name == "sugra_entity_screen")
+    return {"description": tool.description, "properties": tool.inputSchema["properties"]}
+
+
+def _flat(text: str) -> str:
+    return " ".join(text.split())
+
+
+def test_screen_texts_wording_is_pinned(monkeypatch) -> None:
+    # Only the wording is pinned here: the tool forwards dob, country and
+    # nationality and projects the answer, and the scoring behind it is the
+    # API's to test, not this repository's.
+    monkeypatch.setenv("SUGRA_API_KEY", "dummy")
+    schema = _screen_tool_schema()
+    props = schema["properties"]
+    description = _flat(schema["description"])
+
+    forwarded = "Forwarded to the API, which re-scores and re-orders the name candidates."
+    assert props["country"]["description"] == (
+        "Optional ISO 3166-1 alpha-2 country code. " + forwarded)
+    assert props["dob"]["description"] == (
+        "Optional date of birth for a person, YYYY-MM-DD. " + forwarded)
+    assert props["nationality"]["description"] == (
+        "Optional nationality, ISO 3166-1 alpha-2 country code. " + forwarded)
+    for arg_line in ("country: Optional ISO 3166-1 alpha-2 country code.",
+                     "dob: Optional date of birth for a person, YYYY-MM-DD.",
+                     "nationality: Optional nationality, ISO 3166-1 alpha-2 "
+                     "country code."):
+        assert arg_line in description, arg_line
+    # Only the one input format each field names: no year-only dob claim.
+    assert "or YYYY" not in description
+    assert all("or YYYY" not in p["description"] for p in props.values())
+    assert ("Optional `dob`, `country` and `nationality` are forwarded to the "
+            "Sugra API, which re-scores and re-orders the candidates the name "
+            "screen found; it never adds or removes one.") in description
+    # The shape is stated once, with the two conditional keys inline.
+    assert ("`{status, matches:[{name, score, list, type, name_score?, "
+            "secondary_fields?}], disclaimer}`") in description
+    assert "{name, score, list, type}]" not in description
+    assert ("A match carries `name_score` and `secondary_fields` only when the "
+            "call sends `dob`, `country` or `nationality` and the API returns "
+            "them.") in description
+
+    # Claims about the API's scoring this repository cannot show stay out.
+    texts = [description, *(p["description"] for p in props.values())]
+    for text in texts:
+        for absent in ("two or more years", "within one year", "alpha-3",
+                       "English name", "count once", "weighs less",
+                       "never demoted", "narrow", "turn `clear`", "adjusted score",
+                       "`near`", "`contradict`", "`unrecognized`"):
+            assert absent.lower() not in text.lower(), (absent, text)
+        assert chr(0x2014) not in text  # no em dash in public copy
+
+
 async def test_screen_propagates_api_error_as_clean_dict(monkeypatch) -> None:
     fake = FakeClient(post_payload={"error": "auth_failed", "status_code": 401,
                                     "url": "https://sugra.ai/api/v1/entity/screen"})
