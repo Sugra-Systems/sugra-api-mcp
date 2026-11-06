@@ -344,6 +344,13 @@ def test_client_logos_are_inert_svg_with_unique_ids() -> None:
         assert "<title" not in svg and "<text" not in svg, ident
         assert not re.search(r"\son\w+\s*=", svg), ident
         assert not re.search(r'<svg[^>]*\s(?:width|height)="', svg), ident
+        # No element that can pull in styles, other content or another document.
+        lowered = svg.lower()
+        for element in ("<style", "<use", "<foreignobject", "<image", "<a "):
+            assert element not in lowered, (ident, element)
+        # Every url() names a local #id: a gradient, mask or filter in the same mark.
+        for target in re.findall(r"url\(\s*([^)]*)\)", svg):
+            assert target.strip("'\" ").startswith("#"), (ident, target)
         ids += re.findall(r'\sid="([^"]+)"', svg)
     assert len(ids) == len(set(ids))
 
