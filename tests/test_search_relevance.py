@@ -3406,11 +3406,14 @@ def test_a_bond_yield_of_no_country_ranks_the_country_profile_first(catalog, que
 
 @pytest.mark.parametrize("query", ["10-year yield", "10 year yield", "10y yield"])
 def test_a_10_year_yield_of_no_country_ranks_the_country_profile_first(catalog, query: str) -> None:
-    """A 10-year yield names no bond, so no national bond source holds a strong
-    word of it to clamp; the profile, which names its "10Y yield", answers it."""
+    """The profile, which names its "10Y yield", answers a 10-year yield of
+    any country. The Bundesbank's 10-year Bund yield answers for Germany
+    alone, a place the question never named: it ranked first for all three."""
     results = search_catalog(catalog, query, limit=5)
     assert results[0]["operation_id"] == "macro_country_profile", [r["operation_id"] for r in results]
     assert "pattern:any-country->param" in results[0]["why"], results[0]["why"]
+    ranks = {r["operation_id"]: i for i, r in enumerate(results)}
+    assert "clamped-below:any-country-answers" in results[ranks["bundesbank_bund_10y"]]["why"]
 
 
 def test_a_bond_yield_of_no_country_clamps_the_euro_area_curve(catalog) -> None:
@@ -3428,6 +3431,9 @@ def test_a_bond_yield_of_no_country_clamps_the_euro_area_curve(catalog) -> None:
     ("euro area yield curve", "ecb_yield_curve"),
     ("euro area bond yields", "ecb_yield_curve"),
     ("ECB bond yields", "ecb_yield_curve"),
+    ("Germany bond yields", "bundesbank_bund_10y"),
+    ("Germany bond yield", "bundesbank_bund_10y"),
+    ("Germany 10 year yield", "bundesbank_bund_10y"),
 ])
 def test_a_bond_yield_of_a_named_place_keeps_its_source(catalog, query: str, first: str) -> None:
     results = search_catalog(catalog, query, limit=5)
@@ -3436,8 +3442,6 @@ def test_a_bond_yield_of_a_named_place_keeps_its_source(catalog, query: str, fir
 
 
 @pytest.mark.parametrize("query", [
-    "Germany bond yields",
-    "Germany bond yield",
     "France 10 year yield",
     "Italy bond yield",
     "Japan bond yields",
@@ -3446,10 +3450,11 @@ def test_a_bond_yield_of_a_named_place_keeps_its_source(catalog, query: str, fir
 def test_a_bond_yield_of_a_country_without_its_own_source_ranks_the_profile_first(
     catalog, query: str,
 ) -> None:
-    """Neither the euro area curve nor the US Treasury answers for another
-    country: "Germany bond yields" ranked the US Treasury's exchange rates
-    first, on the words "bond yield" reach through "treasury yield", and
-    "France 10 year yield" the euro area curve."""
+    """Neither the euro area curve, the US Treasury nor the Bundesbank answers
+    for another country: "Germany bond yields", before Germany had a source of
+    its own, ranked the US Treasury's exchange rates first, on the words "bond
+    yield" reach through "treasury yield", "France 10 year yield" the euro
+    area curve, and then the German Bund yield."""
     results = search_catalog(catalog, query, limit=5)
     ids = [r["operation_id"] for r in results]
     assert ids[0] == "macro_country_profile", ids
@@ -3458,6 +3463,9 @@ def test_a_bond_yield_of_a_country_without_its_own_source_ranks_the_profile_firs
     if "ecb_yield_curve" in ids:
         why = results[ids.index("ecb_yield_curve")]["why"]
         assert "clamped-below:country-answers" in why or "geo-mismatch:EU" in why, why
+    if "bundesbank_bund_10y" in ids:
+        why = results[ids.index("bundesbank_bund_10y")]["why"]
+        assert "clamped-below:country-answers" in why or "geo-mismatch:DE" in why, why
 
 
 def test_a_national_alias_keeps_its_source_for_its_own_country(catalog) -> None:
@@ -5048,3 +5056,42 @@ def test_the_external_pressure_heuristic_is_computed_from_the_current_account(
 def test_the_external_pressure_heuristic_keeps_its_own_question(catalog) -> None:
     top = search_catalog(catalog, "Germany external pressure", limit=1)[0]
     assert top["operation_id"] == "imf_signals_external_pressure_country", top
+
+
+_OECD_INPUT_REASONS = (":earnings", ":government", ":gross", ":national", ":wage")
+
+
+@pytest.mark.parametrize("query", [
+    "government debt to GDP", "national debt to GDP", "ratio to GDP", "wages by country",
+    "average earnings", "gross domestic product",
+])
+def test_the_oecd_indicator_names_its_tax_bases_and_survey_method_as_inputs(
+        catalog, query: str) -> None:
+    """Its description names the base and the setter of its tax rates ("in
+    percent of gross wage earnings", "the central government rate") and the
+    method of its surveys ("national methodology"): "government debt to GDP"
+    and "national debt to GDP" found it above the country profile, "ratio to
+    GDP" above the credit-to-GDP gap and "wages by country" above the ILO."""
+    row = next((row for row in search_catalog(catalog, query, limit=2000)
+                if row["operation_id"] == "oecd_country_indicator"), None)
+    assert row is None or not any(
+        reason.endswith(_OECD_INPUT_REASONS) for reason in row["why"]), row
+
+
+def test_a_wage_the_oecd_indicator_names_only_as_a_tax_base_earns_no_country_boost(
+        catalog) -> None:
+    """The spelling "wage" of the wage statistic is a word it names only as an
+    input, so it is no wage the operation answers for any country."""
+    row = next(row for row in search_catalog(catalog, "wages by country", limit=2000)
+               if row["operation_id"] == "oecd_country_indicator")
+    assert "pattern:any-country->param" not in row["why"], row
+
+
+@pytest.mark.parametrize("query", [
+    "corporate tax rate by country",
+    "Germany top personal income tax rate",
+    "OECD business confidence",
+])
+def test_the_oecd_indicator_keeps_its_own_questions(catalog, query: str) -> None:
+    top = search_catalog(catalog, query, limit=1)[0]
+    assert top["operation_id"] == "oecd_country_indicator", top

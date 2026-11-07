@@ -27,7 +27,7 @@ pre-gateway curated surface and never shipped in this package after v0.4.0.
 Two different counters. Do not equate them.
 
 - Live `GET https://sugra.ai/stats` (2026-11-05): 1,683 endpoints, 200 sources, 36 categories. Public copy: "1,600+" / "200" / 36 domains.
-- Bundled MCP catalog (built_at 2026-11-05T19:22:55Z): 1,638 GET/POST operations from live OpenAPI (spec_sha256 498b1c2b7dbc...).
+- Bundled MCP catalog (built_at 2026-11-06T21:31:37Z): 1,653 GET/POST operations from live OpenAPI (spec_sha256 068437158601...).
 
 ## Fixed facts
 
