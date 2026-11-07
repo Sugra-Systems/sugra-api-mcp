@@ -10,6 +10,8 @@ central-bank routing without explicit failures here.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from sugra_api_mcp.catalog.aliases import (
@@ -5203,34 +5205,99 @@ def test_a_confidence_question_that_names_its_source_ranks_that_source_first(
     assert ids[0].startswith(prefix), (query, ids)
 
 
-def _oecd_indicator_keys(catalog) -> set[str]:
-    """The indicator keys the OECD operation's texts name: the list in its
-    indicator parameter and every snake_case key in its description."""
-    import re
+_INDICATOR_KEY_RE = re.compile(r"[a-z0-9]+(?:_[a-z0-9]+)*")
+_AREA_CODE_RE = re.compile(r"[A-Z]{2,3}[0-9]*")
 
+
+def _indicator_keys(listing_texts: list[str], other_texts: list[str],
+                    parameter_names: set[str]) -> set[str]:
+    """The indicator keys the texts name, in every shape the OECD operation's
+    texts use: each item of every "(e.g. ...)" list of a listing text (its
+    description and its indicator parameter's), and every snake_case word and
+    every word in backticks that is no parameter name, of any text.
+
+    An e.g. item that is neither a lowercase key nor an area code (USA, EA20)
+    fails, so a format drift cannot shrink the set unseen. A one-word key
+    written in plain prose, outside a list and backticks, cannot be told from
+    the prose words the set silences ("gross wage earnings"): the live
+    catalog read named in the test below covers that shape."""
+    keys: set[str] = set()
+    for text in listing_texts:
+        for listed in re.findall(r"\(e\.g\. ([^)]*)\)", text):
+            for item in (item.strip() for item in listed.split(",")):
+                if _AREA_CODE_RE.fullmatch(item):
+                    continue
+                assert _INDICATOR_KEY_RE.fullmatch(item), (
+                    f"e.g. item {item!r} is no indicator key: {listed!r}")
+                keys.add(item)
+    for text in (*listing_texts, *other_texts):
+        keys.update(re.findall(r"\b[a-z0-9]+(?:_[a-z0-9]+)+\b", text))
+        keys.update(word for word in re.findall(r"`([a-z0-9_]+)`", text)
+                    if word not in parameter_names)
+    return keys
+
+
+def _keys_named_by(keys: set[str], silenced: frozenset[str]) -> dict[str, set[str]]:
+    """Each key that a silenced word names, in either number: "wage" names
+    average_wages, "earnings" names earning_growth."""
+    from sugra_api_mcp.catalog.search import _singulars
+
+    forms = frozenset().union(*(_singulars(word) for word in silenced))
+    named = {key: forms & frozenset().union(*(_singulars(part) for part in key.split("_")))
+             for key in keys}
+    return {key: set(words) for key, words in named.items() if words}
+
+
+def _oecd_indicator_keys(catalog) -> set[str]:
     endpoint = catalog.get("oecd_country_indicator")
     parameter = next((p for p in endpoint.parameters if p.name == "indicator"), None)
     assert parameter is not None, [p.name for p in endpoint.parameters]
-    listed = re.search(r"\(e\.g\. ([^)]*)\)", parameter.description)
-    assert listed is not None, parameter.description
-    keys = {key.strip() for key in listed.group(1).split(",")}
-    keys |= set(re.findall(r"\b[a-z]+(?:_[a-z]+)+\b", endpoint.description))
-    return keys
+    values = [parameter.example, *(parameter.schema_.get("enum") or [])]
+    keys = _indicator_keys(
+        [endpoint.description, parameter.description],
+        [endpoint.summary, *(p.description for p in endpoint.parameters)],
+        {p.name for p in endpoint.parameters})
+    return keys | {value for value in values if isinstance(value, str)}
 
 
 def test_no_oecd_indicator_is_named_by_a_word_it_silences(catalog) -> None:
     """The silenced words hold for the whole operation, whichever indicator a
     call asks for, so none may name a series it serves: an earnings or a
     government-debt indicator would lose its own question. No key the catalog
-    names does (the live OECD catalog, read 2026-11-07, holds none either);
-    a resync that adds one fails here, and the set must narrow first."""
+    names does, nor any of the 17 keys of the live OECD catalog (read
+    2026-11-07); a resync that adds one fails here, and the set must narrow
+    first."""
     from sugra_api_mcp.catalog.aliases import OPERATION_INPUT_WORDS
 
     keys = _oecd_indicator_keys(catalog)
-    assert {"gdp_growth", "top_personal_income_tax_rate"} <= keys, keys
-    silenced = OPERATION_INPUT_WORDS["oecd_country_indicator"]
-    named = {key: silenced & set(key.split("_")) for key in keys}
-    assert not any(named.values()), {key: words for key, words in named.items() if words}
+    assert {"gdp_growth", "cpi", "unemployment", "top_personal_income_tax_rate"} <= keys, keys
+    named = _keys_named_by(keys, OPERATION_INPUT_WORDS["oecd_country_indicator"])
+    assert not named, named
+
+
+_SILENCED = frozenset({"earnings", "government", "gross", "national", "wage"})
+
+
+@pytest.mark.parametrize(("description", "indicator", "named"), [
+    # a forbidden key in a later list of the parameter, beside both sentinels
+    ("Fetch a series.", "Key (e.g. gdp_growth, cpi). Also (e.g. government_debt_to_gdp).",
+     {"government_debt_to_gdp"}),
+    # a one-word key in backticks in the operation description
+    ("`earnings` is the average earnings series.", "Key (e.g. gdp_growth).", {"earnings"}),
+    # the other number of a silenced word, in a key and in a list
+    ("average_wages and earning_growth are monthly.", "Key (e.g. gdp_growth).",
+     {"average_wages", "earning_growth"}),
+    ("Fetch a series.", "Key (e.g. gdp_growth, wages).", {"wages"}),
+])
+def test_the_indicator_key_guard_finds_a_key_a_silenced_word_names(
+        description: str, indicator: str, named: set[str]) -> None:
+    keys = _indicator_keys([description, indicator], [], {"country", "indicator"})
+    assert set(_keys_named_by(keys, _SILENCED)) == named, keys
+
+
+def test_the_indicator_key_guard_refuses_a_list_item_it_cannot_read() -> None:
+    with pytest.raises(AssertionError, match="is no indicator key"):
+        _indicator_keys(["Key (e.g. gdp_growth, Average Wages)."], [], set())
 
 
 def test_wages_by_country_ranks_the_ilo_earnings_first(catalog) -> None:
@@ -5267,7 +5334,10 @@ def test_a_ratio_slot_goes_to_the_profile_that_names_the_numerator_not_the_oecd_
     inputs, so its measures name none and it takes the later slot. Read from
     its whole text, it ranked above the profile for six of these and first
     for five."""
-    ids = [r["operation_id"] for r in search_catalog(catalog, query, limit=200)]
+    rows = {r["operation_id"]: r for r in search_catalog(catalog, query, limit=200)}
+    ids = list(rows)
     for op in ("macro_country_profile", "oecd_country_indicator"):
-        assert op in ids, (op, ids[:10])
+        assert op in rows, (op, ids[:10])
+        # both hold a slot of the operations that answer any country
+        assert "pattern:any-country->param" in rows[op]["why"], (op, rows[op]["why"])
     assert ids.index("macro_country_profile") < ids.index("oecd_country_indicator"), ids[:8]
