@@ -310,9 +310,13 @@ async def sugra_entity_screen(
     `{status, matches:[{name, score, list, type, name_score?, secondary_fields?}], disclaimer}`.
     The verdict `status` is one of `clear`, `review`, or `hit`. A match carries
     `name_score` and `secondary_fields` only when the call sends `dob`,
-    `country` or `nationality` and the API returns them. The heavy raw fields
-    (match rationale, source ids, publish dates) are dropped; use the Sugra API
-    directly when the full screening envelope is needed.
+    `country` or `nationality` and the API returns them. `name_score` is the
+    match score from the name alone, before the API re-scores the match with
+    those fields. `secondary_fields` gives, for each of those fields the call sent, how the
+    list record compares: `match`, `near`, `contradict`, `unknown` or
+    `unrecognized`. The heavy raw fields (match rationale, source ids, publish
+    dates) are dropped; use the Sugra API directly when the full screening
+    envelope is needed.
 
     Args:
         name: The person or organization name to screen (required).
