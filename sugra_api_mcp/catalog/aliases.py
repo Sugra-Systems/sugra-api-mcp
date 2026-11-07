@@ -284,6 +284,19 @@ SOURCE_COUNTRY_PREFIXES: dict[str, str] = {
     # maritime_history_) covers United States waters only. Untagged, Portnet
     # ranked first for ship calls at Rotterdam.
     "transport_ports_port_calls": "FI", "transport_vessels_history_": "US",
+    # One country's confidence and tendency surveys, each read from that
+    # country's statistics office or survey (every operation under each
+    # prefix, its catalog included, answers for that country alone).
+    # Untagged, Statistics Poland's consumer confidence ranked first for
+    # "consumer confidence", "Czech consumer confidence" and "Japan consumer
+    # confidence".
+    "gus_": "PL",
+    "statistical_agencies_cbs_": "NL",
+    "statistical_agencies_czso_": "CZ",
+    "statistical_agencies_dst_": "DK",
+    "statistical_agencies_nier_": "SE",
+    "macro_consumer_sentiment_switzerland": "CH",
+    "macro_manufacturing_survey_us_south_atlantic": "US",
 }
 # The dead-prefix test (tests/test_search_relevance.py) guards this map: every
 # entry must match at least one bundled operation, so a source rename or
@@ -396,7 +409,9 @@ def country_statistic_words(query: str) -> frozenset[str]:
 # ranked the US Census source first. So is a house price, which the BIS
 # serves for 61 countries: "house prices" ranked Statistics Finland's first.
 # A wage is a salary too: the ILO serves the average wage of any country,
-# and "average salary" ranked Statistics Sweden's first.
+# and "average salary" ranked Statistics Sweden's first. So is consumer
+# confidence, which the OECD indicator serves for any area as each area's
+# national survey: "consumer confidence" ranked Statistics Poland's first.
 COUNTRY_STATISTIC_SPELLINGS: dict[str, tuple[str, ...]] = {
     "cpi": ("consumer price",),
     "gdp": ("gross domestic product",),
@@ -406,6 +421,7 @@ COUNTRY_STATISTIC_SPELLINGS: dict[str, tuple[str, ...]] = {
     "trade balance": ("trade balance",),
     "house price": ("house price", "housing price", "residential property price"),
     "wage": ("wage", "salary"),
+    "consumer confidence": ("consumer confidence",),
 }
 
 

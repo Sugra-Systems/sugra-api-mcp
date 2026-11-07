@@ -3981,7 +3981,8 @@ def test_an_operation_that_names_the_numerator_answers_the_ratio(
     ("yen consumer prices", {"JP"}, {"yen"}),
     ("dollar gross domestic product", {"US"}, {"dollar"}),
     ("pound jobless rate", {"GB"}, {"pound"}),
-    ("yen consumer confidence", set(), set()),
+    ("yen consumer confidence", {"JP"}, {"yen"}),
+    ("yen consumer spending", set(), set()),
     # A unit, a market, a weight or a word of several currencies: no place.
     ("GDP in dollars", set(), set()),
     ("coffee price in dollars and inflation", set(), set()),
@@ -4360,8 +4361,9 @@ def test_several_listings_one_described_ask_for_their_prices(catalog) -> None:
     ("10Y yield", {"bond yield": {"10y", "yield"}}),
     ("10-year yield", {"bond yield": {"10", "year", "yield"}}),
     ("trade balances", {"trade balance": {"trade", "balances"}}),
+    ("consumer confidence", {"consumer confidence": {"consumer", "confidence"}}),
     # Other statistics, part of a spelling, another word: none.
-    ("consumer confidence", {}),
+    ("consumer spending", {}),
     ("producer prices", {}),
     ("domestic product", {}),
     ("joblessness", {}),
@@ -4463,7 +4465,7 @@ def test_a_named_country_keeps_its_own_source_first_in_other_words(catalog, quer
 
 
 @pytest.mark.parametrize("query", [
-    "consumer confidence", "consumer spending", "consumer credit", "producer prices",
+    "consumer spending", "consumer credit", "consumer sentiment", "producer prices",
     "house price index", "domestic product", "national accounts",
 ])
 def test_the_other_words_of_a_spelling_ask_for_no_country(catalog, query: str) -> None:
@@ -5095,3 +5097,104 @@ def test_a_wage_the_oecd_indicator_names_only_as_a_tax_base_earns_no_country_boo
 def test_the_oecd_indicator_keeps_its_own_questions(catalog, query: str) -> None:
     top = search_catalog(catalog, query, limit=1)[0]
     assert top["operation_id"] == "oecd_country_indicator", top
+
+
+# One country's confidence and tendency surveys, bundled by the 2026-11-06
+# resync: each answers for its own country alone, every operation of it
+# served under one API path.
+_CONFIDENCE_SOURCES = (
+    ("gus_", "PL", "/api/v1/gus/"),
+    ("statistical_agencies_cbs_", "NL", "/api/v1/statistical-agencies/cbs-confidence/"),
+    ("statistical_agencies_czso_", "CZ", "/api/v1/statistical-agencies/czso/"),
+    ("statistical_agencies_dst_", "DK", "/api/v1/statistical-agencies/dst-confidence/"),
+    ("statistical_agencies_nier_", "SE",
+     "/api/v1/statistical-agencies/nier-economic-tendency/"),
+    ("macro_consumer_sentiment_switzerland", "CH", "/api/v1/macro/consumer-sentiment/switzerland"),
+    ("macro_manufacturing_survey_us_south_atlantic", "US",
+     "/api/v1/macro/manufacturing-survey/us-south-atlantic"),
+)
+
+
+@pytest.mark.parametrize("prefix,country,path", _CONFIDENCE_SOURCES)
+def test_a_single_country_confidence_survey_carries_its_country(
+        catalog, prefix: str, country: str, path: str) -> None:
+    """The prefix tags every operation it catches with one country, so it
+    may catch only that source's: an operation of another source whose id
+    began with the same stem would be read as that country's alone."""
+    from sugra_api_mcp.catalog.aliases import SOURCE_COUNTRY_PREFIXES
+
+    assert SOURCE_COUNTRY_PREFIXES.get(prefix) == country, prefix
+    caught = {e.operation_id: e.path for e in catalog.endpoints
+              if e.operation_id.startswith(prefix)}
+    assert caught, f"{prefix} catches no operation"
+    stray = {op: p for op, p in caught.items() if not p.startswith(path)}
+    assert not stray, (prefix, stray)
+
+
+def _national_sources(rows: list[dict]) -> dict[str, str]:
+    """The national sources among the rows, each with its country."""
+    from sugra_api_mcp.catalog.aliases import SOURCE_COUNTRY_PREFIXES
+
+    return {
+        row["operation_id"]: country
+        for row in rows
+        for prefix, country in SOURCE_COUNTRY_PREFIXES.items()
+        if row["operation_id"].startswith(prefix)
+    }
+
+
+@pytest.mark.parametrize("query", [
+    "consumer confidence", "consumer confidence index", "latest consumer confidence",
+])
+def test_consumer_confidence_with_no_country_ranks_the_any_country_indicator_first(
+        catalog, query: str) -> None:
+    """The OECD indicator serves consumer confidence for any area; Statistics
+    Poland's survey ranked first for "consumer confidence"."""
+    top = search_catalog(catalog, query, limit=1)[0]
+    assert top["operation_id"] == "oecd_country_indicator", (query, top)
+
+
+@pytest.mark.parametrize("query,own", [
+    ("consumer confidence Poland", "gus_consumer_confidence"),
+    ("Netherlands consumer confidence", "statistical_agencies_cbs_confidence_series"),
+    ("Denmark consumer confidence", "statistical_agencies_dst_confidence_series"),
+    ("Czech consumer confidence", "statistical_agencies_czso_confidence_index"),
+    ("Japan consumer confidence", None),
+    ("consumer confidence Germany", None),
+])
+def test_consumer_confidence_of_a_named_country_finds_no_other_countrys_survey(
+        catalog, query: str, own: str | None) -> None:
+    """A named country keeps its own survey among the first answers, and no
+    other country's survey ranks there: "Czech consumer confidence" and
+    "Japan consumer confidence" ranked Statistics Poland's first."""
+    from sugra_api_mcp.catalog.aliases import detect_query_countries
+
+    rows = search_catalog(catalog, query, limit=5)
+    ids = [row["operation_id"] for row in rows]
+    named = detect_query_countries(query)
+    foreign = {op: c for op, c in _national_sources(rows).items() if c not in named}
+    assert not foreign, (query, foreign, ids)
+    if own is None:
+        assert ids[0] == "oecd_country_indicator", (query, ids)
+    else:
+        assert own in ids, (query, ids)
+
+
+@pytest.mark.parametrize("query,prefix", [
+    ("Statistics Poland consumer confidence", "gus_"),
+    ("GUS consumer confidence", "gus_"),
+    ("CBS consumer confidence", "statistical_agencies_cbs_"),
+    ("Statistics Netherlands consumer confidence", "statistical_agencies_cbs_"),
+    ("Statistics Denmark consumer confidence", "statistical_agencies_dst_"),
+    ("DST consumer confidence", "statistical_agencies_dst_"),
+    ("Czech Statistical Office consumer confidence", "statistical_agencies_czso_"),
+    ("NIER economic tendency", "statistical_agencies_nier_"),
+    ("Swiss consumer sentiment", "macro_consumer_sentiment_switzerland"),
+])
+def test_a_confidence_question_that_names_its_source_ranks_that_source_first(
+        catalog, query: str, prefix: str) -> None:
+    """Reading consumer confidence as a statistic every country reports lifts
+    the OECD indicator for a question that names no country; a question that
+    names the survey's own source still finds that source first."""
+    ids = [row["operation_id"] for row in search_catalog(catalog, query, limit=5)]
+    assert ids[0].startswith(prefix), (query, ids)
