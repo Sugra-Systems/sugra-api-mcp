@@ -235,7 +235,9 @@ SOURCE_COUNTRY_PREFIXES: dict[str, str] = {
     "norges_bank_": "NO",
     "stat_finland_": "FI",
     "statistical_agencies_statbank_dk_": "DK",
-    "destatis_": "DE",
+    # The Bundesbank answers for Germany alone: its 10-year Bund yield ranked
+    # first for "10-year yield" and "France 10 year yield".
+    "destatis_": "DE", "bundesbank_": "DE",
     "statistical_agencies_ibge_": "BR", "bcb_": "BR",
     "central_banks_bcra_": "AR",
     "central_banks_bcrp_": "PE",
@@ -282,6 +284,19 @@ SOURCE_COUNTRY_PREFIXES: dict[str, str] = {
     # maritime_history_) covers United States waters only. Untagged, Portnet
     # ranked first for ship calls at Rotterdam.
     "transport_ports_port_calls": "FI", "transport_vessels_history_": "US",
+    # One country's confidence and tendency surveys, each read from that
+    # country's statistics office or survey (every operation under each
+    # prefix, its catalog included, answers for that country alone).
+    # Untagged, Statistics Poland's consumer confidence ranked first for
+    # "consumer confidence", "Czech consumer confidence" and "Japan consumer
+    # confidence".
+    "gus_": "PL",
+    "statistical_agencies_cbs_": "NL",
+    "statistical_agencies_czso_": "CZ",
+    "statistical_agencies_dst_": "DK",
+    "statistical_agencies_nier_": "SE",
+    "macro_consumer_sentiment_switzerland": "CH",
+    "macro_manufacturing_survey_us_south_atlantic": "US",
 }
 # The dead-prefix test (tests/test_search_relevance.py) guards this map: every
 # entry must match at least one bundled operation, so a source rename or
@@ -394,7 +409,9 @@ def country_statistic_words(query: str) -> frozenset[str]:
 # ranked the US Census source first. So is a house price, which the BIS
 # serves for 61 countries: "house prices" ranked Statistics Finland's first.
 # A wage is a salary too: the ILO serves the average wage of any country,
-# and "average salary" ranked Statistics Sweden's first.
+# and "average salary" ranked Statistics Sweden's first. So is consumer
+# confidence, which the OECD indicator serves for any area as each area's
+# national survey: "consumer confidence" ranked Statistics Poland's first.
 COUNTRY_STATISTIC_SPELLINGS: dict[str, tuple[str, ...]] = {
     "cpi": ("consumer price",),
     "gdp": ("gross domestic product",),
@@ -404,6 +421,7 @@ COUNTRY_STATISTIC_SPELLINGS: dict[str, tuple[str, ...]] = {
     "trade balance": ("trade balance",),
     "house price": ("house price", "housing price", "residential property price"),
     "wage": ("wage", "salary"),
+    "consumer confidence": ("consumer confidence",),
 }
 
 
@@ -1969,10 +1987,27 @@ COMPOUND_NAMED_OPERATIONS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = 
 # computed from growth, income and inflation, and "Dutch inflation" found it
 # above every Dutch inflation series. The external-pressure heuristic is
 # computed from the current account outlook, and "Germany current account"
-# found it above the country profile, which holds the current account.
+# found it above the country profile, which holds the current account. The
+# OECD indicator operation names the base and the setter of its tax rates
+# ("in percent of gross wage earnings", "the central government rate") and the
+# method of its surveys ("national methodology"), none of them a series it
+# holds: "government debt to GDP", "national debt to GDP" and "ratio to GDP"
+# found it above the country profile and the credit-to-GDP gap, and "wages by
+# country" above the ILO wage series.
+#
+# The mapping is read twice: search scores none of these words as a query
+# term the operation names (``_score`` in search.py), and a ratio question
+# whose numerator is one of them does not count the operation as naming what
+# the ratio measures (``_EndpointProfile.measures``, read by the ratio slot
+# ordering).
+# Every word here is silenced for the whole operation, whichever indicator a
+# call asks for: a word joins only when no series the operation serves is
+# named by it (tests pin the OECD indicator keys against this set).
 OPERATION_INPUT_WORDS: dict[str, frozenset[str]] = {
     "imf_signals_telecom_demand_country": frozenset({"growth", "income", "inflation"}),
     "imf_signals_external_pressure_country": frozenset({"current", "account"}),
+    "oecd_country_indicator": frozenset({
+        "earnings", "government", "gross", "national", "wage"}),
 }
 
 

@@ -15,6 +15,9 @@ Sources:
   recolored or re-drawn versions: keep it blue.
 - other: the Lucide plug icon (ISC), Sugra's own icon set.
 
+The MIT and ISC texts with their copyright lines, which both licenses ask to
+go with copies, are in THIRD_PARTY_NOTICES.txt beside this module.
+
 The marks belong to their owners; the page uses them only to name the program
 a tab is for, never as an endorsement or a partnership.
 """
