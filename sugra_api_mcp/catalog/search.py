@@ -530,7 +530,9 @@ class _EndpointProfile:
         # The words that can name what the operation measures: its text less
         # the words it names only as an input (OPERATION_INPUT_WORDS). The
         # OECD indicator's "national methodology" names no national debt.
-        self.measures = self.text - OPERATION_INPUT_WORDS.get(endpoint.operation_id, frozenset())
+        # Most operations name no input, and their text is shared, not copied.
+        inputs = OPERATION_INPUT_WORDS.get(endpoint.operation_id)
+        self.measures = self.text - inputs if inputs else self.text
 
 
 # Keyed by object identity and holding the endpoint itself, so an id is never

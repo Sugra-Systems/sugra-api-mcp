@@ -3400,8 +3400,9 @@ def test_a_bond_yield_of_no_country_ranks_the_country_profile_first(catalog, que
     results = search_catalog(catalog, query, limit=200)
     assert results[0]["operation_id"] == "macro_country_profile", [r["operation_id"] for r in results[:5]]
     assert "pattern:any-country->param" in results[0]["why"], results[0]["why"]
-    ranks = {r["operation_id"]: i for i, r in enumerate(results)}
-    assert "clamped-below:any-country-answers" in results[ranks["rba_bond_yields"]]["why"]
+    rba = next((r for r in results if r["operation_id"] == "rba_bond_yields"), None)
+    assert rba is not None, [r["operation_id"] for r in results[:10]]
+    assert "clamped-below:any-country-answers" in rba["why"], rba["why"]
 
 
 @pytest.mark.parametrize("query", ["10-year yield", "10 year yield", "10y yield"])
@@ -3412,8 +3413,9 @@ def test_a_10_year_yield_of_no_country_ranks_the_country_profile_first(catalog, 
     results = search_catalog(catalog, query, limit=5)
     assert results[0]["operation_id"] == "macro_country_profile", [r["operation_id"] for r in results]
     assert "pattern:any-country->param" in results[0]["why"], results[0]["why"]
-    ranks = {r["operation_id"]: i for i, r in enumerate(results)}
-    assert "clamped-below:any-country-answers" in results[ranks["bundesbank_bund_10y"]]["why"]
+    bund = next((r for r in results if r["operation_id"] == "bundesbank_bund_10y"), None)
+    assert bund is not None, [r["operation_id"] for r in results]
+    assert "clamped-below:any-country-answers" in bund["why"], bund["why"]
 
 
 def test_a_bond_yield_of_no_country_clamps_the_euro_area_curve(catalog) -> None:
@@ -5084,8 +5086,9 @@ def test_a_wage_the_oecd_indicator_names_only_as_a_tax_base_earns_no_country_boo
         catalog) -> None:
     """The spelling "wage" of the wage statistic is a word it names only as an
     input, so it is no wage the operation answers for any country."""
-    row = next(row for row in search_catalog(catalog, "wages by country", limit=2000)
-               if row["operation_id"] == "oecd_country_indicator")
+    row = next((row for row in search_catalog(catalog, "wages by country", limit=2000)
+                if row["operation_id"] == "oecd_country_indicator"), None)
+    assert row is not None, "the OECD indicator is among no results for 'wages by country'"
     assert "pattern:any-country->param" not in row["why"], row
 
 
@@ -5198,3 +5201,73 @@ def test_a_confidence_question_that_names_its_source_ranks_that_source_first(
     names the survey's own source still finds that source first."""
     ids = [row["operation_id"] for row in search_catalog(catalog, query, limit=5)]
     assert ids[0].startswith(prefix), (query, ids)
+
+
+def _oecd_indicator_keys(catalog) -> set[str]:
+    """The indicator keys the OECD operation's texts name: the list in its
+    indicator parameter and every snake_case key in its description."""
+    import re
+
+    endpoint = catalog.get("oecd_country_indicator")
+    parameter = next((p for p in endpoint.parameters if p.name == "indicator"), None)
+    assert parameter is not None, [p.name for p in endpoint.parameters]
+    listed = re.search(r"\(e\.g\. ([^)]*)\)", parameter.description)
+    assert listed is not None, parameter.description
+    keys = {key.strip() for key in listed.group(1).split(",")}
+    keys |= set(re.findall(r"\b[a-z]+(?:_[a-z]+)+\b", endpoint.description))
+    return keys
+
+
+def test_no_oecd_indicator_is_named_by_a_word_it_silences(catalog) -> None:
+    """The silenced words hold for the whole operation, whichever indicator a
+    call asks for, so none may name a series it serves: an earnings or a
+    government-debt indicator would lose its own question. No key the catalog
+    names does (the live OECD catalog, read 2026-11-07, holds none either);
+    a resync that adds one fails here, and the set must narrow first."""
+    from sugra_api_mcp.catalog.aliases import OPERATION_INPUT_WORDS
+
+    keys = _oecd_indicator_keys(catalog)
+    assert {"gdp_growth", "top_personal_income_tax_rate"} <= keys, keys
+    silenced = OPERATION_INPUT_WORDS["oecd_country_indicator"]
+    named = {key: silenced & set(key.split("_")) for key in keys}
+    assert not any(named.values()), {key: words for key, words in named.items() if words}
+
+
+def test_wages_by_country_ranks_the_ilo_earnings_first(catalog) -> None:
+    """The ILO earnings answer any country's wages; the OECD indicator ranked
+    first while it scored "wage", a word it names only as a tax base."""
+    top = search_catalog(catalog, "wages by country", limit=1)[0]
+    assert top["operation_id"] == "ilostat_earnings", top
+
+
+@pytest.mark.parametrize("query", [
+    "wages by country", "average earnings by country", "average wage earnings by country",
+])
+def test_an_earnings_question_ranks_the_ilo_earnings_above_the_oecd_indicator(
+        catalog, query: str) -> None:
+    ids = [r["operation_id"] for r in search_catalog(catalog, query, limit=2000)]
+    assert "ilostat_earnings" in ids, ids[:10]
+    oecd = ids.index("oecd_country_indicator") if "oecd_country_indicator" in ids else len(ids)
+    assert ids.index("ilostat_earnings") < oecd, ids[:15]
+
+
+@pytest.mark.parametrize("query", [
+    "government debt to GDP",
+    "national debt to GDP",
+    "government debt as a percent of GDP",
+    "national debt as a percent of GDP",
+    "government deficit to GDP",
+    "government spending to GDP",
+    "government revenue to GDP",
+])
+def test_a_ratio_slot_goes_to_the_profile_that_names_the_numerator_not_the_oecd_indicator(
+        catalog, query: str) -> None:
+    """Both answer any country's ratio to GDP. The country profile names the
+    numerator; the OECD indicator names "government" and "national" only as
+    inputs, so its measures name none and it takes the later slot. Read from
+    its whole text, it ranked above the profile for six of these and first
+    for five."""
+    ids = [r["operation_id"] for r in search_catalog(catalog, query, limit=200)]
+    for op in ("macro_country_profile", "oecd_country_indicator"):
+        assert op in ids, (op, ids[:10])
+    assert ids.index("macro_country_profile") < ids.index("oecd_country_indicator"), ids[:8]
