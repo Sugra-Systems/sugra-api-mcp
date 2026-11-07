@@ -5207,30 +5207,42 @@ def test_a_confidence_question_that_names_its_source_ranks_that_source_first(
 
 _INDICATOR_KEY_RE = re.compile(r"[a-z0-9]+(?:_[a-z0-9]+)*")
 _AREA_CODE_RE = re.compile(r"[A-Z]{2,3}[0-9]*")
+_EG_MARKER_RE = re.compile(r"e\.g\.", re.IGNORECASE)
+_EG_LIST_RE = re.compile(r"\(e\.g\.,?\s+([^)]*)\)", re.IGNORECASE)
 
 
-def _indicator_keys(listing_texts: list[str], other_texts: list[str],
-                    parameter_names: set[str]) -> set[str]:
-    """The indicator keys the texts name, in every shape the OECD operation's
-    texts use: each item of every "(e.g. ...)" list of a listing text (its
-    description and its indicator parameter's), and every snake_case word and
-    every word in backticks that is no parameter name, of any text.
-
-    An e.g. item that is neither a lowercase key nor an area code (USA, EA20)
-    fails, so a format drift cannot shrink the set unseen. A one-word key
-    written in plain prose, outside a list and backticks, cannot be told from
-    the prose words the set silences ("gross wage earnings"): the live
-    catalog read named in the test below covers that shape."""
+def _listed_keys(items: list[object], where: str) -> set[str]:
+    """The keys among listed values: an area code (USA, EA20) is skipped, and a
+    value that is neither that nor a lowercase key fails, so a format drift
+    cannot shrink the set unseen."""
     keys: set[str] = set()
-    for text in listing_texts:
-        for listed in re.findall(r"\(e\.g\. ([^)]*)\)", text):
-            for item in (item.strip() for item in listed.split(",")):
-                if _AREA_CODE_RE.fullmatch(item):
-                    continue
-                assert _INDICATOR_KEY_RE.fullmatch(item), (
-                    f"e.g. item {item!r} is no indicator key: {listed!r}")
-                keys.add(item)
-    for text in (*listing_texts, *other_texts):
+    for item in items:
+        assert isinstance(item, str), f"{where}: {item!r} is no indicator key"
+        item = item.strip()
+        if _AREA_CODE_RE.fullmatch(item):
+            continue
+        assert _INDICATOR_KEY_RE.fullmatch(item), f"{where}: {item!r} is no indicator key"
+        keys.add(item)
+    return keys
+
+
+def _indicator_keys(texts: list[str], parameter_names: set[str]) -> set[str]:
+    """The indicator keys the texts name, in every shape the OECD operation's
+    texts use: each item of every "(e.g. ...)" list, and every snake_case word
+    and every word in backticks that is no parameter name.
+
+    Every "e.g." of a text must open a parenthesised list this reads, and every
+    item of it must be a lowercase key or an area code; anything else fails, so
+    no format drift shrinks the set unseen. A one-word key written in plain
+    prose, outside a list and backticks, cannot be told from the prose words
+    the set silences ("gross wage earnings")."""
+    keys: set[str] = set()
+    for text in texts:
+        lists = _EG_LIST_RE.findall(text)
+        assert len(lists) == len(_EG_MARKER_RE.findall(text)), (
+            f"an e.g. opens no list this reads: {text!r}")
+        for listed in lists:
+            keys |= _listed_keys(listed.split(","), f"e.g. list {listed!r}")
         keys.update(re.findall(r"\b[a-z0-9]+(?:_[a-z0-9]+)+\b", text))
         keys.update(word for word in re.findall(r"`([a-z0-9_]+)`", text)
                     if word not in parameter_names)
@@ -5252,21 +5264,21 @@ def _oecd_indicator_keys(catalog) -> set[str]:
     endpoint = catalog.get("oecd_country_indicator")
     parameter = next((p for p in endpoint.parameters if p.name == "indicator"), None)
     assert parameter is not None, [p.name for p in endpoint.parameters]
-    values = [parameter.example, *(parameter.schema_.get("enum") or [])]
-    keys = _indicator_keys(
-        [endpoint.description, parameter.description],
-        [endpoint.summary, *(p.description for p in endpoint.parameters)],
-        {p.name for p in endpoint.parameters})
-    return keys | {value for value in values if isinstance(value, str)}
+    texts = [endpoint.description, endpoint.summary,
+             *(p.description for p in endpoint.parameters)]
+    values = [*([] if parameter.example is None else [parameter.example]),
+              *(parameter.schema_.get("enum") or [])]
+    return (_indicator_keys([text for text in texts if text], {p.name for p in endpoint.parameters})
+            | _listed_keys(values, "indicator example or enum"))
 
 
 def test_no_oecd_indicator_is_named_by_a_word_it_silences(catalog) -> None:
     """The silenced words hold for the whole operation, whichever indicator a
     call asks for, so none may name a series it serves: an earnings or a
     government-debt indicator would lose its own question. No key the catalog
-    names does, nor any of the 17 keys of the live OECD catalog (read
-    2026-11-07); a resync that adds one fails here, and the set must narrow
-    first."""
+    names does; a resync that names one fails here, and the set must narrow
+    first. (Nor did any of the 17 keys the live OECD catalog served on
+    2026-11-07, read outside this test.)"""
     from sugra_api_mcp.catalog.aliases import OPERATION_INPUT_WORDS
 
     keys = _oecd_indicator_keys(catalog)
@@ -5288,16 +5300,32 @@ _SILENCED = frozenset({"earnings", "government", "gross", "national", "wage"})
     ("average_wages and earning_growth are monthly.", "Key (e.g. gdp_growth).",
      {"average_wages", "earning_growth"}),
     ("Fetch a series.", "Key (e.g. gdp_growth, wages).", {"wages"}),
+    # another opener spelling: a newline, a comma, a capital
+    ("Fetch a series.", "Key (e.g.\nearnings, gdp_growth, cpi).", {"earnings"}),
+    ("Fetch a series (E.g., wages).", "Key (e.g. gdp_growth).", {"wages"}),
 ])
 def test_the_indicator_key_guard_finds_a_key_a_silenced_word_names(
         description: str, indicator: str, named: set[str]) -> None:
-    keys = _indicator_keys([description, indicator], [], {"country", "indicator"})
+    keys = _indicator_keys([description, indicator], {"country", "indicator"})
     assert set(_keys_named_by(keys, _SILENCED)) == named, keys
 
 
-def test_the_indicator_key_guard_refuses_a_list_item_it_cannot_read() -> None:
+@pytest.mark.parametrize(("texts", "message"), [
+    (["Key (e.g. gdp_growth, Average Wages)."], "is no indicator key"),
+    (["Key, e.g. wages, or gdp_growth."], "opens no list"),
+    (["Key (e.g. gdp_growth) or e.g. wages."], "opens no list"),
+])
+def test_the_indicator_key_guard_refuses_a_list_it_cannot_read(
+        texts: list[str], message: str) -> None:
+    with pytest.raises(AssertionError, match=message):
+        _indicator_keys(texts, set())
+
+
+@pytest.mark.parametrize("values", [["Average wages"], ["gdp_growth", 7]])
+def test_the_indicator_key_guard_refuses_an_example_or_enum_value_it_cannot_read(
+        values: list[object]) -> None:
     with pytest.raises(AssertionError, match="is no indicator key"):
-        _indicator_keys(["Key (e.g. gdp_growth, Average Wages)."], [], set())
+        _listed_keys(values, "indicator example or enum")
 
 
 def test_wages_by_country_ranks_the_ilo_earnings_first(catalog) -> None:
