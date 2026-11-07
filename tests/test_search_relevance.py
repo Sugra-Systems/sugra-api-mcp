@@ -10,6 +10,8 @@ central-bank routing without explicit failures here.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from sugra_api_mcp.catalog.aliases import (
@@ -3400,8 +3402,9 @@ def test_a_bond_yield_of_no_country_ranks_the_country_profile_first(catalog, que
     results = search_catalog(catalog, query, limit=200)
     assert results[0]["operation_id"] == "macro_country_profile", [r["operation_id"] for r in results[:5]]
     assert "pattern:any-country->param" in results[0]["why"], results[0]["why"]
-    ranks = {r["operation_id"]: i for i, r in enumerate(results)}
-    assert "clamped-below:any-country-answers" in results[ranks["rba_bond_yields"]]["why"]
+    rba = next((r for r in results if r["operation_id"] == "rba_bond_yields"), None)
+    assert rba is not None, [r["operation_id"] for r in results[:10]]
+    assert "clamped-below:any-country-answers" in rba["why"], rba["why"]
 
 
 @pytest.mark.parametrize("query", ["10-year yield", "10 year yield", "10y yield"])
@@ -3412,8 +3415,9 @@ def test_a_10_year_yield_of_no_country_ranks_the_country_profile_first(catalog, 
     results = search_catalog(catalog, query, limit=5)
     assert results[0]["operation_id"] == "macro_country_profile", [r["operation_id"] for r in results]
     assert "pattern:any-country->param" in results[0]["why"], results[0]["why"]
-    ranks = {r["operation_id"]: i for i, r in enumerate(results)}
-    assert "clamped-below:any-country-answers" in results[ranks["bundesbank_bund_10y"]]["why"]
+    bund = next((r for r in results if r["operation_id"] == "bundesbank_bund_10y"), None)
+    assert bund is not None, [r["operation_id"] for r in results]
+    assert "clamped-below:any-country-answers" in bund["why"], bund["why"]
 
 
 def test_a_bond_yield_of_no_country_clamps_the_euro_area_curve(catalog) -> None:
@@ -5084,8 +5088,9 @@ def test_a_wage_the_oecd_indicator_names_only_as_a_tax_base_earns_no_country_boo
         catalog) -> None:
     """The spelling "wage" of the wage statistic is a word it names only as an
     input, so it is no wage the operation answers for any country."""
-    row = next(row for row in search_catalog(catalog, "wages by country", limit=2000)
-               if row["operation_id"] == "oecd_country_indicator")
+    row = next((row for row in search_catalog(catalog, "wages by country", limit=2000)
+                if row["operation_id"] == "oecd_country_indicator"), None)
+    assert row is not None, "the OECD indicator is among no results for 'wages by country'"
     assert "pattern:any-country->param" not in row["why"], row
 
 
@@ -5198,3 +5203,169 @@ def test_a_confidence_question_that_names_its_source_ranks_that_source_first(
     names the survey's own source still finds that source first."""
     ids = [row["operation_id"] for row in search_catalog(catalog, query, limit=5)]
     assert ids[0].startswith(prefix), (query, ids)
+
+
+_INDICATOR_KEY_RE = re.compile(r"[a-z0-9]+(?:_[a-z0-9]+)*")
+_AREA_CODE_RE = re.compile(r"[A-Z]{2,3}[0-9]*")
+_EG_MARKER_RE = re.compile(r"e\.g\.", re.IGNORECASE)
+_EG_LIST_RE = re.compile(r"\(e\.g\.,?\s+([^)]*)\)", re.IGNORECASE)
+
+
+def _listed_keys(items: list[object], where: str) -> set[str]:
+    """The keys among listed values: an area code (USA, EA20) is skipped, and a
+    value that is neither that nor a lowercase key fails, so a format drift
+    cannot shrink the set unseen."""
+    keys: set[str] = set()
+    for item in items:
+        assert isinstance(item, str), f"{where}: {item!r} is no indicator key"
+        item = item.strip()
+        if _AREA_CODE_RE.fullmatch(item):
+            continue
+        assert _INDICATOR_KEY_RE.fullmatch(item), f"{where}: {item!r} is no indicator key"
+        keys.add(item)
+    return keys
+
+
+def _indicator_keys(texts: list[str], parameter_names: set[str]) -> set[str]:
+    """The indicator keys the texts name, in every shape the OECD operation's
+    texts use: each item of every "(e.g. ...)" list, and every snake_case word
+    and every word in backticks that is no parameter name.
+
+    Every "e.g." of a text must open a parenthesised list this reads, and every
+    item of it must be a lowercase key or an area code; anything else fails, so
+    no format drift shrinks the set unseen. A one-word key written in plain
+    prose, outside a list and backticks, cannot be told from the prose words
+    the set silences ("gross wage earnings")."""
+    keys: set[str] = set()
+    for text in texts:
+        lists = _EG_LIST_RE.findall(text)
+        assert len(lists) == len(_EG_MARKER_RE.findall(text)), (
+            f"an e.g. opens no list this reads: {text!r}")
+        for listed in lists:
+            keys |= _listed_keys(listed.split(","), f"e.g. list {listed!r}")
+        keys.update(re.findall(r"\b[a-z0-9]+(?:_[a-z0-9]+)+\b", text))
+        keys.update(word for word in re.findall(r"`([a-z0-9_]+)`", text)
+                    if word not in parameter_names)
+    return keys
+
+
+def _keys_named_by(keys: set[str], silenced: frozenset[str]) -> dict[str, set[str]]:
+    """Each key that a silenced word names, in either number: "wage" names
+    average_wages, "earnings" names earning_growth."""
+    from sugra_api_mcp.catalog.search import _singulars
+
+    forms = frozenset().union(*(_singulars(word) for word in silenced))
+    named = {key: forms & frozenset().union(*(_singulars(part) for part in key.split("_")))
+             for key in keys}
+    return {key: set(words) for key, words in named.items() if words}
+
+
+def _oecd_indicator_keys(catalog) -> set[str]:
+    endpoint = catalog.get("oecd_country_indicator")
+    parameter = next((p for p in endpoint.parameters if p.name == "indicator"), None)
+    assert parameter is not None, [p.name for p in endpoint.parameters]
+    texts = [endpoint.description, endpoint.summary,
+             *(p.description for p in endpoint.parameters)]
+    values = [*([] if parameter.example is None else [parameter.example]),
+              *(parameter.schema_.get("enum") or [])]
+    return (_indicator_keys([text for text in texts if text], {p.name for p in endpoint.parameters})
+            | _listed_keys(values, "indicator example or enum"))
+
+
+def test_no_oecd_indicator_is_named_by_a_word_it_silences(catalog) -> None:
+    """The silenced words hold for the whole operation, whichever indicator a
+    call asks for, so none may name a series it serves: an earnings or a
+    government-debt indicator would lose its own question. No key the catalog
+    names does; a resync that names one fails here, and the set must narrow
+    first. (Nor did any of the 17 keys the live OECD catalog served on
+    2026-11-07, read outside this test.)"""
+    from sugra_api_mcp.catalog.aliases import OPERATION_INPUT_WORDS
+
+    keys = _oecd_indicator_keys(catalog)
+    assert {"gdp_growth", "cpi", "unemployment", "top_personal_income_tax_rate"} <= keys, keys
+    named = _keys_named_by(keys, OPERATION_INPUT_WORDS["oecd_country_indicator"])
+    assert not named, named
+
+
+_SILENCED = frozenset({"earnings", "government", "gross", "national", "wage"})
+
+
+@pytest.mark.parametrize(("description", "indicator", "named"), [
+    # a forbidden key in a later list of the parameter, beside both sentinels
+    ("Fetch a series.", "Key (e.g. gdp_growth, cpi). Also (e.g. government_debt_to_gdp).",
+     {"government_debt_to_gdp"}),
+    # a one-word key in backticks in the operation description
+    ("`earnings` is the average earnings series.", "Key (e.g. gdp_growth).", {"earnings"}),
+    # the other number of a silenced word, in a key and in a list
+    ("average_wages and earning_growth are monthly.", "Key (e.g. gdp_growth).",
+     {"average_wages", "earning_growth"}),
+    ("Fetch a series.", "Key (e.g. gdp_growth, wages).", {"wages"}),
+    # another opener spelling: a newline, a comma, a capital
+    ("Fetch a series.", "Key (e.g.\nearnings, gdp_growth, cpi).", {"earnings"}),
+    ("Fetch a series (E.g., wages).", "Key (e.g. gdp_growth).", {"wages"}),
+])
+def test_the_indicator_key_guard_finds_a_key_a_silenced_word_names(
+        description: str, indicator: str, named: set[str]) -> None:
+    keys = _indicator_keys([description, indicator], {"country", "indicator"})
+    assert set(_keys_named_by(keys, _SILENCED)) == named, keys
+
+
+@pytest.mark.parametrize(("texts", "message"), [
+    (["Key (e.g. gdp_growth, Average Wages)."], "is no indicator key"),
+    (["Key, e.g. wages, or gdp_growth."], "opens no list"),
+    (["Key (e.g. gdp_growth) or e.g. wages."], "opens no list"),
+])
+def test_the_indicator_key_guard_refuses_a_list_it_cannot_read(
+        texts: list[str], message: str) -> None:
+    with pytest.raises(AssertionError, match=message):
+        _indicator_keys(texts, set())
+
+
+@pytest.mark.parametrize("values", [["Average wages"], ["gdp_growth", 7]])
+def test_the_indicator_key_guard_refuses_an_example_or_enum_value_it_cannot_read(
+        values: list[object]) -> None:
+    with pytest.raises(AssertionError, match="is no indicator key"):
+        _listed_keys(values, "indicator example or enum")
+
+
+def test_wages_by_country_ranks_the_ilo_earnings_first(catalog) -> None:
+    """The ILO earnings answer any country's wages; the OECD indicator ranked
+    first while it scored "wage", a word it names only as a tax base."""
+    top = search_catalog(catalog, "wages by country", limit=1)[0]
+    assert top["operation_id"] == "ilostat_earnings", top
+
+
+@pytest.mark.parametrize("query", [
+    "wages by country", "average earnings by country", "average wage earnings by country",
+])
+def test_an_earnings_question_ranks_the_ilo_earnings_above_the_oecd_indicator(
+        catalog, query: str) -> None:
+    ids = [r["operation_id"] for r in search_catalog(catalog, query, limit=2000)]
+    assert "ilostat_earnings" in ids, ids[:10]
+    oecd = ids.index("oecd_country_indicator") if "oecd_country_indicator" in ids else len(ids)
+    assert ids.index("ilostat_earnings") < oecd, ids[:15]
+
+
+@pytest.mark.parametrize("query", [
+    "government debt to GDP",
+    "national debt to GDP",
+    "government debt as a percent of GDP",
+    "national debt as a percent of GDP",
+    "government deficit to GDP",
+    "government spending to GDP",
+    "government revenue to GDP",
+])
+def test_a_ratio_slot_goes_to_the_profile_that_names_the_numerator_not_the_oecd_indicator(
+        catalog, query: str) -> None:
+    """Both answer any country's ratio to GDP. The country profile names the
+    numerator; the OECD indicator names "government" and "national" only as
+    inputs, so its measures name none and it takes the later slot. Read from
+    its whole text, it ranked above the profile for six of these and first
+    for five."""
+    rows = {r["operation_id"]: r for r in search_catalog(catalog, query, limit=200)}
+    ids = list(rows)
+    for op in ("macro_country_profile", "oecd_country_indicator"):
+        assert op in rows, (op, ids[:10])
+        # both hold a slot of the operations that answer any country
+        assert "pattern:any-country->param" in rows[op]["why"], (op, rows[op]["why"])
+    assert ids.index("macro_country_profile") < ids.index("oecd_country_indicator"), ids[:8]

@@ -1994,6 +1994,15 @@ COMPOUND_NAMED_OPERATIONS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = 
 # holds: "government debt to GDP", "national debt to GDP" and "ratio to GDP"
 # found it above the country profile and the credit-to-GDP gap, and "wages by
 # country" above the ILO wage series.
+#
+# The mapping is read twice: search scores none of these words as a query
+# term the operation names (``_score`` in search.py), and a ratio question
+# whose numerator is one of them does not count the operation as naming what
+# the ratio measures (``_EndpointProfile.measures``, read by the ratio slot
+# ordering).
+# Every word here is silenced for the whole operation, whichever indicator a
+# call asks for: a word joins only when no series the operation serves is
+# named by it (tests pin the OECD indicator keys against this set).
 OPERATION_INPUT_WORDS: dict[str, frozenset[str]] = {
     "imf_signals_telecom_demand_country": frozenset({"growth", "income", "inflation"}),
     "imf_signals_external_pressure_country": frozenset({"current", "account"}),
