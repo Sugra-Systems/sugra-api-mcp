@@ -5,8 +5,10 @@ from __future__ import annotations
 import base64
 import json
 import re
+import tomllib
 from html.parser import HTMLParser
 from importlib import resources
+from pathlib import Path
 from urllib.parse import unquote
 
 import pytest
@@ -364,27 +366,55 @@ def test_vscode_logo_stays_the_blue_icon() -> None:
     assert "currentColor" not in svg
 
 
+def _covered_logos(section: str) -> set[str]:
+    covers = re.search(r"Covers:([^(]*)\(", section)
+    assert covers, f"no Covers list: {section[:300]!r}"
+    return {ident for ident in re.split(r"[\s,]+", covers.group(1)) if ident}
+
+
 def test_client_logo_licenses_ship_with_the_package() -> None:
     # MIT and ISC ask that their copyright and permission notice go with copies:
-    # the texts sit beside client_logos.py, so the wheel carries them.
+    # the texts sit beside client_logos.py, and the wheel force-includes them
+    # (test_the_wheel_force_includes_the_client_logo_notices).
     notices = (resources.files("sugra_api_mcp") / "THIRD_PARTY_NOTICES.txt").read_text(
         encoding="utf-8"
     )
-    mit, isc = notices.split("2. ISC License - Lucide")
-    assert "Copyright (c) 2023 LobeHub" in mit
-    assert (
+    mit, heading, isc = notices.partition("2. ISC License - Lucide")
+    assert heading and heading not in isc, "expected exactly one ISC License - Lucide heading"
+    assert _covered_logos(mit) == LOGOS.keys() - {"vscode", "other"}
+    assert _covered_logos(isc) == {"other"}
+    for line in (
+        "LICENSE at tag v1.97.0",
+        "Copyright (c) 2023 LobeHub",
+        "Permission is hereby granted, free of charge, to any person obtaining a copy",
         "The above copyright notice and this permission notice shall be included in all\n"
-        "copies or substantial portions of the Software." in mit
-    )
-    for ident in LOGOS.keys() - {"vscode", "other"}:
-        assert re.search(rf"[\s,]{re.escape(ident)}[,\s]", mit.split("Source:")[0]), ident
-    assert "Covers: other" in isc
-    assert "Copyright (c) 2026 Lucide Icons and Contributors" in isc
-    assert (
-        "provided that the above\ncopyright notice and this permission notice appear in all copies."
-        in isc
-    )
+        "copies or substantial portions of the Software.",
+        'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR',
+        "IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE",
+    ):
+        assert line in mit, line
+    for line in (
+        "LICENSE at tag 1.70.0",
+        "Copyright (c) 2026 Lucide Icons and Contributors",
+        "Permission to use, copy, modify, and/or distribute this software for any\n"
+        "purpose with or without fee is hereby granted, provided that the above\n"
+        "copyright notice and this permission notice appear in all copies.",
+        'THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES',
+        "IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR",
+    ):
+        assert line in isc, line
     assert "THIRD_PARTY_NOTICES.txt" in (client_logos.__doc__ or "")
+
+
+def test_the_wheel_force_includes_the_client_logo_notices() -> None:
+    # Read from the build configuration, not the source tree: an ignore rule or a
+    # packaging change cannot drop the notices from the wheel while this passes.
+    pyproject = tomllib.loads(
+        (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    force = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"]
+    path = "sugra_api_mcp/THIRD_PARTY_NOTICES.txt"
+    assert force.get(path) == path, force
 
 
 def test_cursor_install_link_carries_the_env_reference_not_a_key() -> None:

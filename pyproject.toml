@@ -81,6 +81,7 @@ packages = ["sugra_api_mcp"]
 "sugra_api_mcp/catalog/data/endpoints.json" = "sugra_api_mcp/catalog/data/endpoints.json"
 "sugra_api_mcp/catalog/data/typed_tools.json" = "sugra_api_mcp/catalog/data/typed_tools.json"
 "sugra_api_mcp/skills_index.json" = "sugra_api_mcp/skills_index.json"
+"sugra_api_mcp/THIRD_PARTY_NOTICES.txt" = "sugra_api_mcp/THIRD_PARTY_NOTICES.txt"
 
 [tool.ruff]
 line-length = 100

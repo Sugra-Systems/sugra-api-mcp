@@ -38,8 +38,9 @@ SOFTWARE.
 
 2. ISC License - Lucide
    Covers: other (the Lucide plug icon)
-   Source: https://github.com/lucide-icons/lucide (LICENSE, its ISC section;
-   the plug is not one of the Feather-derived icons its MIT section covers)
+   Source: https://github.com/lucide-icons/lucide (LICENSE at tag 1.70.0, its
+   ISC section; the plug is not one of the Feather-derived icons its MIT
+   section covers)
 
 ISC License
 
