@@ -5100,24 +5100,35 @@ def test_the_oecd_indicator_keeps_its_own_questions(catalog, query: str) -> None
 
 
 # One country's confidence and tendency surveys, bundled by the 2026-11-06
-# resync: each answers for its own country alone.
+# resync: each answers for its own country alone, every operation of it
+# served under one API path.
 _CONFIDENCE_SOURCES = (
-    ("gus_", "PL"),
-    ("statistical_agencies_cbs_", "NL"),
-    ("statistical_agencies_czso_", "CZ"),
-    ("statistical_agencies_dst_", "DK"),
-    ("statistical_agencies_nier_", "SE"),
-    ("macro_consumer_sentiment_switzerland", "CH"),
-    ("macro_manufacturing_survey_us_south_atlantic", "US"),
+    ("gus_", "PL", "/api/v1/gus/"),
+    ("statistical_agencies_cbs_", "NL", "/api/v1/statistical-agencies/cbs-confidence/"),
+    ("statistical_agencies_czso_", "CZ", "/api/v1/statistical-agencies/czso/"),
+    ("statistical_agencies_dst_", "DK", "/api/v1/statistical-agencies/dst-confidence/"),
+    ("statistical_agencies_nier_", "SE",
+     "/api/v1/statistical-agencies/nier-economic-tendency/"),
+    ("macro_consumer_sentiment_switzerland", "CH", "/api/v1/macro/consumer-sentiment/switzerland"),
+    ("macro_manufacturing_survey_us_south_atlantic", "US",
+     "/api/v1/macro/manufacturing-survey/us-south-atlantic"),
 )
 
 
-@pytest.mark.parametrize("prefix,country", _CONFIDENCE_SOURCES)
+@pytest.mark.parametrize("prefix,country,path", _CONFIDENCE_SOURCES)
 def test_a_single_country_confidence_survey_carries_its_country(
-        prefix: str, country: str) -> None:
+        catalog, prefix: str, country: str, path: str) -> None:
+    """The prefix tags every operation it catches with one country, so it
+    may catch only that source's: an operation of another source whose id
+    began with the same stem would be read as that country's alone."""
     from sugra_api_mcp.catalog.aliases import SOURCE_COUNTRY_PREFIXES
 
     assert SOURCE_COUNTRY_PREFIXES.get(prefix) == country, prefix
+    caught = {e.operation_id: e.path for e in catalog.endpoints
+              if e.operation_id.startswith(prefix)}
+    assert caught, f"{prefix} catches no operation"
+    stray = {op: p for op, p in caught.items() if not p.startswith(path)}
+    assert not stray, (prefix, stray)
 
 
 def _national_sources(rows: list[dict]) -> dict[str, str]:
@@ -5167,3 +5178,23 @@ def test_consumer_confidence_of_a_named_country_finds_no_other_countrys_survey(
         assert ids[0] == "oecd_country_indicator", (query, ids)
     else:
         assert own in ids, (query, ids)
+
+
+@pytest.mark.parametrize("query,prefix", [
+    ("Statistics Poland consumer confidence", "gus_"),
+    ("GUS consumer confidence", "gus_"),
+    ("CBS consumer confidence", "statistical_agencies_cbs_"),
+    ("Statistics Netherlands consumer confidence", "statistical_agencies_cbs_"),
+    ("Statistics Denmark consumer confidence", "statistical_agencies_dst_"),
+    ("DST consumer confidence", "statistical_agencies_dst_"),
+    ("Czech Statistical Office consumer confidence", "statistical_agencies_czso_"),
+    ("NIER economic tendency", "statistical_agencies_nier_"),
+    ("Swiss consumer sentiment", "macro_consumer_sentiment_switzerland"),
+])
+def test_a_confidence_question_that_names_its_source_ranks_that_source_first(
+        catalog, query: str, prefix: str) -> None:
+    """Reading consumer confidence as a statistic every country reports lifts
+    the OECD indicator for a question that names no country; a question that
+    names the survey's own source still finds that source first."""
+    ids = [row["operation_id"] for row in search_catalog(catalog, query, limit=5)]
+    assert ids[0].startswith(prefix), (query, ids)
