@@ -7,7 +7,10 @@ fix lands as a pull request instead of waiting for a human rebuild.
 Public-repo rules (load-bearing):
 
 - Branch name is the stable neutral ref `ci/catalog-resync` (force-with-lease
-  from origin/main on every run, so there is exactly one resync PR).
+  from origin/main, so there is exactly one resync PR). A run whose rebuild
+  holds the same spec on the same main as the open PR's branch pushes nothing:
+  the API dispatches on every deploy, and a push that only moves `built_at`
+  reruns the PR's Test matrix on an unchanged tree.
 - Commit author and committer are Arman Obosyan. github-actions[bot] cannot
   author this: a bot push does not trigger workflows, so Test would never
   run on the PR.
@@ -233,6 +236,114 @@ def stamp_facts(repo_root: Path, bundle: dict) -> None:
     facts_path.write_text(updated, encoding="utf-8", newline="\n")
 
 
+def commit_parents(raw_commit: str) -> list[str]:
+    """Parent ids from the header of `git cat-file commit` output.
+
+    Read from the raw object, not `rev-parse <ref>^`, so a shallow boundary
+    cannot hide a parent. The header ends at the first blank line; a message
+    line that starts with "parent " is not a parent.
+    """
+    parents = []
+    for line in raw_commit.splitlines():
+        if not line:
+            break
+        if line.startswith("parent "):
+            parents.append(line[len("parent ") :].strip())
+    return parents
+
+
+def resync_branch_is_current(
+    *,
+    raw_commit: str,
+    bundle_bytes: bytes,
+    main_sha: str,
+    spec_sha256: str,
+) -> bool:
+    """True when the resync branch is one commit on main_sha with this spec.
+
+    The bundle is a function of the spec and of the builder on main, so the same
+    spec over the same main rebuilds the same bundle apart from built_at.
+    Anything unreadable answers False, and the caller pushes as before.
+    """
+    if not main_sha or not spec_sha256:
+        return False
+    if commit_parents(raw_commit) != [main_sha]:
+        return False
+    try:
+        bundle = json.loads(bundle_bytes.decode("utf-8"))
+    except ValueError:
+        return False
+    return isinstance(bundle, dict) and bundle.get("spec_sha256") == spec_sha256
+
+
+def remote_resync_is_current(
+    repo_root: Path,
+    env: Mapping[str, str],
+    *,
+    main_sha: str,
+    spec_sha256: str,
+) -> bool:
+    """Read origin's resync branch (as last fetched) and judge it current."""
+    ref = f"refs/remotes/origin/{RESYNC_BRANCH}"
+    raw = subprocess.run(
+        ["git", "cat-file", "commit", ref],
+        cwd=repo_root,
+        env=dict(env),
+        check=False,
+        capture_output=True,
+    )
+    if raw.returncode != 0:
+        return False
+    shown = subprocess.run(
+        ["git", "show", f"{ref}:{BUNDLE_REL.as_posix()}"],
+        cwd=repo_root,
+        env=dict(env),
+        check=False,
+        capture_output=True,
+    )
+    if shown.returncode != 0:
+        return False
+    try:
+        raw_commit = raw.stdout.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return resync_branch_is_current(
+        raw_commit=raw_commit,
+        bundle_bytes=shown.stdout,
+        main_sha=main_sha,
+        spec_sha256=spec_sha256,
+    )
+
+
+def _open_resync_prs(repo_root: Path, git_env: dict[str, str], token: str) -> list[dict]:
+    listed = subprocess.run(
+        [
+            "gh",
+            "pr",
+            "list",
+            "--repo",
+            GH_REPO,
+            "--head",
+            RESYNC_BRANCH,
+            "--state",
+            "open",
+            "--json",
+            "number,url",
+        ],
+        cwd=repo_root,
+        env=git_env,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    if listed.returncode != 0:
+        raise SystemExit(
+            f"FAIL: gh pr list exited {listed.returncode}\n"
+            f"{_redact(listed.stdout, token)}\n{_redact(listed.stderr, token)}"
+        )
+    return json.loads(listed.stdout or "[]")
+
+
 def land_resync_pr(
     *,
     repo_root: Path,
@@ -272,6 +383,19 @@ def land_resync_pr(
             "FAIL: rebuild produced no file changes, but the parity checker "
             "reported drift. The builder and the checker disagree."
         )
+
+    open_prs = _open_resync_prs(repo_root, git_env, token)
+    main_sha = _git(["rev-parse", "origin/main"], cwd=repo_root, env=git_env).stdout.strip()
+    spec_sha256 = str(new["spec_sha256"])
+    if open_prs and remote_resync_is_current(
+        repo_root, git_env, main_sha=main_sha, spec_sha256=spec_sha256
+    ):
+        print(
+            f"Resync PR {open_prs[0]['url']} already holds spec_sha256 "
+            f"{spec_sha256[:12]}... on main {main_sha[:12]}; nothing pushed."
+        )
+        return 0
+
     _git(
         [
             "commit",
@@ -306,33 +430,6 @@ def land_resync_pr(
             f"{RESYNC_BRANCH} exited {pushed.returncode}\n"
             f"{_redact(pushed.stdout, token)}\n{_redact(pushed.stderr, token)}"
         )
-
-    listed = subprocess.run(
-        [
-            "gh",
-            "pr",
-            "list",
-            "--repo",
-            GH_REPO,
-            "--head",
-            RESYNC_BRANCH,
-            "--state",
-            "open",
-            "--json",
-            "number,url",
-        ],
-        cwd=repo_root,
-        env=git_env,
-        check=False,
-        text=True,
-        capture_output=True,
-    )
-    if listed.returncode != 0:
-        raise SystemExit(
-            f"FAIL: gh pr list exited {listed.returncode}\n"
-            f"{_redact(listed.stdout, token)}\n{_redact(listed.stderr, token)}"
-        )
-    open_prs = json.loads(listed.stdout or "[]")
 
     with tempfile.NamedTemporaryFile(
         "w", encoding="utf-8", newline="\n", suffix=".md", delete=False
