@@ -1,6 +1,6 @@
 {
-  "built_at": "2026-11-07T12:33:03Z",
-  "endpoint_count": 1653,
+  "built_at": "2026-11-14T18:57:17Z",
+  "endpoint_count": 1670,
   "endpoints": [
     {
       "description": "Pre-configured key Australian datasets: CPI, GDP, Labour, Trade, Retail, Wages, Population.",
@@ -10691,6 +10691,92 @@
       "toolset": "central_banks"
     },
     {
+      "description": "Monthly series of the Bank of Russia's household survey for Russia, for the series you name: the one-year median observed and expected inflation and the five-year median expected inflation, in percent, and the consumer sentiment index and its sub-indices, in index points (100 plus the balance of positive and negative answers; above 100 is more optimistic than pessimistic). Each series carries its group, label and unit. Observation time is the survey month. A month the survey did not cover is absent from a series, never zero; before 2014 the survey was quarterly or irregular. Find the ids with the catalog route. Source: Bank of Russia, Inflation expectations and consumer sentiment, with a link to its release page on every answer.",
+      "method": "GET",
+      "operation_id": "central_banks_cbr_consumer_sentiment",
+      "parameters": [
+        {
+          "description": "Series id, or several separated by commas, for example csi or inflation_1y_expected,inflation_5y_expected,csi. Case-insensitive. Ids are listed by the catalog route.",
+          "location": "query",
+          "name": "indicator",
+          "required": true,
+          "schema": {
+            "description": "Series id, or several separated by commas, for example csi or inflation_1y_expected,inflation_5y_expected,csi. Case-insensitive. Ids are listed by the catalog route.",
+            "title": "Indicator",
+            "type": "string"
+          }
+        },
+        {
+          "description": "First survey month: 2020 or 2020-01.",
+          "location": "query",
+          "name": "start_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First survey month: 2020 or 2020-01.",
+            "title": "Start Period"
+          }
+        },
+        {
+          "description": "Last survey month: 2026 or 2026-10.",
+          "location": "query",
+          "name": "end_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last survey month: 2026 or 2026-10.",
+            "title": "End Period"
+          }
+        }
+      ],
+      "path": "/api/v1/central-banks/cbr/consumer-sentiment",
+      "request_body_required": false,
+      "required_parameters": [
+        "indicator"
+      ],
+      "source_family": "central_banks",
+      "sources": [
+        "central_banks"
+      ],
+      "summary": "Bank of Russia consumer sentiment and inflation expectations for Russia",
+      "tags": [
+        "Central Banks & Monetary"
+      ],
+      "toolset": "central_banks"
+    },
+    {
+      "description": "List the series of the Bank of Russia's household survey, from its monthly publication Inflation expectations and consumer sentiment: the one-year median observed and expected inflation and the five-year median expected inflation (percent), and the consumer sentiment index with its expectations, current conditions and nine question indices (index points). Each series carries its id, its group, an English name, the Bank's own Russian label, its unit and the months it has values for. Monthly since 2014; quarterly or irregular from 2009-12. Source: Bank of Russia, with a link to its release page.",
+      "method": "GET",
+      "operation_id": "central_banks_cbr_consumer_sentiment_catalog",
+      "parameters": [],
+      "path": "/api/v1/central-banks/cbr/consumer-sentiment/catalog",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "central_banks",
+      "sources": [
+        "central_banks"
+      ],
+      "summary": "Bank of Russia consumer sentiment and inflation expectations series for Russia",
+      "tags": [
+        "Central Banks & Monetary"
+      ],
+      "toolset": "central_banks"
+    },
+    {
       "description": "South African headline Consumer Price Index (CPI) year-over-year percentage change (monthly). Compiled by Statistics South Africa and republished by the South African Reserve Bank (SARB) as upstream code `CPI1000F`.",
       "method": "GET",
       "operation_id": "central_banks_sarb_cpi",
@@ -19279,7 +19365,7 @@
       "toolset": "central_banks"
     },
     {
-      "description": "Returns the macro summary matrix for the major economies: one row per country with GDP, GDP growth, interest rate, inflation rate, jobless rate, government budget, debt to GDP, current account and population. Values are returned as published text. Responses are cached for 10 minutes.",
+      "description": "Sugra Macro: the macro summary matrix for the major economies, one row per country with GDP, GDP growth, interest rate, inflation rate, jobless rate, government budget, debt to GDP, current account and population. Values are returned as published text. Sugra Macro reads these indicators once a day; a snapshot more than 7 days old is not served (503).",
       "method": "GET",
       "operation_id": "economics_countries_overview",
       "parameters": [],
@@ -19297,7 +19383,7 @@
       "toolset": "macro"
     },
     {
-      "description": "Returns every macro indicator row for one country, each with its latest value, previous value, change, change percent, highest, lowest, unit and reference period. The country is a slug such as united-states; ISO country codes are not accepted. The optional Related parameter keeps only the rows whose related-items field contains the given text, case-insensitive. Responses are cached for 10 minutes.",
+      "description": "Sugra Macro: every macro indicator row for one country, section by section, each with its latest value, previous value, change, change percent, highest, lowest, unit and reference period. The country is a slug such as united-states; ISO country codes are not accepted, and a country Sugra Macro holds no indicator detail for is a 404, even when the countries-overview summary has a row for it. The optional Related parameter keeps only the rows whose indicator name contains the given text, case-insensitive. Sugra Macro reads these indicators once a day; a snapshot more than 7 days old is not served (503).",
       "method": "GET",
       "operation_id": "economics_country_overview",
       "parameters": [
@@ -19314,8 +19400,8 @@
           }
         },
         {
-          "description": "Related items filter.",
-          "example": "similar",
+          "description": "Keeps only the rows whose indicator name contains this text, case-insensitive.",
+          "example": "growth",
           "location": "query",
           "name": "Related",
           "required": false,
@@ -19328,7 +19414,7 @@
                 "type": "null"
               }
             ],
-            "description": "Related items filter.",
+            "description": "Keeps only the rows whose indicator name contains this text, case-insensitive.",
             "title": "Related"
           }
         }
@@ -19349,7 +19435,7 @@
       "toolset": "macro"
     },
     {
-      "description": "Returns the indicator rows of one report section for one country, each with its latest value, previous value, change, change percent, highest, lowest, unit and reference period. The section is one of gdp, labour, prices, health, money, trade, government, business, consumer or housing. The country is a slug such as united-states; ISO country codes are not accepted. The optional Related parameter keeps only the rows whose related-items field contains the given text, case-insensitive. Responses are cached for 10 minutes.",
+      "description": "Sugra Macro: the indicator rows of one report section for one country, each with its latest value, previous value, change, change percent, highest, lowest, unit and reference period. The section is one of gdp, labour, prices, health, money, trade, government, business, consumer or housing (any other value is a 400); a section the country has no rows in is a 404. The country is a slug such as united-states; ISO country codes are not accepted. The optional Related parameter keeps only the rows whose indicator name contains the given text, case-insensitive. Sugra Macro reads these indicators once a day; a snapshot more than 7 days old is not served (503).",
       "method": "GET",
       "operation_id": "economics_country_section",
       "parameters": [
@@ -19390,8 +19476,8 @@
           }
         },
         {
-          "description": "Related items filter.",
-          "example": "similar",
+          "description": "Keeps only the rows whose indicator name contains this text, case-insensitive.",
+          "example": "growth",
           "location": "query",
           "name": "Related",
           "required": false,
@@ -19404,7 +19490,7 @@
                 "type": "null"
               }
             ],
-            "description": "Related items filter.",
+            "description": "Keeps only the rows whose indicator name contains this text, case-insensitive.",
             "title": "Related"
           }
         }
@@ -20014,6 +20100,38 @@
       "toolset": "fundamentals"
     },
     {
+      "description": "Read the company's own public website at `https://{domain}/` and return what it publishes about itself: website, name, title, description, the meta description written for search engines, logo, icon, company phone numbers and role email addresses, and its LinkedIn, X, Facebook, Instagram and YouTube profiles, each read only from its schema.org Organization data. At most one legal-notice page the homepage links to (\"mentions legales\", \"legal notice\", \"imprint\") is read as well; a French site must publish its SIREN there, and a valid SIREN (or a SIRET, RCS number or French VAT number that carries one, each checked) is chained to the register: `entity` is then the profile `/entity/siren/{siren}` answers. The full KYB envelope (screening, ownership, adverse media) stays on that route.\n\nOnly https on port 443 to public addresses is read, redirects only within the domain and its `www.` twin, each page is cut at 2 MiB, and the whole read stops after 12 seconds. The site's robots.txt is respected: a site that does not allow the read, or whose robots.txt cannot be read, answers 200 with `site.read` false and `site.reason` saying why (`blocked` when the site refuses automated reads). When the bare domain has no readable robots.txt or no public address, its `www.` twin is read instead. Only company-level contacts are returned, never a person's: role addresses (contact@, info@ and similar), and the telephone numbers and profiles that the company's own schema.org Organization data declares (a fixed, switchboard or toll-free number, never a mobile). Numbers and profiles shown only as links or page text are not returned. A SIREN whose register name does not match the site's company name or domain is not chained: `entity` is then null. A site read is kept 6 hours (a site not read, 15 minutes). `meta.partial` is true when the site was not read or the register lookup failed or did not match; `meta.errors` says why.",
+      "method": "GET",
+      "operation_id": "entity_domain_domain",
+      "parameters": [
+        {
+          "description": "The company's website domain, for example `example.fr` (no scheme or path).",
+          "location": "path",
+          "name": "domain",
+          "required": true,
+          "schema": {
+            "description": "The company's website domain, for example `example.fr` (no scheme or path).",
+            "title": "Domain",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/entity/domain/{domain}",
+      "request_body_required": false,
+      "required_parameters": [
+        "domain"
+      ],
+      "source_family": "entity_screening",
+      "sources": [
+        "entity_screening"
+      ],
+      "summary": "Company profile from its own website, chained to the register by SIREN",
+      "tags": [
+        "Sugra Entity"
+      ],
+      "toolset": "entity_screening"
+    },
+    {
       "description": "Exact-match screen a document identifier (passport, national id, tax id, vessel IMO, or aircraft tail number) against the OFAC SDN identifiers (an O(1) lookup). The query value is normalized per type to match the stored key: passport/national_id/tax_id are upper-cased with separators stripped; vessel_imo drops a leading `IMO` (any/no separator) and strips separators to bare digits; aircraft_tail is upper-cased. Fail-CLOSED: an unavailable index returns 503 (never a `clear`); a stale index downgrades a `hit`/`clear` to `review`.",
       "method": "GET",
       "operation_id": "entity_id_id_type_value_screen",
@@ -20162,7 +20280,7 @@
                 "type": "null"
               }
             ],
-            "description": "Optional country, ISO 3166-1 alpha-2 (alpha-3 or the English name are read too). Compared with the countries the list record names (nationality, citizenship, registration and address are one list in the corpus): present raises a candidate, absent demotes it, a record with no country is never demoted. Weighs less than dob.",
+            "description": "Optional country, ISO 3166-1 alpha-2 (alpha-3 or the English name are read too). Compared with the countries the list record names (nationality, citizenship, registration and address are one list in the corpus): present raises a candidate, absent demotes it, a record with no country is never demoted. Weighs less than dob, and its effect adds to the dob's, so the two can offset. A country match alone never lifts a candidate to `hit`: unless the dob matches or the name score is already at `threshold_hit`, a score the country bonus would take to `threshold_hit` is held just below it, never below the name score, and a smaller lift applies in full. The exception is a candidate held at `review` because a word of its name matches the name sent only as another transliteration (`Schukow` for `Zhukov`) or only a French reading found it, as the POST /api/v1/entity/screen description states: a matching country does not raise it, and it is never a `hit`.",
             "title": "Country"
           },
           "dob": {
@@ -20175,7 +20293,7 @@
                 "type": "null"
               }
             ],
-            "description": "Optional date of birth, YYYY-MM-DD or YYYY. Compared with the dates of birth person records hold: the same day raises a candidate, the same year (when either side holds only a year) raises it less, within one year has no effect, two or more years from every date the record holds demotes it. A record with no date of birth is never demoted.",
+            "description": "Optional date of birth, YYYY-MM-DD or YYYY. Compared with the dates of birth person records hold: the same day raises a candidate, the same year (when either side holds only a year) raises it less, within one year has no effect, two or more years from every date the record holds demotes it. A record with no date of birth is never demoted. The exception is a candidate held at `review` because a word of its name matches the name sent only as another transliteration (`Schukow` for `Zhukov`) or only a French reading found it, as the POST /api/v1/entity/screen description states: a matching dob does not raise it, and it is never a `hit`.",
             "title": "Dob"
           },
           "identifier": {
@@ -20303,7 +20421,7 @@
       "toolset": "entity_screening"
     },
     {
-      "description": "Screen a person or organization name against the sanctions corpus and return a screening signal (`clear`, `review`, or `hit`) with matched records. Fail-CLOSED on staleness: if the underlying list is stale, a `hit` or `clear` result is downgraded to `review` and `meta.stale_screening` is set to `true`. ENTITY-4: optional `corpus` selects `sanctions` (default - Western/IGO + PEP), `rf_regulatory` (Russian domestic Minjust lists), or `all`. Optional `dob`, `country` and `nationality` re-score and re-order the name candidates against what each list record holds: a match raises a candidate, a contradiction demotes it (it stays listed, so the verdict never turns `clear` because of them), a record that holds no such data is never demoted. Each match carries `name_score` and `secondary_fields` with the outcome per field. The answer holds at most `max_matches` matches (default 10, up to 100), best score first: `total_matches` counts the records that matched, `total_matches_exact` is false when that count is a lower bound, and `truncated` says whether the answer may have left some out. Which matches enter that window is decided by name score, before `dob`, `country` and `nationality` are applied: matches with an equal name score enter it one per list in turn (one record of each list, then a second, and so on), and at an equal name score the matches flagged `incomplete_coverage` enter after the others, each of the two groups spread on its own. `dob`, `country` and `nationality` then re-score the matches in the window and can change their order: a match flagged `incomplete_coverage` can move ahead of complete ones, and matches with an equal final `score` are not guaranteed to alternate between lists. `status` is decided only over the matches in the window, so which records enter it can change `status` too: a record left out never makes the answer a `hit`, and a PEP match or one flagged `incomplete_coverage` never does either.",
+      "description": "Screen a person or organization name against the sanctions corpus and return a screening signal (`clear`, `review`, or `hit`) with matched records. Fail-CLOSED on staleness: if the underlying list is stale, a `hit` or `clear` result is downgraded to `review` and `meta.stale_screening` is set to `true`. ENTITY-4: optional `corpus` selects `sanctions` (default - Western/IGO + PEP), `rf_regulatory` (Russian domestic Minjust lists), or `all`. Optional `dob`, `country` and `nationality` re-score and re-order the name candidates against what each list record holds: a match raises a candidate's score, a contradiction lowers it, and the effects of the fields add up, so they can offset (before the score is held within 0 to 1, a `dob` matching to the day with a contradicted `country` comes out slightly above the name score and a `dob` matching on the year alone with it slightly below, so a name score of 1 stays at 1 in the first case). No field removes a candidate: `threshold_review` is applied to the name score before the fields re-score, so a lowered candidate stays listed even below it and the verdict never turns `clear` because of a field. A record that holds no such data is never lowered for that field. A `country` or `nationality` match alone never lifts a candidate to `hit`: a score it would take to `threshold_hit` is held just below it, never below the name score; crossing takes a matching `dob` or a name score already at `threshold_hit`. One exception holds a candidate at `review`: when every distinctive word of the name sent (a legal form or other common word does not count) matches a word of its name, at least one only as another transliteration (`Schukow` for `Zhukov`) and not as a similar spelling, and its name as written scores under 0.855, its held result has a `name_score` of 0.855 and is never a `hit` at any `threshold_hit`: a matching `dob`, `country` or `nationality` does not raise its score, and a contradicted one still lowers it. A candidate only a French reading of a word of the name sent found (`Shalabi` for `Chalabi`) is held the same way, at its own `name_score`. A held result is listed only when its `name_score` reaches `threshold_review` or it is flagged `incomplete_coverage`. When the candidate shares with the name sent a distinctive word spelled the same way or two words of any kind, its name as written also gives a second result, listed on the same rule, which the fields raise and which is graded like any other; the candidate is served the result listed, or the better one when both are: a `hit` first, then the higher score. Every other candidate is scored as written and graded like any other, a name that matches as a similar spelling (`Park` for `Pak`) included, even when only that spelling found it. Each match carries `name_score` and `secondary_fields` with the outcome per field. The answer holds at most `max_matches` matches (default 10, up to 100), best score first: `total_matches` counts the records that matched, `total_matches_exact` is false when that count is a lower bound, and `truncated` says whether the answer may have left some out. Which matches enter that window is decided first by name score, before `dob`, `country` and `nationality` are applied, among the matches that share with the name sent a distinctive word spelled the same way or two words of any kind and whose name as written reaches `threshold_review` or is flagged `incomplete_coverage`: matches with an equal name score enter it one per list in turn (one record of each list, then a second, and so on), and at an equal name score the matches flagged `incomplete_coverage` enter after the others, each of the two groups spread on its own. The other matches, among them a candidate found only through another spelling or a French reading, take only the slots those leave free, chosen from among the `max_matches` best name scores: a `hit` first, then the higher final `score`. `dob`, `country` and `nationality` then re-score the matches in the window and can change their order: a match flagged `incomplete_coverage` can move ahead of complete ones, and matches with an equal final `score` are not guaranteed to alternate between lists. `status` is decided only over the matches in the window, so which records enter it can change `status` too: a record left out never makes the answer a `hit`, and a PEP match, one flagged `incomplete_coverage` or one held at `review` above never does either. With `corpus=all`, `lists_expected` and `lists_missing` cover the Western sanctions lists only: a Russian register that is not loaded is never named in `lists_missing`, never sets `coverage_degraded` and does not by itself turn a `clear` into `review`, and `lists_loaded` shows which Russian registers were searched. A `clear` can still become `review` when no Russian register can be searched at all.",
       "method": "POST",
       "operation_id": "post_entity_screen",
       "parameters": [],
@@ -20342,7 +20460,7 @@
                 "type": "null"
               }
             ],
-            "description": "Optional country, ISO 3166-1 alpha-2 (alpha-3 or the English name are read too). Compared with the countries the list record names (nationality, citizenship, registration and address are one list in the corpus): present raises a candidate, absent demotes it, a record with no country is never demoted. Weighs less than dob.",
+            "description": "Optional country, ISO 3166-1 alpha-2 (alpha-3 or the English name are read too). Compared with the countries the list record names (nationality, citizenship, registration and address are one list in the corpus): present raises a candidate, absent demotes it, a record with no country is never demoted. Weighs less than dob, and its effect adds to the dob's, so the two can offset. A country match alone never lifts a candidate to `hit`: unless the dob matches or the name score is already at `threshold_hit`, a score the country bonus would take to `threshold_hit` is held just below it, never below the name score, and a smaller lift applies in full. The exception is a candidate held at `review` because a word of its name matches the name sent only as another transliteration (`Schukow` for `Zhukov`) or only a French reading found it, as the POST /api/v1/entity/screen description states: a matching country does not raise it, and it is never a `hit`.",
             "title": "Country"
           },
           "dob": {
@@ -20355,7 +20473,7 @@
                 "type": "null"
               }
             ],
-            "description": "Optional date of birth, YYYY-MM-DD or YYYY. Compared with the dates of birth person records hold: the same day raises a candidate, the same year (when either side holds only a year) raises it less, within one year has no effect, two or more years from every date the record holds demotes it. A record with no date of birth is never demoted.",
+            "description": "Optional date of birth, YYYY-MM-DD or YYYY. Compared with the dates of birth person records hold: the same day raises a candidate, the same year (when either side holds only a year) raises it less, within one year has no effect, two or more years from every date the record holds demotes it. A record with no date of birth is never demoted. The exception is a candidate held at `review` because a word of its name matches the name sent only as another transliteration (`Schukow` for `Zhukov`) or only a French reading found it, as the POST /api/v1/entity/screen description states: a matching dob does not raise it, and it is never a `hit`.",
             "title": "Dob"
           },
           "identifier": {
@@ -20499,7 +20617,7 @@
                       "type": "null"
                     }
                   ],
-                  "description": "Optional country, ISO 3166-1 alpha-2 (alpha-3 or the English name are read too). Compared with the countries the list record names (nationality, citizenship, registration and address are one list in the corpus): present raises a candidate, absent demotes it, a record with no country is never demoted. Weighs less than dob.",
+                  "description": "Optional country, ISO 3166-1 alpha-2 (alpha-3 or the English name are read too). Compared with the countries the list record names (nationality, citizenship, registration and address are one list in the corpus): present raises a candidate, absent demotes it, a record with no country is never demoted. Weighs less than dob, and its effect adds to the dob's, so the two can offset. A country match alone never lifts a candidate to `hit`: unless the dob matches or the name score is already at `threshold_hit`, a score the country bonus would take to `threshold_hit` is held just below it, never below the name score, and a smaller lift applies in full. The exception is a candidate held at `review` because a word of its name matches the name sent only as another transliteration (`Schukow` for `Zhukov`) or only a French reading found it, as the POST /api/v1/entity/screen description states: a matching country does not raise it, and it is never a `hit`.",
                   "title": "Country"
                 },
                 "dob": {
@@ -20512,7 +20630,7 @@
                       "type": "null"
                     }
                   ],
-                  "description": "Optional date of birth, YYYY-MM-DD or YYYY. Compared with the dates of birth person records hold: the same day raises a candidate, the same year (when either side holds only a year) raises it less, within one year has no effect, two or more years from every date the record holds demotes it. A record with no date of birth is never demoted.",
+                  "description": "Optional date of birth, YYYY-MM-DD or YYYY. Compared with the dates of birth person records hold: the same day raises a candidate, the same year (when either side holds only a year) raises it less, within one year has no effect, two or more years from every date the record holds demotes it. A record with no date of birth is never demoted. The exception is a candidate held at `review` because a word of its name matches the name sent only as another transliteration (`Schukow` for `Zhukov`) or only a French reading found it, as the POST /api/v1/entity/screen description states: a matching dob does not raise it, and it is never a `hit`.",
                   "title": "Dob"
                 },
                 "id": {
@@ -20610,6 +20728,54 @@
       "toolset": "entity_screening"
     },
     {
+      "description": "Checks a company name against the company register of one US state, read from the state's own published register. Colorado is covered, read live from the Colorado Department of State's open dataset Business Entities in Colorado (data.colorado.gov, public domain). `registered` is true when the register holds a company of this name in any status, with each match's status, entity type, place of formation, formation date and register record. `registered` is null otherwise: when the state's register is not covered (`coverage` not_covered: not checked, never not found), when the register search found no company under this name (the register can hold a name in a form the search does not match), or when the register could not be read to its end (too many names could match; see `note`). A register that cannot be read in time is an error answer (504, 502 or 503 with the reason). Names match exactly, then with legal designators (LLC, Inc., Corporation and the like) and a leading The and punctuation set aside. A name the search does not match answers `registered: null`: check the spelling. A found answer, or one that could not be read to its end, is kept for up to six hours per state and normalised name; a name not found is read again each time. This route does not consult GLEIF: a company without an LEI is found here when its state register holds it.",
+      "method": "GET",
+      "operation_id": "entity_us_verify",
+      "parameters": [
+        {
+          "description": "The company's name, for example Example Widgets LLC. Legal designators and punctuation may be left out.",
+          "location": "query",
+          "name": "name",
+          "required": true,
+          "schema": {
+            "description": "The company's name, for example Example Widgets LLC. Legal designators and punctuation may be left out.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        {
+          "description": "The state, as a two-letter USPS code (CO, FL, DE ...), any case. The 50 states, DC and the five inhabited territories are accepted.",
+          "location": "query",
+          "name": "state",
+          "required": true,
+          "schema": {
+            "description": "The state, as a two-letter USPS code (CO, FL, DE ...), any case. The 50 states, DC and the five inhabited territories are accepted.",
+            "maxLength": 2,
+            "minLength": 2,
+            "title": "State",
+            "type": "string"
+          }
+        }
+      ],
+      "path": "/api/v1/entity/us/verify",
+      "request_body_required": false,
+      "required_parameters": [
+        "name",
+        "state"
+      ],
+      "source_family": "entity_screening",
+      "sources": [
+        "entity_screening"
+      ],
+      "summary": "Is a company in a US state's company register?",
+      "tags": [
+        "Sugra Entity"
+      ],
+      "toolset": "entity_screening"
+    },
+    {
       "description": "Exact-match screen a wallet address against the OFAC SDN digital-currency addresses (an O(1) lookup, not name matching). Returns `hit` with the matched record(s) or `clear`. The query tries the address verbatim AND lowercased so a mixed-case `0x` address still matches the stored lowercased key; base58 addresses are checksum-significant and matched verbatim only. Fail-CLOSED: an unavailable index returns 503 (never a `clear`), and a stale index downgrades a `hit`/`clear` to `review`.",
       "method": "GET",
       "operation_id": "entity_wallet_address_screen",
@@ -20642,7 +20808,7 @@
       "toolset": "entity_screening"
     },
     {
-      "description": "Resolve an entity by `(anchor, value)` and compose the requested slices into the canonical KYB envelope. `anchor` is `lei` (via GLEIF), `vat` (via the EU VIES service), or `siren` / `siret` (via INSEE Sirene). Use `?include=` (comma list of `profile,screening,ownership`) to select slices; the default is all three. The `vat`, `siren` and `siret` anchors have no ownership graph (no LEI) and a withheld identity is never screened `clear`. Fail-CLOSED: a screening failure returns 503, never a `clear`. `?as_of=YYYY-MM-DD` scopes ONLY the screening slice to the dated snapshot for that date (point-in-time); the identity / ownership / VIES / Sirene slices are live external lookups with no historical snapshot and remain current. A malformed as_of returns 422; a date whose snapshot is absent returns 503 (fail-closed, never a live fallback). A 404 means the upstream answered that no such record exists (for `lei`, also an LEI record from GLEIF that has no entity block: its `entity` member absent or null); when GLEIF fails a `lei` lookup (a timeout returns 504; any other non-2xx answer but 404, 400 and 422, a connection error, an unreadable body or a 2xx answer with no usable LEI record - `{}`, or a record whose `entity` member is present, not null and not an object - returns 503) the response carries `Retry-After` and is never a 404 - retry the same request. A request GLEIF rejects as malformed (HTTP 400 or 422) is a 502 without `Retry-After`. The GLEIF ownership lookups of a `lei` request get what is left of the request's configured time limit (with `as_of` and the screening slice, that limit less a short reserve the answer needs to return in time): when they do not finish in time, do not start because too little of the time limit is left or too many ownership lookups are already running, or cannot be started at all, the `ownership` slice is null, the 50%-rule's `evidence` is `unavailable`, `meta.partial` is true and `meta.errors` says which of these happened, while the entity and its screening verdict are still returned - retry the request for the full ownership graph. The same time limit bounds the adverse media slice on every anchor: when the adverse media lookup (the news index reads and the scan of what they return) does not finish in time, does not start because too little of the time limit is left or too many adverse media lookups are already running, or cannot be started at all, `adverse_media` is null, `meta.partial` is true and `meta.errors` says which of these happened, while the rest of the answer is still returned - retry the request for the adverse media slice.",
+      "description": "Resolve an entity by `(anchor, value)` and compose the requested slices into the canonical KYB envelope. `anchor` is `lei` (via GLEIF), `vat` (via the EU VIES service), or `siren` / `siret` (via INSEE Sirene). Use `?include=` (comma list of `profile,screening,ownership`) to select slices; the default is all three. The `vat`, `siren` and `siret` anchors have no ownership graph (no LEI) and a withheld identity is never screened `clear`. Fail-CLOSED: a screening failure returns 503, never a `clear`. `?as_of=YYYY-MM-DD` scopes ONLY the screening slice to the dated snapshot for that date (point-in-time); the identity / ownership / VIES / Sirene slices are live external lookups with no historical snapshot and remain current. A malformed as_of returns 422; a date whose snapshot is absent returns 503 (fail-closed, never a live fallback). A 404 means the upstream answered that no such record exists (for `lei`, also an LEI record from GLEIF that has no entity block: its `entity` member absent or null); when GLEIF fails a `lei` lookup (a timeout returns 504; any other non-2xx answer but 404, 400 and 422, a connection error, an unreadable body or a 2xx answer with no usable LEI record - `{}`, or a record whose `entity` member is present, not null and not an object - returns 503) the response carries `Retry-After` and is never a 404 - retry the same request. A request GLEIF rejects as malformed (HTTP 400 or 422) is a 502 without `Retry-After`. The GLEIF ownership lookups of a `lei` request get what is left of the request's configured time limit (with `as_of` and the screening slice, that limit less a short reserve the answer needs to return in time): when they do not finish in time, do not start because too little of the time limit is left or too many ownership lookups are already running, or cannot be started at all, the `ownership` slice is null, the 50%-rule's `evidence` is `unavailable`, `meta.partial` is true and `meta.errors` says which of these happened, while the entity and its screening verdict are still returned - retry the request for the full ownership graph. The same time limit bounds the adverse media slice on every anchor: when the adverse media lookup (the news index reads and the scan of what they return) does not finish in time, does not start because too little of the time limit is left or too many adverse media lookups are already running, or cannot be started at all, `adverse_media` is null, `meta.partial` is true and `meta.errors` says which of these happened, while the rest of the answer is still returned - retry the request for the adverse media slice. For a `siren` or `siret` anchor, `?include=offices` (never in the default) adds the legal unit's offices that INSEE Sirene's search returns as open now, at most 20, with `offices_total` giving how many that search counts, never fewer than are listed. An establishment whose state INSEE records with neither a start date nor an end date is neither listed nor counted. When the answer also holds the headquarters record (`profile` in the same request, or a `siret` answer for the headquarters) and SIRENE shows the headquarters itself open, it is listed first, once, even when the search did not return it; without that record it is listed only when the search returned it. The others follow by SIRET. When there are more than 20, the search returns the 20 with the lowest SIRET numbers, so two reads of unchanged data list the same offices; a headquarters added first from its own record takes the place of the last of them. If SIRENE refuses that order, which 20 are listed is SIRENE's choice. When that search fails or does not finish within the same time limit, `offices` and `offices_total` are null, `meta.partial` is true and `meta.errors` says why, while the rest of the answer is still returned. The opt-in `directory` slice of a `siren` or `siret` answer reads the French state company directory within the same time limit: when that read fails, is limited by the directory, does not finish in time or finds no published record, its fields are null, `meta.partial` is true and `meta.errors` says why, while the rest of the answer is still returned.",
       "method": "GET",
       "operation_id": "entity_anchor_value",
       "parameters": [
@@ -20669,7 +20835,7 @@
           }
         },
         {
-          "description": "Comma list of slices to compose (profile, screening, ownership).",
+          "description": "Comma list of slices to compose (profile, screening, ownership, adverse; offices for a siren or siret anchor, never in the default). `directory` (siren and siret anchors, not in the default) adds the managers and yearly finances from the French state company directory, one more read inside the request's time limit.",
           "location": "query",
           "name": "include",
           "required": false,
@@ -20682,7 +20848,7 @@
                 "type": "null"
               }
             ],
-            "description": "Comma list of slices to compose (profile, screening, ownership).",
+            "description": "Comma list of slices to compose (profile, screening, ownership, adverse; offices for a siren or siret anchor, never in the default). `directory` (siren and siret anchors, not in the default) adds the managers and yearly finances from the French state company directory, one more read inside the request's time limit.",
             "title": "Include"
           }
         },
@@ -20766,7 +20932,7 @@
       "toolset": "entity_screening"
     },
     {
-      "description": "Resolve an entity by `(anchor, value)` and compose ONLY the named slice (one of `profile`, `screening`, `ownership`, `adverse-media`). Same fail-CLOSED mapping as the full composed endpoint.",
+      "description": "Resolve an entity by `(anchor, value)` and compose ONLY the named slice (one of `profile`, `screening`, `ownership`, `adverse-media`, or `offices` or `directory` for a `siren` or `siret` anchor). Same fail-CLOSED mapping as the full composed endpoint.",
       "method": "GET",
       "operation_id": "entity_anchor_value_slice_name",
       "parameters": [
@@ -27226,6 +27392,121 @@
       "toolset": "funds"
     },
     {
+      "description": "VAT rates of the 27 EU member states from the European Commission's Taxes in Europe Database: the national standard rate and every reduced, super-reduced, parking, exempted, not applicable and out of scope entry, with its category, Combined Nomenclature and CPA codes and the member state's remark. Rates are in percent. Every answer lists the national standard rate of each requested state; set national_standard_only=true to get only that one entry per state. Member states use the codes the Commission writes (Greece is EL; GR is accepted for Greece). A separate regime such as DE Import or ES Canary Islands carries its regime name and is never the national rate. The rates are those in force on the day given in situation_on, refreshed daily. Source: European Commission, Taxes in Europe Database (CC BY 4.0), reshaped by Sugra.",
+      "method": "GET",
+      "operation_id": "european_commission_vat_rates",
+      "parameters": [
+        {
+          "description": "Member state code, or several separated by commas, as the Commission writes them, for example FI or DE,FR,EL. Case-insensitive; GR is read as EL (Greece). Omitted, all 27 member states are returned.",
+          "location": "query",
+          "name": "country",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Member state code, or several separated by commas, as the Commission writes them, for example FI or DE,FR,EL. Case-insensitive; GR is read as EL (Greece). Omitted, all 27 member states are returned.",
+            "examples": [
+              "FI"
+            ],
+            "title": "Country"
+          }
+        },
+        {
+          "description": "Only entries of this type: STANDARD or REDUCED. Case-insensitive.",
+          "location": "query",
+          "name": "type",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Only entries of this type: STANDARD or REDUCED. Case-insensitive.",
+            "examples": [
+              "REDUCED"
+            ],
+            "title": "Type"
+          }
+        },
+        {
+          "description": "Only entries of this kind of rate, for example DEFAULT, REDUCED_RATE, SUPER_REDUCED_RATE, PARKING_RATE or EXEMPTED. Case-insensitive.",
+          "location": "query",
+          "name": "rate_kind",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Only entries of this kind of rate, for example DEFAULT, REDUCED_RATE, SUPER_REDUCED_RATE, PARKING_RATE or EXEMPTED. Case-insensitive.",
+            "examples": [
+              "REDUCED_RATE"
+            ],
+            "title": "Rate Kind"
+          }
+        },
+        {
+          "description": "Only entries of this reduced rate category as the Commission names it, for example FOODSTUFFS, ACCOMMODATION or PHARMACEUTICAL_PRODUCTS. Case-insensitive.",
+          "location": "query",
+          "name": "category",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Only entries of this reduced rate category as the Commission names it, for example FOODSTUFFS, ACCOMMODATION or PHARMACEUTICAL_PRODUCTS. Case-insensitive.",
+            "examples": [
+              "FOODSTUFFS"
+            ],
+            "title": "Category"
+          }
+        },
+        {
+          "description": "true returns only the national standard rate entry of each member state. Cannot be combined with type, rate_kind or category.",
+          "location": "query",
+          "name": "national_standard_only",
+          "required": false,
+          "schema": {
+            "default": false,
+            "description": "true returns only the national standard rate entry of each member state. Cannot be combined with type, rate_kind or category.",
+            "title": "National Standard Only",
+            "type": "boolean"
+          }
+        }
+      ],
+      "path": "/api/v1/european-commission/vat-rates",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "trade",
+      "sources": [
+        "trade"
+      ],
+      "summary": "EU VAT rates by member state",
+      "tags": [
+        "Global Economy & Trade"
+      ],
+      "toolset": "trade"
+    },
+    {
       "description": "List all available Eurostat dataset keys with descriptions.",
       "method": "GET",
       "operation_id": "eurostat_catalog",
@@ -27238,6 +27519,88 @@
         "statistics"
       ],
       "summary": "Available Eurostat datasets",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "The European Commission consumer confidence indicator, monthly, for the EU members, the euro area, the EU (EU27_2020) and the EU candidate countries, from the Commission's harmonised consumer survey as Eurostat publishes it (dataset ei_bsco_m). The value is a balance in percentage points: the share of consumers answering positively minus the share answering negatively, averaged over four questions on household finances, the general economic situation and major purchases, seasonally adjusted, so it runs from -100 to 100. Each row is dated by its survey month, not its release date. A month with no value is null, never zero, and `flag` marks provisional or estimated values. Data for other countries is not served. A non-empty answer is cached for a day. Processed by Sugra; every answer carries the credit Source: the Eurostat dataset DOI, the access date.",
+      "method": "GET",
+      "operation_id": "eurostat_consumer_confidence",
+      "parameters": [
+        {
+          "description": "Geography codes, comma separated: an EU member (DE, FR, EL for Greece), EA21 for the euro area, EU27_2020 for the EU, or a candidate country (AL, BA, GE, MD, ME, MK, RS, TR, UA). Other countries are refused: their data is not served. Omitted: every served geography.",
+          "location": "query",
+          "name": "geo",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Geography codes, comma separated: an EU member (DE, FR, EL for Greece), EA21 for the euro area, EU27_2020 for the EU, or a candidate country (AL, BA, GE, MD, ME, MK, RS, TR, UA). Other countries are refused: their data is not served. Omitted: every served geography.",
+            "examples": [
+              "EA21,EU27_2020"
+            ],
+            "title": "Geo"
+          }
+        },
+        {
+          "description": "First survey month: 2024-01, or a year such as 2024 for its January. Omitted: the 36 months that end with `until`, or with the current month when `until` is omitted too.",
+          "location": "query",
+          "name": "since",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First survey month: 2024-01, or a year such as 2024 for its January. Omitted: the 36 months that end with `until`, or with the current month when `until` is omitted too.",
+            "examples": [
+              "2024-01"
+            ],
+            "title": "Since"
+          }
+        },
+        {
+          "description": "Last survey month: 2026-10, or a year such as 2026 for its December.",
+          "location": "query",
+          "name": "until",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last survey month: 2026-10, or a year such as 2026 for its December.",
+            "examples": [
+              "2026-10"
+            ],
+            "title": "Until"
+          }
+        }
+      ],
+      "path": "/api/v1/eurostat/consumer-confidence",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "EU consumer confidence (European Commission)",
       "tags": [
         "Statistical Agencies"
       ],
@@ -27314,6 +27677,88 @@
       "toolset": "statistics"
     },
     {
+      "description": "The European Commission economic sentiment indicator, monthly, for the EU members, the euro area, the EU (EU27_2020) and the EU candidate countries, from the Commission's harmonised business and consumer surveys as Eurostat publishes it (dataset ei_bssi_m_r2). The value is an index whose long-term average is 100, a weighted composite of the confidence of industry, services, consumers, retail trade and construction, seasonally adjusted: above 100 is sentiment above its long-term average. Each row is dated by its survey month, not its release date. A month with no value is null, never zero, and `flag` marks provisional or estimated values. Data for other countries is not served. A non-empty answer is cached for a day. Processed by Sugra; every answer carries the credit Source: the Eurostat dataset DOI, the access date.",
+      "method": "GET",
+      "operation_id": "eurostat_economic_sentiment",
+      "parameters": [
+        {
+          "description": "Geography codes, comma separated: an EU member (DE, FR, EL for Greece), EA21 for the euro area, EU27_2020 for the EU, or a candidate country (AL, BA, GE, MD, ME, MK, RS, TR, UA). Other countries are refused: their data is not served. Omitted: every served geography.",
+          "location": "query",
+          "name": "geo",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Geography codes, comma separated: an EU member (DE, FR, EL for Greece), EA21 for the euro area, EU27_2020 for the EU, or a candidate country (AL, BA, GE, MD, ME, MK, RS, TR, UA). Other countries are refused: their data is not served. Omitted: every served geography.",
+            "examples": [
+              "EA21,EU27_2020"
+            ],
+            "title": "Geo"
+          }
+        },
+        {
+          "description": "First survey month: 2024-01, or a year such as 2024 for its January. Omitted: the 36 months that end with `until`, or with the current month when `until` is omitted too.",
+          "location": "query",
+          "name": "since",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First survey month: 2024-01, or a year such as 2024 for its January. Omitted: the 36 months that end with `until`, or with the current month when `until` is omitted too.",
+            "examples": [
+              "2024-01"
+            ],
+            "title": "Since"
+          }
+        },
+        {
+          "description": "Last survey month: 2026-10, or a year such as 2026 for its December.",
+          "location": "query",
+          "name": "until",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last survey month: 2026-10, or a year such as 2026 for its December.",
+            "examples": [
+              "2026-10"
+            ],
+            "title": "Until"
+          }
+        }
+      ],
+      "path": "/api/v1/eurostat/economic-sentiment",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "EU economic sentiment (European Commission)",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
       "description": "Annual sold production, exports and imports for one 8-digit PRODCOM product and one reporter. Queries both vintages and labels the 2024/2025 classification break from the EU linking table. geo is the comext reporter (the dissemination API's geo parameter is not defined on comext).",
       "method": "GET",
       "operation_id": "eurostat_prodcom",
@@ -27331,13 +27776,13 @@
           }
         },
         {
-          "description": "Reporter country code: DE, FR, EU27_2020.",
+          "description": "Reporter country code as PRODCOM spells it: DE, FR, GR for Greece, XS for Serbia, ME or XM for Montenegro (XM is the older code and is served as well as ME), EU27_2020. An EU member, an EFTA member (CH, IS, LI, NO), an EU candidate country or EU27_2020; other reporters are refused: their data is not served.",
           "example": "DE",
           "location": "query",
           "name": "geo",
           "required": true,
           "schema": {
-            "description": "Reporter country code: DE, FR, EU27_2020.",
+            "description": "Reporter country code as PRODCOM spells it: DE, FR, GR for Greece, XS for Serbia, ME or XM for Montenegro (XM is the older code and is served as well as ME), EU27_2020. An EU member, an EFTA member (CH, IS, LI, NO), an EU candidate country or EU27_2020; other reporters are refused: their data is not served.",
             "title": "Geo",
             "type": "string"
           }
@@ -27436,7 +27881,7 @@
       "toolset": "statistics"
     },
     {
-      "description": "Fetch EU statistics by dataset key. Filter by country (geo) and time period. Use /eurostat/catalog for available datasets. Geo codes: DE, FR, IT, ES, NL, BE, AT, PL, SE, EU27_2020, EA20, etc.",
+      "description": "Fetch EU statistics by dataset key. Filter by country (geo) and time period. Use /eurostat/catalog for available datasets. Geo codes: DE, FR, IT, ES, NL, BE, AT, PL, SE, EU27_2020, EA21, etc. Served geographies are the EU members, the EFTA members, the EU candidate countries, the euro area, EU27_2020, EFTA, and two national variants of EU members: DE_TOT (Germany including the former GDR) and FX (metropolitan France). Data for other countries is not served: such a geo is refused, and such rows are left out of every answer.",
       "method": "GET",
       "operation_id": "eurostat_dataset",
       "parameters": [
@@ -27453,7 +27898,7 @@
           }
         },
         {
-          "description": "Comma-separated country codes: DE,FR,IT",
+          "description": "Geography codes, comma separated: an EU member (DE, FR, EL for Greece), an EFTA member (CH, IS, LI, NO), an EU candidate country (AL, BA, GE, MD, ME, MK, RS, TR, UA), EA21 for the euro area, EU27_2020 for the EU, EFTA for the four EFTA members together, DE_TOT for Germany including the former GDR, or FX for metropolitan France. Other countries are refused: their data is not served. Omitted: every served geography.",
           "example": "DE,FR,IT",
           "location": "query",
           "name": "geo",
@@ -27467,7 +27912,7 @@
                 "type": "null"
               }
             ],
-            "description": "Comma-separated country codes: DE,FR,IT",
+            "description": "Geography codes, comma separated: an EU member (DE, FR, EL for Greece), an EFTA member (CH, IS, LI, NO), an EU candidate country (AL, BA, GE, MD, ME, MK, RS, TR, UA), EA21 for the euro area, EU27_2020 for the EU, EFTA for the four EFTA members together, DE_TOT for Germany including the former GDR, or FX for metropolitan France. Other countries are refused: their data is not served. Omitted: every served geography.",
             "title": "Geo"
           }
         },
@@ -32893,7 +33338,7 @@
       "toolset": "funds"
     },
     {
-      "description": "News cards from the GDELT files Sugra already stores: title, source, time, link, tone, themes, organizations, and quantities named in the article. The served window is at most 24 hours; a longer timespan is marked window_capped. English file by default. lang accepts the 15 source languages already stored.",
+      "description": "News cards from the GDELT files Sugra already stores: title, source, time, link, tone, themes, organizations, and quantities named in the article. English articles are kept for 30 days. timespan 3days, 1week, 2weeks or 1month reads that many stored days. A call without timespan answers from the last 24 hours and, while the answer holds fewer than max_records articles, widens to 72 hours and then to 7 days, newest first. It takes each step only when every day the step adds has its search index built. A call that stops widening before 7 days while it holds fewer than max_records articles, because a day has no search index yet or the time for the call ran out, is marked window_capped; pass timespan 3days or 1week to read those days whether or not they are indexed. timespan_served and window_start name the window the answer covers. Other languages are served from the last 24 hours. English file by default. lang accepts the 15 source languages already stored. Articles whose title, quotations, people or organizations hold the search words come first; articles that match only through a GDELT theme code follow them. One link is returned once.",
       "method": "GET",
       "operation_id": "gdelt_articles",
       "parameters": [
@@ -32925,16 +33370,22 @@
           }
         },
         {
-          "description": "Time window: 15min, 1h, 6h or 24h (15m, 1d and 1day also work). Any other value is read as 24h and marked window_capped.",
-          "example": "24h",
+          "description": "Time window: 15min, 1h, 6h, 24h, 3days, 1week, 2weeks or 1month (15m, 1d, 1day and 1m also work). Omit it for the last 24 hours, widened to 72 hours and then 7 days while the answer holds fewer than max_records articles, one step at a time and only over days whose search index is built; a call that stops widening early while it holds fewer than max_records articles is marked window_capped. Pass 24h for the last 24 hours only. 3days, 1week, 2weeks and 1month read the stored days whether or not they are indexed. The windows past 24 hours apply to English articles; other languages are served from the last 24 hours, marked window_capped. Any other value is read as 24h and marked window_capped.",
+          "example": "1week",
           "location": "query",
           "name": "timespan",
           "required": false,
           "schema": {
-            "default": "24h",
-            "description": "Time window: 15min, 1h, 6h or 24h (15m, 1d and 1day also work). Any other value is read as 24h and marked window_capped.",
-            "title": "Timespan",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Time window: 15min, 1h, 6h, 24h, 3days, 1week, 2weeks or 1month (15m, 1d, 1day and 1m also work). Omit it for the last 24 hours, widened to 72 hours and then 7 days while the answer holds fewer than max_records articles, one step at a time and only over days whose search index is built; a call that stops widening early while it holds fewer than max_records articles is marked window_capped. Pass 24h for the last 24 hours only. 3days, 1week, 2weeks and 1month read the stored days whether or not they are indexed. The windows past 24 hours apply to English articles; other languages are served from the last 24 hours, marked window_capped. Any other value is read as 24h and marked window_capped.",
+            "title": "Timespan"
           }
         },
         {
@@ -34466,14 +34917,15 @@
           }
         },
         {
-          "description": "1-based page number.",
+          "description": "1-based page number, at most 10737419: this API's fixed maximum for this route, which keeps every page inside GLEIF's record offset limit at any page size up to 200.",
           "example": 1,
           "location": "query",
           "name": "page_number",
           "required": false,
           "schema": {
             "default": 1,
-            "description": "1-based page number.",
+            "description": "1-based page number, at most 10737419: this API's fixed maximum for this route, which keeps every page inside GLEIF's record offset limit at any page size up to 200.",
+            "maximum": 10737419,
             "minimum": 1,
             "title": "Page Number",
             "type": "integer"
@@ -34640,7 +35092,7 @@
       "toolset": "corporate_registry"
     },
     {
-      "description": "Full catalog of the ~3.3M LEI records, sorted by `registration.lastUpdateDate` descending. Use `page_size` (1-200) and `page_number` to walk the catalog. Total record count is returned in `pagination.total`. This endpoint does not filter - use `/lei-search` to narrow by legal name, country, or status.",
+      "description": "Full catalog of the ~3.3M LEI records, sorted by `registration.lastUpdateDate` descending. Use `page_size` (1-200) and `page_number` to page through the most recently updated records, up to the first 10000: GLEIF serves only those, so page_size x page_number may not exceed 10000. The full record count is returned in `pagination.total`; `pagination.lastPage` is the smaller of GLEIF's last page and 10000 / page_size rounded down, or null when GLEIF reports no readable last page. This endpoint does not filter - use `/lei-search` to narrow by legal name, country, or status.",
       "method": "GET",
       "operation_id": "gleif_lei_records",
       "parameters": [
@@ -34660,14 +35112,15 @@
           }
         },
         {
-          "description": "1-based page number.",
+          "description": "1-based page number. GLEIF serves only the first 10000 records, so page_size x page_number may not exceed 10000; a deeper page is a 422.",
           "example": 1,
           "location": "query",
           "name": "page_number",
           "required": false,
           "schema": {
             "default": 1,
-            "description": "1-based page number.",
+            "description": "1-based page number. GLEIF serves only the first 10000 records, so page_size x page_number may not exceed 10000; a deeper page is a 422.",
+            "maximum": 10000,
             "minimum": 1,
             "title": "Page Number",
             "type": "integer"
@@ -34786,14 +35239,15 @@
           }
         },
         {
-          "description": "1-based page number.",
+          "description": "1-based page number, at most 10737419: this API's fixed maximum for this route, which keeps every page inside GLEIF's record offset limit at any page size up to 200.",
           "example": 1,
           "location": "query",
           "name": "page_number",
           "required": false,
           "schema": {
             "default": 1,
-            "description": "1-based page number.",
+            "description": "1-based page number, at most 10737419: this API's fixed maximum for this route, which keeps every page inside GLEIF's record offset limit at any page size up to 200.",
+            "maximum": 10737419,
             "minimum": 1,
             "title": "Page Number",
             "type": "integer"
@@ -34849,12 +35303,12 @@
       "toolset": "corporate_registry"
     },
     {
-      "description": "Search the Legal Entity Identifier registry (~3.3M entities worldwide) with optional filters on legal name, country of registered address, and entity status. Pass `legal_name` for free-text matching (GLEIF accepts Lucene-style wildcards like `Microsoft*`). Country is ISO 3166-1 alpha-2 (`US`, `GB`, `DE`). Status is `ACTIVE`, `INACTIVE`, or a registration status such as `ISSUED`, `LAPSED`. Records return full `attributes` including entity block (names, addresses, jurisdiction, legal form) and registration block (issuer, dates, corroboration).",
+      "description": "Search the Legal Entity Identifier registry (~3.3M entities worldwide) with optional filters on legal name, country of registered address, and entity status. Pass `legal_name` for free-text matching (GLEIF accepts Lucene-style wildcards like `Microsoft*`). Country is ISO 3166-1 alpha-2 (`US`, `GB`, `DE`). Status is `ACTIVE`, `INACTIVE`, or a registration status such as `ISSUED`, `LAPSED`. Records return full `attributes` including entity block (names, addresses, jurisdiction, legal form) and registration block (issuer, dates, corroboration). GLEIF serves only the first 10000 matching records, so page_size x page_number may not exceed 10000. `pagination.total` is GLEIF's full match count; `pagination.lastPage` is the smaller of GLEIF's last page and 10000 / page_size rounded down, or null when GLEIF reports no readable last page.",
       "method": "GET",
       "operation_id": "gleif_lei_search",
       "parameters": [
         {
-          "description": "Legal name to match. GLEIF applies Lucene-style full-text matching on `entity.legalName`; append `*` for prefix matching.",
+          "description": "Legal name to match. GLEIF applies Lucene-style full-text matching on `entity.legalName`; append `*` for prefix matching. A comma is part of the name (`Tesla, Inc.`), never a list of names: to search several names, send one request per name. A comma with a backslash right before it (one or more) is sent as it is.",
           "example": "Microsoft",
           "location": "query",
           "name": "legal_name",
@@ -34868,7 +35322,7 @@
                 "type": "null"
               }
             ],
-            "description": "Legal name to match. GLEIF applies Lucene-style full-text matching on `entity.legalName`; append `*` for prefix matching.",
+            "description": "Legal name to match. GLEIF applies Lucene-style full-text matching on `entity.legalName`; append `*` for prefix matching. A comma is part of the name (`Tesla, Inc.`), never a list of names: to search several names, send one request per name. A comma with a backslash right before it (one or more) is sent as it is.",
             "title": "Legal Name"
           }
         },
@@ -34926,14 +35380,15 @@
           }
         },
         {
-          "description": "1-based page number.",
+          "description": "1-based page number. GLEIF serves only the first 10000 matching records, so page_size x page_number may not exceed 10000; a deeper page is a 422.",
           "example": 1,
           "location": "query",
           "name": "page_number",
           "required": false,
           "schema": {
             "default": 1,
-            "description": "1-based page number.",
+            "description": "1-based page number. GLEIF serves only the first 10000 matching records, so page_size x page_number may not exceed 10000; a deeper page is a 422.",
+            "maximum": 10000,
             "minimum": 1,
             "title": "Page Number",
             "type": "integer"
@@ -34954,7 +35409,7 @@
       "toolset": "corporate_registry"
     },
     {
-      "description": "List fund LEIs reported as managed by the subject entity. Each fund is returned as a full LEI record with entity and registration blocks. Applies to asset managers and investment advisors who file fund-manager relationships with GLEIF. Returns an empty list when the entity manages no reported funds. An LEI GLEIF has no record of answers 404, so an empty list always means a known entity. When GLEIF fails or does not answer in time the route returns 503 or 504 with `Retry-After`, never an empty list. A request GLEIF rejects as malformed (HTTP 400 or 422) is a 502 without `Retry-After`.",
+      "description": "List fund LEIs reported as managed by the subject entity. Each fund is returned as a full LEI record with entity and registration blocks. Applies to asset managers and investment advisors who file fund-manager relationships with GLEIF. Returns an empty list when the entity manages no reported funds. An LEI GLEIF has no record of answers 404, so an empty list always means a known entity. When GLEIF fails or does not answer in time the route returns 503 or 504 with `Retry-After`, never an empty list. A request GLEIF rejects as malformed (HTTP 400 or 422) is a 502 without `Retry-After`. GLEIF serves only the first 10000 funds, so page_size x page_number may not exceed 10000. `pagination.total` is GLEIF's full fund count; `pagination.lastPage` is the smaller of GLEIF's last page and 10000 / page_size rounded down, or null when GLEIF reports no readable last page.",
       "method": "GET",
       "operation_id": "gleif_managed_funds_lei",
       "parameters": [
@@ -34986,14 +35441,15 @@
           }
         },
         {
-          "description": "1-based page number.",
+          "description": "1-based page number. GLEIF serves only the first 10000 funds, so page_size x page_number may not exceed 10000; a deeper page is a 422.",
           "example": 1,
           "location": "query",
           "name": "page_number",
           "required": false,
           "schema": {
             "default": 1,
-            "description": "1-based page number.",
+            "description": "1-based page number. GLEIF serves only the first 10000 funds, so page_size x page_number may not exceed 10000; a deeper page is a 422.",
+            "maximum": 10000,
             "minimum": 1,
             "title": "Page Number",
             "type": "integer"
@@ -51486,7 +51942,7 @@
       "toolset": "statistics"
     },
     {
-      "description": "INSEE synthetic household confidence indicator for France, monthly since 1972-10, seasonally adjusted, in index points (long-run mean 100, standard deviation 10): BDM series 001587668. Every month carries INSEE's observation status and quality mark (DEF final, P provisional); a month with no published number is null, never zero. Live from INSEE, cached for a day. Source : Insee, with the series' last update date, Licence Ouverte 2.0. Declared before the generic series route so this key is never read as a series key.",
+      "description": "INSEE synthetic household confidence indicator for France, monthly since 1972-10, seasonally adjusted, in index points (long-run mean 100, standard deviation 10): BDM series 001587668. Every month carries INSEE's observation status and quality mark (DEF final, P provisional); a month with no published number is null, never zero. Live from INSEE, cached for a day. Source : Insee, with the series' last update date, Licence Ouverte 2.0.",
       "method": "GET",
       "operation_id": "insee_household_confidence",
       "parameters": [
@@ -51782,6 +52238,151 @@
         "statistics"
       ],
       "summary": "Available ISTAT series",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "Italian National Institute of Statistics (ISTAT) consumer confidence for Italy and four areas, monthly, in index points: the consumer confidence climate (COF) and the economic, personal, current and future climates. Default: Italy, base 2021=100, not seasonally adjusted, which is the headline ISTAT publishes. The former base 2010=100 (not seasonally adjusted and seasonally adjusted) ended in December 2023 and is served from January 2021 to December 2023: choose it with base_year=2010. Bases and adjustments are separate series and are never mixed in one answer; a combination ISTAT does not publish (base 2021 seasonally adjusted) answers 404. A monthly survey: latest_period is the newest survey month of the series returned, and the data is refreshed from ISTAT once a day. Source: ISTAT (CC BY 4.0), processed by Sugra.",
+      "method": "GET",
+      "operation_id": "istat_consumer_confidence",
+      "parameters": [
+        {
+          "description": "Territory: IT Italy, ITC North-West, ITD North-East, ITE Centre, ITFG South and Islands. Default IT.",
+          "location": "query",
+          "name": "area",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Territory: IT Italy, ITC North-West, ITD North-East, ITE Centre, ITFG South and Islands. Default IT.",
+            "title": "Area"
+          }
+        },
+        {
+          "description": "Climate code: COF, COF_ECO, COF_PER, COF_COR, COF_FUT. Omit for all five.",
+          "location": "query",
+          "name": "climate",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Climate code: COF, COF_ECO, COF_PER, COF_COR, COF_FUT. Omit for all five.",
+            "title": "Climate"
+          }
+        },
+        {
+          "description": "Index base year: 2021 (default, 2021=100) or 2010 (2010=100, served 2021-01 to 2023-12).",
+          "location": "query",
+          "name": "base_year",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Index base year: 2021 (default, 2021=100) or 2010 (2010=100, served 2021-01 to 2023-12).",
+            "title": "Base Year"
+          }
+        },
+        {
+          "description": "N (default, not seasonally adjusted) or Y (seasonally adjusted, base 2010 only).",
+          "location": "query",
+          "name": "adjustment",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "N (default, not seasonally adjusted) or Y (seasonally adjusted, base 2010 only).",
+            "title": "Adjustment"
+          }
+        },
+        {
+          "description": "First month: 2024 or 2024-01.",
+          "location": "query",
+          "name": "start_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First month: 2024 or 2024-01.",
+            "title": "Start Period"
+          }
+        },
+        {
+          "description": "Last month: 2026 or 2026-09.",
+          "location": "query",
+          "name": "end_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last month: 2026 or 2026-09.",
+            "title": "End Period"
+          }
+        }
+      ],
+      "path": "/api/v1/istat/consumer-confidence",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "ISTAT consumer confidence",
+      "tags": [
+        "Statistical Agencies"
+      ],
+      "toolset": "statistics"
+    },
+    {
+      "description": "List the Italian National Institute of Statistics (ISTAT) consumer confidence climates (the consumer confidence climate and the economic, personal, current and future climates), the five territories (Italy and four areas), the two index bases and the adjustments, with English labels and the unit (index points). Source: ISTAT (CC BY 4.0), processed by Sugra.",
+      "method": "GET",
+      "operation_id": "istat_consumer_confidence_catalog",
+      "parameters": [],
+      "path": "/api/v1/istat/consumer-confidence/catalog",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "statistics",
+      "sources": [
+        "statistics"
+      ],
+      "summary": "ISTAT consumer confidence climates",
       "tags": [
         "Statistical Agencies"
       ],
@@ -52500,12 +53101,12 @@
       "toolset": "macro"
     },
     {
-      "description": "Scheduled monetary policy meetings and announcement days of eight central banks, as PUBLISHED on each bank's own site - a static committed table refreshed yearly, independent of any data-release feed. Every row carries the decision publication day (decision_date), the meeting window for two-day formats, and whether the decision ships with the bank's forecast publication (type=projections). Defaults to upcoming meetings; pass upcoming=false for the full published table, or from/to for a window.",
+      "description": "Scheduled monetary policy meetings and announcement days of nine central banks, as PUBLISHED on each bank's own site - a static committed table refreshed yearly, independent of any data-release feed. Turkey's Monetary Policy Committee meetings (bank tr) are presented as Sugra Macro, with no schedule_url. Every row carries the decision publication day (decision_date), the meeting window for two-day formats, and whether the decision ships with the bank's forecast publication (type=projections). Defaults to upcoming meetings; pass upcoming=false for the full published table, or from/to for a window.",
       "method": "GET",
       "operation_id": "macro_cb_calendar",
       "parameters": [
         {
-          "description": "Narrow to one bank: fomc, ecb, boe, boj, snb, riksbank, bi, banxico.",
+          "description": "Narrow to one bank: fomc, ecb, boe, boj, snb, riksbank, bi, banxico, tr.",
           "example": "fomc",
           "location": "query",
           "name": "bank",
@@ -52519,7 +53120,7 @@
                 "type": "null"
               }
             ],
-            "description": "Narrow to one bank: fomc, ecb, boe, boj, snb, riksbank, bi, banxico.",
+            "description": "Narrow to one bank: fomc, ecb, boe, boj, snb, riksbank, bi, banxico, tr.",
             "title": "Bank"
           }
         },
@@ -52588,7 +53189,7 @@
       "sources": [
         "macro"
       ],
-      "summary": "Central bank meeting calendar (FOMC, ECB, BoE, BoJ, SNB, Riksbank, Bank Indonesia, Banco de Mexico)",
+      "summary": "Central bank meeting calendar (FOMC, ECB, BoE, BoJ, SNB, Riksbank, Bank Indonesia, Banco de Mexico, Turkey)",
       "tags": [
         "Economics"
       ],
@@ -52600,13 +53201,13 @@
       "operation_id": "macro_cb_calendar_bank",
       "parameters": [
         {
-          "description": "fomc, ecb, boe, boj, snb, riksbank, bi or banxico.",
+          "description": "fomc, ecb, boe, boj, snb, riksbank, bi, banxico or tr.",
           "example": "fomc",
           "location": "path",
           "name": "bank",
           "required": true,
           "schema": {
-            "description": "fomc, ecb, boe, boj, snb, riksbank, bi or banxico.",
+            "description": "fomc, ecb, boe, boj, snb, riksbank, bi, banxico or tr.",
             "title": "Bank",
             "type": "string"
           }
@@ -52842,6 +53443,168 @@
       "toolset": "macro"
     },
     {
+      "description": "Sugra Macro: the five country tables, with one value per country each: business confidence, consumer confidence, the corporate tax rate, and the manufacturing and services purchasing managers' indices (PMI). For each table: its units, the number of countries, the date of its newest snapshot and its newest reference period. The tables are read once a day; status says whether a table is served (ok), too old to serve (stale, newest snapshot more than 7 days old) or not available.",
+      "method": "GET",
+      "operation_id": "macro_country_tables",
+      "parameters": [],
+      "path": "/api/v1/macro/country-tables",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "macro",
+      "sources": [
+        "macro"
+      ],
+      "summary": "Sugra Macro country tables",
+      "tags": [
+        "Economics"
+      ],
+      "toolset": "macro"
+    },
+    {
+      "description": "Sugra Macro: the latest value per country of one country table, with its unit (points or percent; consumer confidence mixes both, so read the unit on every row), its reference period, the previous value, and the producer where it is a government body or an intergovernmental organization. The answer carries the date of the snapshot and when it was read, so an old value shows as old. A table whose newest snapshot is more than 7 days old is refused with a 503 until it is refreshed.",
+      "method": "GET",
+      "operation_id": "macro_country_tables_table",
+      "parameters": [
+        {
+          "description": "Table: business-confidence, consumer-confidence, corporate-tax-rate, manufacturing-pmi or services-pmi. The catalog route lists them.",
+          "location": "path",
+          "name": "table",
+          "required": true,
+          "schema": {
+            "description": "Table: business-confidence, consumer-confidence, corporate-tax-rate, manufacturing-pmi or services-pmi. The catalog route lists them.",
+            "enum": [
+              "business-confidence",
+              "consumer-confidence",
+              "corporate-tax-rate",
+              "manufacturing-pmi",
+              "services-pmi"
+            ],
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Only these countries: one name or several separated by commas, for example United States,Euro Area,Japan. Case-insensitive. All countries when omitted.",
+          "location": "query",
+          "name": "country",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Only these countries: one name or several separated by commas, for example United States,Euro Area,Japan. Case-insensitive. All countries when omitted.",
+            "title": "Country"
+          }
+        }
+      ],
+      "path": "/api/v1/macro/country-tables/{table}",
+      "request_body_required": false,
+      "required_parameters": [
+        "table"
+      ],
+      "source_family": "macro",
+      "sources": [
+        "macro"
+      ],
+      "summary": "Sugra Macro country table: latest value per country",
+      "tags": [
+        "Economics"
+      ],
+      "toolset": "macro"
+    },
+    {
+      "description": "Sugra Macro: the value of one country table for each reference period, per country, built from the daily snapshots of the last 400 days. Each point carries its unit and the date of the snapshot it was read from; where several snapshots state a value for the same period, the newest snapshot wins. A snapshot that failed its checks is skipped. Name the countries with country; narrow the periods with start_period and end_period.",
+      "method": "GET",
+      "operation_id": "macro_country_tables_table_history",
+      "parameters": [
+        {
+          "description": "Table: business-confidence, consumer-confidence, corporate-tax-rate, manufacturing-pmi or services-pmi. The catalog route lists them.",
+          "location": "path",
+          "name": "table",
+          "required": true,
+          "schema": {
+            "description": "Table: business-confidence, consumer-confidence, corporate-tax-rate, manufacturing-pmi or services-pmi. The catalog route lists them.",
+            "enum": [
+              "business-confidence",
+              "consumer-confidence",
+              "corporate-tax-rate",
+              "manufacturing-pmi",
+              "services-pmi"
+            ],
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Country name, or several separated by commas, for example United States,Euro Area. Case-insensitive; at most 30.",
+          "location": "query",
+          "name": "country",
+          "required": true,
+          "schema": {
+            "description": "Country name, or several separated by commas, for example United States,Euro Area. Case-insensitive; at most 30.",
+            "title": "Country",
+            "type": "string"
+          }
+        },
+        {
+          "description": "First reference month: 2026 or 2026-01.",
+          "location": "query",
+          "name": "start_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First reference month: 2026 or 2026-01.",
+            "title": "Start Period"
+          }
+        },
+        {
+          "description": "Last reference month: 2026 or 2026-10.",
+          "location": "query",
+          "name": "end_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last reference month: 2026 or 2026-10.",
+            "title": "End Period"
+          }
+        }
+      ],
+      "path": "/api/v1/macro/country-tables/{table}/history",
+      "request_body_required": false,
+      "required_parameters": [
+        "table",
+        "country"
+      ],
+      "source_family": "macro",
+      "sources": [
+        "macro"
+      ],
+      "summary": "Sugra Macro country table: history per country",
+      "tags": [
+        "Economics"
+      ],
+      "toolset": "macro"
+    },
+    {
       "description": "A country's largest export destinations by value (millions USD). Pass a country name or ISO code; multiple are accepted as a comma-separated list (capped at 10 per request). Source: national trade statistics via Sugra Macro.",
       "method": "GET",
       "operation_id": "macro_exports_destinations",
@@ -52971,7 +53734,7 @@
       "toolset": "macro"
     },
     {
-      "description": "Time series for one or more indicators across one or more countries. Pass indicator roots (e.g. GDP, CPI, URATE, GBAL for the budget balance or deficit, EXP for exports - discover them via the indicators catalog) as symbol, and country names or ISO codes as country; both accept comma-separated lists. Optional transform: toya (YoY), tpop (period change), tpgp (percent of GDP), tusd (USD). Percent series are returned as normalized fractions (0.05 = 5%).",
+      "description": "Time series for one or more indicators across one or more countries. Pass indicator roots (e.g. GDP, CPI, URATE, GBAL for the budget balance or deficit, EXP for exports - discover them via the indicators catalog) as symbol, and country names or ISO codes as country; both accept comma-separated lists. Optional transform: toya (YoY), tpop (period change), tpgp (percent of GDP), tusd (USD). Percent series are returned as normalized fractions (0.05 = 5%). For symbol Y10YD (the 10-year government bond yield) without a transform, daily official rows are returned beside the harmonized ones, each with frequency D, its compiler, the compiler's series_id and the published_value in percent: Australia from the Reserve Bank of Australia (table F2); Sweden, Germany, France, the Netherlands, Finland, Denmark and Norway from Sveriges Riksbank (the newest trading day); Germany also from the Deutsche Bundesbank; the United States from the Board of Governors of the Federal Reserve System (H.15, FRED series DGS10, Y10YDUS.FED); the United Kingdom and Japan from Sveriges Riksbank only when their harmonized daily rows are more than 7 days old. Rows of two compilers are both kept, each under its own symbol (Y10YDDE.RIKSBANK, Y10YDDE.BUNDESBANK). Official rows cover at most the last 365 days.",
       "method": "GET",
       "operation_id": "macro_indicators",
       "parameters": [
@@ -53194,6 +53957,92 @@
         "macro"
       ],
       "summary": "Sugra Macro - available macroeconomic indicators catalog",
+      "tags": [
+        "Economics"
+      ],
+      "toolset": "macro"
+    },
+    {
+      "description": "Sugra Macro: list the 70 monthly series of the regional manufacturing survey for the US Plains and Mountain states, since 2001-07. Each series is one of 14 questions (composite index, production, shipments, new orders, employees, prices and more), one comparison (versus a month ago, versus a year ago, expected in six months) and one adjustment (seasonally adjusted or not), and carries its id, English names, the unit (index points, a diffusion index from -100 to 100) and the months it has values for.",
+      "method": "GET",
+      "operation_id": "macro_manufacturing_survey_us_plains_mountain_catalog",
+      "parameters": [],
+      "path": "/api/v1/macro/manufacturing-survey/us-plains-mountain/catalog",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "macro",
+      "sources": [
+        "macro"
+      ],
+      "summary": "US Plains and Mountain manufacturing survey series",
+      "tags": [
+        "Economics"
+      ],
+      "toolset": "macro"
+    },
+    {
+      "description": "Sugra Macro: monthly series of the regional manufacturing survey for the US Plains and Mountain states, since 2001-07, for the series ids you name (for example composite_index.month_ago.sa, the seasonally adjusted composite index versus a month ago). Values are diffusion index points from -100 to 100: the share of surveyed firms reporting an increase minus the share reporting a decrease. Observation time is the survey month. A month for which the survey published no value is returned with a null value and counted in no_value_months, never zero. Find the ids with the catalog route. A new month appears after the survey's monthly release, up to a day later.",
+      "method": "GET",
+      "operation_id": "macro_manufacturing_survey_us_plains_mountain_series",
+      "parameters": [
+        {
+          "description": "Series id, or several separated by commas, for example composite_index.month_ago.sa or composite_index.month_ago.sa,production.month_ago.sa. Case-insensitive; at most 20. Ids are listed by the catalog route.",
+          "location": "query",
+          "name": "series",
+          "required": true,
+          "schema": {
+            "description": "Series id, or several separated by commas, for example composite_index.month_ago.sa or composite_index.month_ago.sa,production.month_ago.sa. Case-insensitive; at most 20. Ids are listed by the catalog route.",
+            "title": "Series",
+            "type": "string"
+          }
+        },
+        {
+          "description": "First survey month: 2020 or 2020-01.",
+          "location": "query",
+          "name": "start_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First survey month: 2020 or 2020-01.",
+            "title": "Start Period"
+          }
+        },
+        {
+          "description": "Last survey month: 2026 or 2026-10.",
+          "location": "query",
+          "name": "end_period",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last survey month: 2026 or 2026-10.",
+            "title": "End Period"
+          }
+        }
+      ],
+      "path": "/api/v1/macro/manufacturing-survey/us-plains-mountain/series",
+      "request_body_required": false,
+      "required_parameters": [
+        "series"
+      ],
+      "source_family": "macro",
+      "sources": [
+        "macro"
+      ],
+      "summary": "US Plains and Mountain manufacturing survey series data",
       "tags": [
         "Economics"
       ],
@@ -57294,6 +58143,79 @@
       "toolset": "macro"
     },
     {
+      "description": "The latest closing yield and price of the Singapore Government Securities (SGS) 10-year benchmark bond, with the benchmark issue behind it (code, coupon, maturity) as the Monetary Authority of Singapore (MAS) table header names it. A standalone Singapore answer read from MAS; it is not taken from a cross-country panel. Yield in percent per annum, price in SGD per 100 SGD of principal, clean. Live from MAS, parsed and reshaped by Sugra. Sugra keeps the parsed MAS page for six hours after it reads it, a fixed lifetime that does not follow the time MAS publishes the day's closing levels, so a newly published close can show up to six hours late; meta.cached says whether an answer came from that kept copy. Source: Monetary Authority of Singapore, Singapore Open Data Licence v1.0.",
+      "method": "GET",
+      "operation_id": "mas_sgs_10y",
+      "parameters": [],
+      "path": "/api/v1/mas/sgs-10y",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "central_banks",
+      "sources": [
+        "central_banks"
+      ],
+      "summary": "Singapore 10-year government bond benchmark yield",
+      "tags": [
+        "Central Banks & Monetary"
+      ],
+      "toolset": "central_banks"
+    },
+    {
+      "description": "Closing prices and yields of the Singapore Government Securities (SGS) benchmark issues from the Monetary Authority of Singapore (MAS): the 6-month and 1-year Treasury bills (yield only, never a price) and the 2, 5, 10, 15, 20, 30 and 50-year bonds (price and yield). Each tenor carries the benchmark issue behind it (code, coupon, maturity) as the MAS table header names it; the benchmark changes when MAS names a new issue. Yields are percent per annum, bid rates quoted by SGS primary dealers; prices are SGD per 100 SGD of principal, clean. The MAS page holds the last seven trading days. Live from MAS, parsed and reshaped by Sugra. Sugra keeps the parsed MAS page for six hours after it reads it, a fixed lifetime that does not follow the time MAS publishes the day's closing levels, so a newly published close can show up to six hours late; meta.cached says whether an answer came from that kept copy. Source: Monetary Authority of Singapore, Singapore Open Data Licence v1.0.",
+      "method": "GET",
+      "operation_id": "mas_sgs_yields",
+      "parameters": [
+        {
+          "description": "Tenor: 6M, 1Y, 2Y, 5Y, 10Y, 15Y, 20Y, 30Y, 50Y. Omit for all nine. 6M and 1Y are Treasury bills (yield only).",
+          "location": "query",
+          "name": "tenor",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tenor: 6M, 1Y, 2Y, 5Y, 10Y, 15Y, 20Y, 30Y, 50Y. Omit for all nine. 6M and 1Y are Treasury bills (yield only).",
+            "title": "Tenor"
+          }
+        },
+        {
+          "description": "How many of the latest trading days to return, 1 to 7 (default 1). The MAS page holds the last seven trading days.",
+          "location": "query",
+          "name": "days",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How many of the latest trading days to return, 1 to 7 (default 1). The MAS page holds the last seven trading days.",
+            "title": "Days"
+          }
+        }
+      ],
+      "path": "/api/v1/mas/sgs-yields",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "central_banks",
+      "sources": [
+        "central_banks"
+      ],
+      "summary": "Singapore Government Securities benchmark yields",
+      "tags": [
+        "Central Banks & Monetary"
+      ],
+      "toolset": "central_banks"
+    },
+    {
       "description": "Snapshot of all 46 metrics: S&P 500 valuation (PE, CAPE, earnings yield, dividend yield, P/B, P/S, EPS, prices), Treasury rates (1M-30Y + real rates), US economy (GDP, inflation, CPI, population, income, federal debt). Updated hourly from multpl.com. Data since 1871 for some metrics.",
       "method": "GET",
       "operation_id": "multpl_current",
@@ -59183,7 +60105,7 @@
       "toolset": "network"
     },
     {
-      "description": "Returns the raw RDAP response for a domain, fetched through the IANA bootstrap. Returns 404 when the top-level domain is not supported.",
+      "description": "Returns the raw RDAP response for a domain, fetched through the IANA bootstrap, and beside it the registrar's own RDAP record of the same domain when the registry record links to it (null otherwise, or when the registrar's server does not answer). Returns 404 when the top-level domain is not supported.",
       "method": "GET",
       "operation_id": "network_domain_host_rdap",
       "parameters": [
@@ -59215,7 +60137,7 @@
       "toolset": "network"
     },
     {
-      "description": "Returns domain registration data in a flat WHOIS-style shape, built from RDAP through the IANA bootstrap: registrar and its IANA id, created, expires and updated dates, status, name servers and the abuse contact. Returns 404 when the top-level domain is not supported.",
+      "description": "Returns domain registration data in a flat WHOIS-style shape, built from RDAP through the IANA bootstrap: registrar and its IANA id, created, expires and updated dates, status, name servers, the abuse contact email and phone, whether the delegation is DNSSEC-signed, and the registrant name and organisation as the registry publishes them, or as the registrar's own RDAP record publishes them when the registry publishes none. The abuse email and phone come from the registrar's own RDAP record when the registry record links to it and the registrar publishes them, otherwise from the registry record (read wherever it places the abuse entity, usually inside the registrar entity). Returns 404 when the top-level domain is not supported.",
       "method": "GET",
       "operation_id": "network_domain_host_whois",
       "parameters": [
@@ -61014,7 +61936,7 @@
       "toolset": "news"
     },
     {
-      "description": "Keyword search over the current world-news RSS corpus (feed list: /api/v1/news/sources). All query terms must be present as whole words in the headline or description; wrap the query in double quotes for a literal phrase. This is a rolling window of what the feeds currently publish, not an archive, so a story that has aged out of every feed is gone. For company or ticker news use /api/v2/quotes/{symbol}/news, and for free-text search over the wider global press use /api/v1/gdelt/articles.",
+      "description": "Keyword search over the world-news RSS feeds (feed list: /api/v1/news/sources): the items the feeds show now, plus an archive of the items first seen in the last 30 days (UTC days), newest first. A story that has left the feeds is still found while the day it was first seen is in that archive. archive_days in the answer says how many days of the archive the search covered; it is below 30 while the archive is filling or when its oldest days are left out under the size limit. All query terms must be present as whole words in the headline or description; wrap the query in double quotes for a literal phrase. For company or ticker news use /api/v2/quotes/{symbol}/news, and for free-text search over the wider global press use /api/v1/gdelt/articles.",
       "method": "GET",
       "operation_id": "news_search",
       "parameters": [
@@ -62892,7 +63814,7 @@
       "toolset": "trade"
     },
     {
-      "description": "Fetch OECD time series for a country and indicator.\n\n`country` is an ISO 3-letter code (e.g. USA, DEU, GBR).\n`indicator` is a key from the OECD catalog (e.g. gdp_growth, cpi, unemployment).\n\nconsumer_confidence and business_confidence are composite survey results as the OECD republishes\neach area's national survey. Each point is dated by its survey month or quarter. The unit is\n\"balance or index, national methodology\": values follow each country's own methodology and are\nnot comparable across countries. business_confidence needs `activity`.\n\ncorporate_tax_rate_central, corporate_tax_rate_combined and top_personal_income_tax_rate are\nstatutory tax rates as the OECD publishes them in its Tax Database, processed by Sugra: one value\nper tax year (date YYYY), in percent of taxable income for the corporate rates and in percent of\ngross wage earnings for the top personal rate. They are statutory rates, not effective tax rates.\ncorporate_tax_rate_central is the central government rate; corporate_tax_rate_combined adds\nsub-central taxes. The corporate rates cover about 146 jurisdictions, the top personal rate the\n38 OECD members.",
+      "description": "Fetch OECD time series for a country and indicator.\n\n`country` is an ISO 3-letter code (e.g. USA, DEU, GBR).\n`indicator` is a key from the OECD catalog (e.g. gdp_growth, cpi, unemployment).\n\nconsumer_confidence and business_confidence are composite survey results as the OECD republishes\neach area's national survey. Each point is dated by its survey month or quarter. The unit is\n\"balance or index, national methodology\": values follow each country's own methodology and are\nnot comparable across countries. business_confidence needs `activity`.\n\ncorporate_tax_rate_central, corporate_tax_rate_combined and top_personal_income_tax_rate are\nstatutory tax rates as the OECD publishes them in its Tax Database, processed by Sugra: one value\nper tax year (date YYYY), in percent of taxable income for the corporate rates and in percent of\ngross wage earnings for the top personal rate. They are statutory rates, not effective tax rates.\ncorporate_tax_rate_central is the central government rate; corporate_tax_rate_combined adds\nsub-central taxes. The corporate rates cover OECD members and non-member jurisdictions, the top\npersonal rate the OECD members only.",
       "method": "GET",
       "operation_id": "oecd_country_indicator",
       "parameters": [
@@ -62980,7 +63902,7 @@
           }
         },
         {
-          "description": "Activity of the surveyed firms, required for business_confidence and not accepted for any other indicator: C manufacturing, F construction, G47 retail trade, GTU services.",
+          "description": "Activity of the surveyed firms, required for business_confidence and not accepted for any other indicator: C manufacturing, F construction, G47 retail trade, GTU services. South Africa quarterly C returns an all-sector composite, not a manufacturing-only series.",
           "location": "query",
           "name": "activity",
           "required": false,
@@ -62999,7 +63921,7 @@
                 "type": "null"
               }
             ],
-            "description": "Activity of the surveyed firms, required for business_confidence and not accepted for any other indicator: C manufacturing, F construction, G47 retail trade, GTU services.",
+            "description": "Activity of the surveyed firms, required for business_confidence and not accepted for any other indicator: C manufacturing, F construction, G47 retail trade, GTU services. South Africa quarterly C returns an all-sector composite, not a manufacturing-only series.",
             "examples": [
               "GTU"
             ],
@@ -78638,7 +79560,7 @@
       "toolset": "statistics"
     },
     {
-      "description": "List the monthly indicators of the Economic Tendency Survey of the National Institute of Economic Research (NIER) for Sweden, since 1996-01: the Economic Tendency Indicator (KIFI), the business sector and its sectors, household confidence and the industry breakdowns. Each carries its NIER code, an English name, the unit (index) and the months it has values for. The indices are NIER's own standardised measure, not the Eurostat consumer confidence balance for Sweden, and are never mixed with it.",
+      "description": "List the monthly indicators of the Economic Tendency Survey of the National Institute of Economic Research (NIER) for Sweden, since 1996-01: the Economic Tendency Indicator (KIFI), the business sector and its sectors, household confidence and the industry breakdowns. Each carries its NIER code, an English name, the unit (index) and the first and last month with a value. The indices are NIER's own standardised measure, not the Eurostat consumer confidence balance for Sweden, and are never mixed with it.",
       "method": "GET",
       "operation_id": "statistical_agencies_nier_economic_tendency_catalog",
       "parameters": [],
@@ -80193,7 +81115,7 @@
       "toolset": "research"
     },
     {
-      "description": "Returns the place codes that `/series` and `/places` accept, from a place name (`q`) or from coordinates (`lat` and `lon`). Each place carries its code, the code system, its name, its type and its country. A name finds the whole world, a continent or a world region too (`q=Sub-Saharan Africa`), those named exactly first. Coordinates return every place that contains the point, from the smallest up.",
+      "description": "Returns the place codes that `/series` and `/places` accept, from a place name (`q`) or from coordinates (`lat` and `lon`). Each place carries its code, the code system, its name, its type and its country. A name finds the whole world, a continent or a world region too (`q=Sub-Saharan Africa`), those named exactly first. Coordinates return every place that contains the point, from the smallest up. A request that does not complete within 35 seconds answers 504 with `Retry-After`.",
       "method": "GET",
       "operation_id": "statistics_places_resolve",
       "parameters": [
@@ -80281,7 +81203,7 @@
       "toolset": "research"
     },
     {
-      "description": "Returns one value per place for every place of one type inside a parent place, for example every county of California (`parent=06&type=county`) or every NUTS 2 region of Germany (`parent=DEU&type=nuts2`). Under the whole world (`parent=world`) the rows are countries, continents or world regions (groups of countries such as Sub-Saharan Africa or the least developed countries); under a continent or a world region they are its countries. US schools (`public-school`, `private-school`) are listed under a county, a city or a ZIP code area, US school districts (`school-district`) under a state, each by its NCES id. All rows come from one source, picked in the order of `/series/{indicator}`: an agency's own figures first, then figures computed from an agency's data, then model projections, then series from other sources. When no source has the population of any of the places, `date=latest` takes it from Wikidata, one value per place from 2015 on. `date=latest` (the default) gives each place's latest value; a year, month or day gives the value for that period. At most 5,000 rows: a larger request answers 413, narrow it with a smaller parent. An answer not already cached typically takes about 4 seconds for every 500 places; one already cached is served at once. A request that does not complete within 35 seconds answers 504 with `Retry-After`. A retry can reuse the places already looked up.",
+      "description": "Returns one value per place for every place of one type inside a parent place, for example every county of California (`parent=06&type=county`) or every NUTS 2 region of Germany (`parent=DEU&type=nuts2`). Under the whole world (`parent=world`) the rows are countries, continents or world regions (groups of countries such as Sub-Saharan Africa or the least developed countries); under a continent or a world region they are its countries. US schools (`public-school`, `private-school`) are listed under a county, a city or a ZIP code area, US school districts (`school-district`) under a state, each by its NCES id. US facilities that report greenhouse gas emissions to the US EPA (`ghg-facility`) are listed under a state or a county, each by its 7-digit US EPA Greenhouse Gas Reporting Program id. All rows come from one source, picked in the order of `/series/{indicator}`: an agency's own figures first, then figures computed from an agency's data, then model projections, then series from other sources. When no source has the population of any of the places, `date=latest` takes it from Wikidata, one value per place from 2015 on. `date=latest` (the default) gives each place's latest value; a year, month or day gives the value for that period. At most 5,000 rows: a larger request answers 413, narrow it with a smaller parent. An answer not already cached typically takes about 4 seconds for every 500 places; one already cached is served at once. A request that does not complete within 35 seconds answers 504 with `Retry-After`. A large answer not already cached can take longer than that and answer 504. A retry can reuse the places already looked up.",
       "method": "GET",
       "operation_id": "statistics_places_indicator",
       "parameters": [
@@ -80316,12 +81238,12 @@
           }
         },
         {
-          "description": "Place type of the rows: country, state, county, city, metro, zcta, admin1, admin2, nuts1, nuts2, nuts3, school-district, public-school, private-school, continent or region.",
+          "description": "Place type of the rows: country, state, county, city, metro, zcta, admin1, admin2, nuts1, nuts2, nuts3, school-district, public-school, private-school, ghg-facility, continent or region.",
           "location": "query",
           "name": "type",
           "required": true,
           "schema": {
-            "description": "Place type of the rows: country, state, county, city, metro, zcta, admin1, admin2, nuts1, nuts2, nuts3, school-district, public-school, private-school, continent or region.",
+            "description": "Place type of the rows: country, state, county, city, metro, zcta, admin1, admin2, nuts1, nuts2, nuts3, school-district, public-school, private-school, ghg-facility, continent or region.",
             "examples": [
               "county"
             ],
@@ -80385,7 +81307,7 @@
       "toolset": "research"
     },
     {
-      "description": "Searches the Sugra statistics catalog by meaning and returns matching indicators, best first, with their name, unit, period, the place types that have data, the first and last period and the agencies or other sources that publish them. When fewer than `limit` match by meaning, indicators whose names hold the query's words follow. Optional `place` keeps only indicators with data for that type of place. Use the `indicator` code with `/series/{indicator}` or `/places/{indicator}`.",
+      "description": "Searches the Sugra statistics catalog by meaning and returns matching indicators, best first, with their name, unit, period, the place types that have data, the first and last period and the agencies or other sources that publish them. When fewer than `limit` match by meaning, indicators whose names hold the query's words follow. Optional `place` keeps only indicators with data for that type of place. Use the `indicator` code with `/series/{indicator}` or `/places/{indicator}`. A search that does not complete within 35 seconds answers with the indicators whose names hold the query's words, marked by `meta.fallback_used`; one still looking up `place` at that point answers 504 with `Retry-After`.",
       "method": "GET",
       "operation_id": "statistics_search",
       "parameters": [
@@ -80458,7 +81380,7 @@
       "toolset": "research"
     },
     {
-      "description": "Returns the series of one indicator for one place, from one source, in date order. Places are given by open codes: ISO 3166-1 alpha-3 for countries (USA), ISO 3166-2 for regions (IN-MH), FIPS for US states and counties (06, 06037), NUTS for European regions (DE11), zcta:94043 for US ZIP code areas, the NCES id behind `nces:` for US schools and school districts (nces:062961004587), `world` for the whole world, or a code returned by `/places/resolve`, continents and world regions among them. Without `agency` the figures an agency publishes itself come first; when there are none, figures computed from an agency's data (a sum, count or average), then model projections, then series from other sources. Computed figures and projections are named by the agency and say so in `meta.notes`; projections may lie in the future. When none of these has a place's population, it comes from Wikidata as one value, the latest from 2015 on. The source, its website and its method are in `data.source`. A request that does not complete within 35 seconds answers 504 with `Retry-After`.",
+      "description": "Returns the series of one indicator for one place, from one source, in date order. Places are given by open codes: ISO 3166-1 alpha-3 for countries (USA), ISO 3166-2 for regions (IN-MH), FIPS for US states and counties (06, 06037), NUTS for European regions (DE11), zcta:94043 for US ZIP code areas, the NCES id behind `nces:` for US schools and school districts (nces:062961004587), the 7-digit US EPA Greenhouse Gas Reporting Program id behind `ghgrp:` for a US facility that reports greenhouse gas emissions to the US EPA (ghgrp:1000005), `world` for the whole world, or a code returned by `/places/resolve`, continents and world regions among them. Without `agency` the figures an agency publishes itself come first; when there are none, figures computed from an agency's data (a sum, count or average), then model projections, then series from other sources. Computed figures and projections are named by the agency and say so in `meta.notes`; projections may lie in the future. When none of these has a place's population, it comes from Wikidata as one value, the latest from 2015 on. The source is in `data.source`, with its website when it has one and its method when known. A request that does not complete within 35 seconds answers 504 with `Retry-After`.",
       "method": "GET",
       "operation_id": "statistics_series_indicator",
       "parameters": [
@@ -87450,18 +88372,18 @@
       "toolset": "energy"
     },
     {
-      "description": "Grid operating data, provider-resolved by region: US balancing authorities (EIA respondent code, e.g. US48, PJM, CISO, ERCO) from the EIA-930 Hourly Electric Grid Monitor; GB from Elexon Insights (BMRS - demand outturn, day-ahead forecast) plus NESO (carbon intensity actual/forecast, embedded wind/solar forecast), half-hourly; DK1/DK2 from Energinet (hourly - demand, co2_intensity). DE_LU, FR, NL, ES, IT_NORD and PL from ENTSO-E Transparency at the published native resolution (demand and EUR/MWh day-ahead price). Operational data, preliminary and subject to revision; not for real-time grid operations.",
+      "description": "Grid operating data, provider-resolved by region: US balancing authorities (EIA respondent code, e.g. US48, PJM, CISO, ERCO) from the EIA-930 Hourly Electric Grid Monitor; GB from Elexon Insights (BMRS - demand outturn, day-ahead forecast) plus NESO (carbon intensity actual/forecast, embedded wind/solar forecast), half-hourly; GB metric=price is the GB day-ahead hourly auction price in GBP/MWh from NESO, hourly in UTC, newest first, the last 60 days plus the next day once its auction result is published, null where no price was set (a different measure from the half-hourly /grid/market-index); DK1/DK2 from Energinet (hourly - demand, co2_intensity). DE_LU, FR, NL, ES, IT_NORD and PL from ENTSO-E Transparency at the published native resolution (demand and EUR/MWh day-ahead price). Operational data, preliminary and subject to revision; not for real-time grid operations.",
       "method": "GET",
       "operation_id": "energy_grid",
       "parameters": [
         {
-          "description": "Region code: EIA balancing authority (US48, PJM, ...), GB, DK1/DK2, ENTSO-E zone (DE_LU, FR, NL, ES, IT_NORD, PL), or AU NEM region.",
+          "description": "Region code: EIA balancing authority (US48, PJM, ...), GB (Great Britain; with metric=price the GB day-ahead hourly auction price in GBP/MWh from NESO), DK1/DK2, ENTSO-E zone (DE_LU, FR, NL, ES, IT_NORD, PL), or AU NEM region.",
           "location": "query",
           "name": "region",
           "required": false,
           "schema": {
             "default": "US48",
-            "description": "Region code: EIA balancing authority (US48, PJM, ...), GB, DK1/DK2, ENTSO-E zone (DE_LU, FR, NL, ES, IT_NORD, PL), or AU NEM region.",
+            "description": "Region code: EIA balancing authority (US48, PJM, ...), GB (Great Britain; with metric=price the GB day-ahead hourly auction price in GBP/MWh from NESO), DK1/DK2, ENTSO-E zone (DE_LU, FR, NL, ES, IT_NORD, PL), or AU NEM region.",
             "examples": [
               "PJM"
             ],
@@ -87470,13 +88392,13 @@
           }
         },
         {
-          "description": "demand | demand_forecast | net_generation | total_interchange | co2_intensity (GB/DK) | co2_intensity_forecast (GB) | embedded_wind_forecast (GB) | embedded_solar_forecast (GB) | price (AU NEM or ENTSO-E).",
+          "description": "demand | demand_forecast | net_generation | total_interchange | co2_intensity (GB/DK) | co2_intensity_forecast (GB) | embedded_wind_forecast (GB) | embedded_solar_forecast (GB) | price (AU NEM dispatch price in AUD/MWh, ENTSO-E day-ahead price in EUR/MWh, or GB day-ahead hourly auction price in GBP/MWh, source NESO).",
           "location": "query",
           "name": "metric",
           "required": false,
           "schema": {
             "default": "demand",
-            "description": "demand | demand_forecast | net_generation | total_interchange | co2_intensity (GB/DK) | co2_intensity_forecast (GB) | embedded_wind_forecast (GB) | embedded_solar_forecast (GB) | price (AU NEM or ENTSO-E).",
+            "description": "demand | demand_forecast | net_generation | total_interchange | co2_intensity (GB/DK) | co2_intensity_forecast (GB) | embedded_wind_forecast (GB) | embedded_solar_forecast (GB) | price (AU NEM dispatch price in AUD/MWh, ENTSO-E day-ahead price in EUR/MWh, or GB day-ahead hourly auction price in GBP/MWh, source NESO).",
             "enum": [
               "demand",
               "demand_forecast",
@@ -87767,6 +88689,90 @@
         "energy"
       ],
       "summary": "Interchange between grid regions (EIA-930 / Elexon BMRS / Energinet / AEMO)",
+      "tags": [
+        "Energy"
+      ],
+      "toolset": "energy"
+    },
+    {
+      "description": "Half-hourly Market Index for Great Britain from the Balancing Mechanism Reporting Service (BMRS) via Elexon Insights: for every settlement period the traded short-term price in GBP/MWh and the traded volume in MWh. The price is the volume-weighted average of the prices of the index data providers that traded in the half-hour (provider A and provider B, each also returned on its own); a half-hour in which nobody traded has price null, never zero. Newest half-hours first; the window is at most 7 days and defaults to the last 48 hours. A window that ended before today is cached for a day and a window that includes today for ten minutes, so a value revised after it was cached shows here up to a day later.",
+      "method": "GET",
+      "operation_id": "energy_grid_market_index",
+      "parameters": [
+        {
+          "description": "Region code. Only GB is available.",
+          "location": "query",
+          "name": "region",
+          "required": false,
+          "schema": {
+            "default": "GB",
+            "description": "Region code. Only GB is available.",
+            "examples": [
+              "GB"
+            ],
+            "title": "Region",
+            "type": "string"
+          }
+        },
+        {
+          "description": "Lower bound on the half-hour start (ISO 8601). Default: 48 hours before end.",
+          "location": "query",
+          "name": "start",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Lower bound on the half-hour start (ISO 8601). Default: 48 hours before end.",
+            "title": "Start"
+          }
+        },
+        {
+          "description": "Upper bound on the half-hour start (ISO 8601). Default: now.",
+          "location": "query",
+          "name": "end",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Upper bound on the half-hour start (ISO 8601). Default: now.",
+            "title": "End"
+          }
+        },
+        {
+          "description": "Maximum half-hours returned, newest first.",
+          "location": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 96,
+            "description": "Maximum half-hours returned, newest first.",
+            "maximum": 500,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/api/v2/energy/grid/market-index",
+      "request_body_required": false,
+      "required_parameters": [],
+      "source_family": "energy",
+      "sources": [
+        "energy"
+      ],
+      "summary": "GB Market Index: half-hourly price and volume (Elexon BMRS)",
       "tags": [
         "Energy"
       ],
@@ -91527,7 +92533,7 @@
       "toolset": "markets"
     },
     {
-      "description": "Returns the market calendar for a date range of up to 31 days, defaulting to the next 7 days: earnings, dividends, splits and economic events. Choose the sections to return, filter by country, and page each section with limit and offset.",
+      "description": "Returns the market calendar for a date range of up to 31 days, defaulting to the next 7 days: earnings, dividends, splits and economic events. Choose the sections to return, filter by country, and page each section with limit and offset. Economic events for Turkey are the planned release times from Turkey's national data release calendar kept by TurkStat, with no values. They also hold the days of Turkey's Monetary Policy Committee rate decisions, meeting summaries, Inflation Reports and Financial Stability Reports from Sugra Macro: the day only, with no time of day and no values. Economic events for Argentina are the planned publication days of its main macro reports from Sugra Macro: the day only, with no time of day and no values.",
       "method": "GET",
       "operation_id": "market_calendar",
       "parameters": [
@@ -91590,7 +92596,7 @@
           }
         },
         {
-          "description": "Optional comma-separated country names that economic_events rows must match (case-insensitive, e.g. United States). Other sections are not filtered by it.",
+          "description": "Optional comma-separated country names that economic_events rows must match (case-insensitive, e.g. United States, Turkey or Argentina). Other sections are not filtered by it.",
           "example": "United States,Germany",
           "location": "query",
           "name": "country",
@@ -91605,7 +92611,7 @@
                 "type": "null"
               }
             ],
-            "description": "Optional comma-separated country names that economic_events rows must match (case-insensitive, e.g. United States). Other sections are not filtered by it.",
+            "description": "Optional comma-separated country names that economic_events rows must match (case-insensitive, e.g. United States, Turkey or Argentina). Other sections are not filtered by it.",
             "title": "Country"
           }
         },
@@ -98278,5 +99284,5 @@
     }
   ],
   "source": "https://sugra.ai/openapi.json",
-  "spec_sha256": "3204844dacacc35d9362017fd8914022fde4d039a2831b9d5c5d8c4af9394ae7"
+  "spec_sha256": "224eddcb32fe079276ff74d23659bf6a4ff83a882955104ca46aee1eb1c18d91"
 }
