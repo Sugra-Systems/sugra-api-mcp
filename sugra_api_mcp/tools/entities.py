@@ -145,23 +145,69 @@ def _compact_match(match: dict[str, Any], secondary: bool = False) -> dict[str, 
     return out
 
 
+def _screen_reason(meta: Any) -> dict[str, Any] | None:
+    """Why the API may have turned a screen into ``review``, or None.
+
+    The API downgrades a verdict to ``review`` when a sanctions list is stale
+    (``meta.stale_screening``) or when expected lists are not loaded
+    (``meta.coverage_degraded``, ``meta.lists_missing``). With none of the
+    three set there is no reason and the caller adds no key. Each field is
+    read only when it has the type the API sends; a field that cannot be read
+    is left out of the reason, never guessed and never raised on.
+    ``stale_lists`` names the ``meta.list_freshness`` entries marked stale.
+    """
+    if not isinstance(meta, dict):
+        return None
+    stale = meta.get("stale_screening")
+    degraded = meta.get("coverage_degraded")
+    missing_raw = meta.get("lists_missing")
+    missing = (
+        sorted({k for k in missing_raw if isinstance(k, str)})
+        if isinstance(missing_raw, list)
+        else None
+    )
+    if not (stale is True or degraded is True or missing):
+        return None
+    reason: dict[str, Any] = {}
+    if isinstance(stale, bool):
+        reason["stale_screening"] = stale
+    freshness = meta.get("list_freshness")
+    if isinstance(freshness, dict):
+        reason["stale_lists"] = sorted(
+            key
+            for key, row in freshness.items()
+            if isinstance(key, str) and isinstance(row, dict) and row.get("stale") is True
+        )
+    if isinstance(degraded, bool):
+        reason["coverage_degraded"] = degraded
+    if missing is not None:
+        reason["lists_missing"] = missing
+    return reason
+
+
 def _project_screen(payload: dict[str, Any], secondary: bool = False) -> dict[str, Any]:
     """Compact projection for POST /entity/screen.
 
     {status, matches:[{name, score, list, type, name_score?, secondary_fields?}],
-    disclaimer}; the two conditional keys as ``_compact_match`` carries them.
+    disclaimer, reason?}; the two conditional match keys as ``_compact_match``
+    carries them, and ``reason`` only when ``_screen_reason`` finds one, so an
+    answer the API did not downgrade keeps exactly the three keys.
     """
     data = payload.get("data") or {}
     meta = payload.get("meta") or {}
     screening = data.get("screening") or {}
     matches = screening.get("matches") or []
-    return {
+    out: dict[str, Any] = {
         "status": screening.get("status"),
         "matches": [
             _compact_match(m, secondary) for m in matches if isinstance(m, dict)
         ],
         "disclaimer": _disclaimer_of(meta),
     }
+    reason = _screen_reason(meta)
+    if reason is not None:
+        out["reason"] = reason
+    return out
 
 
 def _project_lookup(

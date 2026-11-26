@@ -358,6 +358,133 @@ async def test_screen_with_dob_leaves_out_a_name_score_the_api_did_not_send(monk
     ]
 
 
+# A screen the API turned into review: no candidate matched, and the verdict is
+# review only because a list is stale or not loaded. The meta names are the ones
+# the API's screen route writes (stale_screening, coverage_degraded,
+# lists_missing, list_freshness with a `stale` flag per list).
+def _review_envelope(**meta: Any) -> dict[str, Any]:
+    return {
+        "data": {"screening": {"status": "review", "matches": []}},
+        "meta": {"disclaimer": "Screening signal, not a compliance determination.",
+                 **meta},
+    }
+
+
+_FRESH_ROWS = {
+    "ofac_sdn": {"age_hours": 3.0, "stale": False, "max_age_hours": 48},
+    "eu_consolidated": {"age_hours": 5.0, "stale": False, "max_age_hours": 48},
+}
+
+
+async def test_screen_review_from_a_stale_list_names_the_stale_lists(monkeypatch) -> None:
+    raw = _review_envelope(
+        stale_screening=True,
+        coverage_degraded=False,
+        lists_missing=[],
+        list_freshness={
+            **_FRESH_ROWS,
+            "us_csl": {"age_hours": 400.0, "stale": True, "max_age_hours": 48},
+            "csl_alt": {"age_hours": 300.0, "stale": True, "max_age_hours": 48},
+        },
+    )
+    fake = FakeClient(post_payload=raw)
+    monkeypatch.setattr(entities, "get_client", lambda: fake)
+
+    result = await entities.sugra_entity_screen(name="Siemens")
+
+    assert result == {
+        "status": "review",
+        "matches": [],
+        "disclaimer": "Screening signal, not a compliance determination.",
+        "reason": {
+            "stale_screening": True,
+            "stale_lists": ["csl_alt", "us_csl"],
+            "coverage_degraded": False,
+            "lists_missing": [],
+        },
+    }
+
+
+async def test_screen_review_from_missing_lists_names_them(monkeypatch) -> None:
+    raw = _review_envelope(
+        stale_screening=False,
+        coverage_degraded=True,
+        lists_missing=["un_consolidated", "uk_ofsi"],
+        list_freshness=_FRESH_ROWS,
+    )
+    fake = FakeClient(post_payload=raw)
+    monkeypatch.setattr(entities, "get_client", lambda: fake)
+
+    result = await entities.sugra_entity_screen(name="Acme")
+
+    assert result["reason"] == {
+        "stale_screening": False,
+        "stale_lists": [],
+        "coverage_degraded": True,
+        "lists_missing": ["uk_ofsi", "un_consolidated"],
+    }
+
+
+async def test_screen_with_fresh_full_lists_has_no_reason_key(monkeypatch) -> None:
+    # The answer the API did not downgrade is the same dict as before the
+    # reason key existed: three keys, nothing added. A stale row in
+    # list_freshness alone (a supplementary list the API does not let move
+    # the verdict) is not a reason either.
+    for rows in (_FRESH_ROWS,
+                 {**_FRESH_ROWS, "pep": {"age_hours": 900.0, "stale": True}}):
+        raw = _review_envelope(stale_screening=False, coverage_degraded=False,
+                               lists_missing=[], list_freshness=rows)
+        raw["data"]["screening"]["status"] = "clear"
+        fake = FakeClient(post_payload=raw)
+        monkeypatch.setattr(entities, "get_client", lambda fake=fake: fake)
+
+        result = await entities.sugra_entity_screen(name="Jane Doe")
+
+        assert result == {
+            "status": "clear",
+            "matches": [],
+            "disclaimer": "Screening signal, not a compliance determination.",
+        }
+    # The long-standing hit fixture, whose meta carries no reason, keeps its
+    # three keys too.
+    fake = FakeClient(post_payload=_SCREEN_RAW)
+    monkeypatch.setattr(entities, "get_client", lambda: fake)
+    result = await entities.sugra_entity_screen(name="Vladimir Putin")
+    assert set(result) == {"status", "matches", "disclaimer"}
+
+
+async def test_screen_reason_reads_malformed_meta_without_raising(monkeypatch) -> None:
+    cases = [
+        # meta that is not an object at all: no reason, no raise.
+        ("not a dict", None),
+        (["stale_screening"], None),
+        # The flags as strings are not read as true.
+        ({"stale_screening": "true", "coverage_degraded": "yes"}, None),
+        ({"lists_missing": "csl"}, None),
+        # A reason is found, and each field that cannot be read is left out.
+        ({"stale_screening": True, "list_freshness": "2026-06-01",
+          "coverage_degraded": None, "lists_missing": {"a": 1}},
+         {"stale_screening": True}),
+        ({"stale_screening": True,
+          "list_freshness": {"a": "stale", "b": {"stale": "true"}, 7: {"stale": True},
+                             "c": {"stale": True}, "d": None}},
+         {"stale_screening": True, "stale_lists": ["c"]}),
+        ({"coverage_degraded": 1, "lists_missing": ["x", 3, None, "x", "a"]},
+         {"lists_missing": ["a", "x"]}),
+    ]
+    for meta, expected in cases:
+        raw = {"data": {"screening": {"status": "review", "matches": []}}, "meta": meta}
+        assert entities._screen_reason(meta) == expected, meta
+        if isinstance(meta, dict):
+            fake = FakeClient(post_payload=raw)
+            monkeypatch.setattr(entities, "get_client", lambda fake=fake: fake)
+            result = await entities.sugra_entity_screen(name="x")
+            if expected is None:
+                assert "reason" not in result, meta
+            else:
+                assert result["reason"] == expected, meta
+
+
 def _screen_tool_schema() -> dict[str, Any]:
     import asyncio
 
