@@ -124,8 +124,11 @@ def test_sanctions_screening_step_one_agrees_with_the_entity_screen_contract(
     # cannot drift from the contract it relays.
     claims = (
         "re-score and re-order the name candidates",
-        "a contradiction demotes",
-        "it stays listed",
+        "a match raises a candidate's score, a contradiction lowers it",
+        "the effects of the fields add up, so they can offset",
+        "No field removes a candidate",
+        "a lowered candidate stays listed",
+        "match alone never lifts a candidate to",
     )
     for claim in claims:
         assert claim in contract, f"contract no longer says {claim!r}"
@@ -133,9 +136,15 @@ def test_sanctions_screening_step_one_agrees_with_the_entity_screen_contract(
 
     assert step_one == (
         '1. Call sugra_entity_screen with name="Example Holdings". Add country, dob, '
-        "or nationality when known: they re-score and re-order the name candidates, "
-        "and a contradiction demotes a candidate (it stays listed)."
+        "or nationality when known: they re-score and re-order the name candidates: "
+        "a match raises a candidate's score, a contradiction lowers it, and the effects "
+        "of the fields add up, so they can offset. No field removes a candidate (a "
+        "lowered candidate stays listed), and a country or nationality match alone "
+        "never lifts a candidate to hit."
     )
+    # The contract drops no candidate for a contradicted field: the prompt
+    # never says one demotes or removes it.
+    assert "demote" not in step_one.lower()
     assert "narrow" not in step_one.lower()
 
 
