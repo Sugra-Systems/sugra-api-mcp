@@ -129,15 +129,30 @@ def test_sanctions_screening_step_one_agrees_with_the_entity_screen_contract(
         "No field removes a candidate",
         "a lowered candidate stays listed",
         "match alone never lifts a candidate to",
+        # The one exception to "a match raises": a candidate held at review,
+        # found only through another transliteration or a French reading.
+        "does not raise its score, and a contradicted one still lowers it",
     )
     for claim in claims:
         assert claim in contract, f"contract no longer says {claim!r}"
         assert claim in step_one, f"step 1 does not say {claim!r}"
+    # The exception's condition, as the contract states it and the prompt
+    # relays it in its own words.
+    for contract_says, step_one_says in (
+        ("One exception holds a candidate at `review`", 'a candidate held at "review"'),
+        ("only as another transliteration", "only through another transliteration"),
+        ("only a French reading of a word of the name sent found", "a French reading"),
+    ):
+        assert contract_says in contract, f"contract no longer says {contract_says!r}"
+        assert step_one_says in step_one, f"step 1 does not say {step_one_says!r}"
 
     assert step_one == (
         '1. Call sugra_entity_screen with name="Example Holdings". Add country, dob, '
         "or nationality when known: they re-score and re-order the name candidates: "
-        "a match raises a candidate's score, a contradiction lowers it, and the effects "
+        "a match raises a candidate's score, a contradiction lowers it (except a "
+        'candidate held at "review" because it was found only through another '
+        "transliteration or a French reading: a matching field does not raise its "
+        "score, and a contradicted one still lowers it), and the effects "
         "of the fields add up, so they can offset. No field removes a candidate (a "
         "lowered candidate stays listed), and a country or nationality match alone "
         "never lifts a candidate to hit."

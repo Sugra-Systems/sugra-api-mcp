@@ -5553,6 +5553,53 @@ def test_an_own_source_steps_a_fixed_set_operation_down_only_beside_its_country(
     assert "clamped-below:own-source" not in rows[0]["why"], rows[0]["why"]
 
 
+def test_an_own_source_of_another_measure_holds_no_fixed_set_operation_below_it(
+        catalog) -> None:
+    """The own source must answer every measure word of the question: Italy's
+    consumer confidence, on the word "economic" its text holds, held the EU's
+    economic sentiment below it for "Italy economic sentiment"."""
+    rows = search_catalog(catalog, "Italy economic sentiment", limit=40)
+    ids = [row["operation_id"] for row in rows]
+    assert "eurostat_economic_sentiment" in ids[:5], ids[:10]
+    assert ids.index("eurostat_economic_sentiment") < ids.index("istat_consumer_confidence"), ids
+    row = rows[ids.index("eurostat_economic_sentiment")]
+    assert "clamped-below:own-source" not in row["why"], row["why"]
+
+
+@pytest.mark.parametrize("query,first", [
+    ("Eurostat economic sentiment Italy", "eurostat_economic_sentiment"),
+    ("Eurostat consumer confidence Netherlands", "eurostat_consumer_confidence"),
+])
+def test_a_question_that_names_the_fixed_set_operations_source_keeps_it_first(
+        catalog, query: str, first: str) -> None:
+    """Naming the source chooses its operation: "Eurostat consumer confidence
+    Netherlands" ranked the EU survey below Statistics Netherlands', and
+    "Eurostat economic sentiment Italy" fifteenth."""
+    rows = search_catalog(catalog, query, limit=10)
+    assert rows[0]["operation_id"] == first, (query, [r["operation_id"] for r in rows])
+    assert "clamped-below:own-source" not in rows[0]["why"], rows[0]["why"]
+
+
+def test_an_own_source_steps_a_fixed_set_operation_down_unless_the_question_names_its_source(
+        ) -> None:
+    """The source name is read off the operation's own path, so the clamp
+    needs no list of names: the same operation is held below the own source
+    until the question names the source it is served under."""
+    from sugra_api_mcp.catalog.models import Catalog, Endpoint
+
+    region = Endpoint(operation_id="eurostat_consumer_confidence", method="GET",
+                      path="/api/v1/regional/consumer-confidence", summary="Consumer confidence",
+                      description="Consumer confidence of the EU members")
+    own = Endpoint(operation_id="gus_widget", method="GET", path="/api/v1/gus/widget",
+                   summary="Poland confidence", description="Consumer confidence of Poland")
+    tiny = Catalog(source="test", endpoints=[region, own])
+    rows = search_catalog(tiny, "Poland consumer confidence", limit=5)
+    assert "clamped-below:own-source" in rows[1]["why"], rows
+    rows = search_catalog(tiny, "Regional consumer confidence Poland", limit=5)
+    row = next(r for r in rows if r["operation_id"] == "eurostat_consumer_confidence")
+    assert "clamped-below:own-source" not in row["why"], row["why"]
+
+
 @pytest.mark.parametrize("operation", ["macro_country_tables_table",
                                        "macro_country_tables_table_history"])
 def test_the_country_tables_example_places_score_nothing(catalog, operation: str) -> None:

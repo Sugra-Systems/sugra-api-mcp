@@ -648,6 +648,28 @@ def _uncovered_countries(endpoint: Endpoint, countries: set[str]) -> list[str]:
     return sorted(countries)
 
 
+_VERSION_SEGMENT_RE = re.compile(r"v\d+")
+
+
+def _source_words(endpoint: Endpoint) -> frozenset[str]:
+    """The words of the name the API serves the operation's source under:
+    the first segment of its path after the API prefix and the version,
+    "eurostat" in /api/v1/eurostat/consumer-confidence."""
+    segments = [segment for segment in endpoint.path.lower().split("/") if segment]
+    if segments[:1] == ["api"]:
+        segments = segments[1:]
+    if segments and _VERSION_SEGMENT_RE.fullmatch(segments[0]):
+        segments = segments[1:]
+    return frozenset(_tokens(segments[0])) if segments else frozenset()
+
+
+def _answers_every_word(endpoint: Endpoint, words: frozenset[str]) -> bool:
+    """Whether the words the operation can measure hold every one of the
+    words, in the singular or the plural."""
+    measures = _profile(endpoint).measures
+    return all(_names_any(frozenset({word}), measures) for word in words)
+
+
 def _matches_only_place_words(why: list[str], place_words: frozenset[str]) -> bool:
     """Whether every reason an operation scored is a field matching one of
     the place's words, or the coverage those words give it."""
@@ -1660,17 +1682,40 @@ def search_catalog(
     # own source of the question: the European Commission's harmonised survey
     # republishes, for each member, the survey a national institute runs, and
     # "Statistics Netherlands consumer confidence" found the EU's indicator
-    # above Statistics Netherlands. An own source that matches nothing but the
-    # place's words is no source of the question.
+    # above Statistics Netherlands. Two conditions bound it.
+    # The own source must answer the same measure the question asks for: its
+    # measurable words (_answers_every_word) must hold every measure word of
+    # the question, the words left after the place's words, the words naming
+    # either side's source (_source_words) and the words that measure nothing
+    # (_RATIO_NON_MEASURES). One shared word is not enough: on "economic"
+    # alone, Italy's consumer confidence held the EU's economic sentiment
+    # below it for "Italy economic sentiment". An own source that matches
+    # nothing but the place's words is no source of the question either.
+    # And a question that names the fixed-set operation's own source, as the
+    # API serves it ("Eurostat"), chose that operation: it is never held
+    # below, as "Eurostat consumer confidence Netherlands" was below CBS.
     if query_countries:
+        query_words = frozenset(terms)
+        fixed = [endpoint for _, endpoint, _ in scored
+                 if endpoint.operation_id in OPERATION_COUNTRY_COVERAGE
+                 and not _profile(endpoint).takes_country_param]
+        fixed_ids = {endpoint.operation_id for endpoint in fixed}
+        owners = [endpoint for _, endpoint, _ in scored
+                  if _source_country(endpoint) in query_countries]
+        source_words = frozenset().union(*(_source_words(endpoint) for endpoint in [*fixed, *owners]))
+        measure_words = frozenset(
+            term for term in query_words
+            if term not in country_terms and term not in source_words
+            and term not in _RATIO_NON_MEASURES and not term.isdigit())
         own = [score for score, endpoint, why in scored
                if _source_country(endpoint) in query_countries
-               and not _matches_only_place_words(why, country_terms)]
+               and not _matches_only_place_words(why, country_terms)
+               and _answers_every_word(endpoint, measure_words)]
         if own:
             best_own = max(own)
             for i, (score, endpoint, why) in enumerate(scored):
-                if (score >= best_own and endpoint.operation_id in OPERATION_COUNTRY_COVERAGE
-                        and not _profile(endpoint).takes_country_param):
+                if (score >= best_own and endpoint.operation_id in fixed_ids
+                        and _source_words(endpoint).isdisjoint(query_words)):
                     scored[i] = (best_own - 1, endpoint, [*why, _reason("clamped-below", "own-source")])
 
     # Structural guarantee: beside a place and a statistic spelled in two
