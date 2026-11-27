@@ -423,9 +423,14 @@ _RATIO_NON_MEASURES = _QUERY_STOPWORDS | _TWO_LETTER_FILLER | frozenset({
 
 
 def _measures(word: str) -> bool:
-    """Whether a word before a ratio can be what the ratio measures."""
+    """Whether a word before a ratio can be what the ratio measures.
+
+    A word that says the statistic is a nation's says whose it is, not what
+    it is: "national debt to GDP" measures debt, and the Swiss National Bank
+    an operation names as a compiler names none.
+    """
     return (len(word) > 1 and not word.isdigit() and word not in _RATIO_NON_MEASURES
-            and word not in COUNTRY_STATISTIC_WORDS)
+            and word not in COUNTRY_STATISTIC_WORDS and word not in _NATION_WORDS)
 
 
 def _ratio_numerators(text: str) -> dict[str, frozenset[str]]:
@@ -641,6 +646,28 @@ def _uncovered_countries(endpoint: Endpoint, countries: set[str]) -> list[str]:
     if coverage is None or not coverage.isdisjoint(countries):
         return []
     return sorted(countries)
+
+
+_VERSION_SEGMENT_RE = re.compile(r"v\d+")
+
+
+def _source_words(endpoint: Endpoint) -> frozenset[str]:
+    """The words of the name the API serves the operation's source under:
+    the first segment of its path after the API prefix and the version,
+    "eurostat" in /api/v1/eurostat/consumer-confidence."""
+    segments = [segment for segment in endpoint.path.lower().split("/") if segment]
+    if segments[:1] == ["api"]:
+        segments = segments[1:]
+    if segments and _VERSION_SEGMENT_RE.fullmatch(segments[0]):
+        segments = segments[1:]
+    return frozenset(_tokens(segments[0])) if segments else frozenset()
+
+
+def _answers_every_word(endpoint: Endpoint, words: frozenset[str]) -> bool:
+    """Whether the words the operation can measure hold every one of the
+    words, in the singular or the plural."""
+    measures = _profile(endpoint).measures
+    return all(_names_any(frozenset({word}), measures) for word in words)
 
 
 def _matches_only_place_words(why: list[str], place_words: frozenset[str]) -> bool:
@@ -1631,9 +1658,13 @@ def search_catalog(
     # "Venezuelan GDP" found the GDP of Spain above the World Bank and the
     # composite country profile, which take Venezuela, and "Germany trade
     # balance" the US and UK trade balances right after the one operation
-    # that answers it.
+    # that answers it. The euro area, named alone, is the place of no
+    # national source, and the operations that take a country answer it for
+    # any one: "EU inflation" listed the Bank of Russia's household survey
+    # among its first ten, on the inflation it names.
+    answers = country_answers or (place_answers if names_euro_area else set())
     answering = [score for score, endpoint, _ in scored
-                 if endpoint.operation_id in country_answers]
+                 if endpoint.operation_id in answers]
     if answering:
         # The floor reads "foreign" as the clamp does, so a foreign euro-area
         # operation never sets the floor the others are clamped to.
@@ -1641,10 +1672,51 @@ def search_catalog(
                        endpoint, query_countries, penalty_countries, central_bank_prefixes)
                    for _, endpoint, _ in scored]
         floor = min(score for (score, endpoint, _), outside in zip(scored, foreign, strict=True)
-                    if not outside or endpoint.operation_id in country_answers)
+                    if not outside or endpoint.operation_id in answers)
         for i, (score, endpoint, why) in enumerate(scored):
             if foreign[i] and score >= floor:
                 scored[i] = (floor - 1, endpoint, [*why, _reason("clamped-below", "country-answers")])
+
+    # Structural guarantee: beside a country the query names, an operation of
+    # a fixed set of places that takes no country ranks below that country's
+    # own source of the question: the European Commission's harmonised survey
+    # republishes, for each member, the survey a national institute runs, and
+    # "Statistics Netherlands consumer confidence" found the EU's indicator
+    # above Statistics Netherlands. Two conditions bound it.
+    # The own source must answer the same measure the question asks for: its
+    # measurable words (_answers_every_word) must hold every measure word of
+    # the question, the words left after the place's words, the words naming
+    # either side's source (_source_words) and the words that measure nothing
+    # (_RATIO_NON_MEASURES). One shared word is not enough: on "economic"
+    # alone, Italy's consumer confidence held the EU's economic sentiment
+    # below it for "Italy economic sentiment". An own source that matches
+    # nothing but the place's words is no source of the question either.
+    # And a question that names the fixed-set operation's own source, as the
+    # API serves it ("Eurostat"), chose that operation: it is never held
+    # below, as "Eurostat consumer confidence Netherlands" was below CBS.
+    if query_countries:
+        query_words = frozenset(terms)
+        fixed = [endpoint for _, endpoint, _ in scored
+                 if endpoint.operation_id in OPERATION_COUNTRY_COVERAGE
+                 and not _profile(endpoint).takes_country_param]
+        fixed_ids = {endpoint.operation_id for endpoint in fixed}
+        owners = [endpoint for _, endpoint, _ in scored
+                  if _source_country(endpoint) in query_countries]
+        source_words = frozenset().union(*(_source_words(endpoint) for endpoint in [*fixed, *owners]))
+        measure_words = frozenset(
+            term for term in query_words
+            if term not in country_terms and term not in source_words
+            and term not in _RATIO_NON_MEASURES and not term.isdigit())
+        own = [score for score, endpoint, why in scored
+               if _source_country(endpoint) in query_countries
+               and not _matches_only_place_words(why, country_terms)
+               and _answers_every_word(endpoint, measure_words)]
+        if own:
+            best_own = max(own)
+            for i, (score, endpoint, why) in enumerate(scored):
+                if (score >= best_own and endpoint.operation_id in fixed_ids
+                        and _source_words(endpoint).isdisjoint(query_words)):
+                    scored[i] = (best_own - 1, endpoint, [*why, _reason("clamped-below", "own-source")])
 
     # Structural guarantee: beside a place and a statistic spelled in two
     # words, an operation that matches nothing but the place's words ranks
@@ -1736,9 +1808,16 @@ def search_catalog(
             # never named: "bond yield" found the euro area yield curve first.
             # A word that says the statistic is a nation's names no source of
             # one nation: "national debt to GDP" found Spain's quarterly
-            # national accounts first, on the word their summary holds.
+            # national accounts first, on the word their summary holds. An
+            # operation of a fixed set of places answers for those alone, and
+            # here it takes no country (one that does is among the answers
+            # above): "consumer confidence" found the EU's survey first. One
+            # that covers the euro area answers a question that names it.
             elif (_source_country(endpoint) is not None
                   or (not names_euro_area and endpoint.operation_id.startswith("ecb_"))
+                  or (endpoint.operation_id in OPERATION_COUNTRY_COVERAGE and not (
+                      names_euro_area
+                      and "EU" in OPERATION_COUNTRY_COVERAGE[endpoint.operation_id]))
                   ) and not strong - answered - _NATION_WORDS:
                 national.append(i)
 
@@ -1748,12 +1827,16 @@ def search_catalog(
         # A question that names what its ratio measures asks for that measure:
         # an operation that names it answers before one that names only the
         # base. "government debt to GDP" found GDP per capita first, an
-        # operation that names no debt.
+        # operation that names no debt. One that names more of the words the
+        # ratio measures answers before one that names fewer: the indicator
+        # panel, which names a "government bond yield", came first for it
+        # above the country profile, which names government debt.
         numerators = frozenset().union(*ratio_numerators.values())
 
-        def place_slot(i: int) -> tuple[bool, int, bool, str]:
-            names = not numerators or _names_any(numerators, _profile(scored[i][1]).measures)
-            return not names, *slot_of(i)
+        def place_slot(i: int) -> tuple[int, int, bool, str]:
+            measures = _profile(scored[i][1]).measures
+            named = sum(_names_any(frozenset({word}), measures) for word in numerators)
+            return -named, *slot_of(i)
 
         group = {i: "subject" for i in subjects} | {i: "place" for i in places} | {
             i: "national" for i in national}

@@ -3395,26 +3395,41 @@ def test_a_current_account_of_a_named_place_keeps_its_source(catalog, query: str
     "bond yield",
     "10 year bond yield",
 ])
-def test_a_bond_yield_of_no_country_ranks_the_country_profile_first(catalog, query: str) -> None:
-    """The country profile holds the 10-year yield of any country: "government
-    bond yields" ranked the Reserve Bank of Australia's first and the profile
-    198th."""
+def test_a_bond_yield_of_no_country_ranks_the_any_country_answers_first(
+        catalog, query: str) -> None:
+    """The indicator panel serves the 10-year government bond yield of any
+    country (symbol Y10YD), with the daily official rows of its compilers
+    beside the harmonized ones, and the country profile holds its latest
+    value: the two answer first, the panel, which names the bond yield,
+    before the profile, which names a "10Y yield". "government bond yields"
+    ranked the Reserve Bank of Australia's first and the profile 198th."""
     results = search_catalog(catalog, query, limit=200)
-    assert results[0]["operation_id"] == "macro_country_profile", [r["operation_id"] for r in results[:5]]
-    assert "pattern:any-country->param" in results[0]["why"], results[0]["why"]
+    ids = [r["operation_id"] for r in results[:5]]
+    assert ids[:2] == ["macro_indicators", "macro_country_profile"], ids
+    for row in results[:2]:
+        assert "pattern:any-country->param" in row["why"], row["why"]
     rba = next((r for r in results if r["operation_id"] == "rba_bond_yields"), None)
     assert rba is not None, [r["operation_id"] for r in results[:10]]
     assert "clamped-below:any-country-answers" in rba["why"], rba["why"]
 
 
-@pytest.mark.parametrize("query", ["10-year yield", "10 year yield", "10y yield"])
-def test_a_10_year_yield_of_no_country_ranks_the_country_profile_first(catalog, query: str) -> None:
-    """The profile, which names its "10Y yield", answers a 10-year yield of
-    any country. The Bundesbank's 10-year Bund yield answers for Germany
-    alone, a place the question never named: it ranked first for all three."""
+@pytest.mark.parametrize(("query", "first", "second"), [
+    ("10-year yield", "macro_indicators", "macro_country_profile"),
+    ("10 year yield", "macro_indicators", "macro_country_profile"),
+    ("10y yield", "macro_country_profile", "macro_indicators"),
+])
+def test_a_10_year_yield_of_no_country_ranks_the_any_country_answers_first(
+        catalog, query: str, first: str, second: str) -> None:
+    """The panel, which names the "10-year government bond yield", and the
+    profile, which names its "10Y yield", answer a 10-year yield of any
+    country, each first for the spelling it holds. The Bundesbank's 10-year
+    Bund yield answers for Germany alone, a place the question never named:
+    it ranked first for all three."""
     results = search_catalog(catalog, query, limit=5)
-    assert results[0]["operation_id"] == "macro_country_profile", [r["operation_id"] for r in results]
-    assert "pattern:any-country->param" in results[0]["why"], results[0]["why"]
+    assert [r["operation_id"] for r in results[:2]] == [first, second], [
+        r["operation_id"] for r in results]
+    for row in results[:2]:
+        assert "pattern:any-country->param" in row["why"], row["why"]
     bund = next((r for r in results if r["operation_id"] == "bundesbank_bund_10y"), None)
     assert bund is not None, [r["operation_id"] for r in results]
     assert "clamped-below:any-country-answers" in bund["why"], bund["why"]
@@ -3426,8 +3441,8 @@ def test_a_bond_yield_of_no_country_clamps_the_euro_area_curve(catalog) -> None:
     profile second."""
     results = search_catalog(catalog, "bond yield", limit=5)
     ids = [r["operation_id"] for r in results]
-    assert ids[:2] == ["macro_country_profile", "ecb_yield_curve"], ids
-    assert "clamped-below:any-country-answers" in results[1]["why"], results[1]["why"]
+    assert ids[:3] == ["macro_indicators", "macro_country_profile", "ecb_yield_curve"], ids
+    assert "clamped-below:any-country-answers" in results[2]["why"], results[2]["why"]
 
 
 @pytest.mark.parametrize(("query", "first"), [
@@ -3451,18 +3466,21 @@ def test_a_bond_yield_of_a_named_place_keeps_its_source(catalog, query: str, fir
     "Japan bond yields",
     "UK bond yields",
 ])
-def test_a_bond_yield_of_a_country_without_its_own_source_ranks_the_profile_first(
+def test_a_bond_yield_of_a_country_without_its_own_source_ranks_the_country_answers_first(
     catalog, query: str,
 ) -> None:
     """Neither the euro area curve, the US Treasury nor the Bundesbank answers
     for another country: "Germany bond yields", before Germany had a source of
     its own, ranked the US Treasury's exchange rates first, on the words "bond
     yield" reach through "treasury yield", "France 10 year yield" the euro
-    area curve, and then the German Bund yield."""
+    area curve, and then the German Bund yield. The indicator panel, which
+    serves the 10-year government bond yield of the named country, answers
+    first, and the country profile second."""
     results = search_catalog(catalog, query, limit=5)
     ids = [r["operation_id"] for r in results]
-    assert ids[0] == "macro_country_profile", ids
-    assert "pattern:country->param" in results[0]["why"], results[0]["why"]
+    assert ids[:2] == ["macro_indicators", "macro_country_profile"], ids
+    for row in results[:2]:
+        assert "pattern:country->param" in row["why"], row["why"]
     assert not any(i.startswith(("treasury_", "fixed_income_treasury_")) for i in ids), ids
     if "ecb_yield_curve" in ids:
         why = results[ids.index("ecb_yield_curve")]["why"]
@@ -3716,13 +3734,17 @@ def test_a_two_letter_word_keeps_no_national_source_in_place(catalog, query: str
 def test_the_euro_areas_penalty_ranks_denmarks_harmonised_index_below(catalog) -> None:
     """Denmark's EU-harmonised price index names the EU in its summary;
     "EU inflation" names the euro area, so the wrong-country penalty ranks
-    it below every operation that takes the country."""
-    rows = search_catalog(catalog, "EU inflation", limit=100)
+    it below every operation that takes the country. As every national
+    source beside the euro area named alone, it falls below every operation
+    that is none as well, at the floor of the ranking, where a score of zero
+    lists it no more."""
+    rows = search_catalog(catalog, "EU inflation", limit=2000)
     ranks = {row["operation_id"]: i for i, row in enumerate(rows)}
     answers = [ranks[row["operation_id"]] for row in rows
                if "pattern:any-country->param" in row["why"]]
     assert answers
-    assert ranks["statistical_agencies_statbank_dk_hicp"] > max(answers), ranks
+    rank = ranks.get("statistical_agencies_statbank_dk_hicp")
+    assert rank is None or rank > max(answers), ranks
 
 
 def test_an_equal_score_never_ranks_a_national_source_first() -> None:
@@ -5095,7 +5117,6 @@ def test_a_wage_the_oecd_indicator_names_only_as_a_tax_base_earns_no_country_boo
 
 
 @pytest.mark.parametrize("query", [
-    "corporate tax rate by country",
     "Germany top personal income tax rate",
     "OECD business confidence",
 ])
@@ -5149,26 +5170,44 @@ def _national_sources(rows: list[dict]) -> dict[str, str]:
 
 
 @pytest.mark.parametrize("query", [
-    "consumer confidence", "consumer confidence index", "latest consumer confidence",
+    "consumer confidence", "consumer confidence index",
 ])
 def test_consumer_confidence_with_no_country_ranks_the_any_country_indicator_first(
         catalog, query: str) -> None:
     """The OECD indicator serves consumer confidence for any area; Statistics
-    Poland's survey ranked first for "consumer confidence"."""
+    Poland's survey ranked first for "consumer confidence", and after the
+    2026-11-27 resync the EU's indicator and ISTAT's."""
     top = search_catalog(catalog, query, limit=1)[0]
     assert top["operation_id"] == "oecd_country_indicator", (query, top)
 
 
-@pytest.mark.parametrize("query,own", [
-    ("consumer confidence Poland", "gus_consumer_confidence"),
-    ("Netherlands consumer confidence", "statistical_agencies_cbs_confidence_series"),
-    ("Denmark consumer confidence", "statistical_agencies_dst_confidence_series"),
-    ("Czech consumer confidence", "statistical_agencies_czso_confidence_index"),
-    ("Japan consumer confidence", None),
-    ("consumer confidence Germany", None),
+@pytest.mark.parametrize("query", [
+    "latest consumer confidence", "corporate tax rate by country",
+])
+def test_the_latest_value_of_every_country_ranks_the_country_table_first(
+        catalog, query: str) -> None:
+    """The Sugra Macro country tables hold the latest value per country of
+    consumer confidence, business confidence and the corporate tax rate, so a
+    question for the latest value or a value by country is theirs; the OECD
+    indicator, which answers one country a call, comes right after."""
+    ids = [row["operation_id"] for row in search_catalog(catalog, query, limit=2)]
+    assert ids == ["macro_country_tables_table", "oecd_country_indicator"], (query, ids)
+
+
+@pytest.mark.parametrize("query,own,first", [
+    ("consumer confidence Poland", "gus_consumer_confidence", None),
+    ("Netherlands consumer confidence", "statistical_agencies_cbs_confidence_series", None),
+    ("Denmark consumer confidence", "statistical_agencies_dst_confidence_series", None),
+    # The three CZSO operations tie, ordered by id, behind the OECD indicator
+    # and the two country tables: one of them ranks in the first five.
+    ("Czech consumer confidence", "statistical_agencies_czso_", None),
+    ("Japan consumer confidence", None, "oecd_country_indicator"),
+    # Germany has no consumer survey of its own here; the European
+    # Commission's harmonised survey serves it.
+    ("consumer confidence Germany", None, "eurostat_consumer_confidence"),
 ])
 def test_consumer_confidence_of_a_named_country_finds_no_other_countrys_survey(
-        catalog, query: str, own: str | None) -> None:
+        catalog, query: str, own: str | None, first: str | None) -> None:
     """A named country keeps its own survey among the first answers, and no
     other country's survey ranks there: "Czech consumer confidence" and
     "Japan consumer confidence" ranked Statistics Poland's first."""
@@ -5179,10 +5218,11 @@ def test_consumer_confidence_of_a_named_country_finds_no_other_countrys_survey(
     named = detect_query_countries(query)
     foreign = {op: c for op, c in _national_sources(rows).items() if c not in named}
     assert not foreign, (query, foreign, ids)
-    if own is None:
-        assert ids[0] == "oecd_country_indicator", (query, ids)
-    else:
-        assert own in ids, (query, ids)
+    if first is not None:
+        assert ids[0] == first, (query, ids)
+    if own is not None:
+        assert any(i == own or (own.endswith("_") and i.startswith(own)) for i in ids), (
+            query, ids)
 
 
 @pytest.mark.parametrize("query,prefix", [
@@ -5369,3 +5409,257 @@ def test_a_ratio_slot_goes_to_the_profile_that_names_the_numerator_not_the_oecd_
         # both hold a slot of the operations that answer any country
         assert "pattern:any-country->param" in rows[op]["why"], (op, rows[op]["why"])
     assert ids.index("macro_country_profile") < ids.index("oecd_country_indicator"), ids[:8]
+
+
+# One country's sources bundled by the 2026-11-27 resync: each answers for its
+# own country alone, every operation of it served under one API path.
+_RESYNC_SINGLE_COUNTRY_SOURCES = (
+    ("central_banks_cbr_", "RU", "/api/v1/central-banks/cbr/"),
+    ("istat_", "IT", "/api/v1/istat/"),
+    ("mas_", "SG", "/api/v1/mas/"),
+    ("macro_manufacturing_survey_us_plains_mountain", "US",
+     "/api/v1/macro/manufacturing-survey/us-plains-mountain"),
+    ("energy_grid_market_index", "GB", "/api/v2/energy/grid/market-index"),
+    ("entity_us_verify", "US", "/api/v1/entity/us/verify"),
+)
+
+
+@pytest.mark.parametrize("prefix,country,path", _RESYNC_SINGLE_COUNTRY_SOURCES)
+def test_a_single_country_source_of_the_resync_carries_its_country(
+        catalog, prefix: str, country: str, path: str) -> None:
+    """The prefix tags every operation it catches with one country, so it may
+    catch only that source's."""
+    from sugra_api_mcp.catalog.aliases import SOURCE_COUNTRY_PREFIXES
+
+    assert SOURCE_COUNTRY_PREFIXES.get(prefix) == country, prefix
+    caught = {e.operation_id: e.path for e in catalog.endpoints
+              if e.operation_id.startswith(prefix)}
+    assert caught, f"{prefix} catches no operation"
+    stray = {op: p for op, p in caught.items() if not p.startswith(path)}
+    assert not stray, (prefix, stray)
+
+
+@pytest.mark.parametrize("query,prefix", [
+    ("Russia consumer sentiment", "central_banks_cbr_"),
+    ("Russia inflation expectations", "central_banks_cbr_"),
+    ("Bank of Russia inflation expectations", "central_banks_cbr_"),
+    ("Italy consumer confidence", "istat_"),
+    ("ISTAT consumer confidence", "istat_"),
+])
+def test_a_single_country_source_of_the_resync_keeps_its_own_country(
+        catalog, query: str, prefix: str) -> None:
+    ids = [row["operation_id"] for row in search_catalog(catalog, query, limit=3)]
+    assert ids[0].startswith(prefix), (query, ids)
+
+
+@pytest.mark.parametrize("query", [
+    "inflation", "CPI", "Sweden CPI", "Netherlands CPI inflation", "Swiss consumer sentiment",
+])
+def test_the_bank_of_russias_household_survey_answers_no_other_countrys_inflation(
+        catalog, query: str) -> None:
+    """It names consumer price inflation and the consumer sentiment of Russia
+    alone; untagged, it ranked first for questions of no country or another."""
+    rows = search_catalog(catalog, query, limit=200)
+    ids = [row["operation_id"] for row in rows]
+    assert not ids[0].startswith("central_banks_cbr_"), (query, ids[:5])
+    for row in rows:
+        if row["operation_id"].startswith("central_banks_cbr_"):
+            assert {"clamped-below:any-country-answers", "geo-mismatch:RU",
+                    "clamped-below:country-answers"} & set(row["why"]), (query, row["why"])
+
+
+@pytest.mark.parametrize("operation", ["eurostat_consumer_confidence", "eurostat_economic_sentiment"])
+def test_the_eu_surveys_cover_the_members_the_euro_area_and_the_candidates(
+        catalog, operation: str) -> None:
+    """The coverage holds the 27 members, the euro area and nine candidates,
+    and no other country."""
+    from sugra_api_mcp.catalog.aliases import OPERATION_COUNTRY_COVERAGE
+
+    coverage = OPERATION_COUNTRY_COVERAGE[operation]
+    assert "EU" in coverage
+    assert len(coverage - {"EU"}) == 27 + 9, sorted(coverage)
+    assert {"DE", "FR", "IT", "PL", "NL", "GR", "TR", "UA"} <= coverage
+    assert not {"JP", "US", "GB", "CH", "NO", "RU"} & coverage
+
+
+@pytest.mark.parametrize("query,first", [
+    ("EU consumer confidence", "eurostat_consumer_confidence"),
+    ("euro area consumer confidence", "eurostat_consumer_confidence"),
+    ("eurozone economic sentiment", "eurostat_economic_sentiment"),
+])
+def test_a_question_that_names_the_euro_area_keeps_the_eu_survey_first(
+        catalog, query: str, first: str) -> None:
+    """The euro area is one of its places: the clamp that steps it below the
+    any-country answers for a question of no place leaves it first here."""
+    ids = [row["operation_id"] for row in search_catalog(catalog, query, limit=3)]
+    assert ids[0] == first, (query, ids)
+
+
+def test_the_eu_survey_steps_below_the_any_country_answers_of_a_question_with_no_place(
+        catalog) -> None:
+    """It answers for the European places alone: "consumer confidence" ranked
+    it first, above the OECD indicator, which answers for any area."""
+    rows = search_catalog(catalog, "consumer confidence", limit=10)
+    row = next(r for r in rows if r["operation_id"] == "eurostat_consumer_confidence")
+    assert "clamped-below:any-country-answers" in row["why"], row["why"]
+
+
+def test_the_eu_survey_answers_no_country_outside_its_places(catalog) -> None:
+    rows = search_catalog(catalog, "Japan consumer confidence", limit=20)
+    row = next(r for r in rows if r["operation_id"] == "eurostat_consumer_confidence")
+    assert "geo-uncovered:JP" in row["why"], row["why"]
+
+
+@pytest.mark.parametrize("query,own", [
+    ("Netherlands consumer confidence", "statistical_agencies_cbs_"),
+    ("Statistics Netherlands consumer confidence", "statistical_agencies_cbs_"),
+    ("Czech Statistical Office consumer confidence", "statistical_agencies_czso_"),
+    ("Poland consumer confidence", "gus_"),
+])
+def test_a_named_countrys_own_survey_ranks_above_the_eu_survey(
+        catalog, query: str, own: str) -> None:
+    """The European Commission's survey republishes, for each member, the
+    survey a national institute runs: beside a named member that member's own
+    source of the question ranks first."""
+    ids = [row["operation_id"] for row in search_catalog(catalog, query, limit=10)]
+    assert ids[0].startswith(own), (query, ids)
+
+
+def test_netherlands_consumer_confidence_steps_the_eu_survey_below_its_own_source(
+        catalog) -> None:
+    """The EU survey matched the question in more fields than Statistics
+    Netherlands' own survey and ranked first."""
+    rows = search_catalog(catalog, "Netherlands consumer confidence", limit=10)
+    row = next(r for r in rows if r["operation_id"] == "eurostat_consumer_confidence")
+    assert "clamped-below:own-source" in row["why"], row["why"]
+
+
+def test_an_own_source_steps_a_fixed_set_operation_down_only_beside_its_country() -> None:
+    """The clamp reads the named country's own source of the question: the
+    same fixed-set operation keeps its score beside another country."""
+    from sugra_api_mcp.catalog.models import Catalog, Endpoint
+
+    region = Endpoint(operation_id="eurostat_consumer_confidence", method="GET",
+                      path="/a/consumer-confidence", summary="Consumer confidence",
+                      description="Consumer confidence of the EU members")
+    own = Endpoint(operation_id="gus_widget", method="GET", path="/b",
+                   summary="Poland confidence", description="Consumer confidence of Poland")
+    tiny = Catalog(source="test", endpoints=[region, own])
+    rows = search_catalog(tiny, "Poland consumer confidence", limit=5)
+    assert [r["operation_id"] for r in rows] == ["gus_widget", "eurostat_consumer_confidence"], rows
+    assert "clamped-below:own-source" in rows[1]["why"], rows[1]["why"]
+    rows = search_catalog(tiny, "France consumer confidence", limit=5)
+    assert rows[0]["operation_id"] == "eurostat_consumer_confidence", rows
+    assert "clamped-below:own-source" not in rows[0]["why"], rows[0]["why"]
+
+
+def test_an_own_source_of_another_measure_holds_no_fixed_set_operation_below_it(
+        catalog) -> None:
+    """The own source must answer every measure word of the question: Italy's
+    consumer confidence, on the word "economic" its text holds, held the EU's
+    economic sentiment below it for "Italy economic sentiment"."""
+    rows = search_catalog(catalog, "Italy economic sentiment", limit=40)
+    ids = [row["operation_id"] for row in rows]
+    assert "eurostat_economic_sentiment" in ids[:5], ids[:10]
+    assert ids.index("eurostat_economic_sentiment") < ids.index("istat_consumer_confidence"), ids
+    row = rows[ids.index("eurostat_economic_sentiment")]
+    assert "clamped-below:own-source" not in row["why"], row["why"]
+
+
+@pytest.mark.parametrize("query,first", [
+    ("Eurostat economic sentiment Italy", "eurostat_economic_sentiment"),
+    ("Eurostat consumer confidence Netherlands", "eurostat_consumer_confidence"),
+])
+def test_a_question_that_names_the_fixed_set_operations_source_keeps_it_first(
+        catalog, query: str, first: str) -> None:
+    """Naming the source chooses its operation: "Eurostat consumer confidence
+    Netherlands" ranked the EU survey below Statistics Netherlands', and
+    "Eurostat economic sentiment Italy" fifteenth."""
+    rows = search_catalog(catalog, query, limit=10)
+    assert rows[0]["operation_id"] == first, (query, [r["operation_id"] for r in rows])
+    assert "clamped-below:own-source" not in rows[0]["why"], rows[0]["why"]
+
+
+def test_an_own_source_steps_a_fixed_set_operation_down_unless_the_question_names_its_source(
+        ) -> None:
+    """The source name is read off the operation's own path, so the clamp
+    needs no list of names: the same operation is held below the own source
+    until the question names the source it is served under."""
+    from sugra_api_mcp.catalog.models import Catalog, Endpoint
+
+    region = Endpoint(operation_id="eurostat_consumer_confidence", method="GET",
+                      path="/api/v1/regional/consumer-confidence", summary="Consumer confidence",
+                      description="Consumer confidence of the EU members")
+    own = Endpoint(operation_id="gus_widget", method="GET", path="/api/v1/gus/widget",
+                   summary="Poland confidence", description="Consumer confidence of Poland")
+    tiny = Catalog(source="test", endpoints=[region, own])
+    rows = search_catalog(tiny, "Poland consumer confidence", limit=5)
+    assert "clamped-below:own-source" in rows[1]["why"], rows
+    rows = search_catalog(tiny, "Regional consumer confidence Poland", limit=5)
+    row = next(r for r in rows if r["operation_id"] == "eurostat_consumer_confidence")
+    assert "clamped-below:own-source" not in row["why"], row["why"]
+
+
+@pytest.mark.parametrize("operation", ["macro_country_tables_table",
+                                       "macro_country_tables_table_history"])
+def test_the_country_tables_example_places_score_nothing(catalog, operation: str) -> None:
+    """Their `country` parameter names "United States,Euro Area,Japan" as an
+    example of the input: "Japan consumer confidence" ranked them first on it."""
+    rows = search_catalog(catalog, "Japan consumer confidence", limit=20)
+    row = next(r for r in rows if r["operation_id"] == operation)
+    assert "params:japan" not in row["why"], row["why"]
+
+
+def test_the_market_calendar_names_no_inflation_figure(catalog) -> None:
+    """It dates the Turkish central bank's Inflation Reports and holds no
+    values: "inflation" ranked it among the operations that answer any
+    country's inflation."""
+    rows = search_catalog(catalog, "inflation", limit=200)
+    row = next((r for r in rows if r["operation_id"] == "market_calendar"), None)
+    assert row is None or "params:inflation" not in row["why"], row
+
+
+@pytest.mark.parametrize("query,numerators", [
+    ("national debt to GDP", {"debt"}),
+    ("domestic debt to GDP", {"debt"}),
+    ("government debt to GDP", {"government", "debt"}),
+])
+def test_a_nation_word_measures_nothing_in_a_ratio(query: str, numerators: set) -> None:
+    """"national debt to GDP" measures debt: the word says whose it is, and the
+    indicator panel, which names the Swiss National Bank as a compiler, came
+    first for it."""
+    from sugra_api_mcp.catalog.aliases import with_statistic_words
+    from sugra_api_mcp.catalog.search import _ratio_numerators
+
+    found = _ratio_numerators(with_statistic_words(query))
+    assert set().union(*found.values()) == numerators, found
+
+
+def test_an_answer_that_names_more_of_the_measure_takes_the_earlier_slot() -> None:
+    """Both take a country and name GDP; one names the government's debt, the
+    other only a government's bond yield, and the second outscored it."""
+    from sugra_api_mcp.catalog.models import Catalog, Endpoint, EndpointParameter
+
+    country = EndpointParameter(name="country", location="query")
+    yields = Endpoint(operation_id="panel_widget", method="GET", path="/panel",
+                      summary="Panel GDP government", parameters=[country],
+                      description="GDP, GDP growth, government bond yield, GDP per capita")
+    debt = Endpoint(operation_id="profile_widget", method="GET", path="/profile",
+                    summary="Profile", parameters=[country],
+                    description="government debt to GDP")
+    tiny = Catalog(source="test", endpoints=[yields, debt])
+    rows = search_catalog(tiny, "government debt to GDP", limit=5)
+    assert [r["operation_id"] for r in rows] == ["profile_widget", "panel_widget"], rows
+
+
+@pytest.mark.parametrize("query", ["EU inflation", "eurozone inflation", "euro area inflation"])
+def test_the_euro_area_named_alone_lists_no_national_source_among_the_answers(
+        catalog, query: str) -> None:
+    """The Bank of Russia's household survey, which names inflation, stayed in
+    the first ten under the wrong-country penalty alone."""
+    from sugra_api_mcp.catalog.search import _source_country
+
+    rows = search_catalog(catalog, query, limit=10)
+    national = {row["operation_id"]: _source_country(catalog.get(row["operation_id"]))
+                for row in rows}
+    assert not {op: c for op, c in national.items() if c is not None}, (query, list(national))

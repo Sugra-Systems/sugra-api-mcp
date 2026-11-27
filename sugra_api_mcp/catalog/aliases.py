@@ -297,6 +297,18 @@ SOURCE_COUNTRY_PREFIXES: dict[str, str] = {
     "statistical_agencies_nier_": "SE",
     "macro_consumer_sentiment_switzerland": "CH",
     "macro_manufacturing_survey_us_south_atlantic": "US",
+    # One country's sources bundled by the 2026-11-27 resync, each served
+    # under one API path of its own. Untagged, the Bank of Russia's household
+    # survey, which names consumer price inflation, ranked first for
+    # "inflation", "Sweden CPI" and "Swiss consumer sentiment", and the ISTAT
+    # consumer confidence for "consumer confidence" and "Japan consumer
+    # confidence". ISTAT's older series answer for Italy alone as well.
+    "central_banks_cbr_": "RU",
+    "istat_": "IT",
+    "mas_": "SG",
+    "macro_manufacturing_survey_us_plains_mountain": "US",
+    "energy_grid_market_index": "GB",
+    "entity_us_verify": "US",
 }
 # The dead-prefix test (tests/test_search_relevance.py) guards this map: every
 # entry must match at least one bundled operation, so a source rename or
@@ -326,6 +338,14 @@ SOURCE_ALSO_SERVES: dict[str, frozenset[str]] = {
 # ranked the BIS residential property prices first, a set without Nigeria.
 # Curated from the live data (REF_AREA, 2026-10-12); the euro area is "EU",
 # the code query detection gives it, and the BIS aggregates are left out.
+_EU_SURVEY_PLACES: frozenset[str] = frozenset({
+    # The 27 members (Greece as GR, not Eurostat's EL), the euro area and EU.
+    "AT", "BE", "BG", "CY", "CZ", "DE", "DK", "EE", "ES", "EU", "FI", "FR",
+    "GR", "HR", "HU", "IE", "IT", "LT", "LU", "LV", "MT", "NL", "PL", "PT",
+    "RO", "SE", "SI", "SK",
+    # The candidate countries.
+    "AL", "BA", "GE", "MD", "ME", "MK", "RS", "TR", "UA",
+})
 OPERATION_COUNTRY_COVERAGE: dict[str, frozenset[str]] = {
     "bis_property": frozenset({
         "AT", "AU", "BE", "BG", "BR", "CA", "CH", "CL", "CN", "CO", "CY", "CZ",
@@ -345,6 +365,14 @@ OPERATION_COUNTRY_COVERAGE: dict[str, frozenset[str]] = {
         "AE", "AR", "CH", "CZ", "DE", "DK", "ES", "EU", "FR", "ID", "IS", "JP",
         "MA", "NL", "PH", "SA", "SG", "SI", "TR", "US",
     }),
+    # The European Commission's harmonised surveys as Eurostat publishes them
+    # serve the EU members, the euro area and the EU, and the candidate
+    # countries, and refuse every other place (their `geo` parameter,
+    # 2026-11-27). They take no `country` parameter, so a question that names
+    # no place ranks them below the operations that answer for any country:
+    # "consumer confidence" ranked the EU indicator first.
+    **{operation: _EU_SURVEY_PLACES
+       for operation in ("eurostat_consumer_confidence", "eurostat_economic_sentiment")},
 }
 
 # Query-side country vocabulary: a comprehensive generated module, because
@@ -2008,6 +2036,14 @@ OPERATION_INPUT_WORDS: dict[str, frozenset[str]] = {
     "imf_signals_external_pressure_country": frozenset({"current", "account"}),
     "oecd_country_indicator": frozenset({
         "earnings", "government", "gross", "national", "wage"}),
+    # The places its `country` parameter names as an example of the input
+    # ("United States,Euro Area,Japan"): "Japan consumer confidence" found
+    # the country tables first on that example alone.
+    **{operation: frozenset({"area", "euro", "japan", "states", "united"})
+       for operation in ("macro_country_tables_table", "macro_country_tables_table_history")},
+    # The calendar dates the Turkish central bank's Inflation Reports, a
+    # publication, and holds no values: "inflation" ranked it second.
+    "market_calendar": frozenset({"inflation"}),
 }
 
 
