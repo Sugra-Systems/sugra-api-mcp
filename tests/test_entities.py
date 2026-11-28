@@ -396,13 +396,73 @@ async def test_screen_review_from_a_stale_list_names_the_stale_lists(monkeypatch
         "status": "review",
         "matches": [],
         "disclaimer": "Screening signal, not a compliance determination.",
-        "reason": {
+        "review_reason": {
             "stale_screening": True,
-            "stale_lists": ["csl_alt", "us_csl"],
+            "list_freshness_stale": ["csl_alt", "us_csl"],
             "coverage_degraded": False,
             "lists_missing": [],
         },
     }
+    # Error results carry a string `reason` (daily_limit_reached and the
+    # transport reasons), so the success key has a name of its own.
+    assert "reason" not in result
+
+
+async def test_screen_review_reason_names_every_stale_list_as_stale_only(monkeypatch) -> None:
+    # list_freshness_stale copies every list meta.list_freshness marks stale,
+    # a supplementary row such as pep included: it says which lists are stale,
+    # not which of them made the verdict review. The name says only that.
+    raw = _review_envelope(
+        stale_screening=True,
+        coverage_degraded=False,
+        lists_missing=[],
+        list_freshness={
+            **_FRESH_ROWS,
+            "us_csl": {"age_hours": 400.0, "stale": True, "max_age_hours": 48},
+            "pep": {"age_hours": 900.0, "stale": True},
+        },
+    )
+    fake = FakeClient(post_payload=raw)
+    monkeypatch.setattr(entities, "get_client", lambda: fake)
+
+    result = await entities.sugra_entity_screen(name="Siemens")
+
+    assert result["review_reason"]["list_freshness_stale"] == ["pep", "us_csl"]
+    assert "stale_lists" not in result["review_reason"]
+
+
+async def test_screen_hit_with_degraded_coverage_carries_the_review_reason(monkeypatch) -> None:
+    # The key follows the trigger, not the status: a hit whose meta reports
+    # degraded coverage carries it too.
+    raw = _review_envelope(coverage_degraded=True, lists_missing=["uk_ofsi"])
+    raw["data"]["screening"] = {"status": "hit", "matches": [
+        {"list": "ofac_sdn", "matched_name": "DOE, Jane", "score": 0.97,
+         "match_type": "name_exact"}]}
+    fake = FakeClient(post_payload=raw)
+    monkeypatch.setattr(entities, "get_client", lambda: fake)
+
+    result = await entities.sugra_entity_screen(name="Jane Doe")
+
+    assert result["status"] == "hit"
+    assert result["review_reason"] == {"coverage_degraded": True,
+                                       "lists_missing": ["uk_ofsi"]}
+
+
+async def test_screen_with_meta_that_is_not_an_object_keeps_three_keys(monkeypatch) -> None:
+    # A meta that is not an object reads as an empty one: the fallback
+    # disclaimer, no review_reason, and no raise.
+    for meta in (["stale_screening"], "stale", 7):
+        raw = {"data": {"screening": {"status": "clear", "matches": []}}, "meta": meta}
+        fake = FakeClient(post_payload=raw)
+        monkeypatch.setattr(entities, "get_client", lambda fake=fake: fake)
+
+        result = await entities.sugra_entity_screen(name="Jane Doe")
+
+        assert result == {
+            "status": "clear",
+            "matches": [],
+            "disclaimer": entities._FALLBACK_DISCLAIMER,
+        }, meta
 
 
 async def test_screen_review_from_missing_lists_names_them(monkeypatch) -> None:
@@ -417,17 +477,17 @@ async def test_screen_review_from_missing_lists_names_them(monkeypatch) -> None:
 
     result = await entities.sugra_entity_screen(name="Acme")
 
-    assert result["reason"] == {
+    assert result["review_reason"] == {
         "stale_screening": False,
-        "stale_lists": [],
+        "list_freshness_stale": [],
         "coverage_degraded": True,
         "lists_missing": ["uk_ofsi", "un_consolidated"],
     }
 
 
 async def test_screen_with_fresh_full_lists_has_no_reason_key(monkeypatch) -> None:
-    # The answer the API did not downgrade is the same dict as before the
-    # reason key existed: three keys, nothing added. A stale row in
+    # The answer with no trigger is the same dict as before the review_reason
+    # key existed: three keys, nothing added. A stale row in
     # list_freshness alone (a supplementary list the API does not let move
     # the verdict) is not a reason either.
     for rows in (_FRESH_ROWS,
@@ -445,7 +505,7 @@ async def test_screen_with_fresh_full_lists_has_no_reason_key(monkeypatch) -> No
             "matches": [],
             "disclaimer": "Screening signal, not a compliance determination.",
         }
-    # The long-standing hit fixture, whose meta carries no reason, keeps its
+    # The long-standing hit fixture, whose meta carries no trigger, keeps its
     # three keys too.
     fake = FakeClient(post_payload=_SCREEN_RAW)
     monkeypatch.setattr(entities, "get_client", lambda: fake)
@@ -453,9 +513,9 @@ async def test_screen_with_fresh_full_lists_has_no_reason_key(monkeypatch) -> No
     assert set(result) == {"status", "matches", "disclaimer"}
 
 
-async def test_screen_reason_reads_malformed_meta_without_raising(monkeypatch) -> None:
+async def test_review_reason_reads_malformed_meta_without_raising(monkeypatch) -> None:
     cases = [
-        # meta that is not an object at all: no reason, no raise.
+        # meta that is not an object at all: no review_reason, no raise.
         ("not a dict", None),
         (["stale_screening"], None),
         # The flags as strings are not read as true.
@@ -468,21 +528,22 @@ async def test_screen_reason_reads_malformed_meta_without_raising(monkeypatch) -
         ({"stale_screening": True,
           "list_freshness": {"a": "stale", "b": {"stale": "true"}, 7: {"stale": True},
                              "c": {"stale": True}, "d": None}},
-         {"stale_screening": True, "stale_lists": ["c"]}),
+         {"stale_screening": True, "list_freshness_stale": ["c"]}),
         ({"coverage_degraded": 1, "lists_missing": ["x", 3, None, "x", "a"]},
          {"lists_missing": ["a", "x"]}),
     ]
     for meta, expected in cases:
         raw = {"data": {"screening": {"status": "review", "matches": []}}, "meta": meta}
-        assert entities._screen_reason(meta) == expected, meta
-        if isinstance(meta, dict):
-            fake = FakeClient(post_payload=raw)
-            monkeypatch.setattr(entities, "get_client", lambda fake=fake: fake)
-            result = await entities.sugra_entity_screen(name="x")
-            if expected is None:
-                assert "reason" not in result, meta
-            else:
-                assert result["reason"] == expected, meta
+        assert entities._review_reason(meta) == expected, meta
+        # Through the tool too, a meta that is not an object included.
+        fake = FakeClient(post_payload=raw)
+        monkeypatch.setattr(entities, "get_client", lambda fake=fake: fake)
+        result = await entities.sugra_entity_screen(name="x")
+        assert "reason" not in result, meta
+        if expected is None:
+            assert "review_reason" not in result, meta
+        else:
+            assert result["review_reason"] == expected, meta
 
 
 def _screen_tool_schema() -> dict[str, Any]:
@@ -542,6 +603,11 @@ def test_screen_texts_wording_is_pinned(monkeypatch) -> None:
     assert ("`secondary_fields` gives, for each of those fields the call sent, "
             "how the list record compares: `match`, `near`, `contradict`, "
             "`unknown` or `unrecognized`.") in description
+    # The review key and its four fields, by name only.
+    assert ("An answer can also carry `review_reason`, with `stale_screening`, "
+            "`list_freshness_stale`, `coverage_degraded` and `lists_missing`.") in description
+    assert "`reason`" not in description
+    assert "stale_lists" not in description
 
     # Claims about the API's scoring this repository cannot show stay out.
     texts = [description, *(p["description"] for p in props.values())]
@@ -581,6 +647,24 @@ async def test_lookup_gets_composed_path(monkeypatch) -> None:
     method, path, _params, _body = fake.calls[0]
     assert method == "GET"
     assert path == "/api/v1/entity/lei/5493001KJTIIGC8Y1R12"
+
+
+async def test_lookup_with_meta_that_is_not_an_object_reads_it_as_empty(monkeypatch) -> None:
+    # A meta that is not an object reads as an empty one: the fallback
+    # disclaimer, no partial flag, the compact core intact, and no raise.
+    for meta in (["partial"], "partial", 7):
+        raw = {**_LOOKUP_RAW, "meta": meta}
+        fake = FakeClient(get_payload=raw)
+        monkeypatch.setattr(entities, "get_client", lambda fake=fake: fake)
+
+        result = await entities.sugra_entity_lookup(anchor="lei",
+                                                    value="5493001KJTIIGC8Y1R12")
+
+        assert "error" not in result, meta
+        assert result["disclaimer"] == entities._FALLBACK_DISCLAIMER, meta
+        assert "partial" not in result, meta
+        assert result["entity"]["name"] == "Acme PLC", meta
+        assert result["screening"]["hit_count"] == 4, meta
 
 
 async def test_lookup_compact_default_shape(monkeypatch) -> None:

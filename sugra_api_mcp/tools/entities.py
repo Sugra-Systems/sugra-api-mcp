@@ -145,16 +145,22 @@ def _compact_match(match: dict[str, Any], secondary: bool = False) -> dict[str, 
     return out
 
 
-def _screen_reason(meta: Any) -> dict[str, Any] | None:
+def _review_reason(meta: Any) -> dict[str, Any] | None:
     """Why the API may have turned a screen into ``review``, or None.
 
     The API downgrades a verdict to ``review`` when a sanctions list is stale
     (``meta.stale_screening``) or when expected lists are not loaded
     (``meta.coverage_degraded``, ``meta.lists_missing``). With none of the
-    three set there is no reason and the caller adds no key. Each field is
+    three set there is no trigger and the caller adds no key. Each field is
     read only when it has the type the API sends; a field that cannot be read
-    is left out of the reason, never guessed and never raised on.
-    ``stale_lists`` names the ``meta.list_freshness`` entries marked stale.
+    is left out, never guessed and never raised on.
+    ``list_freshness_stale`` names every ``meta.list_freshness`` entry marked
+    stale, a supplementary list that cannot move the verdict included: it
+    says which lists are stale, not which of them made the verdict
+    ``review``. The rows carry no mark of which lists drive the verdict, so
+    this module does not guess one.
+    The key is ``review_reason``, never ``reason``: an error result already
+    carries a string ``reason`` (``_clean_error``).
     """
     if not isinstance(meta, dict):
         return None
@@ -173,7 +179,7 @@ def _screen_reason(meta: Any) -> dict[str, Any] | None:
         reason["stale_screening"] = stale
     freshness = meta.get("list_freshness")
     if isinstance(freshness, dict):
-        reason["stale_lists"] = sorted(
+        reason["list_freshness_stale"] = sorted(
             key
             for key, row in freshness.items()
             if isinstance(key, str) and isinstance(row, dict) and row.get("stale") is True
@@ -189,12 +195,16 @@ def _project_screen(payload: dict[str, Any], secondary: bool = False) -> dict[st
     """Compact projection for POST /entity/screen.
 
     {status, matches:[{name, score, list, type, name_score?, secondary_fields?}],
-    disclaimer, reason?}; the two conditional match keys as ``_compact_match``
-    carries them, and ``reason`` only when ``_screen_reason`` finds one, so an
-    answer the API did not downgrade keeps exactly the three keys.
+    disclaimer, review_reason?}; the two conditional match keys as
+    ``_compact_match`` carries them. ``review_reason`` is added whenever
+    ``_review_reason`` finds a trigger, whatever the status: a ``hit`` whose
+    meta reports degraded coverage carries it too. No trigger means exactly
+    the three keys. A ``meta`` that is not an object is read as an empty one.
     """
     data = payload.get("data") or {}
-    meta = payload.get("meta") or {}
+    meta = payload.get("meta")
+    if not isinstance(meta, dict):
+        meta = {}
     screening = data.get("screening") or {}
     matches = screening.get("matches") or []
     out: dict[str, Any] = {
@@ -204,9 +214,9 @@ def _project_screen(payload: dict[str, Any], secondary: bool = False) -> dict[st
         ],
         "disclaimer": _disclaimer_of(meta),
     }
-    reason = _screen_reason(meta)
+    reason = _review_reason(meta)
     if reason is not None:
-        out["reason"] = reason
+        out["review_reason"] = reason
     return out
 
 
@@ -218,10 +228,13 @@ def _project_lookup(
     Default core: {entity, screening (status + top matches + hit_count), ids,
     disclaimer}. `include` opts into fuller per-slice detail (ownership,
     adverse_media) appended in full form. Always carries the disclaimer; any
-    pep / adverse content keeps its non-comprehensive coverage note.
+    pep / adverse content keeps its non-comprehensive coverage note. A
+    ``meta`` that is not an object is read as an empty one.
     """
     data = payload.get("data") or {}
-    meta = payload.get("meta") or {}
+    meta = payload.get("meta")
+    if not isinstance(meta, dict):
+        meta = {}
     entity = data.get("entity") or {}
     screening = data.get("screening") or {}
     matches = [m for m in (screening.get("matches") or []) if isinstance(m, dict)]
@@ -354,7 +367,9 @@ async def sugra_entity_screen(
 
     Output is COMPACT to protect the agent context budget:
     `{status, matches:[{name, score, list, type, name_score?, secondary_fields?}], disclaimer}`.
-    The verdict `status` is one of `clear`, `review`, or `hit`. A match carries
+    The verdict `status` is one of `clear`, `review`, or `hit`. An answer can
+    also carry `review_reason`, with `stale_screening`, `list_freshness_stale`,
+    `coverage_degraded` and `lists_missing`. A match carries
     `name_score` and `secondary_fields` only when the call sends `dob`,
     `country` or `nationality` and the API returns them. `name_score` is the
     match score from the name alone, before the API re-scores the match with
