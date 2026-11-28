@@ -2,13 +2,18 @@
 
 These tests pin the pure functions in scripts/open_catalog_resync.py: FACTS
 stamp surgery, drift lists, PR body contract (no Closes board item, no agent
-identity), and the token refusal. GitHub and git are not exercised here.
+identity), the token refusal, and the skip of a push that would only move
+built_at. GitHub is not exercised here; one test reads a local git repository.
 """
 
 from __future__ import annotations
 
 import base64
 import importlib.util
+import json
+import os
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -162,3 +167,99 @@ def test_git_https_extraheader_is_basic_x_access_token_not_bearer() -> None:
     assert "pat_secret" not in redacted
     assert blob not in redacted
     assert "***" in redacted
+
+
+_MAIN = "1" * 40
+_SPEC = "ab" * 32
+
+
+def _raw_commit(*parents: str, message: str = "chore: resync") -> str:
+    header = [f"tree {'f' * 40}"] + [f"parent {p}" for p in parents]
+    header += ["author A <a@example.invalid> 0 +0000", "committer A <a@example.invalid> 0 +0000"]
+    return "\n".join(header) + "\n\n" + message + "\n"
+
+
+def _bundle(spec_sha256: str) -> bytes:
+    return json.dumps({"spec_sha256": spec_sha256, "endpoints": []}).encode("utf-8")
+
+
+def test_commit_parents_reads_the_header_only() -> None:
+    mod = _mod()
+    raw = _raw_commit(_MAIN, message="parent " + "2" * 40)
+    assert mod.commit_parents(raw) == [_MAIN]
+    assert mod.commit_parents(_raw_commit()) == []
+
+
+def test_resync_branch_is_current_on_same_spec_and_same_main() -> None:
+    mod = _mod()
+    assert mod.resync_branch_is_current(
+        raw_commit=_raw_commit(_MAIN),
+        bundle_bytes=_bundle(_SPEC),
+        main_sha=_MAIN,
+        spec_sha256=_SPEC,
+    )
+
+
+@pytest.mark.parametrize(
+    ("raw_commit", "bundle_bytes", "main_sha", "spec_sha256"),
+    [
+        (_raw_commit(_MAIN), _bundle("cd" * 32), _MAIN, _SPEC),  # the spec changed
+        (_raw_commit("2" * 40), _bundle(_SPEC), _MAIN, _SPEC),  # main moved
+        (_raw_commit(_MAIN, "3" * 40), _bundle(_SPEC), _MAIN, _SPEC),  # a merge commit
+        (_raw_commit(), _bundle(_SPEC), _MAIN, _SPEC),  # a root commit
+        (_raw_commit(_MAIN), b"not json", _MAIN, _SPEC),
+        (_raw_commit(_MAIN), b"\xff\xfe", _MAIN, _SPEC),
+        (_raw_commit(_MAIN), b"[]", _MAIN, _SPEC),
+        (_raw_commit(_MAIN), _bundle(_SPEC), "", _SPEC),
+        (_raw_commit(_MAIN), _bundle(""), _MAIN, ""),
+    ],
+)
+def test_resync_branch_is_not_current_otherwise(
+    raw_commit: str, bundle_bytes: bytes, main_sha: str, spec_sha256: str
+) -> None:
+    mod = _mod()
+    assert not mod.resync_branch_is_current(
+        raw_commit=raw_commit,
+        bundle_bytes=bundle_bytes,
+        main_sha=main_sha,
+        spec_sha256=spec_sha256,
+    )
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+def test_remote_resync_is_current_reads_origin_branch_and_bundle(tmp_path: Path) -> None:
+    mod = _mod()
+
+    def git(*args: str) -> str:
+        done = subprocess.run(
+            ["git", "-c", "user.name=T", "-c", "user.email=t@example.invalid", *args],
+            cwd=tmp_path,
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        return done.stdout.strip()
+
+    bundle = tmp_path / mod.BUNDLE_REL
+    bundle.parent.mkdir(parents=True)
+    git("init", "-q")
+    bundle.write_bytes(_bundle("00" * 32))
+    git("add", "--", mod.BUNDLE_REL.as_posix())
+    git("commit", "-q", "-m", "main")
+    main_sha = git("rev-parse", "HEAD")
+
+    ref = f"refs/remotes/origin/{mod.RESYNC_BRANCH}"
+    env = dict(os.environ)
+    assert not mod.remote_resync_is_current(
+        tmp_path, env, main_sha=main_sha, spec_sha256=_SPEC
+    )  # no branch on origin yet
+
+    bundle.write_bytes(_bundle(_SPEC))
+    git("commit", "-q", "-am", "chore: resync")
+    git("update-ref", ref, git("rev-parse", "HEAD"))
+    assert mod.remote_resync_is_current(tmp_path, env, main_sha=main_sha, spec_sha256=_SPEC)
+    assert not mod.remote_resync_is_current(tmp_path, env, main_sha=main_sha, spec_sha256="cd" * 32)
+
+    git("commit", "-q", "--allow-empty", "-m", "main moves on")
+    moved = git("rev-parse", "HEAD")
+    assert not mod.remote_resync_is_current(tmp_path, env, main_sha=moved, spec_sha256=_SPEC)
